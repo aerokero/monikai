@@ -159,7 +159,47 @@
     "title": "Notatki",
     "placeholder": "Będę dla Ciebie tutaj notować ważne rzeczy...",
     "saved": "Zapisano",
-    "saving": "Zapisywanie..."
+    "saving": "Zapisywanie...",
+    "new_page": "Nowa notatka",
+    "delete_page": "Usuń notatkę",
+    "category_label": "Kategoria",
+    "category_all": "Wszystkie",
+    "new_title_placeholder": "Tytuł notatki",
+    "new_category_placeholder": "Kategoria (opcjonalnie)",
+    "create": "Utwórz",
+    "empty_pages": "Brak notatek.",
+    "untitled": "Bez tytułu",
+    "rename": "Zmień nazwę notatki",
+    "rename_prompt": "Zmień nazwę notatki",
+    "confirm_delete": "Usunąć \"{title}\"?",
+    "name_exists": "Notatka o tej nazwie już istnieje.",
+    "live_preview": "Podgląd na żywo",
+    "source": "Źródło",
+    "toggle_markdown": "Widok Markdown",
+    "toggle_rich": "Widok wizualny",
+    "editor_placeholder": "Napisz swoje notatki...",
+    "commands": {
+      "title": "Polecenia",
+      "heading1": "Nagłówek 1",
+      "heading2": "Nagłówek 2",
+      "heading3": "Nagłówek 3",
+      "bulleted": "Lista punktowana",
+      "numbered": "Lista numerowana",
+      "quote": "Cytat"
+    },
+    "toolbar": {
+      "bold": "Pogrubienie",
+      "italic": "Kursywa",
+      "highlight": "Podświetlenie",
+      "bulleted": "Lista punktowana",
+      "numbered": "Lista numerowana"
+    },
+    "context": {
+      "rename": "Zmień nazwę",
+      "duplicate": "Duplikuj notatkę",
+      "delete": "Usuń notatkę",
+      "reveal": "Wyświetl w menedżerze plików"
+    }
   },
   "kasa": {
     "title": "Inteligentny Dom",

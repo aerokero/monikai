@@ -415,8 +415,8 @@ class PersonalitySystem:
 
     def get_cycle_phase(self) -> str:
         day = self.state.cycle_day
-        if 1 <= day <= 5: return "Lower Energy, Calm"
-        if 6 <= day <= 13: return "Rising Energy, Creative"
+        if 1 <= day <= 5: return "Calm, Neutral"
+        if 6 <= day <= 13: return "Rising Energy, Happy"
         if 14 <= day <= 16: return "Peak Energy, Social, Flirty"
         return "Calm -> Irritable/Tired"
 

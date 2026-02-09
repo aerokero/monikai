@@ -24,6 +24,7 @@ const Visualizer = ({
   characterScale = 1.0,
   characterY = 10,
   characterX = 0,
+  characterTransitionMs = 0.35,
 
   headpatActive = false,
   petpetSrc = null,
@@ -94,11 +95,38 @@ const Visualizer = ({
     return sprites.idle || null;
   }, [sprites, vnState, talkFrames, frameIdx]);
 
+  const FOOD_LAYER_SCALE = 0.39;
+  const FOOD_LAYER_SHIFT_PCT = -2;
+  const isFoodLayer = (src) => typeof src === "string" && src.includes("/t/food/");
+
   // robust fallback states
   const [bgBroken, setBgBroken] = useState(false);
   const [charBroken, setCharBroken] = useState(false);
 
-  useEffect(() => setBgBroken(false), [backgroundSrc]);
+  // background transition / glitch
+  const [bgActive, setBgActive] = useState(backgroundSrc || null);
+  const [bgPrev, setBgPrev] = useState(null);
+  const [isBgGlitching, setIsBgGlitching] = useState(false);
+
+  useEffect(() => {
+    if (!backgroundSrc) return;
+    if (!bgActive) {
+      setBgActive(backgroundSrc);
+      return;
+    }
+    if (backgroundSrc === bgActive) return;
+    setBgPrev(bgActive);
+    setBgActive(backgroundSrc);
+    setIsBgGlitching(true);
+    const clearPrev = setTimeout(() => setBgPrev(null), 700);
+    const stopGlitch = setTimeout(() => setIsBgGlitching(false), 650);
+    return () => {
+      clearTimeout(clearPrev);
+      clearTimeout(stopGlitch);
+    };
+  }, [backgroundSrc, bgActive]);
+
+  useEffect(() => setBgBroken(false), [bgActive]);
   useEffect(() => setCharBroken(false), [characterSrc]);
 
   // Visual tuning
@@ -134,12 +162,28 @@ const Visualizer = ({
         transition={{ duration: 0.6 }}
         style={{ willChange: "transform" }}
       >
-        {backgroundSrc && !bgBroken ? (
-          <img
-            src={backgroundSrc}
+        {bgPrev && (
+          <motion.img
+            key={`bg-prev-${bgPrev}`}
+            src={bgPrev}
             alt=""
             className="absolute inset-0 w-full h-full object-cover select-none pointer-events-none"
             draggable={false}
+            initial={{ opacity: 1 }}
+            animate={{ opacity: 0 }}
+            transition={{ duration: 0.6, ease: "easeOut" }}
+          />
+        )}
+        {bgActive && !bgBroken ? (
+          <motion.img
+            key={`bg-active-${bgActive}`}
+            src={bgActive}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover select-none pointer-events-none"
+            draggable={false}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.6, ease: "easeOut" }}
             onError={() => setBgBroken(true)}
           />
         ) : (
@@ -147,6 +191,26 @@ const Visualizer = ({
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.08),transparent_60%)]" />
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_75%_80%,rgba(255,255,255,0.06),transparent_62%)]" />
           </div>
+        )}
+
+        {isBgGlitching && bgActive && (
+          <motion.div
+            className="absolute inset-0 pointer-events-none mix-blend-screen"
+            style={{
+              backgroundImage: `url(${bgActive})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              filter: "contrast(1.25) saturate(1.4)",
+              opacity: 0.35,
+            }}
+            initial={{ opacity: 0 }}
+            animate={{
+              opacity: [0, 0.35, 0.15, 0.3, 0],
+              x: [0, -12, 8, -6, 0],
+              y: [0, 2, -1, 1, 0],
+            }}
+            transition={{ duration: 0.65, ease: "linear" }}
+          />
         )}
 
         {/* Vignette */}
@@ -163,20 +227,42 @@ const Visualizer = ({
             y: vnState === STATE.MONIKA ? characterY - 2 : characterY,
             x: characterX,
           }}
-          transition={{ duration: 0.35 }}
+          transition={{ duration: characterTransitionMs }}
           style={{ scale: characterScale, willChange: "transform, opacity" }}
         >
           {layers && layers.length > 0 ? (
             <div className="relative w-[960px] h-[960px] flex items-center justify-center">
-              {layers.map((layerSrc, i) => (
-                <img
-                  key={i}
-                  src={layerSrc}
-                  className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
-                  alt=""
-                  onError={(e) => { e.target.style.display = 'none'; }}
-                />
-              ))}
+              {layers.map((layerSrc, i) => {
+                if (isFoodLayer(layerSrc)) {
+                  return (
+                    <div
+                      key={i}
+                      className="absolute inset-0 pointer-events-none select-none"
+                      style={{ transform: `translateY(${FOOD_LAYER_SHIFT_PCT}%)` }}
+                    >
+                      <img
+                        src={layerSrc}
+                        className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
+                        alt=""
+                        style={{
+                          transformOrigin: "bottom center",
+                          transform: `scale(${FOOD_LAYER_SCALE})`,
+                        }}
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                      />
+                    </div>
+                  );
+                }
+                return (
+                  <img
+                    key={i}
+                    src={layerSrc}
+                    className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
+                    alt=""
+                    onError={(e) => { e.target.style.display = 'none'; }}
+                  />
+                );
+              })}
               {headpatActive && petpetSrc && (
                 <img
                   src={petpetSrc}

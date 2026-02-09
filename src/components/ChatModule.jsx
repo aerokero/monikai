@@ -143,6 +143,8 @@ const ChatModule = ({
   micAudioData,
   studyModeActive,
   onShareStudyPage,
+  onMinimizedChange,
+  onSizeChange,
 }) => {
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
@@ -179,6 +181,24 @@ const ChatModule = ({
     socket.emit("get_settings");
     return () => socket.off("settings", onSettings);
   }, [socket]);
+
+  useEffect(() => {
+    if (typeof onMinimizedChange === "function") {
+      onMinimizedChange(isMinimized);
+    }
+  }, [isMinimized, onMinimizedChange]);
+
+  const rootRef = useRef(null);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || typeof onSizeChange !== "function") return;
+    const notify = () => onSizeChange(el.getBoundingClientRect().height);
+    notify();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => notify());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [onSizeChange, isMinimized, historyExpanded, width, height]);
 
   const toggleThoughts = () => {
     if (!socket) return;
@@ -352,6 +372,7 @@ const ChatModule = ({
   return (
     <div
       id="chat"
+      ref={rootRef}
       onDrop={onDrop}
       onDragOver={onDragOver}
       className={`absolute flex flex-col transition-[box-shadow,border-color,height,top,left,width] duration-200

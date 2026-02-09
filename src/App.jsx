@@ -106,6 +106,12 @@ function AppContent() {
   const [showBrowserWindow, setShowBrowserWindow] = useState(false);
   const [showCompanionWindow, setShowCompanionWindow] = useState(false);
   const [showStudyWindow, setShowStudyWindow] = useState(false);
+  const [eatTogetherActive, setEatTogetherActive] = useState(false);
+  const [eatTogetherMeal, setEatTogetherMeal] = useState(null);
+  const [monikaMeal, setMonikaMeal] = useState("pasta");
+  const [isChatMinimized, setIsChatMinimized] = useState(false);
+  const [isChatMinimizeAnimating, setIsChatMinimizeAnimating] = useState(false);
+  const [chatLiveHeight, setChatLiveHeight] = useState(320);
 
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -117,6 +123,7 @@ function AppContent() {
     kitchen: "/vn/location/bg_kitchen.png",
     outside: "/vn/location/bg_outside.png",
     school: "/vn/location/bg_school.png",
+    restaurant: "/vn/location/bg_restaurant.png",
   };
   const ROOM_DAY_BG = "/vn/location/bg_room.png";
   const ROOM_NIGHT_BG = "/vn/location/bg_room_night.png";
@@ -130,6 +137,9 @@ function AppContent() {
   const sceneRef = useRef(vnScene);
   const [sceneOverrideUntil, setSceneOverrideUntil] = useState(0);
   const prevSceneRef = useRef(null);
+  const eatPrevSceneRef = useRef(null);
+  const showStudyWindowRef = useRef(showStudyWindow);
+  const eatTogetherActiveRef = useRef(eatTogetherActive);
 
   const isNightHour = (date) => {
     const h = date.getHours();
@@ -145,6 +155,141 @@ function AppContent() {
       return isNightHour(date) ? OUTSIDE_NIGHT_VARIANTS[idx] : OUTSIDE_DAY_VARIANTS[idx];
     }
     return VN_BACKGROUNDS[scene] || VN_BACKGROUNDS.room;
+  };
+
+  const EAT_MEAL_ASSETS = {
+    pizza: "/vn/monika/t/food/food_pizza.png",
+    sushi: "/vn/monika/t/food/food_sushi.png",
+    pasta: "/vn/monika/t/food/food_pasta.png",
+    salad: "/vn/monika/t/food/food_salad.png",
+    burger: "/vn/monika/t/food/food_burger.png",
+    pierogi: "/vn/monika/t/food/food_pierogi.png",
+    cereal: "/vn/monika/t/food/food_cereal.png",
+    coffee: "/vn/monika/t/food/drink_coffee.png",
+    tea: "/vn/monika/t/food/drink_tea.png",
+    finished: "/vn/monika/t/food/food_finished.png",
+  };
+
+  const MONIKA_MEAL_ASSETS = {
+    pasta: "/vn/monika/t/food/food_pasta.png",
+    salad: "/vn/monika/t/food/food_salad.png",
+    sushi: "/vn/monika/t/food/food_sushi.png",
+    pierogi: "/vn/monika/t/food/food_pierogi.png",
+    cereal: "/vn/monika/t/food/food_cereal.png",
+  };
+
+  const AHOGE_ACCESSORIES = [
+    "ahoge_bent",
+    "ahoge_curl",
+    "ahoge_double",
+    "ahoge_heart",
+    "ahoge_lightning",
+    "ahoge_sharp",
+    "ahoge_simple",
+    "ahoge_small",
+    "ahoge_swoop",
+    "ahoge_twisty",
+  ];
+
+  const MEAL_KEYWORDS = [
+    { key: "pizza", re: /\b(pizza(s)?|piz(z)?a)\b/ },
+    { key: "sushi", re: /\b(sushi)\b/ },
+    { key: "pasta", re: /\b(pasta|spaghetti|ramen|noodles?|makaron)\b/ },
+    { key: "salad", re: /\b(salad|salat|sałatka|salatka)\b/ },
+    { key: "burger", re: /\b(burger|cheeseburger|hamburger)\b/ },
+    { key: "pierogi", re: /\b(pierogi|pierog(i|ów|ow)?)\b/ },
+    { key: "cereal", re: /\b(cereal|płatki|platki)\b/ },
+    { key: "coffee", re: /\b(coffee|kawa)\b/ },
+    { key: "tea", re: /\b(tea|herbata)\b/ },
+  ];
+
+  const FINISHED_MEAL_KEYWORDS = [
+    /\b(finished eating|done eating|i'?m full|i am full)\b/,
+    /\b(sko[ńn]czy[łl](em|am)?(em)?(\s+je[śs]?[cć])?)\b/,
+    /\b(zjad(łem|lam))\b/,
+    /\b(najedzon(y|a))\b/,
+    /\b(syt(y|a))\b/,
+  ];
+
+  const detectMealKey = (raw) => {
+    const text = String(raw || "").toLowerCase();
+    if (!text) return null;
+    for (const entry of MEAL_KEYWORDS) {
+      if (entry.re.test(text)) return entry.key;
+    }
+    return null;
+  };
+
+  const detectFinishedMeal = (raw) => {
+    const text = String(raw || "").toLowerCase();
+    if (!text) return false;
+    return FINISHED_MEAL_KEYWORDS.some((re) => re.test(text));
+  };
+
+  const shouldStartEatTogether = (raw) => {
+    const text = String(raw || "").toLowerCase();
+    if (!text) return false;
+    return (
+      text.includes("eat together") ||
+      text.includes("let's eat") ||
+      text.includes("lets eat") ||
+      text.includes("dinner together") ||
+      text.includes("have dinner") ||
+      text.includes("have lunch") ||
+      text.includes("have breakfast") ||
+      text.includes("meal together") ||
+      text.includes("jedzmy razem") ||
+      text.includes("zjedzmy razem") ||
+      text.includes("kolacja razem") ||
+      text.includes("obiad razem") ||
+      text.includes("sniadanie razem") ||
+      text.includes("śniadanie razem") ||
+      text.includes("chodzmy na obiad") ||
+      text.includes("chodźmy na obiad") ||
+      text.includes("chodzmy na kolacje") ||
+      text.includes("chodźmy na kolację")
+    );
+  };
+
+  const shouldStopEatTogether = (raw) => {
+    const text = String(raw || "").toLowerCase();
+    if (!text) return false;
+    return (
+      text.includes("end meal") ||
+      text.includes("end eating") ||
+      text.includes("end dinner") ||
+      text.includes("end lunch") ||
+      text.includes("stop eat together") ||
+      text.includes("stop eating together") ||
+      text.includes("finish eating") ||
+      text.includes("that's all") ||
+      text.includes("thats all") ||
+      text.includes("wrap up dinner") ||
+      text.includes("koniec trybu jedzenia") ||
+      text.includes("koniec trybu") ||
+      text.includes("koniec posilku") ||
+      text.includes("koniec posiłku") ||
+      text.includes("zakończ posiłek") ||
+      text.includes("zakoncz posilek")
+    );
+  };
+
+  const pickMonikaMeal = () => {
+    const keys = Object.keys(MONIKA_MEAL_ASSETS || {});
+    if (!keys.length) return null;
+    return keys[Math.floor(Math.random() * keys.length)];
+  };
+
+  const startEatTogether = () => {
+    setEatTogetherActive(true);
+    setEatTogetherMeal(null);
+    const pick = pickMonikaMeal();
+    if (pick) setMonikaMeal(pick);
+  };
+
+  const stopEatTogether = () => {
+    setEatTogetherActive(false);
+    setEatTogetherMeal(null);
   };
 
   // ---------------------------------------------------------------------
@@ -387,12 +532,35 @@ function AppContent() {
       setSceneOverrideUntil(Date.now() + 6 * 60 * 60 * 1000);
     } else if (prevSceneRef.current) {
       const prev = prevSceneRef.current;
-      setVnScene(prev);
-      setVnBackground(resolveVnBackground(prev, new Date()));
+      const nextScene = eatTogetherActive ? 'restaurant' : prev;
+      setVnScene(nextScene);
+      setVnBackground(resolveVnBackground(nextScene, new Date()));
       prevSceneRef.current = null;
       setSceneOverrideUntil(0);
     }
-  }, [showStudyWindow]);
+  }, [showStudyWindow, eatTogetherActive, vnScene]);
+
+  useEffect(() => {
+    if (!eatTogetherActive) {
+      if (!showStudyWindow && eatPrevSceneRef.current) {
+        const prev = eatPrevSceneRef.current;
+        eatPrevSceneRef.current = null;
+        setVnScene(prev);
+        setVnBackground(resolveVnBackground(prev, new Date()));
+        setSceneOverrideUntil(0);
+      }
+      return;
+    }
+
+    if (showStudyWindow) return;
+
+    if (!eatPrevSceneRef.current) eatPrevSceneRef.current = vnScene;
+    if (vnScene !== 'restaurant') {
+      setVnScene('restaurant');
+      setVnBackground(resolveVnBackground('restaurant', new Date()));
+    }
+    setSceneOverrideUntil(Date.now() + 3 * 60 * 60 * 1000);
+  }, [eatTogetherActive, showStudyWindow, vnScene]);
 
   const clearSessionPrompts = () => {
     setSessionPromptQueue([]);
@@ -626,14 +794,21 @@ function AppContent() {
     sceneRef.current = vnScene;
   }, [vnScene]);
 
+  useEffect(() => {
+    showStudyWindowRef.current = showStudyWindow;
+  }, [showStudyWindow]);
+
+  useEffect(() => {
+    eatTogetherActiveRef.current = eatTogetherActive;
+  }, [eatTogetherActive]);
+
   const pickVnScene = (date, quietForMs = 0) => {
     const h = date.getHours();
-    // If it's been quiet for a while, let Monika "step outside"
-    if (quietForMs >= 120000) return "outside";
+    // Default schedule keeps Monika indoors; outside only when explicitly triggered by content.
     if (h >= 6 && h < 10) return "kitchen";
     if (h >= 10 && h < 16) return "school";
     if (h >= 16 && h < 22) return "room";
-    return "outside";
+    return "room";
   };
 
   useEffect(() => {
@@ -759,22 +934,34 @@ function AppContent() {
   // MAS Layer Logic (Monika After Story Assets)
   // ---------------------------------------------------------------------
   const currentHour = currentTime.getHours();
+  const currentMinute = currentTime.getMinutes();
   const currentMonth = currentTime.getMonth(); // 0-11
   const currentDay = currentTime.getDate();
+  const currentYear = currentTime.getFullYear();
 
   // Calculate Outfit State (Folder, Hair, Name)
   const visualState = useMemo(() => {
     const mood = (personalityState.mood || 'neutral').toLowerCase();
     const affection = personalityState.affection || 0;
     const weather = (personalityState.weather || '').toLowerCase();
+    const isHalloween = currentMonth === 9 && currentDay === 31;
+    const isChristmas = currentMonth === 11 && currentDay >= 24 && currentDay <= 26;
+    const isValentines = currentMonth === 1 && currentDay === 14;
+    const tempMatch = weather.match(/(-?\d+(?:\.\d+)?)\s*°c/i);
+    const tempC = tempMatch ? parseFloat(tempMatch[1]) : null;
+    const isCold = tempC !== null ? tempC <= 6 : weather.includes('snowy');
+    const isRainy = weather.includes('rainy') || weather.includes('thunderstorm');
     
     // Hair Style Logic
     // Day (7-20): def (Ponytail)
     // Night (20-7): down (Loose)
     let hairStyle = 'def';
     const isNight = currentHour >= 20 || currentHour < 7;
-    // Shower times: 6-8 AM and 19-21 PM
-    const isShowerTime = (currentHour >= 6 && currentHour < 8) || (currentHour >= 19 && currentHour < 21);
+    const isLateNight = currentHour >= 22 || currentHour < 6;
+    // Shower times: 6:00-6:30 and 19:00-19:30
+    const isShowerTime =
+      (currentHour === 6 && currentMinute < 30) ||
+      (currentHour === 19 && currentMinute < 30);
 
     if (isNight) {
       hairStyle = 'down';
@@ -783,6 +970,23 @@ function AppContent() {
     // Clothes Logic
     let clothesFolder = 'def';
     let outfitName = "School Uniform";
+    let headAccessories = ['ribbon_def'];
+    let ahogeAccessory = null;
+    let deskAccessories = [];
+
+    const addHeadAccessory = (acc) => {
+      if (!acc) return;
+      if (!headAccessories.includes(acc)) headAccessories.push(acc);
+    };
+    const addDeskAccessory = (acc) => {
+      if (!acc) return;
+      if (!deskAccessories.includes(acc)) deskAccessories.push(acc);
+    };
+
+    if (AHOGE_ACCESSORIES.length) {
+      const daySeed = currentYear * 10000 + (currentMonth + 1) * 100 + currentDay;
+      ahogeAccessory = AHOGE_ACCESSORIES[daySeed % AHOGE_ACCESSORIES.length];
+    }
 
     // New Year (Dec 31 - Jan 1)
     if ((currentMonth === 11 && currentDay === 31) || (currentMonth === 0 && currentDay === 1)) {
@@ -792,11 +996,11 @@ function AppContent() {
       // Valentine's Day (Feb 14)
       clothesFolder = isNight ? 'vday_lingerie' : 'blackpinkdress';
       outfitName = isNight ? "Valentine's Lingerie" : "Blackpink Dress";
-    } else if (currentMonth === 9 && currentDay === 31) {
+    } else if (isHalloween) {
       // Halloween (Oct 31)
       clothesFolder = isNight ? 'spider_lingerie' : 'marisa';
       outfitName = isNight ? "Spider Lingerie" : "Witch Cosplay (Marisa)";
-    } else if (currentMonth === 11 && (currentDay >= 24 && currentDay <= 26)) {
+    } else if (isChristmas) {
       // Christmas (Dec 24-26)
       clothesFolder = isNight ? 'santa_lingerie' : 'santa';
       outfitName = isNight ? "Santa Lingerie" : "Santa Costume";
@@ -805,11 +1009,17 @@ function AppContent() {
       if (isNight && affection > 50 && (mood.includes('flirty') || mood.includes('love') || mood.includes('romantic'))) {
          clothesFolder = 'vday_lingerie';
          outfitName = "Valentine's Lingerie";
+      } else if (isLateNight) {
+        // Late night towel (dry hair)
+        clothesFolder = 'bath_towel_white';
+        outfitName = "White Bath Towel";
+        headAccessories = [];
       } else if (isShowerTime) {
-         // Shower / Towel Mode
-         clothesFolder = 'bath_towel_white';
-         hairStyle = 'wet';
-         outfitName = "White Bath Towel";
+        // Shower / Towel Mode
+        clothesFolder = 'bath_towel_white';
+        hairStyle = 'wet';
+        outfitName = "White Bath Towel";
+        headAccessories = [];
       } else if (!isNight && (weather.includes('sunny') || weather.includes('clear'))) {
          clothesFolder = 'sundress_white';
          outfitName = "White Sundress";
@@ -817,8 +1027,14 @@ function AppContent() {
          clothesFolder = 'blazerless';
          outfitName = "School Uniform (Blazerless)";
       } else if (isNight) {
-         outfitName = "Pajamas (Pink Shirt)"; // Assuming default night look
+         outfitName = "School Uniform";
       }
+    }
+
+    if (eatTogetherActive) {
+      clothesFolder = 'blackdress';
+      outfitName = "Black Dress";
+      headAccessories = ['ribbon_black'];
     }
 
     // Canon override: when Monika is outside, she wears the school uniform.
@@ -834,8 +1050,35 @@ function AppContent() {
       hairStyle = 'def';
     }
 
-    return { clothesFolder, hairStyle, outfitName };
-  }, [personalityState.mood, personalityState.affection, personalityState.weather, currentHour, currentMonth, currentDay, showNotesWindow, showSessionNotesWindow, vnScene, showStudyWindow]);
+    if (isChristmas) addHeadAccessory('holly_hairclip');
+    if (isRainy) addHeadAccessory('water_drops');
+    if (clothesFolder === 'marisa') {
+      headAccessories = ['marisa_witchhat', 'marisa_strandbow'];
+    }
+    if (clothesFolder === 'bath_towel_white') {
+      headAccessories = [];
+    }
+
+    if (isChristmas) {
+      addDeskAccessory('candycane');
+      addDeskAccessory('christmas_cookies');
+    }
+    if (isValentines) {
+      addDeskAccessory('roses');
+      addDeskAccessory('heartchoc');
+    }
+    if (isHalloween) {
+      addDeskAccessory('desk_candy_jack_half');
+      addDeskAccessory(isNight ? 'desk_lantern_lit' : 'desk_lantern_unlit');
+    }
+    if (isCold) addDeskAccessory('thermos_mug');
+    if (!isCold && !isHalloween && !isChristmas && !isValentines && !eatTogetherActive) {
+      const drinkSeed = currentYear * 1000000 + (currentMonth + 1) * 10000 + currentDay * 100 + currentHour;
+      if (drinkSeed % 3 === 0) addDeskAccessory('mug');
+    }
+
+    return { clothesFolder, hairStyle, outfitName, headAccessories, ahogeAccessory, deskAccessories };
+  }, [personalityState.mood, personalityState.affection, personalityState.weather, currentHour, currentMinute, currentMonth, currentDay, currentYear, showNotesWindow, showSessionNotesWindow, vnScene, showStudyWindow, eatTogetherActive]);
 
   // Report Visual State to Backend
   useEffect(() => {
@@ -850,13 +1093,25 @@ function AppContent() {
   const masLayers = useMemo(() => {
     const baseMood = (personalityState.mood || 'neutral').toLowerCase();
     const mood = headpatActive ? `${baseMood} happy` : baseMood;
-    const { clothesFolder, hairStyle } = visualState;
+    const { clothesFolder, hairStyle, headAccessories, ahogeAccessory, deskAccessories } = visualState;
+    const isTowelOutfit = clothesFolder === 'bath_towel_white';
     const isStudyMode = showStudyWindow;
     const forceClosedEyes = headpatActive;
     const forceHappy = headpatActive;
     
     // Determine Pose based on mood
+    const energy = Number(personalityState.energy ?? 0.8);
+    const leanChance =
+      energy < 0.10 ? 1.0 :
+      energy < 0.25 ? 0.7 :
+      energy < 0.35 ? 0.45 :
+      energy < 0.5 ? 0.2 : 0.0;
+    const leanBucket = Math.floor((currentHour * 60 + currentMinute) / 10);
+    const leanRoll = Math.abs(Math.sin(leanBucket * 9301 + 49297) * 10000) % 1;
+    const energyLean = leanRoll < leanChance;
+
     const isLeaning = !isStudyMode && (
+      energyLean ||
       mood.includes('leaning') ||
       mood.includes('mysterious') ||
       mood.includes('foggy') ||
@@ -879,6 +1134,9 @@ function AppContent() {
       }
     }
     if (isStudyMode) {
+      armStyle = 'def';
+    }
+    if (isTowelOutfit) {
       armStyle = 'def';
     }
 
@@ -983,21 +1241,33 @@ function AppContent() {
     const armLayers = [];
     let headBase = null;
 
+    let leaningTopOverlay = null;
     if (isLeaning) {
       // Leaning Pose (Body + Arms + Head)
       layers.push(
         '/vn/monika/b/body-leaning-def-0.png',       // Body Skin
+        `/vn/monika/c/${clothesFolder}/body-leaning-def-0.png`,   // Body Clothes 0
         '/vn/monika/b/body-leaning-def-1.png',       // Body Skin 1
-        `/vn/monika/c/${clothesFolder}/body-leaning-def-1.png`    // Body Clothes 1
+        ...(isTowelOutfit ? [] : [`/vn/monika/c/${clothesFolder}/body-leaning-def-1.png`])    // Body Clothes 1
       );
+      if (isTowelOutfit) {
+        // Towel top layer should sit above arms
+        leaningTopOverlay = `/vn/monika/c/${clothesFolder}/body-leaning-def-1.png`;
+      }
       headBase = '/vn/monika/b/body-leaning-def-head.png';
       
       armLayers.push(
         '/vn/monika/b/arms-leaning-def-left-def-10.png', // Left Arm Skin
-        `/vn/monika/c/${clothesFolder}/arms-leaning-def-left-def-10.png`, // Left Arm Clothes
-        '/vn/monika/b/arms-leaning-def-right-def-10.png', // Right Arm Skin
-        `/vn/monika/c/${clothesFolder}/arms-leaning-def-right-def-10.png` // Right Arm Clothes
+        '/vn/monika/b/arms-leaning-def-right-def-5.png', // Right Arm Skin (under)
+        '/vn/monika/b/arms-leaning-def-right-def-10.png' // Right Arm Skin (over)
       );
+      if (!isTowelOutfit) {
+        armLayers.push(
+          `/vn/monika/c/${clothesFolder}/arms-leaning-def-left-def-10.png`, // Left Arm Clothes
+          `/vn/monika/c/${clothesFolder}/arms-leaning-def-right-def-5.png`, // Right Arm Clothes (under)
+          `/vn/monika/c/${clothesFolder}/arms-leaning-def-right-def-10.png` // Right Arm Clothes (over)
+        );
+      }
     } else {
       // Normal Pose (Body + Arms + Head)
       layers.push(
@@ -1010,54 +1280,96 @@ function AppContent() {
 
       // Arms based on style
       if (armStyle === 'crossed') {
-        armLayers.push(
-          '/vn/monika/b/arms-crossed-10.png',
-          `/vn/monika/c/${clothesFolder}/arms-crossed-10.png`
-        );
+        armLayers.push('/vn/monika/b/arms-crossed-10.png');
+        if (!isTowelOutfit) armLayers.push(`/vn/monika/c/${clothesFolder}/arms-crossed-10.png`);
       } else if (armStyle === 'steepling') {
-        armLayers.push(
-          '/vn/monika/b/arms-steepling-10.png',
-          `/vn/monika/c/${clothesFolder}/arms-steepling-10.png`
-        );
+        armLayers.push('/vn/monika/b/arms-steepling-10.png');
+        if (!isTowelOutfit) armLayers.push(`/vn/monika/c/${clothesFolder}/arms-steepling-10.png`);
       } else if (armStyle === 'point') {
-        armLayers.push(
-          '/vn/monika/b/arms-left-down-0.png', `/vn/monika/c/${clothesFolder}/arms-left-down-0.png`,
-          '/vn/monika/b/arms-right-point-0.png', `/vn/monika/c/${clothesFolder}/arms-right-point-0.png`
-        );
+        armLayers.push('/vn/monika/b/arms-left-down-0.png', '/vn/monika/b/arms-right-point-0.png');
+        if (!isTowelOutfit) {
+          armLayers.push(
+            `/vn/monika/c/${clothesFolder}/arms-left-down-0.png`,
+            `/vn/monika/c/${clothesFolder}/arms-right-point-0.png`
+          );
+        }
       } else if (armStyle === 'restpoint') {
-        armLayers.push(
-          '/vn/monika/b/arms-left-rest-10.png', `/vn/monika/c/${clothesFolder}/arms-left-rest-10.png`,
-          '/vn/monika/b/arms-right-restpoint-10.png', `/vn/monika/c/${clothesFolder}/arms-right-restpoint-10.png`
-        );
+        armLayers.push('/vn/monika/b/arms-left-rest-10.png', '/vn/monika/b/arms-right-restpoint-10.png');
+        if (!isTowelOutfit) {
+          armLayers.push(
+            `/vn/monika/c/${clothesFolder}/arms-left-rest-10.png`,
+            `/vn/monika/c/${clothesFolder}/arms-right-restpoint-10.png`
+          );
+        }
       } else {
         // Default Down
-        armLayers.push(
-          '/vn/monika/b/arms-left-down-0.png', `/vn/monika/c/${clothesFolder}/arms-left-down-0.png`,
-          '/vn/monika/b/arms-right-down-0.png', `/vn/monika/c/${clothesFolder}/arms-right-down-0.png`
-        );
+        armLayers.push('/vn/monika/b/arms-left-down-0.png', '/vn/monika/b/arms-right-down-0.png');
+        if (!isTowelOutfit) {
+          armLayers.push(
+            `/vn/monika/c/${clothesFolder}/arms-left-down-0.png`,
+            `/vn/monika/c/${clothesFolder}/arms-right-down-0.png`
+          );
+        }
       }
+    }
+
+    const eatLayers = [];
+    if (eatTogetherActive) {
+      const monikaLayer = MONIKA_MEAL_ASSETS[monikaMeal] || MONIKA_MEAL_ASSETS.pasta;
+      if (monikaLayer) eatLayers.push(monikaLayer);
+      const userLayer = eatTogetherMeal ? EAT_MEAL_ASSETS[eatTogetherMeal] : null;
+      if (userLayer) eatLayers.push(userLayer);
     }
 
     // Table & Shadow (Before Arms)
     layers.push('/vn/monika/t/table-def.png');
+    if (Array.isArray(deskAccessories) && deskAccessories.length) {
+      deskAccessories.forEach((acc) => {
+        layers.push(`/vn/monika/a/${acc}/0.png`);
+      });
+    }
     layers.push('/vn/monika/t/table-def-s.png');
 
     // Arms
     layers.push(...armLayers);
+    if (leaningTopOverlay) layers.push(leaningTopOverlay);
 
     // Head Base (Face Skin)
     if (headBase) layers.push(headBase);
 
     // Face Parts (Nose -> Mouth -> Eyes -> Eyebrows)
-    layers.push(facePrefix + nose, facePrefix + mouth, facePrefix + eyes, facePrefix + eyebrows);
+    const faceParts = [facePrefix + nose];
+    if (clothesFolder === 'bath_towel_white') {
+      // Slight boost for subtle nose in towel lighting
+      faceParts.push(facePrefix + nose);
+    }
+    faceParts.push(facePrefix + mouth, facePrefix + eyes, facePrefix + eyebrows);
+    layers.push(...faceParts);
 
     if (blush) layers.push(facePrefix + blush);
 
     // Front Hair
     layers.push(hairFront);
 
+    // Ahoge (daily)
+    if (ahogeAccessory) {
+      const accFrame = isLeaning ? '5' : '0';
+      layers.push(`/vn/monika/a/${ahogeAccessory}/${accFrame}.png`);
+    }
+
+    // Head accessories (e.g., ribbon, clips, hats)
+    if (Array.isArray(headAccessories) && headAccessories.length) {
+      const accFrame = isLeaning ? '5' : '0';
+      headAccessories.forEach((acc) => {
+        layers.push(`/vn/monika/a/${acc}/${accFrame}.png`);
+      });
+    }
+
+    // Eat-together food on top of Monika
+    if (eatLayers.length) layers.push(...eatLayers);
+
     return layers;
-  }, [personalityState.mood, visualState, isBlinking, randomGlance, randomPose, vnScene, showStudyWindow, headpatActive]);
+  }, [personalityState.mood, personalityState.energy, visualState, isBlinking, randomGlance, randomPose, vnScene, showStudyWindow, headpatActive, eatTogetherActive, eatTogetherMeal, monikaMeal, currentHour, currentMinute]);
 
   useEffect(() => {
     if (aiSpeaking || userSpeaking) {
@@ -1233,6 +1545,9 @@ function AppContent() {
     });
 
     socket.on('transcription', (data) => {
+      const rawText = String(data?.text ?? "");
+      if (!rawText.trim()) return;
+
       // Trigger listening state only when text is actually transcribed
       if (data.sender === 'Ty' || data.sender === 'User') {
         setUserSpeaking(true);
@@ -1240,6 +1555,21 @@ function AppContent() {
         userOffTimerRef.current = setTimeout(() => {
           setUserSpeaking(false);
         }, 3000);
+
+        const wantsStart = shouldStartEatTogether(data.text);
+        const wantsStop = shouldStopEatTogether(data.text);
+        if (wantsStart) startEatTogether();
+        if (wantsStop) stopEatTogether();
+
+        const wantsFinished = detectFinishedMeal(data.text);
+        if (wantsFinished && (eatTogetherActiveRef.current || wantsStart)) {
+          setEatTogetherMeal("finished");
+        } else {
+          const mealKey = detectMealKey(data.text);
+          if (mealKey && (eatTogetherActiveRef.current || wantsStart)) {
+            setEatTogetherMeal(mealKey);
+          }
+        }
       }
 
       setMessages(prev => {
@@ -1295,6 +1625,7 @@ function AppContent() {
     socket.on('vn_scene', (payload) => {
       const scene = payload?.scene;
       if (!scene || !VN_BACKGROUNDS[scene]) return;
+      if (showStudyWindowRef.current || eatTogetherActiveRef.current) return;
       const ttl = typeof payload?.ttl_ms === 'number' ? payload.ttl_ms : 180000;
       setVnScene(scene);
       setVnBackground(resolveVnBackground(scene, new Date()));
@@ -1655,6 +1986,26 @@ function AppContent() {
   // pozwól wysłać: (tekst) lub (same załączniki) lub (oba)
   if (!text && attachments.length === 0) return;
 
+    // Treat typed input as activity for VN scene auto-logic
+    lastActivityRef.current = Date.now();
+
+    if (text) {
+      const wantsStart = shouldStartEatTogether(text);
+      const wantsStop = shouldStopEatTogether(text);
+      if (wantsStart) startEatTogether();
+      if (wantsStop) stopEatTogether();
+
+      const wantsFinished = detectFinishedMeal(text);
+      if (wantsFinished && (eatTogetherActiveRef.current || wantsStart)) {
+        setEatTogetherMeal("finished");
+      } else {
+        const mealKey = detectMealKey(text);
+        if (mealKey && (eatTogetherActiveRef.current || wantsStart)) {
+          setEatTogetherMeal(mealKey);
+        }
+      }
+    }
+
     const shouldAutoShare = Boolean(showStudyWindow && studyShareRef.current && isCurrentPageRequest(text));
     const sendToBackend = () => socket.emit('user_input', { text, attachments });
     if (shouldAutoShare) {
@@ -1893,14 +2244,41 @@ function AppContent() {
   const focusMode = sessionMode.active || showStudyWindow;
   const chatCenterX = elementPositions.chat?.x ?? viewport.w / 2;
   const characterShift = Math.round(chatCenterX - viewport.w / 2);
-  const characterY = focusMode ? -80 : -40;
+  const isCompactViewport = viewport.h < 1100;
+  const eatTogetherLift = eatTogetherActive ? (isCompactViewport ? -160 : -120) : 0;
+  const isTableScene = vnScene !== 'outside';
+  const chatMinimizedOffset = useMemo(() => {
+    if (!isTableScene) return 0;
+    const baseH = elementSizes.chat?.h ?? 320;
+    const currentH = chatLiveHeight || baseH;
+    const offset = Math.max(0, baseH - currentH);
+    return isChatMinimized ? offset : 0;
+  }, [isTableScene, isChatMinimized, elementSizes.chat?.h, chatLiveHeight]);
+
+  useEffect(() => {
+    if (!isTableScene) return;
+    setIsChatMinimizeAnimating(true);
+    const t = setTimeout(() => setIsChatMinimizeAnimating(false), 220);
+    return () => clearTimeout(t);
+  }, [isChatMinimized, isTableScene]);
+
+    const tableOffset = isTableScene ? (isCompactViewport ? -60 : -125) : 0;
+    const fullscreenLowering = isCompactViewport ? 0 : 40;
+    const characterY = (focusMode ? -80 : -40)
+      + tableOffset
+      + eatTogetherLift
+      + (isCompactViewport ? -70 : 0)
+      + fullscreenLowering
+      + chatMinimizedOffset;
   const characterScale = useMemo(() => {
     const refW = 1920;
     const refH = 1080;
     const sizeFactor = Math.min(viewport.w / refW, viewport.h / refH);
     const t = Math.max(0, Math.min(1, (sizeFactor - 0.85) / 0.25));
-    return 1.05 + 0.15 * t;
-  }, [viewport.w, viewport.h]);
+    const baseScale = 1.05 + 0.15 * t;
+    const tableScale = isTableScene ? (isCompactViewport ? 0.9 : 0.94) : 1.0;
+    return baseScale * (isCompactViewport ? 0.9 : 1.0) * tableScale;
+  }, [viewport.w, viewport.h, isCompactViewport, isTableScene]);
 
   return (
     <div className="h-screen w-screen bg-black text-white/85 font-sans overflow-hidden flex flex-col relative selection:bg-white/10 selection:text-white">
@@ -1933,6 +2311,7 @@ function AppContent() {
           characterScale={characterScale}
           characterY={characterY}
           characterX={characterShift}
+          characterTransitionMs={isChatMinimizeAnimating ? 0 : 0.35}
           headpatActive={headpatActive}
           petpetSrc="/petpet.gif"
         />
@@ -2158,6 +2537,8 @@ function AppContent() {
           zIndex={10}
           studyModeActive={showStudyWindow}
           onShareStudyPage={() => studyShareRef.current && studyShareRef.current()}
+          onMinimizedChange={setIsChatMinimized}
+          onSizeChange={setChatLiveHeight}
         />
 
         {/* Tools Module */}
@@ -2275,6 +2656,9 @@ function AppContent() {
             onHeadpat={triggerHeadpat}
             sessionActive={sessionMode.active}
             onToggleSession={toggleSessionMode}
+            eatTogetherActive={eatTogetherActive}
+            onStartEatTogether={startEatTogether}
+            onStopEatTogether={stopEatTogether}
           />
         )}
 

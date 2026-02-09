@@ -759,7 +759,7 @@ async def start_audio(sid, data=None):
         # Always emit to chat log so frontend can toggle visibility retroactively
         asyncio.create_task(sio.emit('transcription', {
             "sender": "Monika (Thought)",
-            "text": f"💭 {thought}",
+            "text": f"{thought}",
             "is_new": True
         }))
 
@@ -1279,6 +1279,17 @@ async def user_input(sid, data):
         # Mark user activity (prevents idle nudges + updates topic memory)
         try:
             audio_loop_mark_user_activity(audio_loop, text)
+        except Exception:
+            pass
+
+        # Scene switching based on user text (text chat)
+        try:
+            if text:
+                global _vn_user_buf, _vn_user_last_ts, _vn_scene_task
+                _vn_user_buf = (_vn_user_buf + " " + text).strip()[-400:]
+                _vn_user_last_ts = time.time()
+                if _vn_scene_task is None or _vn_scene_task.done():
+                    _vn_scene_task = asyncio.create_task(_debounced_vn_scene_check())
         except Exception:
             pass
         

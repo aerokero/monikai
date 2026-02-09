@@ -13,10 +13,18 @@ import {
   Plus,
   Trash2,
 } from 'lucide-react';
+import { useLanguage } from '../contexts/LanguageContext';
 
 const INLINE_TOKEN_RE = /(\*\*[^*\n]+?\*\*|\*[^*\n]+?\*|==[^=\n]+?==|`[^`\n]+?`|<u>[\s\S]+?<\/u>|<mark>[\s\S]+?<\/mark>|<span[^>]*>[\s\S]+?<\/span>)/g;
 const ALIGN_OPEN_RE = /^<div\s+(?:style="text-align:\s*(left|center|right|justify)\s*"|align="(left|center|right|justify)")\s*>/i;
 const ALIGN_LINE_RE = /^<div\s+style="text-align:\s*(left|center|right|justify)\s*"\s*>$/i;
+
+const LINE_WRAPPER_TOKENS = [
+  { open: '==', close: '==' },
+  { open: '**', close: '**' },
+  { open: '*', close: '*' },
+  { open: '`', close: '`' },
+];
 
 const alignToClass = (align) => {
   if (align === 'center') return 'text-center';
@@ -83,6 +91,69 @@ const extractSpanStyle = (part) => {
   return { inner, style };
 };
 
+const unwrapInlineWrappers = (text) => {
+  let rest = text || '';
+  const wrappers = [];
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+
+    for (const token of LINE_WRAPPER_TOKENS) {
+      if (rest.startsWith(token.open) && rest.endsWith(token.close)) {
+        const inner = rest.slice(token.open.length, rest.length - token.close.length);
+        if (!inner.trim()) break;
+        rest = inner;
+        wrappers.push({ open: token.open, close: token.close });
+        changed = true;
+        break;
+      }
+    }
+    if (changed) continue;
+
+    const uMatch = rest.match(/^<u>([\s\S]+)<\/u>$/i);
+    if (uMatch && uMatch[1].trim()) {
+      rest = uMatch[1];
+      wrappers.push({ open: '<u>', close: '</u>' });
+      changed = true;
+      continue;
+    }
+
+    const markMatch = rest.match(/^<mark>([\s\S]+)<\/mark>$/i);
+    if (markMatch && markMatch[1].trim()) {
+      rest = markMatch[1];
+      wrappers.push({ open: '<mark>', close: '</mark>' });
+      changed = true;
+      continue;
+    }
+
+    const spanOpen = rest.match(/^<span[^>]*>/i)?.[0];
+    if (spanOpen && rest.toLowerCase().endsWith('</span>')) {
+      const inner = rest.slice(spanOpen.length, rest.length - 7);
+      if (inner.trim()) {
+        rest = inner;
+        wrappers.push({ open: spanOpen, close: '</span>' });
+        changed = true;
+      }
+    }
+  }
+
+  return { core: rest, wrappers };
+};
+
+const unwrapLineForMarkers = (line) => {
+  const match = line.match(/^(\s*)(.*)$/);
+  const indent = match ? match[1] : '';
+  const rest = match ? match[2] : line;
+  const { core, wrappers } = unwrapInlineWrappers(rest);
+  return { indent, core, wrappers };
+};
+
+const rewrapInline = (text, wrappers) => {
+  if (!wrappers?.length) return text;
+  return wrappers.reduceRight((acc, wrapper) => `${wrapper.open}${acc}${wrapper.close}`, text);
+};
+
 const renderInline = (text, mode = 'preview') => {
   const parts = text.split(INLINE_TOKEN_RE).filter(Boolean);
   return parts.map((part, i) => {
@@ -147,32 +218,34 @@ const renderInline = (text, mode = 'preview') => {
 };
 
 const renderOverlayLine = (line, key) => {
+  const { core, wrappers } = unwrapLineForMarkers(line);
+  const baseLine = core;
   let inner = renderInline(line, 'overlay');
   let className = '';
 
-  if (line.startsWith('# ')) {
+  if (baseLine.startsWith('# ')) {
     className = 'font-bold text-white';
-    inner = renderInline(line.slice(2), 'overlay');
-  } else if (line.startsWith('## ')) {
+    inner = renderInline(rewrapInline(baseLine.slice(2), wrappers), 'overlay');
+  } else if (baseLine.startsWith('## ')) {
     className = 'font-bold text-white';
-    inner = renderInline(line.slice(3), 'overlay');
-  } else if (line.startsWith('### ')) {
+    inner = renderInline(rewrapInline(baseLine.slice(3), wrappers), 'overlay');
+  } else if (baseLine.startsWith('### ')) {
     className = 'font-bold text-white';
-    inner = renderInline(line.slice(4), 'overlay');
-  } else if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
+    inner = renderInline(rewrapInline(baseLine.slice(4), wrappers), 'overlay');
+  } else if (baseLine.trim().startsWith('- ') || baseLine.trim().startsWith('* ')) {
     className = 'text-white/80';
-    const match = line.match(/^(\s*[-*])(\s.*)/);
+    const match = baseLine.match(/^(\s*[-*])(\s.*)/);
     if (match) {
       inner = (
         <span className="flex items-start gap-2">
           <span className="text-white mt-1 text-[10px]">•</span>
-          <span>{renderInline(match[2].trimStart(), 'overlay')}</span>
+          <span>{renderInline(rewrapInline(match[2].trimStart(), wrappers), 'overlay')}</span>
         </span>
       );
     }
-  } else if (line.startsWith('> ')) {
+  } else if (baseLine.startsWith('> ')) {
     className = 'text-white/60 italic';
-    inner = renderInline(line.slice(2), 'overlay');
+    inner = renderInline(rewrapInline(baseLine.slice(2), wrappers), 'overlay');
   }
 
   return (
@@ -233,27 +306,29 @@ const MarkdownOverlay = ({ content }) => {
 };
 
 const renderPreviewLine = (line, key) => {
-  if (line.startsWith('# ')) {
-    return <h1 key={key} className="text-xl font-bold text-white mt-4 mb-2 border-b border-white/10 pb-1">{renderInline(line.slice(2), 'preview')}</h1>;
+  const { core, wrappers } = unwrapLineForMarkers(line);
+  const baseLine = core;
+  if (baseLine.startsWith('# ')) {
+    return <h1 key={key} className="text-xl font-bold text-white mt-4 mb-2 border-b border-white/10 pb-1">{renderInline(rewrapInline(baseLine.slice(2), wrappers), 'preview')}</h1>;
   }
-  if (line.startsWith('## ')) {
-    return <h2 key={key} className="text-lg font-bold text-white mt-3 mb-2">{renderInline(line.slice(3), 'preview')}</h2>;
+  if (baseLine.startsWith('## ')) {
+    return <h2 key={key} className="text-lg font-bold text-white mt-3 mb-2">{renderInline(rewrapInline(baseLine.slice(3), wrappers), 'preview')}</h2>;
   }
-  if (line.startsWith('### ')) {
-    return <h3 key={key} className="text-base font-bold text-white mt-2 mb-1">{renderInline(line.slice(4), 'preview')}</h3>;
+  if (baseLine.startsWith('### ')) {
+    return <h3 key={key} className="text-base font-bold text-white mt-2 mb-1">{renderInline(rewrapInline(baseLine.slice(4), wrappers), 'preview')}</h3>;
   }
-  if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
+  if (baseLine.trim().startsWith('- ') || baseLine.trim().startsWith('* ')) {
     return (
       <div key={key} className="flex items-start gap-2 ml-1 mb-1">
         <span className="text-white mt-1.5 text-[10px]">•</span>
-        <span className="text-white/80 leading-relaxed">{renderInline(line.trim().slice(2), 'preview')}</span>
+        <span className="text-white/80 leading-relaxed">{renderInline(rewrapInline(baseLine.trim().slice(2), wrappers), 'preview')}</span>
       </div>
     );
   }
-  if (line.startsWith('> ')) {
+  if (baseLine.startsWith('> ')) {
     return (
       <div key={key} className="border-l-2 border-cyan-500/50 pl-3 py-1 my-2 text-white/60 italic bg-white/5 rounded-r">
-        {renderInline(line.slice(2), 'preview')}
+        {renderInline(rewrapInline(baseLine.slice(2), wrappers), 'preview')}
       </div>
     );
   }
@@ -263,8 +338,8 @@ const renderPreviewLine = (line, key) => {
   return <p key={key} className="mb-1 text-white/80 leading-relaxed">{renderInline(line, 'preview')}</p>;
 };
 
-const RenderedView = ({ content }) => {
-  if (!content) return <div className="p-5 text-white/30 italic">Empty...</div>;
+const RenderedView = ({ content, emptyLabel }) => {
+  if (!content) return <div className="p-5 text-white/30 italic">{emptyLabel}</div>;
 
   const lines = content.split('\n');
   const elements = [];
@@ -335,6 +410,7 @@ const NoteWorkspace = ({
   hideCategories = false,
   hidePaths = false,
 }) => {
+  const { t } = useLanguage();
   const [notesText, setNotesText] = useState('');
   const [pagePath, setPagePath] = useState(defaultPath);
   const [isPreview, setIsPreview] = useState(true);
@@ -894,7 +970,8 @@ const NoteWorkspace = ({
 
   const deletePage = () => {
     if (!socket || !pagePath) return;
-    if (!window.confirm(`Delete "${activePage?.title || pagePath}"?`)) return;
+    const deleteTitle = activePage?.title || pagePath;
+    if (!window.confirm(t('notes.confirm_delete', { title: deleteTitle }))) return;
     socket.emit('memory_delete_page', { path: pagePath });
     socket.emit('memory_list_pages');
     setTimeout(() => requestNotes(defaultPath), 150);
@@ -904,7 +981,7 @@ const NoteWorkspace = ({
     if (!socket || !path) return;
     const normalized = path.replace(/\\/g, '/');
     const title = pages.find(p => p.path === normalized)?.title || normalized.split('/').pop() || path;
-    if (!window.confirm(`Delete "${title}"?`)) return;
+    if (!window.confirm(t('notes.confirm_delete', { title }))) return;
     socket.emit('memory_delete_page', { path: normalized });
     socket.emit('memory_list_pages');
     if (normalized === pagePathRef.current) {
@@ -996,10 +1073,10 @@ const NoteWorkspace = ({
   const renamePage = (path, nextTitleOverride) => {
     if (!socket || !path) return;
     const normalized = path.replace(/\\/g, '/');
-    const currentTitle = pages.find(p => p.path === normalized)?.title || activePage?.title || 'Untitled';
+    const currentTitle = pages.find(p => p.path === normalized)?.title || activePage?.title || t('notes.untitled');
     let nextTitleRaw = nextTitleOverride;
     if (typeof nextTitleRaw !== 'string') {
-      nextTitleRaw = window.prompt('Rename note', currentTitle);
+      nextTitleRaw = window.prompt(t('notes.rename_prompt'), currentTitle);
     }
     if (nextTitleRaw === null || typeof nextTitleRaw === 'undefined') return;
     const nextTitle = String(nextTitleRaw).trim();
@@ -1012,7 +1089,7 @@ const NoteWorkspace = ({
     const target = dir ? `${dir}/${slug}${ext}` : `${slug}${ext}`;
     const exists = pages.some(p => p.path === target);
     if (exists && target !== normalized) {
-      window.alert('A note with this name already exists.');
+      window.alert(t('notes.name_exists'));
       return;
     }
     socket.emit('memory_rename_page', { path: normalized, new_path: target, title: titleText });
@@ -1021,7 +1098,7 @@ const NoteWorkspace = ({
   const startTitleEdit = (path) => {
     if (!path) return;
     const normalized = path.replace(/\\/g, '/');
-    const currentTitle = pages.find(p => p.path === normalized)?.title || activePage?.title || 'Untitled';
+    const currentTitle = pages.find(p => p.path === normalized)?.title || activePage?.title || t('notes.untitled');
     setTitleEdit({ path: normalized, value: currentTitle });
   };
 
@@ -1070,31 +1147,31 @@ const NoteWorkspace = ({
 
   const toolbarButton = 'p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-colors';
   const slashCommands = [
-    { id: 'h1', label: 'Heading 1', hint: '#', action: () => applyHeading(1) },
-    { id: 'h2', label: 'Heading 2', hint: '##', action: () => applyHeading(2) },
-    { id: 'h3', label: 'Heading 3', hint: '###', action: () => applyHeading(3) },
-    { id: 'bullet', label: 'Bulleted list', hint: '-', action: applyBulletCommand },
-    { id: 'numbered', label: 'Numbered list', hint: '1.', action: applyNumberedCommand },
-    { id: 'quote', label: 'Quote', hint: '>', action: toggleQuote },
+    { id: 'h1', label: t('notes.commands.heading1'), hint: '#', action: () => applyHeading(1) },
+    { id: 'h2', label: t('notes.commands.heading2'), hint: '##', action: () => applyHeading(2) },
+    { id: 'h3', label: t('notes.commands.heading3'), hint: '###', action: () => applyHeading(3) },
+    { id: 'bullet', label: t('notes.commands.bulleted'), hint: '-', action: applyBulletCommand },
+    { id: 'numbered', label: t('notes.commands.numbered'), hint: '1.', action: applyNumberedCommand },
+    { id: 'quote', label: t('notes.commands.quote'), hint: '>', action: toggleQuote },
   ];
 
   return (
     <div className={`flex h-full min-h-0 ${compact ? 'text-[11px]' : 'text-sm'}`}>
       <div className={`shrink-0 border-r border-white/10 bg-white/5 ${compact ? 'w-44' : 'w-56'} flex flex-col`}>
         <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between">
-          <div className="text-[10px] text-white/60 uppercase tracking-wider">Notes</div>
+          <div className="text-[10px] text-white/60 uppercase tracking-wider">{t('notes.title')}</div>
           <div className="flex items-center gap-1">
             <button
               onClick={() => setShowNewPage(v => !v)}
               className="p-1 rounded-md bg-white/10 hover:bg-white/20 text-white/70"
-              title="New page"
+              title={t('notes.new_page')}
             >
               <Plus size={12} />
             </button>
             <button
               onClick={deletePage}
               className="p-1 rounded-md bg-white/10 hover:bg-red-500/20 text-white/70 hover:text-red-300"
-              title="Delete page"
+              title={t('notes.delete_page')}
             >
               <Trash2 size={12} />
             </button>
@@ -1103,13 +1180,13 @@ const NoteWorkspace = ({
 
         {!hideCategoryUI && (
           <div className="px-3 py-2 border-b border-white/10">
-            <div className="text-[9px] text-white/40 uppercase tracking-wider mb-1">Category</div>
+            <div className="text-[9px] text-white/40 uppercase tracking-wider mb-1">{t('notes.category_label')}</div>
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value)}
               className="w-full bg-black/30 border border-white/10 rounded-md px-2 py-1 text-[11px] text-white/70 focus:outline-none focus:border-white/30"
             >
-              <option value="all">All</option>
+              <option value="all">{t('notes.category_all')}</option>
               {categories.map(cat => (
                 <option key={cat} value={cat}>{cat}</option>
               ))}
@@ -1123,28 +1200,28 @@ const NoteWorkspace = ({
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
               className="w-full bg-black/30 border border-white/10 rounded-md px-2 py-1 text-[11px] text-white/70 focus:outline-none focus:border-white/30"
-              placeholder="Note title"
+              placeholder={t('notes.new_title_placeholder')}
             />
             {!hideCategoryUI && (
               <input
                 value={newCategory}
                 onChange={(e) => setNewCategory(e.target.value)}
                 className="w-full bg-black/30 border border-white/10 rounded-md px-2 py-1 text-[11px] text-white/70 focus:outline-none focus:border-white/30"
-                placeholder="Category (optional)"
+                placeholder={t('notes.new_category_placeholder')}
               />
             )}
             <button
               onClick={createPage}
               className="w-full px-2 py-1 rounded-md bg-white/15 hover:bg-white/25 text-white/80 text-[11px]"
             >
-              Create
+              {t('notes.create')}
             </button>
           </div>
         )}
 
         <div className="flex-1 overflow-y-auto custom-scrollbar px-2 py-2 space-y-1">
           {visiblePages.length === 0 && (
-            <div className="text-[10px] text-white/30 px-2 py-1">No pages yet.</div>
+            <div className="text-[10px] text-white/30 px-2 py-1">{t('notes.empty_pages')}</div>
           )}
           {visiblePages.map(p => {
             const isActive = p.path === pagePath;
@@ -1160,7 +1237,7 @@ const NoteWorkspace = ({
                   isActive ? 'bg-white/20 text-white' : 'bg-white/5 text-white/60 hover:bg-white/10'
                 }`}
               >
-                <div className="text-[11px] font-medium">{p.title || 'Untitled'}</div>
+                <div className="text-[11px] font-medium">{p.title || t('notes.untitled')}</div>
                 {showPaths && (
                   <div className="text-[9px] text-white/35 truncate">{stripPrefix(p.path) || p.path}</div>
                 )}
@@ -1200,9 +1277,9 @@ const NoteWorkspace = ({
               <button
                 className="text-sm font-semibold text-white truncate text-left"
                 onClick={() => startTitleEdit(pagePath)}
-                title="Rename note"
+                title={t('notes.rename')}
               >
-                {activePage?.title || 'Untitled'}
+                {activePage?.title || t('notes.untitled')}
               </button>
             )}
             {showPaths && (
@@ -1213,24 +1290,24 @@ const NoteWorkspace = ({
             {status === 'saving' && (
               <div className="flex items-center gap-1 text-[10px] text-white/40">
                 <Loader2 size={12} className="animate-spin" />
-                Saving
+                {t('notes.saving')}
               </div>
             )}
             {status === 'saved' && (
               <div className="flex items-center gap-1 text-[10px] text-white/40">
                 <Check size={12} className="text-green-400" />
-                Saved
+                {t('notes.saved')}
               </div>
             )}
             <div className="text-[10px] text-white/40 uppercase tracking-wider">
-              {isPreview ? 'Live Preview' : 'Source'}
+              {isPreview ? t('notes.live_preview') : t('notes.source')}
             </div>
             <button
               onClick={() => {
                 setIsPreview(!isPreview);
               }}
               className={`p-1.5 rounded-lg transition-colors ${isPreview ? 'bg-white/20 text-white' : 'text-white/50 hover:text-white hover:bg-white/10'}`}
-              title={isPreview ? 'Markdown view' : 'Rich view'}
+              title={isPreview ? t('notes.toggle_markdown') : t('notes.toggle_rich')}
             >
               {isPreview ? <Edit2 size={16} /> : <Eye size={16} />}
             </button>
@@ -1243,7 +1320,7 @@ const NoteWorkspace = ({
               wrapSelection('**', '**', { perLine: true });
             }}
             className={toolbarButton}
-            title="Bold"
+            title={t('notes.toolbar.bold')}
           >
             <Bold size={14} />
           </button>
@@ -1252,7 +1329,7 @@ const NoteWorkspace = ({
               wrapSelection('*', '*', { perLine: true });
             }}
             className={toolbarButton}
-            title="Italic"
+            title={t('notes.toolbar.italic')}
           >
             <Italic size={14} />
           </button>
@@ -1261,7 +1338,7 @@ const NoteWorkspace = ({
               applyHighlight();
             }}
             className={toolbarButton}
-            title="Highlight"
+            title={t('notes.toolbar.highlight')}
           >
             <Highlighter size={14} />
           </button>
@@ -1273,7 +1350,7 @@ const NoteWorkspace = ({
               toggleBulletList();
             }}
             className={toolbarButton}
-            title="Bullet list"
+            title={t('notes.toolbar.bulleted')}
           >
             <List size={14} />
           </button>
@@ -1282,7 +1359,7 @@ const NoteWorkspace = ({
               toggleNumberedList();
             }}
             className={toolbarButton}
-            title="Numbered list"
+            title={t('notes.toolbar.numbered')}
           >
             <ListOrdered size={14} />
           </button>
@@ -1304,7 +1381,7 @@ const NoteWorkspace = ({
                 onChange={handleLiveChange}
                 onScroll={handleScroll}
                 onKeyDown={handleLiveKeyDown}
-                placeholder="Write your notes here..."
+                placeholder={t('notes.editor_placeholder')}
                 className="absolute inset-0 w-full h-full bg-transparent p-5 text-[13px] leading-relaxed whitespace-pre-wrap break-words outline-none placeholder:text-white/20 text-transparent caret-white resize-none overflow-y-scroll custom-scrollbar selection:bg-white/20 selection:text-transparent"
                 spellCheck={false}
               />
@@ -1315,7 +1392,7 @@ const NoteWorkspace = ({
               value={notesText}
               onChange={(e) => updateText(e.target.value)}
               onScroll={handleScroll}
-              placeholder="Write your notes here..."
+              placeholder={t('notes.editor_placeholder')}
               className="absolute inset-0 w-full h-full bg-transparent p-5 text-sm font-mono leading-relaxed whitespace-pre-wrap break-words outline-none placeholder:text-white/20 text-white/80 caret-white resize-none overflow-y-scroll custom-scrollbar"
               spellCheck={false}
             />
@@ -1331,7 +1408,7 @@ const NoteWorkspace = ({
           className="fixed z-[220] w-[220px] rounded-lg border border-white/10 bg-black/95 shadow-xl p-1"
           style={{ left: slashMenu.x, top: slashMenu.y }}
         >
-          <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-white/40">Commands</div>
+          <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-white/40">{t('notes.commands.title')}</div>
           {slashCommands.map((cmd) => (
             <button
               key={cmd.id}
@@ -1351,7 +1428,7 @@ const NoteWorkspace = ({
 
       {contextMenu && typeof document !== 'undefined' && createPortal(
         <div
-          className="fixed z-[200] min-w-[220px] rounded-lg border border-white/10 bg-black/90 shadow-xl"
+          className="fixed z-[200] min-w-[120px] rounded-lg border border-white/10 bg-black/90 shadow-xl"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button
@@ -1364,7 +1441,7 @@ const NoteWorkspace = ({
               setContextMenu(null);
             }}
           >
-            Zmień nazwę
+            {t('notes.context.rename')}
           </button>
           <button
             className="w-full px-3 py-2 text-left text-[12px] text-white/80 hover:bg-white/10 rounded-lg"
@@ -1373,7 +1450,7 @@ const NoteWorkspace = ({
               setContextMenu(null);
             }}
           >
-            Duplikuj notatkę
+            {t('notes.context.duplicate')}
           </button>
           <button
             className="w-full px-3 py-2 text-left text-[12px] text-red-200/80 hover:bg-red-500/20 rounded-lg"
@@ -1382,7 +1459,7 @@ const NoteWorkspace = ({
               setContextMenu(null);
             }}
           >
-            Usuń notatkę
+            {t('notes.context.delete')}
           </button>
           <button
             className="w-full px-3 py-2 text-left text-[12px] text-white/80 hover:bg-white/10 rounded-lg"
@@ -1391,7 +1468,7 @@ const NoteWorkspace = ({
               setContextMenu(null);
             }}
           >
-            Wyświetl w menedżerze plików
+            {t('notes.context.reveal')}
           </button>
         </div>,
         document.body

@@ -89,7 +89,7 @@
     "tip_priority": "Tip: Date/Time takes priority."
   },
   "settings": {
-    "title": "Our Settings",
+    "title": "Settings",
     "security": "Security",
     "face_auth": "Face Authentication",
     "microphone": "My Hearing (Microphone)",
@@ -159,7 +159,47 @@
     "title": "Notes",
     "placeholder": "I'll note down important things for you here...",
     "saved": "Saved",
-    "saving": "Saving..."
+    "saving": "Saving...",
+    "new_page": "New page",
+    "delete_page": "Delete page",
+    "category_label": "Category",
+    "category_all": "All",
+    "new_title_placeholder": "Note title",
+    "new_category_placeholder": "Category (optional)",
+    "create": "Create",
+    "empty_pages": "No pages yet.",
+    "untitled": "Untitled",
+    "rename": "Rename note",
+    "rename_prompt": "Rename note",
+    "confirm_delete": "Delete \"{title}\"?",
+    "name_exists": "A note with this name already exists.",
+    "live_preview": "Live Preview",
+    "source": "Source",
+    "toggle_markdown": "Markdown view",
+    "toggle_rich": "Rich view",
+    "editor_placeholder": "Write your notes here...",
+    "commands": {
+      "title": "Commands",
+      "heading1": "Heading 1",
+      "heading2": "Heading 2",
+      "heading3": "Heading 3",
+      "bulleted": "Bulleted list",
+      "numbered": "Numbered list",
+      "quote": "Quote"
+    },
+    "toolbar": {
+      "bold": "Bold",
+      "italic": "Italic",
+      "highlight": "Highlight",
+      "bulleted": "Bullet list",
+      "numbered": "Numbered list"
+    },
+    "context": {
+      "rename": "Rename note",
+      "duplicate": "Duplicate note",
+      "delete": "Delete note",
+      "reveal": "Show in file manager"
+    }
   },
   "kasa": {
     "title": "Smart Control",

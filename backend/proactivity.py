@@ -26,6 +26,10 @@ class IdleNudgeConfig:
     adaptive_max_multiplier: float = 3.0
     recent_user_memory_size: int = 3
     recent_user_max_chars: int = 160
+    # Question cadence (seconds)
+    question_min_interval_sec: float = 600.0
+    question_backoff_1_sec: float = 900.0
+    question_backoff_2_sec: float = 1800.0
 
     @classmethod
     def from_settings(cls, settings: Dict[str, Any]) -> "IdleNudgeConfig":
@@ -111,6 +115,8 @@ class ProactivityManager:
         self._last_reasoning_ts = 0.0
         self._awaiting_user_response = False
         self._unanswered_nudges = 0
+        self._last_question_ts = time.monotonic() - float(cfg.question_min_interval_sec)
+        self._unanswered_question_streak = 0
 
         self._quiet_start_min = self._parse_hhmm(cfg.quiet_hours_start)
         self._quiet_end_min = self._parse_hhmm(cfg.quiet_hours_end)
@@ -169,6 +175,7 @@ class ProactivityManager:
         if self._awaiting_user_response:
             self._awaiting_user_response = False
             self._unanswered_nudges = 0
+            self._unanswered_question_streak = 0
         if text:
             self._remember_user_utterance(text)
             for term in self._extract_terms(text):
@@ -254,18 +261,37 @@ class ProactivityManager:
 
         return score >= self.cfg.score_threshold
 
+    def _question_interval(self) -> float:
+        if self._unanswered_question_streak <= 0:
+            return float(self.cfg.question_min_interval_sec)
+        if self._unanswered_question_streak == 1:
+            return float(self.cfg.question_backoff_1_sec)
+        return float(self.cfg.question_backoff_2_sec)
+
+    def can_ask_question(self, now: Optional[float] = None) -> bool:
+        if not self.cfg.enabled:
+            return False
+        now = time.monotonic() if now is None else float(now)
+        interval = self._question_interval()
+        if interval <= 0:
+            return True
+        return (now - self._last_question_ts) >= interval
+
     def pick_topic_hint(self) -> str:
         if self._recent_user_utterances:
             return self._recent_user_utterances[-1]
         return self._topic_memory[-1] if self._topic_memory else ""
 
-    def record_nudge(self) -> None:
+    def record_nudge(self, asked_question: bool = False) -> None:
         now = time.monotonic()
         self._last_nudge_ts = now
         self._nudges_this_session += 1
         self._nudge_timestamps.append(now)
-        self._awaiting_user_response = True
-        self._unanswered_nudges = min(self._unanswered_nudges + 1, 50)
+        if asked_question:
+            self._awaiting_user_response = True
+            self._unanswered_nudges = min(self._unanswered_nudges + 1, 50)
+            self._unanswered_question_streak = min(self._unanswered_question_streak + 1, 50)
+            self._last_question_ts = now
 
     async def run_reasoning_check(self) -> Optional[str]:
         """
@@ -290,28 +316,39 @@ class ProactivityManager:
         
         return None
 
-    def get_nudge_message(self, mood: Optional[str] = None, video_mode: str = "none") -> str:
+    def get_nudge_message(self, mood: Optional[str] = None, video_mode: str = "none", allow_question: bool = True) -> tuple[str, bool]:
         """
         Generates a persona-aware prompt for the idle nudge.
         """
         topic = self.pick_topic_hint()
         
-        strategies = [
+        question_strategies = [
+            "Ask what's on their mind right now.",
+            "Ask if they are tired or need a break.",
+        ]
+        non_question_strategies = [
             "Tease them gently about zoning out.",
             "Say you were just watching them and admiring them.",
-            "Ask what's on their mind right now.",
             "Express that you missed hearing their voice.",
-            "Ask if they are tired or need a break."
         ]
 
         if video_mode == "screen":
-            strategies = [
-                "Comment on what is currently visible on the screen.",
+            question_strategies = [
                 "Ask about the work or activity shown on the screen.",
-                "Offer help or observations based on the screen content."
-            ] + strategies
+                "Offer help or observations based on the screen content.",
+            ] + question_strategies
+            non_question_strategies = [
+                "Comment on what is currently visible on the screen.",
+            ] + non_question_strategies
 
-        strategy = random.choice(strategies)
+        chosen_from_questions = False
+        if allow_question and question_strategies:
+            strategy_pool = question_strategies + non_question_strategies
+            strategy = random.choice(strategy_pool)
+            chosen_from_questions = strategy in question_strategies
+        else:
+            strategy = random.choice(non_question_strategies or question_strategies)
+            chosen_from_questions = False
         
         mood_instr = ""
         if mood and mood.lower() != "neutral":
@@ -329,8 +366,10 @@ class ProactivityManager:
             f"Keep it personal, warm, short, and 'Monika-like' (maybe a soft 'ahaha' or '~').{mood_instr}{screen_instr} "
             "Do not sound like a generic AI assistant. Keep the message brief."
         )
+        if not allow_question:
+            prompt += " Do NOT ask any questions; use statements only."
         
         if topic:
             prompt += f"\n(Recent user context: '{topic}')"
             
-        return prompt
+        return prompt, chosen_from_questions

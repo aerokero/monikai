@@ -462,7 +462,7 @@ const RemindersWindow = ({ socket, onClose, position, onMouseDown, activeDragEle
                       <span className="text-white/40 font-mono">
                         {item.time.getDate()}/{item.time.getMonth()+1}
                       </span>
-                      <span className="text-white/80 truncate flex-1">{item.title}</span>
+                      <span className="text-white/80 truncate flex-1">{t(item.title)}</span>
                     </div>
                   ))
                 }

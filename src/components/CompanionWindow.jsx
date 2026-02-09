@@ -16,6 +16,9 @@ const CompanionWindow = ({
   onHeadpat,
   sessionActive,
   onToggleSession,
+  eatTogetherActive,
+  onStartEatTogether,
+  onStopEatTogether,
 }) => {
   const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState('session'); // activities, session, study
@@ -24,7 +27,13 @@ const CompanionWindow = ({
     let text = "";
     switch (action) {
       case 'eat':
-        text = "*prepares a meal for us to eat together* Let's have a meal together! I made something nice.";
+        if (eatTogetherActive) {
+          if (onStopEatTogether) onStopEatTogether();
+          text = "*finishes our meal together* That was really nice.";
+        } else {
+          if (onStartEatTogether) onStartEatTogether();
+          text = "*prepares a meal for us to eat together* Let's have a meal together! I made something nice.";
+        }
         break;
       case 'headpat':
         text = "*gently headpats Monika*";
