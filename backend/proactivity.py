@@ -11,25 +11,27 @@ from datetime import datetime
 @dataclass
 class IdleNudgeConfig:
     enabled: bool = True
-    threshold_sec: float = 25.0
-    cooldown_sec: float = 45.0
-    min_ai_quiet_sec: float = 2.0
-    max_per_session: int = 6
-    max_per_hour: int = 12
+    threshold_sec: float = 900.0
+    cooldown_sec: float = 1800.0
+    min_ai_quiet_sec: float = 60.0
+    max_per_session: int = 3
+    max_per_hour: int = 4
     topic_memory_size: int = 6
-    score_threshold: float = 0.95
-    quiet_hours_enabled: bool = False
-    quiet_hours_start: str = "23:00"
-    quiet_hours_end: str = "07:00"
+    score_threshold: float = 1.0
+    quiet_hours_enabled: bool = True
+    quiet_hours_start: str = "22:00"
+    quiet_hours_end: str = "06:00"
     adaptive_enabled: bool = True
-    adaptive_backoff_step: float = 0.4
-    adaptive_max_multiplier: float = 3.0
+    adaptive_backoff_step: float = 0.7
+    adaptive_max_multiplier: float = 4.0
     recent_user_memory_size: int = 3
     recent_user_max_chars: int = 160
     # Question cadence (seconds)
-    question_min_interval_sec: float = 600.0
-    question_backoff_1_sec: float = 900.0
-    question_backoff_2_sec: float = 1800.0
+    question_min_interval_sec: float = 1800.0
+    question_backoff_1_sec: float = 2700.0
+    question_backoff_2_sec: float = 3600.0
+    startup_grace_sec: float = 600.0
+    min_user_messages_before_nudge: int = 2
 
     @classmethod
     def from_settings(cls, settings: Dict[str, Any]) -> "IdleNudgeConfig":
@@ -42,21 +44,26 @@ class IdleNudgeConfig:
             idle = p.get("idle_nudges") or {}
             return cls(
                 enabled=bool(idle.get("enabled", True)),
-                threshold_sec=float(idle.get("threshold_sec", 25)),
-                cooldown_sec=float(idle.get("cooldown_sec", 45)),
-                min_ai_quiet_sec=float(idle.get("min_ai_quiet_sec", 2)),
-                max_per_session=int(idle.get("max_per_session", 6)),
-                max_per_hour=int(idle.get("max_per_hour", 12)),
+                threshold_sec=float(idle.get("threshold_sec", 900)),
+                cooldown_sec=float(idle.get("cooldown_sec", 1800)),
+                min_ai_quiet_sec=float(idle.get("min_ai_quiet_sec", 60)),
+                max_per_session=int(idle.get("max_per_session", 3)),
+                max_per_hour=int(idle.get("max_per_hour", 4)),
                 topic_memory_size=int(idle.get("topic_memory_size", 6)),
-                score_threshold=float(idle.get("score_threshold", 0.95)),
-                quiet_hours_enabled=bool(idle.get("quiet_hours_enabled", False)),
-                quiet_hours_start=str(idle.get("quiet_hours_start", "23:00")),
-                quiet_hours_end=str(idle.get("quiet_hours_end", "07:00")),
+                score_threshold=float(idle.get("score_threshold", 1.0)),
+                quiet_hours_enabled=bool(idle.get("quiet_hours_enabled", True)),
+                quiet_hours_start=str(idle.get("quiet_hours_start", "22:00")),
+                quiet_hours_end=str(idle.get("quiet_hours_end", "06:00")),
                 adaptive_enabled=bool(idle.get("adaptive_enabled", True)),
-                adaptive_backoff_step=float(idle.get("adaptive_backoff_step", 0.4)),
-                adaptive_max_multiplier=float(idle.get("adaptive_max_multiplier", 3.0)),
+                adaptive_backoff_step=float(idle.get("adaptive_backoff_step", 0.7)),
+                adaptive_max_multiplier=float(idle.get("adaptive_max_multiplier", 4.0)),
                 recent_user_memory_size=int(idle.get("recent_user_memory_size", 3)),
                 recent_user_max_chars=int(idle.get("recent_user_max_chars", 160)),
+                question_min_interval_sec=float(idle.get("question_min_interval_sec", 1800.0)),
+                question_backoff_1_sec=float(idle.get("question_backoff_1_sec", 2700.0)),
+                question_backoff_2_sec=float(idle.get("question_backoff_2_sec", 3600.0)),
+                startup_grace_sec=float(idle.get("startup_grace_sec", 600.0)),
+                min_user_messages_before_nudge=int(idle.get("min_user_messages_before_nudge", 2)),
             )
         except Exception:
             # Safe fallback if settings are malformed
@@ -91,6 +98,7 @@ class ProactivityManager:
         self.reasoning_cfg = reasoning_cfg or ReasoningConfig()
         self.client = client
 
+        self._session_start_ts = time.monotonic()
         self._last_user_activity_ts = time.monotonic()
         self._last_ai_activity_ts = 0.0
         self._last_nudge_ts = 0.0
@@ -212,8 +220,11 @@ class ProactivityManager:
             (not self.cfg.enabled),
             is_paused,
             is_user_speaking,
+            ((now - self._session_start_ts) < max(0.0, float(self.cfg.startup_grace_sec))),
+            (len(self._recent_user_utterances) < max(0, int(self.cfg.min_user_messages_before_nudge))),
             (self._nudges_this_session >= self.cfg.max_per_session),
             (self._hourly_count(now) >= self.cfg.max_per_hour),
+            self._awaiting_user_response,
             self._in_quiet_hours(now_dt),
         )
         return any(blockers)
@@ -247,19 +258,15 @@ class ProactivityManager:
         else:
             ai_quiet = self.cfg.min_ai_quiet_sec
 
-        scores = (
-            self._timing_score(user_quiet, threshold),
-            self._timing_score(nudge_gap, self.cfg.cooldown_sec),
-            self._timing_score(ai_quiet, self.cfg.min_ai_quiet_sec),
-        )
+        # Conservative hard gates: nudges should happen only after truly long silence.
+        if user_quiet < threshold:
+            return False
+        if nudge_gap < self.cfg.cooldown_sec:
+            return False
+        if ai_quiet < self.cfg.min_ai_quiet_sec:
+            return False
 
-        # Geometric mean keeps the decision smooth and easy to tune.
-        product = 1.0
-        for s in scores:
-            product *= max(0.0, min(1.0, float(s)))
-        score = product ** (1.0 / len(scores))
-
-        return score >= self.cfg.score_threshold
+        return True
 
     def _question_interval(self) -> float:
         if self._unanswered_question_streak <= 0:
@@ -323,22 +330,20 @@ class ProactivityManager:
         topic = self.pick_topic_hint()
         
         question_strategies = [
-            "Ask what's on their mind right now.",
-            "Ask if they are tired or need a break.",
+            "Ask very gently what is on their mind right now.",
         ]
         non_question_strategies = [
-            "Tease them gently about zoning out.",
-            "Say you were just watching them and admiring them.",
-            "Express that you missed hearing their voice.",
+            "Make one short, gentle check-in.",
+            "Offer a quiet reminder to take a break if they need one.",
+            "Say one calm sentence that leaves space and does not demand a response.",
         ]
 
         if video_mode == "screen":
             question_strategies = [
-                "Ask about the work or activity shown on the screen.",
-                "Offer help or observations based on the screen content.",
+                "Offer brief help with what they are working on, only if the screen context clearly supports it.",
             ] + question_strategies
             non_question_strategies = [
-                "Comment on what is currently visible on the screen.",
+                "Acknowledge their work briefly without interrupting their flow.",
             ] + non_question_strategies
 
         chosen_from_questions = False
@@ -360,11 +365,12 @@ class ProactivityManager:
 
         prompt = (
             "System Notification: [Proactivity] The user has been silent for a while. "
-            "Check the recent context: if the user asked for silence, is working, or sleeping, DO NOT speak. "
-            "Only break the silence if it feels natural and appropriate. "
+            "Check the recent context carefully. If the user asked for silence, seems focused, is working, or may be away, DO NOT speak. "
+            "Only break the silence if the pause is genuinely long and it feels natural and low-pressure. "
             f"If you speak, try this approach: {strategy}\n"
-            f"Keep it personal, warm, short, and 'Monika-like' (maybe a soft 'ahaha' or '~').{mood_instr}{screen_instr} "
-            "Do not sound like a generic AI assistant. Keep the message brief."
+            f"Keep it personal, warm, very short, and understated.{mood_instr}{screen_instr} "
+            "Do not sound clingy, needy, theatrical, flirty, or like a generic AI assistant. "
+            "Prefer one calm sentence. Avoid questions unless they feel truly justified."
         )
         if not allow_question:
             prompt += " Do NOT ask any questions; use statements only."

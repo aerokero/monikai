@@ -25,6 +25,7 @@ MonikAI is a sophisticated AI conversation partner and assistant designed for mu
 | **Face Authentication** | Secure local biometric login | MediaPipe Face Landmarker |
 | **Web Agent** | Autonomous browser automation | Playwright + Chromium |
 | **Smart Home** | Voice control for TP-Link Kasa devices | `python-kasa` |
+| **Spotify Integration** | Read now playing, playlists, and recent listening with persistent auth | `spotify_manager.py` |
 | **Project Memory** | Persistent context across sessions | File-based JSON storage | Separate from Long-Term Memory |
 
 ### Application Notes
@@ -240,6 +241,41 @@ MonikAI uses Google's Gemini API for voice and intelligence. You need a free API
 
 ---
 
+### 7. Spotify Setup (Optional, Persistent Access)
+If you want MonikAI to always have access to your playlists and current listening state, configure Spotify once and keep a refresh token locally.
+
+1. Open [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) and create an app.
+2. In app settings, add this Redirect URI exactly:
+   - `http://127.0.0.1:8000/spotify/callback`
+3. Add these variables to your `.env` file:
+   ```bash
+   SPOTIFY_CLIENT_ID=your_spotify_client_id
+   SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
+   SPOTIFY_REDIRECT_URI=http://127.0.0.1:8000/spotify/callback
+   # Optional: override scopes if needed
+   # SPOTIFY_SCOPE=user-read-playback-state user-read-currently-playing user-read-recently-played playlist-read-private playlist-read-collaborative
+   ```
+4. Restart MonikAI (`npm run dev`) so backend loads Spotify config.
+5. Authorize once in browser while backend is running:
+   - `http://127.0.0.1:8000/spotify/auth/start`
+6. Verify status:
+   - `http://127.0.0.1:8000/spotify/status`
+   - You want `configured=true`, `connected=true`, and `has_refresh_token=true`.
+
+How persistence works:
+- Tokens are stored locally in `data/spotify_tokens.json`.
+- Access tokens are refreshed automatically when needed.
+- Re-auth is needed only if token is revoked/expired permanently, scopes change, or client credentials change.
+
+Available Spotify AI tools:
+- `spotify_get_status`
+- `spotify_get_auth_url`
+- `spotify_get_now_playing`
+- `spotify_list_playlists`
+- `spotify_recently_played`
+
+---
+
 ## Running MonikAI
 
 You have two options to run the app. Ensure your `monikai` environment is active!
@@ -325,6 +361,18 @@ This is a server-side issue from the Gemini API. Simply reconnect by clicking th
 
 ---
 
+### Spotify not connected / "No Spotify refresh token available"
+**Symptoms**: Spotify tools fail and backend reports missing refresh token.
+
+**Solution**:
+1. Confirm `.env` contains valid `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, and `SPOTIFY_REDIRECT_URI`.
+2. Confirm Redirect URI in Spotify Dashboard exactly matches backend (`http://127.0.0.1:8000/spotify/callback` unless customized).
+3. Re-run auth start: `http://127.0.0.1:8000/spotify/auth/start`.
+4. Check `http://127.0.0.1:8000/spotify/status` for `has_refresh_token=true`.
+5. If still broken, delete `data/spotify_tokens.json`, restart app, and authenticate again.
+
+---
+
 ## What It Looks Like
 
 *Coming soon! Screenshots and demo videos will be added here.*
@@ -342,6 +390,7 @@ monikai/
 │   ├── personality.py          # Emotional state & sprite logic
 │   ├── memory_store.py         # Long-term & working memory
 │   ├── web_agent.py            # Playwright browser automation
+│   ├── spotify_manager.py      # Spotify OAuth + API access
 │   ├── kasa_agent.py           # TP-Link smart home control
 │   ├── authenticator.py        # MediaPipe face auth logic
 │   ├── project_manager.py      # Project context management
@@ -350,6 +399,7 @@ monikai/
 │   ├── user_memory/            # Long-term memory & calendar
 │   ├── projects/               # Project-specific files
 │   ├── settings.json           # User configuration
+│   ├── spotify_tokens.json     # Spotify refresh/access tokens
 │   ├── personality.json        # Persistent personality state
 │   └── reference.jpg           # Face auth reference image
 ├── src/                        # React frontend

@@ -47,6 +47,17 @@ const defaultTranslations = {
     session: {
       notes_title: "Session Notes",
     },
+    personality: {
+      state: "Monika's State",
+      affection: "Affection",
+      mood: "Mood",
+      energy: "Energy",
+      cycle: "Biological Cycle",
+      day: "Day",
+      quests: "Active Quests",
+      quest: "Quest",
+      no_quests: "No active quests right now.",
+    },
   },
   pl: {
     system: {
@@ -91,6 +102,17 @@ const defaultTranslations = {
     },
     session: {
       notes_title: "Notatki sesji",
+    },
+    personality: {
+      state: "Stan Moniki",
+      affection: "Sympatia",
+      mood: "Nastrój",
+      energy: "Energia",
+      cycle: "Cykl biologiczny",
+      day: "Dzień",
+      quests: "Aktywne cele",
+      quest: "Cel",
+      no_quests: "Brak aktywnych celów.",
     },
   }
 };

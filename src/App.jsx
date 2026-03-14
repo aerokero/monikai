@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useRef, useMemo, useCallback } from 'react';
 import io from 'socket.io-client';
 
 import Visualizer from './components/Visualizer';
@@ -23,6 +23,25 @@ import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 
 const socket = io('http://localhost:8000');
 const { ipcRenderer } = window.require('electron');
+
+const TOOL_PERMISSION_ALIASES = {
+  list_skills: ['list_skills', 'list_openclaw_skills'],
+  get_skill: ['get_skill', 'get_openclaw_skill'],
+  refresh_skills: ['refresh_skills', 'refresh_openclaw_skills'],
+  run_skill_command: ['run_skill_command', 'run_openclaw_skill_command'],
+};
+
+const normalizeToolPermissions = (raw) => {
+  const next = { ...(raw || {}) };
+  Object.values(TOOL_PERMISSION_ALIASES).forEach((keys) => {
+    const value = keys.map((key) => next[key]).find((v) => typeof v !== 'undefined');
+    if (typeof value === 'undefined') return;
+    keys.forEach((key) => {
+      next[key] = value;
+    });
+  });
+  return next;
+};
 
   const getDefaultPositions = () => ({
   video: { x: window.innerWidth - 230, y: window.innerHeight - 210 },
@@ -59,10 +78,23 @@ function AppContent() {
   // Viewport (for fullscreen VN Visualizer)
   // ---------------------------------------------------------------------
   const [viewport, setViewport] = useState({ w: window.innerWidth, h: window.innerHeight });
+  const [isWindowResizing, setIsWindowResizing] = useState(false);
+  const resizeIdleTimerRef = useRef(null);
   useEffect(() => {
-    const onResize = () => setViewport({ w: window.innerWidth, h: window.innerHeight });
+    const onResize = () => {
+      setViewport({ w: window.innerWidth, h: window.innerHeight });
+      setIsWindowResizing(true);
+      if (resizeIdleTimerRef.current) clearTimeout(resizeIdleTimerRef.current);
+      resizeIdleTimerRef.current = setTimeout(() => {
+        setIsWindowResizing(false);
+        resizeIdleTimerRef.current = null;
+      }, 120);
+    };
     window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      if (resizeIdleTimerRef.current) clearTimeout(resizeIdleTimerRef.current);
+    };
   }, []);
 
   // ---------------------------------------------------------------------
@@ -96,7 +128,7 @@ function AppContent() {
   const studyShareRef = useRef(null);
 
   const [browserData, setBrowserData] = useState({ image: null, logs: [] });
-  const [confirmationRequest, setConfirmationRequest] = useState(null);
+  const [confirmationQueue, setConfirmationQueue] = useState([]);
 
   const [kasaDevices, setKasaDevices] = useState([]);
   const [showKasaWindow, setShowKasaWindow] = useState(false);
@@ -177,6 +209,14 @@ function AppContent() {
     pierogi: "/vn/monika/t/food/food_pierogi.png",
     cereal: "/vn/monika/t/food/food_cereal.png",
   };
+  const OUTFITS_WITHOUT_ARM_OVERLAYS = new Set([
+    'new_years_dress',
+    'santa_lingerie',
+    'sundress_white',
+    'vday_lingerie',
+  ]);
+  const OUTFITS_WITHOUT_CROSSED_ARM_10 = new Set(['blazerless', 'marisa', 'spider_lingerie']);
+  const OUTFITS_WITHOUT_LEANING_RIGHT_ARM_10 = new Set(['marisa', 'spider_lingerie']);
 
   const AHOGE_ACCESSORIES = [
     "ahoge_bent",
@@ -375,6 +415,9 @@ function AppContent() {
   const [showSettings, setShowSettings] = useState(false);
   const [showPersonalityWindow, setShowPersonalityWindow] = useState(false);
   const [toolPermissions, setToolPermissions] = useState({});
+  const [skills, setSkills] = useState([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
+  const [skillsActionBusy, setSkillsActionBusy] = useState(false);
   const [personalityState, setPersonalityState] = useState({ mood: 'neutral', affection: 0 });
   const [sessionMode, setSessionMode] = useState({ active: false, kind: 'auto' });
   const [sessionPromptQueue, setSessionPromptQueue] = useState([]);
@@ -580,15 +623,18 @@ function AppContent() {
   // ---------------------------------------------------------------------
   // VN Dock Layout: chat is bottom textbox, leaving space for bottom tools
   // ---------------------------------------------------------------------
-  useEffect(() => {
+  useLayoutEffect(() => {
     const layout = () => {
-      const width = window.innerWidth;
-      const height = window.innerHeight;
+      const width = viewport.w;
+      const height = viewport.h;
 
       const topBarHeight = 60;
       const sidePad = 16;
       const bottomToolsArea = 140; // space reserved for bottom icons bar
       const bottomPad = 16;
+      const viewportAspect = width / Math.max(height, 1);
+      const stackedViewportFactor = Math.max(0, Math.min(1, (1.02 - viewportAspect) / 0.22));
+      const isStackedViewport = stackedViewportFactor > 0 || (width < 980 && height > 820);
 
       if (showStudyWindow) {
         const availableW = width - sidePad * 2;
@@ -712,12 +758,15 @@ function AppContent() {
       // keep chat readable on small screens:
       const maxChatH = Math.min(360, Math.round(height * 0.30));
       const minChatH = 240;
-      const chatH = Math.max(minChatH, maxChatH);
+      const baseChatH = Math.max(minChatH, maxChatH);
+      const phoneExtraChatH = Math.round(baseChatH * 0.33 * stackedViewportFactor);
+      const chatH = Math.min(Math.round(height * 0.58), baseChatH + phoneExtraChatH);
+      const phoneChatLift = Math.round(44 * stackedViewportFactor);
 
       // IMPORTANT: your ChatModule likely treats y as TOP (not center)
       const chatTop = Math.max(
         topBarHeight + 14,
-        height - bottomToolsArea - bottomPad - chatH
+        height - bottomToolsArea - bottomPad - chatH - phoneChatLift
       );
 
       const desiredChatX = focusMode
@@ -769,9 +818,7 @@ function AppContent() {
     };
 
     layout();
-    window.addEventListener('resize', layout);
-    return () => window.removeEventListener('resize', layout);
-  }, [sessionMode.active, showStudyWindow]);
+  }, [viewport.w, viewport.h, sessionMode.active, showStudyWindow]);
 
   // ---------------------------------------------------------------------
   // Update refs when state changes
@@ -990,7 +1037,7 @@ function AppContent() {
 
     // New Year (Dec 31 - Jan 1)
     if ((currentMonth === 11 && currentDay === 31) || (currentMonth === 0 && currentDay === 1)) {
-      clothesFolder = 'new_year';
+      clothesFolder = 'new_years_dress';
       outfitName = "New Year's Dress";
     } else if (currentMonth === 1 && currentDay === 14) {
       // Valentine's Day (Feb 14)
@@ -1095,6 +1142,9 @@ function AppContent() {
     const mood = headpatActive ? `${baseMood} happy` : baseMood;
     const { clothesFolder, hairStyle, headAccessories, ahogeAccessory, deskAccessories } = visualState;
     const isTowelOutfit = clothesFolder === 'bath_towel_white';
+    const hasOutfitArmOverlays = !OUTFITS_WITHOUT_ARM_OVERLAYS.has(clothesFolder);
+    const hasCrossedArm10 = !OUTFITS_WITHOUT_CROSSED_ARM_10.has(clothesFolder);
+    const hasLeaningRightArm10 = !OUTFITS_WITHOUT_LEANING_RIGHT_ARM_10.has(clothesFolder);
     const isStudyMode = showStudyWindow;
     const forceClosedEyes = headpatActive;
     const forceHappy = headpatActive;
@@ -1138,6 +1188,9 @@ function AppContent() {
     }
     if (isTowelOutfit) {
       armStyle = 'def';
+    }
+    if (!isLeaning && !hasOutfitArmOverlays && armStyle === 'def') {
+      armStyle = 'restpoint';
     }
 
     // --- OUTSIDE SCENE OVERRIDE (Single Layer Standing Poses) ---
@@ -1232,10 +1285,24 @@ function AppContent() {
     // Leaning: def-0 (back), def-10 (front)
     const hairBack = isLeaning ? `/vn/monika/h/${hairStyle}/def-0.png` : `/vn/monika/h/${hairStyle}/0.png`;
     const hairFront = isLeaning ? `/vn/monika/h/${hairStyle}/def-10.png` : `/vn/monika/h/${hairStyle}/10.png`;
+    const accFrame = isLeaning ? '5' : '0';
+    const headAccessoryBackLayers = [];
+    const headAccessoryFrontLayers = [];
+    if (Array.isArray(headAccessories) && headAccessories.length) {
+      headAccessories.forEach((acc) => {
+        const layer = `/vn/monika/a/${acc}/${accFrame}.png`;
+        if (isLeaning && String(acc).startsWith('ribbon_')) {
+          headAccessoryBackLayers.push(layer);
+        } else {
+          headAccessoryFrontLayers.push(layer);
+        }
+      });
+    }
 
     const layers = [
       '/vn/monika/t/chair-def.png',      // Chair (Background)
       hairBack,                          // Hair Back
+      ...headAccessoryBackLayers,        // Back accessories (e.g., leaning ribbon)
     ];
 
     const armLayers = [];
@@ -1261,12 +1328,14 @@ function AppContent() {
         '/vn/monika/b/arms-leaning-def-right-def-5.png', // Right Arm Skin (under)
         '/vn/monika/b/arms-leaning-def-right-def-10.png' // Right Arm Skin (over)
       );
-      if (!isTowelOutfit) {
+      if (!isTowelOutfit && hasOutfitArmOverlays) {
         armLayers.push(
           `/vn/monika/c/${clothesFolder}/arms-leaning-def-left-def-10.png`, // Left Arm Clothes
-          `/vn/monika/c/${clothesFolder}/arms-leaning-def-right-def-5.png`, // Right Arm Clothes (under)
-          `/vn/monika/c/${clothesFolder}/arms-leaning-def-right-def-10.png` // Right Arm Clothes (over)
+          `/vn/monika/c/${clothesFolder}/arms-leaning-def-right-def-5.png` // Right Arm Clothes (under)
         );
+        if (hasLeaningRightArm10) {
+          armLayers.push(`/vn/monika/c/${clothesFolder}/arms-leaning-def-right-def-10.png`); // Right Arm Clothes (over)
+        }
       }
     } else {
       // Normal Pose (Body + Arms + Head)
@@ -1280,14 +1349,19 @@ function AppContent() {
 
       // Arms based on style
       if (armStyle === 'crossed') {
-        armLayers.push('/vn/monika/b/arms-crossed-10.png');
-        if (!isTowelOutfit) armLayers.push(`/vn/monika/c/${clothesFolder}/arms-crossed-10.png`);
+        armLayers.push('/vn/monika/b/arms-crossed-5.png', '/vn/monika/b/arms-crossed-10.png');
+        if (!isTowelOutfit && hasOutfitArmOverlays) {
+          armLayers.push(`/vn/monika/c/${clothesFolder}/arms-crossed-5.png`);
+          if (hasCrossedArm10) {
+            armLayers.push(`/vn/monika/c/${clothesFolder}/arms-crossed-10.png`);
+          }
+        }
       } else if (armStyle === 'steepling') {
         armLayers.push('/vn/monika/b/arms-steepling-10.png');
-        if (!isTowelOutfit) armLayers.push(`/vn/monika/c/${clothesFolder}/arms-steepling-10.png`);
+        if (!isTowelOutfit && hasOutfitArmOverlays) armLayers.push(`/vn/monika/c/${clothesFolder}/arms-steepling-10.png`);
       } else if (armStyle === 'point') {
         armLayers.push('/vn/monika/b/arms-left-down-0.png', '/vn/monika/b/arms-right-point-0.png');
-        if (!isTowelOutfit) {
+        if (!isTowelOutfit && hasOutfitArmOverlays) {
           armLayers.push(
             `/vn/monika/c/${clothesFolder}/arms-left-down-0.png`,
             `/vn/monika/c/${clothesFolder}/arms-right-point-0.png`
@@ -1295,7 +1369,7 @@ function AppContent() {
         }
       } else if (armStyle === 'restpoint') {
         armLayers.push('/vn/monika/b/arms-left-rest-10.png', '/vn/monika/b/arms-right-restpoint-10.png');
-        if (!isTowelOutfit) {
+        if (!isTowelOutfit && hasOutfitArmOverlays) {
           armLayers.push(
             `/vn/monika/c/${clothesFolder}/arms-left-rest-10.png`,
             `/vn/monika/c/${clothesFolder}/arms-right-restpoint-10.png`
@@ -1304,7 +1378,7 @@ function AppContent() {
       } else {
         // Default Down
         armLayers.push('/vn/monika/b/arms-left-down-0.png', '/vn/monika/b/arms-right-down-0.png');
-        if (!isTowelOutfit) {
+        if (!isTowelOutfit && hasOutfitArmOverlays) {
           armLayers.push(
             `/vn/monika/c/${clothesFolder}/arms-left-down-0.png`,
             `/vn/monika/c/${clothesFolder}/arms-right-down-0.png`
@@ -1353,17 +1427,11 @@ function AppContent() {
 
     // Ahoge (daily)
     if (ahogeAccessory) {
-      const accFrame = isLeaning ? '5' : '0';
       layers.push(`/vn/monika/a/${ahogeAccessory}/${accFrame}.png`);
     }
 
-    // Head accessories (e.g., ribbon, clips, hats)
-    if (Array.isArray(headAccessories) && headAccessories.length) {
-      const accFrame = isLeaning ? '5' : '0';
-      headAccessories.forEach((acc) => {
-        layers.push(`/vn/monika/a/${acc}/${accFrame}.png`);
-      });
-    }
+    // Front accessories (clips/hats; ribbons in leaning are moved behind body/hair)
+    if (headAccessoryFrontLayers.length) layers.push(...headAccessoryFrontLayers);
 
     // Eat-together food on top of Monika
     if (eatLayers.length) layers.push(...eatLayers);
@@ -1466,6 +1534,7 @@ function AppContent() {
     socket.on('disconnect', () => {
       setStatus(t('system.disconnected'));
       setSocketConnected(false);
+      setConfirmationQueue([]);
     });
 
     socket.on('status', (data) => {
@@ -1520,9 +1589,47 @@ function AppContent() {
         localStorage.setItem('video_mode', settings.video_mode || 'none');
       }
       if (settings.tool_permissions) {
-        setToolPermissions(settings.tool_permissions);
+        setToolPermissions(normalizeToolPermissions(settings.tool_permissions));
       }
       setSettingsLoaded(true);
+    });
+
+    socket.on('skills', (payload) => {
+      const nextSkills = Array.isArray(payload?.skills) ? payload.skills : [];
+      setSkills(nextSkills);
+      setSkillsLoading(false);
+      setSkillsActionBusy(false);
+    });
+
+    socket.on('skill_install_result', (payload) => {
+      if (payload?.ok) {
+        const count = Number(payload?.result?.installed_count || 0);
+        const source = payload?.result?.source;
+        if (source) {
+          pushToast(
+            count > 0
+              ? `Installed ${count} skill(s) from source.`
+              : 'Skill source install finished.',
+            'system'
+          );
+        } else {
+          pushToast(`Installed ${count} skill(s).`, 'system');
+        }
+      } else {
+        pushToast(`Skill install failed: ${payload?.error || 'unknown error'}`, 'error');
+      }
+      setSkillsActionBusy(false);
+      setSkillsLoading(false);
+    });
+
+    socket.on('skill_uninstall_result', (payload) => {
+      if (payload?.ok) {
+        pushToast('Skill uninstalled.', 'system');
+      } else {
+        pushToast(`Skill uninstall failed: ${payload?.error || 'unknown error'}`, 'error');
+      }
+      setSkillsActionBusy(false);
+      setSkillsLoading(false);
     });
 
     socket.on('error', (data) => {
@@ -1532,10 +1639,12 @@ function AppContent() {
 
     socket.on('browser_frame', (data) => {
       setBrowserData(prev => ({
-        image: data.image,
-        logs: [...prev.logs, data.log].filter(l => l).slice(-50)
+        image: data?.image || prev.image || null,
+        logs: [...prev.logs, data?.log].filter(l => l).slice(-300)
       }));
-      setShowBrowserWindow(true);
+      if (data?.image) {
+        setShowBrowserWindow(true);
+      }
 
       if (!elementPositions.browser) {
         const size = { w: 600, h: 450 };
@@ -1601,7 +1710,13 @@ function AppContent() {
 
     socket.on('tool_confirmation_request', (data) => {
       console.log("Received Confirmation Request:", data);
-      setConfirmationRequest(data);
+      setConfirmationQueue((prev) => {
+        const requestId = data?.id;
+        if (requestId && prev.some((item) => item?.id === requestId)) {
+          return prev;
+        }
+        return [...prev, data];
+      });
     });
 
     socket.on('kasa_devices', (devices) => {
@@ -1697,6 +1812,9 @@ function AppContent() {
       socket.off('personality_status');
       socket.off('auth_status');
       socket.off('settings');
+      socket.off('skills');
+      socket.off('skill_install_result');
+      socket.off('skill_uninstall_result');
 
       stopMicVisualizer();
       stopVideo();
@@ -1717,6 +1835,12 @@ function AppContent() {
       socket.emit('get_settings');
     }
   }, []);
+
+  useEffect(() => {
+    if (!showSettings) return;
+    if (!socket || !socket.connected) return;
+    requestSkills({ includeIneligible: true, includeDisabled: true });
+  }, [showSettings, socketConnected]);
 
   // Persist device selections to localStorage when they change
   useEffect(() => {
@@ -2039,10 +2163,95 @@ function AppContent() {
 
   const handleTogglePermission = (key) => {
     setToolPermissions(prev => {
-      const next = { ...prev, [key]: !prev[key] };
+      const keys = TOOL_PERMISSION_ALIASES[key] || [key];
+      const value = !prev[key];
+      const next = { ...prev };
+      keys.forEach((aliasKey) => {
+        next[aliasKey] = value;
+      });
       socket.emit('update_settings', { tool_permissions: next });
       return next;
     });
+  };
+
+  const requestSkills = (opts = {}) => {
+    if (!socket || !socket.connected) return;
+    setSkillsLoading(true);
+    socket.emit('list_skills', {
+      include_ineligible: opts.includeIneligible ?? true,
+      include_disabled: opts.includeDisabled ?? true,
+    });
+  };
+
+  const handleRefreshSkills = () => {
+    if (!socket || !socket.connected) return;
+    setSkillsLoading(true);
+    setSkillsActionBusy(true);
+    socket.emit('refresh_skills', {
+      include_ineligible: true,
+      include_disabled: true,
+    });
+  };
+
+  const _arrayBufferToBase64 = (buffer) => {
+    const bytes = new Uint8Array(buffer);
+    const chunkSize = 0x8000;
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode(...chunk);
+    }
+    return btoa(binary);
+  };
+
+  const handleSkillZipUpload = async (file) => {
+    if (!file || !socket || !socket.connected) return;
+    const lower = String(file.name || '').toLowerCase();
+    if (!lower.endsWith('.zip')) {
+      pushToast('Please drop a .zip file for skill install.', 'error');
+      return;
+    }
+    try {
+      const arr = await file.arrayBuffer();
+      const zipB64 = _arrayBufferToBase64(arr);
+      setSkillsActionBusy(true);
+      socket.emit('install_skill_zip', {
+        filename: file.name,
+        zip_b64: zipB64,
+        replace: true,
+      });
+    } catch (err) {
+      console.error('Skill ZIP upload failed:', err);
+      pushToast('Failed to read skill ZIP file.', 'error');
+      setSkillsActionBusy(false);
+    }
+  };
+
+  const handleInstallSkillSource = (payload = {}) => {
+    if (!socket || !socket.connected) return;
+    const source = String(payload?.source || '').trim();
+    const skillName = String(payload?.skillName || '').trim();
+    const agent = String(payload?.agent || 'codex').trim() || 'codex';
+    if (!source) {
+      pushToast('Skill source is required.', 'error');
+      return;
+    }
+    setSkillsActionBusy(true);
+    socket.emit('install_skill_source', {
+      source,
+      skill_name: skillName || null,
+      agent,
+      global_scope: !!payload?.globalScope,
+      copy_files: payload?.copyFiles !== false,
+      replace: true,
+    });
+  };
+
+  const handleUninstallSkill = (name) => {
+    if (!name || !socket || !socket.connected) return;
+    if (!window.confirm(`Uninstall skill "${name}"?`)) return;
+    setSkillsActionBusy(true);
+    socket.emit('uninstall_skill', { name });
   };
 
 
@@ -2086,17 +2295,19 @@ function AppContent() {
     reader.readAsText(file);
   };
 
+  const activeConfirmationRequest = confirmationQueue.length ? confirmationQueue[0] : null;
+
   const handleConfirmTool = () => {
-    if (confirmationRequest) {
-      socket.emit('confirm_tool', { id: confirmationRequest.id, confirmed: true });
-      setConfirmationRequest(null);
+    if (activeConfirmationRequest) {
+      socket.emit('confirm_tool', { id: activeConfirmationRequest.id, confirmed: true });
+      setConfirmationQueue((prev) => prev.slice(1));
     }
   };
 
   const handleDenyTool = () => {
-    if (confirmationRequest) {
-      socket.emit('confirm_tool', { id: confirmationRequest.id, confirmed: false });
-      setConfirmationRequest(null);
+    if (activeConfirmationRequest) {
+      socket.emit('confirm_tool', { id: activeConfirmationRequest.id, confirmed: false });
+      setConfirmationQueue((prev) => prev.slice(1));
     }
   };
 
@@ -2241,12 +2452,23 @@ function AppContent() {
       viewportH: viewport.h,
     };
   }, [elementPositions.chat, elementSizes.chat, viewport.h]);
+  const PHONE_MONIKA_SCALE_MAX = 1.15;
+  const PHONE_DESK_BOTTOM_INSET_MIN = 214;
+  const PHONE_DESK_CHAT_GAP_MAX = 2;
   const focusMode = sessionMode.active || showStudyWindow;
   const chatCenterX = elementPositions.chat?.x ?? viewport.w / 2;
-  const characterShift = Math.round(chatCenterX - viewport.w / 2);
+  const chatTop = elementPositions.chat?.y ?? (viewport.h - 460);
+  const chatBaseHeight = elementSizes.chat?.h ?? 320;
+  const currentChatHeight = chatLiveHeight || chatBaseHeight;
+  const visibleChatTop = chatTop + (chatBaseHeight - currentChatHeight);
+  const characterShift = Math.round(chatCenterX - viewport.w / 2) - 12;
+  const viewportAspect = viewport.w / Math.max(viewport.h, 1);
   const isCompactViewport = viewport.h < 1100;
+  const stackedViewportFactor = Math.max(0, Math.min(1, (1.02 - viewportAspect) / 0.22));
+  const isStackedViewport = stackedViewportFactor > 0 || (viewport.w < 980 && viewport.h > 820);
   const eatTogetherLift = eatTogetherActive ? (isCompactViewport ? -160 : -120) : 0;
   const isTableScene = vnScene !== 'outside';
+  const useGroundedCharacterLayout = isTableScene;
   const chatMinimizedOffset = useMemo(() => {
     if (!isTableScene) return 0;
     const baseH = elementSizes.chat?.h ?? 320;
@@ -2262,14 +2484,17 @@ function AppContent() {
     return () => clearTimeout(t);
   }, [isChatMinimized, isTableScene]);
 
-    const tableOffset = isTableScene ? (isCompactViewport ? -60 : -125) : 0;
-    const fullscreenLowering = isCompactViewport ? 0 : 40;
-    const characterY = (focusMode ? -80 : -40)
-      + tableOffset
-      + eatTogetherLift
-      + (isCompactViewport ? -70 : 0)
-      + fullscreenLowering
-      + chatMinimizedOffset;
+  const tableOffset = isTableScene ? (isCompactViewport ? -60 : -125) : 0;
+  const fullscreenLowering = isCompactViewport ? 0 : 40;
+  const defaultCharacterY = (focusMode ? -80 : -40)
+    + tableOffset
+    + eatTogetherLift
+    + (isCompactViewport ? -70 : 0)
+    + fullscreenLowering
+    + chatMinimizedOffset;
+  const groundedCharacterY = 0;
+  const characterY = useGroundedCharacterLayout ? groundedCharacterY : defaultCharacterY;
+
   const characterScale = useMemo(() => {
     const refW = 1920;
     const refH = 1080;
@@ -2277,8 +2502,18 @@ function AppContent() {
     const t = Math.max(0, Math.min(1, (sizeFactor - 0.85) / 0.25));
     const baseScale = 1.05 + 0.15 * t;
     const tableScale = isTableScene ? (isCompactViewport ? 0.9 : 0.94) : 1.0;
-    return baseScale * (isCompactViewport ? 0.9 : 1.0) * tableScale;
-  }, [viewport.w, viewport.h, isCompactViewport, isTableScene]);
+    const groundedScale = useGroundedCharacterLayout
+      ? 1 + (PHONE_MONIKA_SCALE_MAX - 1) * stackedViewportFactor
+      : 1.0;
+    return baseScale * (isCompactViewport ? 0.9 : 1.0) * tableScale * groundedScale;
+  }, [viewport.w, viewport.h, isCompactViewport, isTableScene, useGroundedCharacterLayout, stackedViewportFactor]);
+  const characterBottomOffset = useMemo(() => {
+    if (!useGroundedCharacterLayout) return 0;
+    const deskBottomInset = 260 - (260 - PHONE_DESK_BOTTOM_INSET_MIN) * stackedViewportFactor;
+    const deskChatGap = 0 + PHONE_DESK_CHAT_GAP_MAX * stackedViewportFactor;
+    const offset = viewport.h - visibleChatTop - deskBottomInset * characterScale + deskChatGap;
+    return Math.max(0, Math.round(offset));
+  }, [useGroundedCharacterLayout, viewport.h, visibleChatTop, characterScale, stackedViewportFactor]);
 
   return (
     <div className="h-screen w-screen bg-black text-white/85 font-sans overflow-hidden flex flex-col relative selection:bg-white/10 selection:text-white">
@@ -2290,7 +2525,7 @@ function AppContent() {
         />
       )}
 
-      {showPersonalityWindow && <PersonalityWindow socket={socket} />}
+      {showPersonalityWindow && <PersonalityWindow state={personalityState} />}
 
       {/* VN FULLSCREEN BACKGROUND + CHARACTER (behind UI) */}
       <div className="fixed inset-0 z-0 pointer-events-none">
@@ -2311,6 +2546,8 @@ function AppContent() {
           characterScale={characterScale}
           characterY={characterY}
           characterX={characterShift}
+          characterAnchorBottom={useGroundedCharacterLayout}
+          characterBottomOffset={characterBottomOffset}
           characterTransitionMs={isChatMinimizeAnimating ? 0 : 0.35}
           headpatActive={headpatActive}
           petpetSrc="/petpet.gif"
@@ -2483,6 +2720,13 @@ function AppContent() {
             toolPermissions={toolPermissions}
             onTogglePermission={handleTogglePermission}
             handleFileUpload={handleFileUpload}
+            skills={skills}
+            skillsLoading={skillsLoading}
+            skillsActionBusy={skillsActionBusy}
+            onRefreshSkills={handleRefreshSkills}
+            onUploadSkillZip={handleSkillZipUpload}
+            onInstallSkillSource={handleInstallSkillSource}
+            onUninstallSkill={handleUninstallSkill}
             onClose={() => setShowSettings(false)}
           />
         )}
@@ -2522,6 +2766,7 @@ function AppContent() {
         {/* VN Chat (docked bottom textbox) */}
         <ChatModule
           messages={messages}
+          agenticLogs={browserData.logs}
           inputValue={inputValue}
           setInputValue={setInputValue}
           handleSend={handleSend}
@@ -2539,6 +2784,7 @@ function AppContent() {
           onShareStudyPage={() => studyShareRef.current && studyShareRef.current()}
           onMinimizedChange={setIsChatMinimized}
           onSizeChange={setChatLiveHeight}
+          isWindowResizing={isWindowResizing}
         />
 
         {/* Tools Module */}
@@ -2568,6 +2814,7 @@ function AppContent() {
             position={elementPositions.tools}
             onMouseDown={(e) => handleMouseDown(e, 'tools')}
             zIndex={getZIndex('tools')}
+            isWindowResizing={isWindowResizing}
           />
 
         {/* Kasa Window */}
@@ -2659,12 +2906,13 @@ function AppContent() {
             eatTogetherActive={eatTogetherActive}
             onStartEatTogether={startEatTogether}
             onStopEatTogether={stopEatTogether}
+            personalityState={personalityState}
           />
         )}
 
         {/* Tool Confirmation Modal */}
         <ConfirmationPopup
-          request={confirmationRequest}
+          request={activeConfirmationRequest}
           onConfirm={handleConfirmTool}
           onDeny={handleDenyTool}
         />

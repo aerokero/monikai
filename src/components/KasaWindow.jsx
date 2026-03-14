@@ -12,6 +12,7 @@ const KasaWindow = ({ socket, onClose, devices, position, onMouseDown, activeDra
     const draggingRef = useRef({}); // { ip: { brightness: bool, hue: bool } }
     const brightnessTimersRef = useRef({});
     const colorTimersRef = useRef({});
+    const discoverTimerRef = useRef(null);
 
     useEffect(() => {
         uiValuesRef.current = uiValues;
@@ -54,6 +55,7 @@ const KasaWindow = ({ socket, onClose, devices, position, onMouseDown, activeDra
             socket.off('kasa_update', onUpdate);
             socket.off('kasa_devices', onDevices);
             if (listTimeoutRef.current) clearTimeout(listTimeoutRef.current);
+            if (discoverTimerRef.current) clearTimeout(discoverTimerRef.current);
         };
     }, [socket]);
 
@@ -62,12 +64,20 @@ const KasaWindow = ({ socket, onClose, devices, position, onMouseDown, activeDra
         setIsThinking(true);
         socket.emit('discover_kasa');
         // Reset thinking after 5s if no response (safety)
-        setTimeout(() => setIsThinking(false), 5000);
+        if (discoverTimerRef.current) clearTimeout(discoverTimerRef.current);
+        discoverTimerRef.current = setTimeout(() => {
+            setIsThinking(false);
+            discoverTimerRef.current = null;
+        }, 5000);
     };
 
     useEffect(() => {
         if (devices && devices.length > 0) {
             setIsThinking(false);
+            if (discoverTimerRef.current) {
+                clearTimeout(discoverTimerRef.current);
+                discoverTimerRef.current = null;
+            }
         }
     }, [devices]);
 
@@ -99,6 +109,7 @@ const KasaWindow = ({ socket, onClose, devices, position, onMouseDown, activeDra
             // Cleanup any pending debounced sends
             Object.values(brightnessTimersRef.current).forEach(t => clearTimeout(t));
             Object.values(colorTimersRef.current).forEach(t => clearTimeout(t));
+            if (discoverTimerRef.current) clearTimeout(discoverTimerRef.current);
         };
     }, []);
 
@@ -262,16 +273,23 @@ const KasaWindow = ({ socket, onClose, devices, position, onMouseDown, activeDra
                     <div key={dev.ip} className="p-3 bg-white/5 rounded-lg border border-white/10 hover:border-white/30 transition-all select-none">
                         <div className="flex items-center justify-between mb-2">
                             <div className="flex flex-col">
-                                <span className="font-bold text-sm text-white">{dev.alias}</span>
+                                <div className="flex items-center gap-2">
+                                    <span className="font-bold text-sm text-white">{dev.alias}</span>
+                                    {dev.offline && (
+                                        <span className="text-[9px] uppercase tracking-wider text-amber-300/80 border border-amber-400/20 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                                            Offline
+                                        </span>
+                                    )}
+                                </div>
                                 <span className="text-[10px] text-white/40 font-mono">{dev.ip}</span>
                             </div>
                             <button
                                 onClick={() => handleToggle(dev.ip, dev.is_on)}
-                                disabled={loadingDevices[dev.ip]}
+                                disabled={loadingDevices[dev.ip] || dev.offline}
                                 className={`p-2 rounded-full transition-all ${dev.is_on
                                     ? 'bg-green-500/20 text-green-400 shadow-[0_0_10px_rgba(34,197,94,0.3)]'
                                     : 'bg-white/5 text-gray-500 hover:text-white'}
-                                    ${loadingDevices[dev.ip] ? 'opacity-50 cursor-not-allowed' : ''}
+                                    ${(loadingDevices[dev.ip] || dev.offline) ? 'opacity-50 cursor-not-allowed' : ''}
                                 `}
                             >
                                 {loadingDevices[dev.ip] ? (
@@ -283,8 +301,14 @@ const KasaWindow = ({ socket, onClose, devices, position, onMouseDown, activeDra
 
                         </div>
 
+                        {dev.offline && (
+                            <div className="text-[11px] text-white/45 mb-2">
+                                Device saved in settings but currently unreachable on the network.
+                            </div>
+                        )}
+
                         {/* Controls */}
-                        {dev.has_brightness && dev.is_on && (
+                        {dev.has_brightness && dev.is_on && !dev.offline && (
                             <div className="flex items-center gap-2 mt-2">
                                 <Sun size={14} className="text-yellow-500/70" />
                                 <input
@@ -305,7 +329,7 @@ const KasaWindow = ({ socket, onClose, devices, position, onMouseDown, activeDra
                         )}
 
                         {/* Color Control */}
-                        {dev.has_color && dev.is_on && (
+                        {dev.has_color && dev.is_on && !dev.offline && (
                             <div className="flex items-center gap-2 mt-2">
                                 <Palette size={14} className="text-purple-500/70" />
                                 <input

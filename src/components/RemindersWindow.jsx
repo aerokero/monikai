@@ -2,6 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { X, Calendar, Clock, Bell, Plus, Trash2, RefreshCw, ChevronLeft, ChevronRight, AlignLeft, Check, AlertCircle, Mic, MapPin, Edit2 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 
+const DAYS_IN_WEEK = 7;
+const CALENDAR_WEEKS = 6;
+
 const RemindersWindow = ({ socket, onClose, position, onMouseDown, activeDragElement, zIndex }) => {
   const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState('list'); // 'list', 'month'
@@ -118,19 +121,30 @@ const RemindersWindow = ({ socket, onClose, position, onMouseDown, activeDragEle
     return { days, firstDay };
   };
 
-  const renderCalendar = () => {
-    const { days, firstDay } = getDaysInMonth(currentDate);
-    const blanks = Array(firstDay).fill(null);
+  const getMonthCells = (date) => {
+    const { days, firstDay } = getDaysInMonth(date);
+    const leadingBlanks = Array(firstDay).fill(null);
     const dayNumbers = Array.from({ length: days }, (_, i) => i + 1);
-    const allCells = [...blanks, ...dayNumbers];
+    const trailingBlanks = Array(Math.max(0, CALENDAR_WEEKS * DAYS_IN_WEEK - leadingBlanks.length - dayNumbers.length)).fill(null);
+    return [...leadingBlanks, ...dayNumbers, ...trailingBlanks];
+  };
+
+  const renderCalendar = () => {
+    const allCells = getMonthCells(currentDate);
 
     return (
-      <div className="grid grid-cols-7 gap-1 text-center text-xs">
+      <div
+        className="grid gap-1 text-center text-xs h-72"
+        style={{
+          gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+          gridTemplateRows: 'auto repeat(6, minmax(0, 1fr))'
+        }}
+      >
         {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(d => (
-          <div key={d} className="text-white/40 py-1">{d}</div>
+          <div key={d} className="flex items-center justify-center text-white/40 py-1">{d}</div>
         ))}
         {allCells.map((day, i) => {
-          if (!day) return <div key={i} className="aspect-square" />;
+          if (!day) return <div key={i} className="rounded-lg" />;
           
           const cellDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
           const isToday = new Date().toDateString() === cellDate.toDateString();
@@ -141,7 +155,7 @@ const RemindersWindow = ({ socket, onClose, position, onMouseDown, activeDragEle
             <div 
               key={i} 
               onClick={() => setSelectedDate(cellDate)}
-              className={`aspect-square flex flex-col items-center justify-center rounded-lg relative group hover:bg-white/10 transition-colors cursor-pointer ${isSelected ? 'bg-white text-black shadow-lg shadow-white/20' : isToday ? 'bg-white/20 text-white border border-white/30' : 'text-white/80'}`}
+              className={`min-h-0 flex flex-col items-center justify-center rounded-lg relative group hover:bg-white/10 transition-colors cursor-pointer ${isSelected ? 'bg-white text-black shadow-lg shadow-white/20' : isToday ? 'bg-white/20 text-white border border-white/30' : 'text-white/80'}`}
             >
               <span>{day}</span>
               {hasItems && <div className={`w-1 h-1 rounded-full mt-1 ${isSelected ? 'bg-black' : 'bg-white'}`} />}
@@ -429,7 +443,7 @@ const RemindersWindow = ({ socket, onClose, position, onMouseDown, activeDragEle
             {/* Calendar Header */}
             <div className="flex items-center justify-between mb-4">
               <button 
-                onClick={() => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth() - 1)))}
+                onClick={() => setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
                 className="p-1 hover:bg-white/10 rounded text-white/50 hover:text-white"
               >
                 <ChevronLeft size={16} />
@@ -438,7 +452,7 @@ const RemindersWindow = ({ socket, onClose, position, onMouseDown, activeDragEle
                 {currentDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
               </span>
               <button 
-                onClick={() => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth() + 1)))}
+                onClick={() => setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
                 className="p-1 hover:bg-white/10 rounded text-white/50 hover:text-white"
               >
                 <ChevronRight size={16} />

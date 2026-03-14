@@ -24,6 +24,8 @@ const Visualizer = ({
   characterScale = 1.0,
   characterY = 10,
   characterX = 0,
+  characterAnchorBottom = false,
+  characterBottomOffset = 0,
   characterTransitionMs = 0.35,
 
   headpatActive = false,
@@ -217,8 +219,11 @@ const Visualizer = ({
         <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_50%_45%,transparent_35%,rgba(0,0,0,0.55)_100%)]" />
       </motion.div>
 
-      {/* Character centered */}
-      <div className="absolute inset-0 flex items-center justify-center">
+      {/* Character centered or grounded depending on viewport layout */}
+      <div
+        className={`absolute inset-0 flex justify-center ${characterAnchorBottom ? "items-end" : "items-center"}`}
+        style={characterAnchorBottom ? { paddingBottom: characterBottomOffset } : undefined}
+      >
         <motion.div
           className="relative"
           initial={{ opacity: 0, y: 14, x: characterX }}
@@ -228,7 +233,11 @@ const Visualizer = ({
             x: characterX,
           }}
           transition={{ duration: characterTransitionMs }}
-          style={{ scale: characterScale, willChange: "transform, opacity" }}
+          style={{
+            scale: characterScale,
+            willChange: "transform, opacity",
+            transformOrigin: characterAnchorBottom ? "center bottom" : "center center",
+          }}
         >
           {layers && layers.length > 0 ? (
             <div className="relative w-[960px] h-[960px] flex items-center justify-center">

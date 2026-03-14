@@ -1,10 +1,110 @@
 import asyncio
-from kasa import Discover, SmartDevice, SmartBulb, SmartPlug
+from kasa import Discover
 
 class KasaAgent:
     def __init__(self, known_devices=None):
         self.devices = {}
-        self.known_devices_config = known_devices or []
+        self.known_devices_config = [d for d in (known_devices or []) if isinstance(d, dict) and d.get("ip")]
+        self._known_devices_by_ip = {str(d["ip"]): dict(d) for d in self.known_devices_config}
+
+    def _is_offline_stub(self, dev):
+        return isinstance(dev, dict) and dev.get("_stub") == "offline"
+
+    def _set_offline_stub(self, ip, alias=None, info=None):
+        existing = self.devices.get(ip)
+        base = {}
+        if isinstance(info, dict):
+            base.update(info)
+        if self._is_offline_stub(existing):
+            base = {**existing, **base}
+        self.devices[ip] = {
+            "_stub": "offline",
+            "ip": ip,
+            "alias": alias or base.get("alias") or ip,
+            "model": base.get("model") or "Unknown",
+            "type": base.get("type") or "unknown",
+            "is_on": False,
+            "brightness": base.get("brightness"),
+            "hsv": base.get("hsv"),
+            "has_color": bool(base.get("has_color", False)),
+            "has_brightness": bool(base.get("has_brightness", False)),
+            "offline": True,
+        }
+
+    def _device_to_info(self, ip, dev):
+        if self._is_offline_stub(dev):
+            return {
+                "ip": ip,
+                "alias": dev.get("alias") or ip,
+                "model": dev.get("model") or "Unknown",
+                "type": dev.get("type") or "unknown",
+                "is_on": False,
+                "brightness": dev.get("brightness"),
+                "hsv": dev.get("hsv"),
+                "has_color": bool(dev.get("has_color", False)),
+                "has_brightness": bool(dev.get("has_brightness", False)),
+                "offline": True,
+            }
+
+        dev_type = "unknown"
+        if dev.is_bulb:
+            dev_type = "bulb"
+        elif dev.is_plug:
+            dev_type = "plug"
+        elif dev.is_strip:
+            dev_type = "strip"
+        elif dev.is_dimmer:
+            dev_type = "dimmer"
+
+        return {
+            "ip": ip,
+            "alias": dev.alias,
+            "model": dev.model,
+            "type": dev_type,
+            "is_on": dev.is_on,
+            "brightness": dev.brightness if dev.is_bulb or dev.is_dimmer else None,
+            "hsv": dev.hsv if dev.is_bulb and dev.is_color else None,
+            "has_color": dev.is_color if dev.is_bulb else False,
+            "has_brightness": dev.is_dimmable if dev.is_bulb or dev.is_dimmer else False,
+            "offline": False,
+        }
+
+    def serialize_devices(self):
+        device_list = []
+        for ip, dev in self.devices.items():
+            try:
+                device_list.append(self._device_to_info(ip, dev))
+            except Exception:
+                continue
+        return device_list
+
+    def _resolve_target_ip(self, target):
+        target = str(target or "").strip()
+        if not target:
+            return None
+        if target in self.devices:
+            return target
+        for ip, dev in self.devices.items():
+            alias = dev.get("alias") if isinstance(dev, dict) else getattr(dev, "alias", None)
+            if alias and str(alias).lower() == target.lower():
+                return ip
+        if target.count(".") == 3:
+            return target
+        return None
+
+    async def _discover_target(self, target):
+        ip = self._resolve_target_ip(target)
+        if not ip:
+            return None
+        try:
+            dev = await Discover.discover_single(ip)
+            if dev:
+                await dev.update()
+                self.devices[ip] = dev
+                return dev
+        except Exception:
+            pass
+        return None
 
     async def initialize(self):
         """Initializes devices from the saved configuration."""
@@ -25,9 +125,6 @@ class KasaAgent:
     async def _add_known_device(self, ip, alias, info):
         """Adds a device from settings without discovery scan."""
         try:
-            # We can't know the exact class (Bulb/Plug) without connecting, 
-            # but Discover.discover_single might work, or just SmartDevice(ip)
-            # SmartDevice is the base class.
             dev = await Discover.discover_single(ip)
             if dev:
                 await dev.update()
@@ -35,8 +132,10 @@ class KasaAgent:
                 print(f"[KasaAgent] Loaded known device: {dev.alias} ({ip})")
             else:
                  print(f"[KasaAgent] Could not connect to known device at {ip}")
+                 self._set_offline_stub(ip, alias=alias, info=info)
         except Exception as e:
             print(f"[KasaAgent] Error loading known device {ip}: {e}")
+            self._set_offline_stub(ip, alias=alias, info=info)
 
     async def discover_devices(self):
         """Discovers devices on the local network."""
@@ -44,49 +143,24 @@ class KasaAgent:
         # Use explicit broadcast and slightly longer timeout for Windows reliability
         found_devices = await Discover.discover(target="255.255.255.255", timeout=5)
         print(f"[KasaAgent] Raw discovery found {len(found_devices)} devices.")
-        
-        # We don't wipe self.devices completely, we merge/update
-        # But if a device is NOT found, we might want to keep it if it was known?
-        # User said: "If a device that is in settings can not be found just list as not found."
-        # This implies we might want to mark them offline.
-        
+
         for ip, dev in found_devices.items():
             await dev.update()
             self.devices[ip] = dev
-            
-        device_list = []
-        for ip, dev in self.devices.items():
-            # Determine type and capabilities
-            dev_type = "unknown"
-            if dev.is_bulb:
-                dev_type = "bulb"
-            elif dev.is_plug:
-                dev_type = "plug"
-            elif dev.is_strip:
-                dev_type = "strip"
-            elif dev.is_dimmer:
-                dev_type = "dimmer"
 
-            device_info = {
-                "ip": ip,
-                "alias": dev.alias,
-                "model": dev.model,
-                "type": dev_type,
-                "is_on": dev.is_on,
-                "brightness": dev.brightness if dev.is_bulb or dev.is_dimmer else None,
-                "hsv": dev.hsv if dev.is_bulb and dev.is_color else None,
-                "has_color": dev.is_color if dev.is_bulb else False,
-                "has_brightness": dev.is_dimmable if dev.is_bulb or dev.is_dimmer else False
-            }
-            device_list.append(device_info)
-            
+        for ip, info in self._known_devices_by_ip.items():
+            if ip not in found_devices:
+                self._set_offline_stub(ip, alias=info.get("alias"), info=info)
+
+        device_list = self.serialize_devices()
         print(f"Total Kasa devices (found + cached): {len(device_list)}")
         return device_list
 
     def get_device_by_alias(self, alias):
         """Finds a device by its alias (case-insensitive)."""
         for ip, dev in self.devices.items():
-            if dev.alias.lower() == alias.lower():
+            dev_alias = dev.get("alias") if isinstance(dev, dict) else getattr(dev, "alias", None)
+            if dev_alias and dev_alias.lower() == alias.lower():
                 return dev
         return None
 
@@ -94,11 +168,12 @@ class KasaAgent:
         """Resolves a target string (IP or Alias) to a device object."""
         # check if it is an IP 
         if target in self.devices:
-            return self.devices[target]
+            dev = self.devices[target]
+            return None if self._is_offline_stub(dev) else dev
         
         # Check alias
         dev = self.get_device_by_alias(target)
-        if dev:
+        if dev and not self._is_offline_stub(dev):
             return dev
             
         return None
@@ -136,17 +211,14 @@ class KasaAgent:
                 print(f"Error turning on {target}: {e}")
                 return False
         
-        # Fallback: Try to discover single if it looks like an IP
-        if target.count(".") == 3:
-             try:
-                dev = await Discover.discover_single(target)
-                if dev:
-                    self.devices[target] = dev
-                    await dev.turn_on()
-                    await dev.update()
-                    return True
-             except Exception:
-                 pass
+        dev = await self._discover_target(target)
+        if dev:
+            try:
+                await dev.turn_on()
+                await dev.update()
+                return True
+            except Exception:
+                pass
         return False
 
     async def turn_off(self, target):
@@ -161,21 +233,21 @@ class KasaAgent:
                 print(f"Error turning off {target}: {e}")
                 return False
         
-        if target.count(".") == 3:
-             try:
-                dev = await Discover.discover_single(target)
-                if dev:
-                    self.devices[target] = dev
-                    await dev.turn_off()
-                    await dev.update()
-                    return True
-             except Exception:
-                 pass
+        dev = await self._discover_target(target)
+        if dev:
+            try:
+                await dev.turn_off()
+                await dev.update()
+                return True
+            except Exception:
+                pass
         return False
 
     async def set_brightness(self, target, brightness):
         """Sets brightness (0-100)."""
         dev = self._resolve_device(target)
+        if not dev:
+            dev = await self._discover_target(target)
         if dev and (dev.is_dimmable or dev.is_bulb):
             try:
                 await dev.set_brightness(int(brightness))
@@ -188,6 +260,8 @@ class KasaAgent:
     async def set_color(self, target, color_input):
         """Sets color by name or direct HSV tuple."""
         dev = self._resolve_device(target)
+        if not dev:
+            dev = await self._discover_target(target)
         if not dev or not dev.is_color:
             return False
 

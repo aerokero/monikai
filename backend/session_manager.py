@@ -2,30 +2,40 @@ import json
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Iterator
 
 
 class SessionManager:
     """Global session manager (no projects)."""
 
-    def __init__(self, workspace_root: Path):
+    def __init__(self, workspace_root: Path, write_mode: str = "immediate"):
         self.workspace_root = Path(workspace_root)
         self.sessions_dir = self.workspace_root / "sessions"
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
         self.current_session_id: Optional[str] = None
         self.current_session_path: Optional[Path] = None
+        self.write_mode = write_mode if write_mode in {"session_end", "immediate"} else "session_end"
+        self._pending_turns: List[Dict] = []
         self.start_new_session()
 
     def start_new_session(self, session_id: Optional[str] = None) -> str:
+        self.flush_current_session()
+
         ts = datetime.now()
         if not session_id:
-            session_id = f"sess_{ts.strftime('%Y%m%d_%H%M%S')}"
+            session_id = f"sess_{ts.strftime('%Y%m%d_%H%M%S_%f')[:-3]}"
 
         day_dir = self.sessions_dir / ts.strftime("%Y-%m-%d")
         day_dir.mkdir(parents=True, exist_ok=True)
 
+        base_session_id = session_id
         session_path = day_dir / session_id
-        session_path.mkdir(parents=True, exist_ok=True)
+        suffix = 2
+        while session_path.exists():
+            session_id = f"{base_session_id}_{suffix}"
+            session_path = day_dir / session_id
+            suffix += 1
+        session_path.mkdir(parents=True, exist_ok=False)
 
         self.current_session_id = session_id
         self.current_session_path = session_path
@@ -73,13 +83,41 @@ class SessionManager:
             "text": text,
             "session_id": self.current_session_id,
         }
+        self._pending_turns.append(entry)
+
+        if self.write_mode == "immediate":
+            self.flush_current_session()
+
+    def flush_current_session(self) -> None:
+        if not self.current_session_path or not self._pending_turns:
+            return
+
         log_file = self.current_session_path / "turns.jsonl"
         with open(log_file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            for entry in self._pending_turns:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        self._pending_turns.clear()
+
+    def close(self) -> None:
+        self.flush_current_session()
+
+    def flush_session(self, session_id: Optional[str] = None) -> None:
+        if not session_id or session_id == self.current_session_id:
+            self.flush_current_session()
 
     def get_recent_chat_history(self, limit: int = 10) -> List[Dict]:
-        """Return last N messages across recent sessions (newest first)."""
+        if limit <= 0:
+            return []
+
         results: List[Dict] = []
+
+        # Newest in-memory entries first (not yet flushed to disk).
+        for entry in reversed(self._pending_turns):
+            if isinstance(entry, dict):
+                results.append(entry)
+            if len(results) >= limit:
+                return list(reversed(results))
+
         for turns_path in self._iter_turns_files_desc():
             try:
                 lines = turns_path.read_text(encoding="utf-8", errors="ignore").splitlines()
@@ -91,7 +129,8 @@ class SessionManager:
                     continue
                 try:
                     entry = json.loads(line)
-                    results.append(entry)
+                    if isinstance(entry, dict):
+                        results.append(entry)
                     if len(results) >= limit:
                         return list(reversed(results))
                 except Exception:
@@ -99,9 +138,9 @@ class SessionManager:
 
         return list(reversed(results))
 
-    def _iter_turns_files_desc(self):
+    def _iter_turns_files_desc(self) -> Iterator[Path]:
         if not self.sessions_dir.exists():
-            return []
+            return
 
         day_dirs = [d for d in self.sessions_dir.iterdir() if d.is_dir()]
         day_dirs.sort(reverse=True)
@@ -113,4 +152,3 @@ class SessionManager:
                 turns = sess_dir / "turns.jsonl"
                 if turns.exists():
                     yield turns
-

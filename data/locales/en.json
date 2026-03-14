@@ -30,6 +30,8 @@
     "history": "History",
     "collapse_history": "Collapse history",
     "expand_history": "Expand history",
+    "minimize": "Minimize",
+    "restore": "Restore",
     "placeholder": "Write to me...",
     "send": "Send",
     "attach": "Attach",
@@ -107,7 +109,10 @@
     "mood": "Mood",
     "energy": "Energy",
     "cycle": "Biological Cycle",
-    "day": "Day"
+    "day": "Day",
+    "quests": "Active Quests",
+    "quest": "Quest",
+    "no_quests": "No active quests right now."
   },
   "holidays": {
     "new_year": "🎉 New Year's Day",
@@ -136,7 +141,8 @@
     "tabs": {
       "session": "Session",
       "activities": "Activities",
-      "study": "Study"
+      "study": "Study",
+      "quests": "Goals"
     },
     "activities": {
       "eat": "Eat Together",
@@ -150,6 +156,9 @@
     "session": {
       "start": "Start Session",
       "end": "End Session"
+    },
+    "quests": {
+      "empty": "No active goals right now."
     }
   },
   "session": {

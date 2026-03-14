@@ -604,6 +604,12 @@ class MemoryEngine:
         if not session_id:
             return "no-session"
 
+        if self.session_manager and hasattr(self.session_manager, "flush_session"):
+            try:
+                self.session_manager.flush_session(session_id)
+            except Exception:
+                pass
+
         session_path = None
         if self.session_manager and hasattr(self.session_manager, "get_session_path"):
             session_path = self.session_manager.get_session_path(session_id)
@@ -707,11 +713,19 @@ class MemoryEngine:
             mp = self._date_re.search(raw)
             if mp:
                 d1, d2, yyyy = int(mp.group(1)), int(mp.group(2)), int(mp.group(3))
-                if 1 <= d1 <= 31 and 1 <= d2 <= 12:
-                    if self.language == "en" and d2 > 12:
-                        mm, dd = d2, d1
-                    else:
+                if self.language == "en":
+                    if 1 <= d1 <= 12 and 1 <= d2 <= 31:
+                        mm, dd = d1, d2
+                    elif 1 <= d1 <= 31 and 1 <= d2 <= 12:
                         dd, mm = d1, d2
+                    else:
+                        mm = dd = None
+                else:
+                    if 1 <= d1 <= 31 and 1 <= d2 <= 12:
+                        dd, mm = d1, d2
+                    else:
+                        mm = dd = None
+                if mm is not None and dd is not None:
                     dob = f"{yyyy:04d}-{mm:02d}-{dd:02d}"
 
         if dob and any(kw in lower for kw in self._dob_keywords):

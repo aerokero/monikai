@@ -64,7 +64,8 @@ const ToolsModule = ({
 
     position,
     onMouseDown,
-    zIndex
+    zIndex,
+    isWindowResizing = false,
 }) => {
     const { t } = useLanguage();
 
@@ -72,7 +73,7 @@ const ToolsModule = ({
         <div
             id="tools"
             onMouseDown={onMouseDown}
-            className={`absolute px-4 py-3 transition-all duration-200 
+            className={`absolute px-4 py-3 ${isWindowResizing ? 'transition-none' : 'transition-all duration-200'} 
                         backdrop-blur-2xl bg-black/50 border border-white/[0.14] shadow-2xl rounded-2xl
                         ${activeDragElement === 'tools' ? 'ring-1 ring-white/50 border-white/30' : ''}`}
             style={{

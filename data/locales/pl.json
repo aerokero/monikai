@@ -30,6 +30,8 @@
     "history": "Historia",
     "collapse_history": "Zwiń historię",
     "expand_history": "Rozwiń historię",
+    "minimize": "Zminimalizuj",
+    "restore": "Przywróć",
     "placeholder": "Napisz do mnie…",
     "send": "Wyślij",
     "attach": "Załącz",
@@ -107,7 +109,10 @@
     "mood": "Nastrój",
     "energy": "Energia",
     "cycle": "Cykl biologiczny",
-    "day": "Dzień"
+    "day": "Dzień",
+    "quests": "Aktywne cele",
+    "quest": "Cel",
+    "no_quests": "Brak aktywnych celów."
   },
   "holidays": {
     "new_year": "🎉 Nowy Rok",
@@ -136,7 +141,8 @@
     "tabs": {
       "session": "Sesja",
       "activities": "Aktywności",
-      "study": "Nauka"
+      "study": "Nauka",
+      "quests": "Cele"
     },
     "activities": {
       "eat": "Zjedzmy razem",
@@ -150,6 +156,9 @@
     "session": {
       "start": "Rozpocznij sesję",
       "end": "Zakończ sesję"
+    },
+    "quests": {
+      "empty": "Brak aktywnych celów."
     }
   },
   "session": {

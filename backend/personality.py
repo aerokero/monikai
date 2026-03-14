@@ -109,7 +109,7 @@ NEGATIVE_WORDS = {
     "zły", "zla", "puste", "męczy", "meczy",
 }
 
-LAUGHTER_WORDS = {"haha", "hehe", "ahaha", "ehehe", "lol", "xD", "xd"}
+LAUGHTER_WORDS = {"haha", "hehe", "ahaha", "ehehe", "lol", "xD", "XD", "xd"}
 
 QUESTION_WORDS = {"dlaczego", "co", "jak", "czy", "kiedy", "gdzie", "po co", "ile"}
 
@@ -756,10 +756,10 @@ class PersonalitySystem:
             new_mood = "calm"
             if aff > 80: new_mood = "love"
             elif aff > 40: new_mood = "happy"
-            elif aff < -20: new_mood = "sad"
+            elif aff < 20: new_mood = "sad"
 
             new_energy = 1.0
-            if aff < 0: new_energy = 0.85
+            if aff < 20: new_energy = 0.85
             elif aff < 30: new_energy = 0.95
 
             self.update(energy=new_energy, mood=new_mood)
@@ -860,6 +860,7 @@ class PersonalitySystem:
 
                 if mood_bias and self.state.mood == "neutral":
                     self.state.mood = mood_bias
+                    self.state.affect.mood = mood_bias
 
                 self._mark_dirty()
                 self.save()

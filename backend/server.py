@@ -42,6 +42,8 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import monikai
 from authenticator import FaceAuthenticator
 from kasa_agent import KasaAgent
+from spotify_manager import SpotifyManager
+from telegram_bot import TelegramBotService
 
 def _determine_sprite(state_dict: dict) -> str:
     """
@@ -88,6 +90,24 @@ def _determine_sprite(state_dict: dict) -> str:
 
 
 MAIN_LOOP = None
+ACTIVE_FRONTEND_SID = None
+
+
+async def _emit_to_frontend(event: str, payload, room: str = None):
+    target_room = room if room is not None else ACTIVE_FRONTEND_SID
+    if target_room:
+        await sio.emit(event, payload, room=target_room)
+    else:
+        await sio.emit(event, payload)
+
+
+def _schedule_emit_to_frontend(event: str, payload, room: str = None):
+    asyncio.create_task(_emit_to_frontend(event, payload, room=room))
+
+
+async def _force_exit_after_delay(delay_seconds: float = 0.15):
+    await asyncio.sleep(delay_seconds)
+    os._exit(0)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -108,7 +128,7 @@ async def lifespan(app: FastAPI):
     await kasa_agent.initialize()
 
     # Initialize Global Managers (Persistent across AI sessions)
-    global calendar_manager, reminder_manager, personality_system
+    global calendar_manager, reminder_manager, personality_system, spotify_manager
     base_dir = Path(os.path.dirname(os.path.abspath(__file__)))
     data_dir = base_dir.parent / "data"
     user_memory_dir = data_dir / "user_memory"
@@ -118,7 +138,7 @@ async def lifespan(app: FastAPI):
     def on_calendar_update_server():
         if calendar_manager:
             events = [e.__dict__ for e in calendar_manager.get_all_events()]
-            asyncio.create_task(sio.emit('calendar_data', events))
+            _schedule_emit_to_frontend('calendar_data', events)
     
     calendar_manager = monikai.CalendarManager(storage_dir=user_memory_dir, on_update=on_calendar_update_server)
     calendar_manager.load()
@@ -131,8 +151,8 @@ async def lifespan(app: FastAPI):
             "id": rem.id, "message": rem.message, "when_iso": rem.when_iso,
             "speak": bool(rem.speak), "alert": bool(getattr(rem, "alert", True))
         }
-        asyncio.create_task(sio.emit('reminder_fired', payload))
-        asyncio.create_task(sio.emit('reminders_list', {'reminders': _serialize_reminders()}))
+        _schedule_emit_to_frontend('reminder_fired', payload)
+        _schedule_emit_to_frontend('reminders_list', {'reminders': _serialize_reminders()})
         
         # If AI is running, let it handle speaking/logging
         if audio_loop:
@@ -155,7 +175,7 @@ async def lifespan(app: FastAPI):
         data["affection_hearts"] = f"{hearts} ({score:.1f}/10)"
         
         async def _emit():
-            await sio.emit('personality_status', data)
+            await _emit_to_frontend('personality_status', data)
         try:
             if MAIN_LOOP and MAIN_LOOP.is_running():
                 asyncio.run_coroutine_threadsafe(_emit(), MAIN_LOOP)
@@ -167,7 +187,51 @@ async def lifespan(app: FastAPI):
     personality_system = monikai.PersonalitySystem(storage_dir=user_memory_dir, on_update=on_personality_update_server)
     print("[SERVER] Personality System initialized.")
 
-    yield
+    # 4. Spotify Manager (OAuth + token refresh)
+    try:
+        spotify_manager = SpotifyManager(data_dir=data_dir)
+        st = spotify_manager.status()
+        print(
+            "[SERVER] Spotify Manager initialized. "
+            f"configured={st.get('configured')} connected={st.get('connected')}"
+        )
+        if st.get("connected"):
+            try:
+                spotify_manager.refresh_access_token()
+            except Exception as e:
+                print(f"[SERVER] Spotify token refresh skipped/failed at startup: {e}")
+    except Exception as e:
+        spotify_manager = None
+        print(f"[SERVER] Spotify Manager init failed: {e}")
+
+    global telegram_service, telegram_task
+    telegram_service = TelegramBotService.from_env(
+        lambda: SETTINGS,
+        calendar_manager=calendar_manager,
+        reminder_manager=reminder_manager,
+        spotify_manager=spotify_manager,
+        personality=personality_system,
+    )
+    if telegram_service:
+        telegram_task = asyncio.create_task(telegram_service.run())
+        print("[SERVER] Telegram bot service started.")
+
+    try:
+        yield
+    finally:
+        if telegram_service:
+            try:
+                await telegram_service.stop()
+            except Exception as e:
+                print(f"[SERVER] Telegram bot stop failed: {e}")
+        if telegram_task and not telegram_task.done():
+            telegram_task.cancel()
+            try:
+                await telegram_task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
 
 # Create a Socket.IO server
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*', max_http_buffer_size=25 * 1024 * 1024)
@@ -215,6 +279,7 @@ audio_loop = None
 calendar_manager = None
 reminder_manager = None
 personality_system = None
+spotify_manager = None
 loop_task = None
 authenticator = None
 kasa_agent = KasaAgent()
@@ -224,6 +289,8 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 SETTINGS_FILE = DATA_DIR / "settings.json"
 STUDY_DIR = DATA_DIR / "study"
 last_start_params = {}
+telegram_service = None
+telegram_task = None
 
 
 def _safe_study_path(rel_path: str) -> Path:
@@ -242,6 +309,21 @@ DEFAULT_SETTINGS = {
         "clear_work_memory": True,
         "notes_set": True,
         "run_web_agent": True,
+        "run_openclaw_agent": True,
+        "manage_agent_job": True,
+        "list_openclaw_skills": False,
+        "list_skills": False,
+        "get_openclaw_skill": False,
+        "get_skill": False,
+        "refresh_openclaw_skills": False,
+        "refresh_skills": False,
+        "run_openclaw_skill_command": True,
+        "run_skill_command": True,
+        "spotify_get_auth_url": False,
+        "spotify_get_status": False,
+        "spotify_get_now_playing": False,
+        "spotify_list_playlists": False,
+        "spotify_recently_played": False,
         "write_file": True
     },# List of {host, port, name, type}
     "kasa_devices": [], # List of {ip, alias, model}
@@ -279,7 +361,12 @@ DEFAULT_SETTINGS = {
             "adaptive_backoff_step": 0.7,
             "adaptive_max_multiplier": 4.0,
             "recent_user_memory_size": 3,
-            "recent_user_max_chars": 160
+            "recent_user_max_chars": 160,
+            "question_min_interval_sec": 1800.0,
+            "question_backoff_1_sec": 2700.0,
+            "question_backoff_2_sec": 3600.0,
+            "startup_grace_sec": 600.0,
+            "min_user_messages_before_nudge": 2
         },
         "reasoning": {
             "enabled": True,
@@ -333,6 +420,28 @@ def _should_run_screen_ocr(text: str) -> bool:
         "tooltip",
     ]
     return any(k in t for k in keywords)
+
+
+def _is_private_web_task_request(text: str) -> bool:
+    if not text:
+        return False
+    t = str(text).lower()
+    patterns = [
+        r"\bgmail\b",
+        r"\binbox\b",
+        r"\bmailbox\b",
+        r"\bemail\b",
+        r"\be-mail\b",
+        r"\bagent\s+web\b",
+        r"\bweb\s+agent\b",
+        r"\bopenclaw\b",
+        r"\bpoczta\b",
+        r"\bskrzynk\w*\b",
+        r"\bsprawd[zź]\w*\b.*\b(mail|gmail|poczt\w*|skrzynk\w*)\b",
+        r"\bwejd[zź]\w*\b.*\b(gmail|mail|poczt\w*|konto)\b",
+        r"\bzaloguj\w*\b.*\b(gmail|mail|poczt\w*|konto)\b",
+    ]
+    return any(re.search(p, t) for p in patterns)
 
 
 def _get_latest_screen_bytes():
@@ -482,6 +591,60 @@ async def status():
     return {"status": "running", "service": "MonikAI Backend"}
 
 
+@app.get("/spotify/status")
+async def spotify_status_http():
+    if not spotify_manager:
+        return {"ok": False, "error": "spotify manager unavailable"}
+    try:
+        return {"ok": True, "status": spotify_manager.status()}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/spotify/auth/start")
+async def spotify_auth_start_http():
+    if not spotify_manager:
+        raise HTTPException(status_code=503, detail="spotify manager unavailable")
+    try:
+        url = spotify_manager.build_auth_url()
+        return {"ok": True, "url": url}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/spotify/callback")
+async def spotify_auth_callback_http(
+    code: str = "",
+    state: str = "",
+    error: str = "",
+    error_description: str = "",
+):
+    if not spotify_manager:
+        raise HTTPException(status_code=503, detail="spotify manager unavailable")
+    if error:
+        detail = str(error_description or error).strip() or "spotify authorization failed"
+        raise HTTPException(status_code=400, detail=detail)
+    if not code:
+        raise HTTPException(status_code=400, detail="missing code")
+    try:
+        status_obj = spotify_manager.exchange_code(code, state=state)
+        try:
+            await _emit_to_frontend("spotify_status", {"ok": True, "status": status_obj})
+        except Exception:
+            pass
+        return Response(
+            content=(
+                "<html><body style='font-family: sans-serif; padding: 24px;'>"
+                "<h2>Spotify connected.</h2>"
+                "<p>You can close this tab and return to MonikAI.</p>"
+                "</body></html>"
+            ),
+            media_type="text/html",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.get("/study/catalog")
 async def study_catalog():
     if not STUDY_DIR.exists():
@@ -538,6 +701,8 @@ async def study_file_options():
 
 @sio.event
 async def connect(sid, environ):
+    global ACTIVE_FRONTEND_SID
+    ACTIVE_FRONTEND_SID = sid
     print(f"[SYSTEM NOTIFICATION] Client connected: {sid}")
     await sio.emit('status', {'msg': 'Connected to MonikAI Backend'}, room=sid)
 
@@ -546,11 +711,11 @@ async def connect(sid, environ):
     # Callback for Auth Status
     async def on_auth_status(is_auth):
         print(f"[SERVER] Auth status change: {is_auth}")
-        await sio.emit('auth_status', {'authenticated': is_auth})
+        await _emit_to_frontend('auth_status', {'authenticated': is_auth})
 
     # Callback for Auth Camera Frames
     async def on_auth_frame(frame_b64):
-        await sio.emit('auth_frame', {'image': frame_b64})
+        await _emit_to_frontend('auth_frame', {'image': frame_b64})
 
     # Initialize Authenticator if not already done
     if authenticator is None:
@@ -562,11 +727,11 @@ async def connect(sid, environ):
     
     # Check if already authenticated or needs to start
     if authenticator.authenticated:
-        await sio.emit('auth_status', {'authenticated': True})
+        await sio.emit('auth_status', {'authenticated': True}, room=sid)
     else:
         # Check Settings for Auth
         if SETTINGS.get("face_auth_enabled", False):
-            await sio.emit('auth_status', {'authenticated': False})
+            await sio.emit('auth_status', {'authenticated': False}, room=sid)
             # Start the auth loop in background
             asyncio.create_task(authenticator.start_authentication_loop())
         else:
@@ -574,15 +739,19 @@ async def connect(sid, environ):
             print("Face Auth Disabled. Auto-authenticating.")
             # We don't change authenticator state to true to avoid confusion if re-enabled? 
             # Or we should just tell client it's auth'd.
-            await sio.emit('auth_status', {'authenticated': True})
+            await sio.emit('auth_status', {'authenticated': True}, room=sid)
 
 @sio.event
 async def disconnect(sid):
+    global ACTIVE_FRONTEND_SID
+    if ACTIVE_FRONTEND_SID == sid:
+        ACTIVE_FRONTEND_SID = None
     print(f"Client disconnected: {sid}")
 
 @sio.event
 async def start_audio(sid, data=None):
-    global audio_loop, loop_task, last_start_params
+    global audio_loop, loop_task, last_start_params, ACTIVE_FRONTEND_SID
+    ACTIVE_FRONTEND_SID = sid
     
     # Save params for auto-restart
     last_start_params = {'sid': sid, 'data': data}
@@ -592,7 +761,7 @@ async def start_audio(sid, data=None):
     if SETTINGS.get("face_auth_enabled", False):
         if authenticator and not authenticator.authenticated:
             print("[SYSTEM ERROR] Blocked start_audio: Not authenticated.")
-            await sio.emit('error', {'msg': 'Authentication Required'})
+            await sio.emit('error', {'msg': 'Authentication Required'}, room=sid)
             return
 
     print("[SYSTEM NOTIFICATION] Starting Audio Loop...")
@@ -609,7 +778,7 @@ async def start_audio(sid, data=None):
     
     if loop_task and not loop_task.done():
         print("[SYSTEM NOTIFICATION] Audio loop already running. Re-connecting client to session.")
-        await sio.emit('status', {'msg': 'MonikAI Already Running'})
+        await sio.emit('status', {'msg': 'MonikAI Already Running'}, room=sid)
         return
     if audio_loop:
         if loop_task and (loop_task.done() or loop_task.cancelled()):
@@ -618,7 +787,7 @@ async def start_audio(sid, data=None):
             loop_task = None
         else:
             print("[SYSTEM NOTIFICATION] Audio loop already running. Re-connecting client to session.")
-            await sio.emit('status', {'msg': 'MonikAI Already Running'})
+            await sio.emit('status', {'msg': 'MonikAI Already Running'}, room=sid)
             return
 
 
@@ -626,17 +795,26 @@ async def start_audio(sid, data=None):
     def on_audio_data(data_bytes):
         # We need to schedule this on the event loop
         # This is high frequency, so we might want to downsample or batch if it's too much
-        asyncio.create_task(sio.emit('audio_data', {'data': list(data_bytes)}))
+        _schedule_emit_to_frontend('audio_data', {'data': list(data_bytes)})
 
     # Callback to send Browser data to frontend
     def on_web_data(data):
-        print(f"Sending Browser data to frontend: {len(data.get('log', ''))} chars logs")
-        asyncio.create_task(sio.emit('browser_frame', data))
+        log_text = str((data or {}).get("log") or "")
+        job_id = (data or {}).get("job_id")
+        job_status = (data or {}).get("job_status")
+        if log_text:
+            compact = " ".join(log_text.split())
+            if len(compact) > 320:
+                compact = compact[:317] + "..."
+            print(f"[WEB AGENT] job={job_id or '-'} status={job_status or '-'} log={compact}")
+        else:
+            print(f"Sending Browser data to frontend: {len(log_text)} chars logs")
+        _schedule_emit_to_frontend('browser_frame', data)
         
     # Callback to send Transcription data to frontend
     def on_transcription(data):
         # data = {"sender": "User"|"MonikAI", "text": "..."}
-        asyncio.create_task(sio.emit('transcription', data))
+        _schedule_emit_to_frontend('transcription', data)
 
         try:
             sender = (data or {}).get("sender", "")
@@ -644,7 +822,7 @@ async def start_audio(sid, data=None):
             if sender in ("Ty", "User") and text:
                 norm_text = str(text).lower()
                 if re.search(r"\bcan you see (this )?current page\??\b", norm_text):
-                    asyncio.create_task(sio.emit('study_request_share', {'reason': 'current_page'}, room=sid))
+                    _schedule_emit_to_frontend('study_request_share', {'reason': 'current_page'})
 
                     async def _send_reminder():
                         reminder = (
@@ -683,17 +861,17 @@ async def start_audio(sid, data=None):
         # data = {"id": "uuid", "tool": "tool_name", "args": {...}}
         tool_name = data.get('tool', 'unknown')
         print(f"[SYSTEM NOTIFICATION] Requesting confirmation for tool: {tool_name}")
-        asyncio.create_task(sio.emit('tool_confirmation_request', data))
+        _schedule_emit_to_frontend('tool_confirmation_request', data)
 
     # Callback to send Session Update to frontend
     def on_session_update(session_id):
         print(f"[SYSTEM NOTIFICATION] Session updated to: {session_id}")
-        asyncio.create_task(sio.emit('session_update', {'session': session_id}))
+        _schedule_emit_to_frontend('session_update', {'session': session_id})
 
     # Callback to show session prompt windows
     def on_session_prompt(payload):
         try:
-            asyncio.create_task(sio.emit('session_prompt', payload))
+            _schedule_emit_to_frontend('session_prompt', payload)
         except Exception:
             pass
 
@@ -701,25 +879,25 @@ async def start_audio(sid, data=None):
     def on_device_update(devices):
         # devices is a list of dicts
         print(f"[SYSTEM NOTIFICATION] Smart device list updated: {len(devices)} devices found.")
-        asyncio.create_task(sio.emit('kasa_devices', devices))
+        _schedule_emit_to_frontend('kasa_devices', devices)
 
     # Callback to send Notes update to frontend
     def on_notes_update(payload):
         try:
             print("[SYSTEM NOTIFICATION] Notes were updated.")
-            asyncio.create_task(sio.emit('notes_data', payload))
+            _schedule_emit_to_frontend('notes_data', payload)
         except Exception:
             pass
 
     # Callback to send Error to frontend
     def on_error(msg):
         print(f"[SYSTEM ERROR] {msg}")
-        asyncio.create_task(sio.emit('error', {'msg': msg}))
+        _schedule_emit_to_frontend('error', {'msg': msg})
 
     # Callback to send Vision Frames (screen/camera) to frontend
     def on_video_frame(payload):
         try:
-            asyncio.create_task(sio.emit('vision_frame', payload))
+            _schedule_emit_to_frontend('vision_frame', payload)
         except Exception:
             pass
 
@@ -728,9 +906,9 @@ async def start_audio(sid, data=None):
         try:
             message = payload.get('message', 'No message')
             print(f"[SYSTEM NOTIFICATION] Reminder fired: {message}")
-            asyncio.create_task(sio.emit('reminder_fired', payload))
+            _schedule_emit_to_frontend('reminder_fired', payload)
             # Also push an updated list so UI stays consistent
-            asyncio.create_task(sio.emit('reminders_list', {'reminders': _serialize_reminders()}))
+            _schedule_emit_to_frontend('reminders_list', {'reminders': _serialize_reminders()})
         except Exception as e:
             print(f"[SERVER] Failed to emit reminder_fired: {e}")
 
@@ -738,7 +916,7 @@ async def start_audio(sid, data=None):
     def on_calendar_update(events):
         try:
             print(f"[SERVER] Emitting calendar_data with {len(events)} events.")
-            asyncio.create_task(sio.emit('calendar_data', events))
+            _schedule_emit_to_frontend('calendar_data', events)
         except Exception as e:
             print(f"[SERVER] Failed to emit calendar_data: {e}")
 
@@ -747,43 +925,43 @@ async def start_audio(sid, data=None):
         try:
             if "sprite" not in data:
                 data["sprite"] = _determine_sprite(data)
-            asyncio.create_task(sio.emit('personality_status', data))
+            _schedule_emit_to_frontend('personality_status', data)
         except Exception as e:
             print(f"[SERVER] Failed to emit personality_status: {e}")
 
     # Callback for Internal Thoughts
     def on_internal_thought(thought):
         print(f"[SYSTEM NOTIFICATION] Internal Thought: {thought}")
-        asyncio.create_task(sio.emit('internal_thought', {'thought': thought}))
+        _schedule_emit_to_frontend('internal_thought', {'thought': thought})
         
         # Always emit to chat log so frontend can toggle visibility retroactively
-        asyncio.create_task(sio.emit('transcription', {
+        _schedule_emit_to_frontend('transcription', {
             "sender": "Monika (Thought)",
             "text": f"{thought}",
             "is_new": True
-        }))
+        })
 
     def on_reminders_updated():
         try:
-            asyncio.create_task(sio.emit('reminders_list', {'reminders': _serialize_reminders()}))
+            _schedule_emit_to_frontend('reminders_list', {'reminders': _serialize_reminders()})
         except Exception as e:
             print(f"[SERVER] Failed to emit reminders_list update: {e}")
 
     def on_study_fields(payload):
         try:
-            asyncio.create_task(sio.emit('study_fields', payload))
+            _schedule_emit_to_frontend('study_fields', payload)
         except Exception as e:
             print(f"[SERVER] Failed to emit study_fields: {e}")
 
     def on_study_notes(payload):
         try:
-            asyncio.create_task(sio.emit('study_notes', payload))
+            _schedule_emit_to_frontend('study_notes', payload)
         except Exception as e:
             print(f"[SERVER] Failed to emit study_notes: {e}")
 
     def on_study_page(payload):
         try:
-            asyncio.create_task(sio.emit('study_page', payload))
+            _schedule_emit_to_frontend('study_page', payload)
         except Exception as e:
             print(f"[SERVER] Failed to emit study_page: {e}")
 
@@ -822,6 +1000,7 @@ async def start_audio(sid, data=None):
             kasa_agent=kasa_agent,
             calendar_manager=calendar_manager,
             reminder_manager=reminder_manager,
+            spotify_manager=spotify_manager,
             personality=personality_system
             
         )
@@ -850,7 +1029,7 @@ async def start_audio(sid, data=None):
                 print("[SYSTEM NOTIFICATION] Audio Loop Cancelled")
             except Exception as e:
                 print(f"[SYSTEM ERROR] Audio Loop Crashed: {e}. Attempting restart...")
-                asyncio.create_task(sio.emit('status', {'msg': 'Connection lost. Reconnecting...'}))
+                _schedule_emit_to_frontend('status', {'msg': 'Connection lost. Reconnecting...'})
                 
                 async def restart_session():
                     await asyncio.sleep(2)
@@ -864,13 +1043,13 @@ async def start_audio(sid, data=None):
         loop_task.add_done_callback(handle_loop_exit)
         
         print("[SYSTEM NOTIFICATION] MonikAI Started")
-        await sio.emit('status', {'msg': 'MonikAI Started'})
+        await sio.emit('status', {'msg': 'MonikAI Started'}, room=sid)
         
     except Exception as e:
         print(f"[SYSTEM ERROR] CRITICAL ERROR STARTING MonikAI: {e}")
         import traceback
         traceback.print_exc()
-        await sio.emit('error', {'msg': f"Failed to start: {str(e)}"})
+        await sio.emit('error', {'msg': f"Failed to start: {str(e)}"}, room=sid)
         audio_loop = None # Ensure we can try again
 
 @sio.event
@@ -890,7 +1069,7 @@ async def stop_audio(sid):
         loop_task = None
     audio_loop = None
     print("[SYSTEM NOTIFICATION] MonikAI Stopped")
-    await sio.emit('status', {'msg': 'MonikAI Stopped'})
+    await sio.emit('status', {'msg': 'MonikAI Stopped'}, room=sid)
 
 @sio.event
 async def pause_audio(sid):
@@ -898,7 +1077,7 @@ async def pause_audio(sid):
     if audio_loop:
         audio_loop.set_paused(True)
         print("[SYSTEM NOTIFICATION] Audio Paused")
-        await sio.emit('status', {'msg': 'Audio Paused'})
+        await sio.emit('status', {'msg': 'Audio Paused'}, room=sid)
 
 @sio.event
 async def resume_audio(sid):
@@ -906,7 +1085,7 @@ async def resume_audio(sid):
     if audio_loop:
         audio_loop.set_paused(False)
         print("[SYSTEM NOTIFICATION] Audio Resumed")
-        await sio.emit('status', {'msg': 'Audio Resumed'})
+        await sio.emit('status', {'msg': 'Audio Resumed'}, room=sid)
 
 
 # --------------------------------------------------------------------------------------
@@ -942,36 +1121,9 @@ def _serialize_reminders():
 
 def _serialize_kasa_devices():
     """Return a JSON-serializable list of known Kasa devices (no discovery scan)."""
-    devices = []
     if not kasa_agent:
-        return devices
-    for ip, dev in kasa_agent.devices.items():
-        try:
-            dev_type = "unknown"
-            if dev.is_bulb:
-                dev_type = "bulb"
-            elif dev.is_plug:
-                dev_type = "plug"
-            elif dev.is_strip:
-                dev_type = "strip"
-            elif dev.is_dimmer:
-                dev_type = "dimmer"
-
-            device_info = {
-                "ip": ip,
-                "alias": dev.alias,
-                "model": dev.model,
-                "type": dev_type,
-                "is_on": dev.is_on,
-                "brightness": dev.brightness if dev.is_bulb or dev.is_dimmer else None,
-                "hsv": dev.hsv if dev.is_bulb and dev.is_color else None,
-                "has_color": dev.is_color if dev.is_bulb else False,
-                "has_brightness": dev.is_dimmable if dev.is_bulb or dev.is_dimmer else False
-            }
-            devices.append(device_info)
-        except Exception:
-            continue
-    return devices
+        return []
+    return kasa_agent.serialize_devices()
 
 
 # --------------------------------------------------------------------------------------
@@ -1084,7 +1236,14 @@ async def list_calendar(sid, data=None):
 async def get_personality_status(sid):
     """Frontend requests current personality status."""
     if personality_system:
-        await sio.emit('personality_status', asdict(personality_system.state), room=sid)
+        data = asdict(personality_system.state)
+        data["sprite"] = _determine_sprite(data)
+        aff = max(0.0, min(100.0, float(data.get("affection", 0))))
+        score = aff / 10.0
+        full = int(score)
+        hearts = "❤️" * full + "🤍" * (10 - full)
+        data["affection_hearts"] = f"{hearts} ({score:.1f}/10)"
+        await sio.emit('personality_status', data, room=sid)
 
 @sio.event
 async def delete_event(sid, data):
@@ -1245,9 +1404,8 @@ async def shutdown(sid, data=None):
         authenticator.stop()
     
     print("[SERVER] Graceful shutdown complete. Terminating process...")
-    
-    # Force exit immediately - os._exit bypasses cleanup but ensures termination
-    os._exit(0)
+    asyncio.create_task(_force_exit_after_delay())
+    return {"ok": True}
 
 @sio.event
 async def user_input(sid, data):
@@ -1347,10 +1505,12 @@ async def user_input(sid, data):
         study_payload, study_meta = STUDY_READER.get_latest_image(max_age_sec=45.0)
 
         page_request = False
+        private_web_task_request = False
         if text:
             norm_text = str(text).lower()
             if re.search(r"\bcan you see (this )?current page\??\b", norm_text):
                 page_request = True
+            private_web_task_request = _is_private_web_task_request(norm_text)
 
         if page_request:
             try:
@@ -1360,6 +1520,20 @@ async def user_input(sid, data):
                     "after they send it via the chat button."
                 )
                 await audio_loop.session.send(input=reminder, end_of_turn=False)
+            except Exception:
+                pass
+
+        if private_web_task_request:
+            try:
+                web_task_nudge = (
+                    "System Notification: [Private Service Routing] The user asked for help with a private web service "
+                    "(e.g., email inbox). Choose approach adaptively: if a relevant Skill is available and "
+                    "eligible, you may use `run_openclaw_skill_command`; otherwise use `run_openclaw_agent` (or "
+                    "`manage_agent_job` action=start for longer flows). For browser flows, guide step by step. "
+                    "If login/2FA is required, ask the user to complete it manually in browser. "
+                    "Never ask for or store passwords."
+                )
+                await audio_loop.session.send(input=web_task_nudge, end_of_turn=False)
             except Exception:
                 pass
 
@@ -1456,7 +1630,7 @@ async def user_input(sid, data):
                 print(f"[SERVER DEBUG] Message sent to model successfully.")
             except Exception as e:
                 print(f"[SERVER DEBUG] Failed to send message to model: {e}")
-                await sio.emit('status', {'msg': 'Connection lost. Reconnecting...'})
+                await _emit_to_frontend('status', {'msg': 'Connection lost. Reconnecting...'})
         else:
             try:
                 await audio_loop.session.send(
@@ -1466,7 +1640,7 @@ async def user_input(sid, data):
                 print(f"[SERVER DEBUG] Attachments-only message sent to model.")
             except Exception as e:
                 print(f"[SERVER DEBUG] Failed to send attachments-only message: {e}")
-                await sio.emit('status', {'msg': 'Connection lost. Reconnecting...'})
+                await _emit_to_frontend('status', {'msg': 'Connection lost. Reconnecting...'})
 
 import json
 from datetime import datetime
@@ -1523,12 +1697,13 @@ async def save_memory(sid, data):
             for msg in messages:
                 sender = msg.get('sender', 'Unknown')
                 text = msg.get('text', '')
+                f.write(f"{sender}: {text}\n")
         print(f"Conversation saved to {filename}")
-        await sio.emit('status', {'msg': 'Memory Saved Successfully'})
+        await sio.emit('status', {'msg': 'Memory Saved Successfully'}, room=sid)
 
     except Exception as e:
         print(f"Error saving memory: {e}")
-        await sio.emit('error', {'msg': f"Failed to save memory: {str(e)}"})
+        await sio.emit('error', {'msg': f"Failed to save memory: {str(e)}"}, room=sid)
 
 def _notes_path():
     try:
@@ -1721,7 +1896,7 @@ async def session_mode_set(sid, data):
         kind = DEFAULT_KIND
         if audio_loop and getattr(audio_loop, "set_session_mode", None):
             audio_loop.set_session_mode(active=active, kind=kind)
-        await sio.emit('session_mode', {'active': active, 'kind': kind})
+        await sio.emit('session_mode', {'active': active, 'kind': kind}, room=sid)
 
         if audio_loop and audio_loop.session:
             if active:
@@ -2261,12 +2436,12 @@ async def upload_memory(sid, data):
 
         if not audio_loop:
              print("[SERVER DEBUG] [Error] Audio loop is None. Cannot load memory.")
-             await sio.emit('error', {'msg': "System not ready (Audio Loop inactive)"})
+             await sio.emit('error', {'msg': "System not ready (Audio Loop inactive)"}, room=sid)
              return
         
         if not audio_loop.session:
              print("[SERVER DEBUG] [Error] Session is None. Cannot load memory.")
-             await sio.emit('error', {'msg': "System not ready (No active session)"})
+             await sio.emit('error', {'msg': "System not ready (No active session)"}, room=sid)
              return
 
         # Send to model
@@ -2275,19 +2450,19 @@ async def upload_memory(sid, data):
         
         await audio_loop.session.send(input=context_msg, end_of_turn=True)
         print("Memory context sent successfully.")
-        await sio.emit('status', {'msg': 'Memory Loaded into Context'})
+        await sio.emit('status', {'msg': 'Memory Loaded into Context'}, room=sid)
 
     except Exception as e:
         print(f"Error uploading memory: {e}")
-        await sio.emit('error', {'msg': f"Failed to upload memory: {str(e)}"})
+        await sio.emit('error', {'msg': f"Failed to upload memory: {str(e)}"}, room=sid)
 
 @sio.event
 async def discover_kasa(sid):
     print(f"Received discover_kasa request")
     try:
         devices = await kasa_agent.discover_devices()
-        await sio.emit('kasa_devices', devices)
-        await sio.emit('status', {'msg': f"Found {len(devices)} Kasa devices"})
+        await sio.emit('kasa_devices', devices, room=sid)
+        await sio.emit('status', {'msg': f"Found {len(devices)} Kasa devices"}, room=sid)
         
         # Save to settings
         # devices is a list of full device info dicts. minimizing for storage.
@@ -2309,7 +2484,7 @@ async def discover_kasa(sid):
         
     except Exception as e:
         print(f"Error discovering kasa: {e}")
-        await sio.emit('error', {'msg': f"Kasa Discovery Failed: {str(e)}"})
+        await sio.emit('error', {'msg': f"Kasa Discovery Failed: {str(e)}"}, room=sid)
 
 
 @sio.event
@@ -2322,31 +2497,356 @@ async def prompt_web_agent(sid, data):
     # data: { prompt: "find xyz" }
     prompt = data.get('prompt')
     print(f"Received web agent prompt: '{prompt}'")
-    
-    if not audio_loop or not audio_loop.web_agent:
-        await sio.emit('error', {'msg': "Web Agent not available"})
+
+    try:
+        if not audio_loop or not getattr(audio_loop, "web_agent", None):
+            await sio.emit('error', {'msg': "Monika OpenClaw fork is not available"}, room=sid)
+            return
+
+        await sio.emit('status', {'msg': 'Monika OpenClaw fork running...'}, room=sid)
+
+        await audio_loop.handle_openclaw_agent_request(prompt)
+        
+        await sio.emit('status', {'msg': 'Monika OpenClaw fork finished'}, room=sid)
+        
+    except Exception as e:
+        print(f"Error running Monika OpenClaw fork: {e}")
+        await sio.emit('error', {'msg': f"Monika OpenClaw fork error: {str(e)}"}, room=sid)
+
+
+@sio.event
+async def control_agent_job(sid, data):
+    action = str((data or {}).get("action") or "").strip().lower()
+    job_id = (data or {}).get("job_id")
+    if not audio_loop:
+        await sio.emit('error', {'msg': "Agent loop not active"}, room=sid)
         return
 
     try:
-        await sio.emit('status', {'msg': 'Web Agent running...'})
-        
-        # We assume web_agent has a run method or similar.
-        # This might block the loop if not strictly async or offloaded.
-        # Ideally web_agent.run is async.
-        # And it should emit 'browser_snap' and logs automatically via hooks if setup.
-        
-        # We might need to launch this as a task if it's long running?
-        # asyncio.create_task(audio_loop.web_agent.run(prompt))
-        # But we want to catch errors here.
-        
-        # Based on typical agent design, run() is the entry point.
-        await audio_loop.web_agent.run(prompt)
-        
-        await sio.emit('status', {'msg': 'Web Agent finished'})
-        
+        if action == "start":
+            prompt = str((data or {}).get("prompt") or "").strip()
+            if not prompt:
+                await sio.emit('agent_job_status', {"ok": False, "error": "prompt required for action=start"}, room=sid)
+                return
+            provider = str((data or {}).get("provider") or "openclaw").strip().lower() or "openclaw"
+            agent = (data or {}).get("agent")
+            thinking = (data or {}).get("thinking")
+            timeout_sec = (data or {}).get("timeout_sec")
+            new_job_id = audio_loop.start_agent_job(
+                prompt=prompt,
+                provider=provider,
+                agent=agent,
+                thinking=thinking,
+                timeout_sec=timeout_sec,
+            )
+            await sio.emit('agent_job_status', {"ok": True, "job_id": new_job_id, "status": "queued"}, room=sid)
+        elif action == "status":
+            status_obj = audio_loop.get_agent_job_status(job_id)
+            await sio.emit('agent_job_status', status_obj, room=sid)
+        elif action == "list":
+            status_obj = audio_loop.get_agent_job_status(None)
+            await sio.emit('agent_job_status', status_obj, room=sid)
+        elif action == "stop":
+            result = await audio_loop.stop_agent_job(job_id)
+            await sio.emit('agent_job_status', result, room=sid)
+        elif action == "resume":
+            result = await audio_loop.resume_agent_job(job_id)
+            await sio.emit('agent_job_status', result, room=sid)
+        else:
+            await sio.emit('agent_job_status', {"ok": False, "error": "unknown action"}, room=sid)
     except Exception as e:
-        print(f"Error running Web Agent: {e}")
-        await sio.emit('error', {'msg': f"Web Agent Error: {str(e)}"})
+        await sio.emit('agent_job_status', {"ok": False, "error": str(e)}, room=sid)
+
+
+def _skills_manager():
+    if not audio_loop:
+        return None
+    return getattr(audio_loop, "skills_manager", None) or getattr(audio_loop, "openclaw_skills", None)
+
+
+async def _emit_skills_payload(sid, payload):
+    await sio.emit('skills', payload, room=sid)
+    await sio.emit('openclaw_skills', payload, room=sid)
+
+
+async def _emit_skill_install_result(sid, payload):
+    await sio.emit('skill_install_result', payload, room=sid)
+    await sio.emit('openclaw_skill_install_result', payload, room=sid)
+
+
+async def _emit_skill_uninstall_result(sid, payload):
+    await sio.emit('skill_uninstall_result', payload, room=sid)
+    await sio.emit('openclaw_skill_uninstall_result', payload, room=sid)
+
+
+async def _list_skills_impl(sid, data=None):
+    include_ineligible = bool((data or {}).get("include_ineligible", False))
+    include_disabled = bool((data or {}).get("include_disabled", False))
+    manager = _skills_manager()
+    if not manager:
+        payload = {
+            "count": 0,
+            "skills": [],
+            "error": "Skills manager unavailable",
+        }
+    else:
+        skills = manager.list_skills(
+            include_ineligible=include_ineligible,
+            include_disabled=include_disabled,
+        )
+        payload = {"count": len(skills), "skills": skills}
+    await _emit_skills_payload(sid, payload)
+
+
+@sio.event
+async def list_openclaw_skills(sid, data=None):
+    await _list_skills_impl(sid, data)
+
+
+@sio.on('list_skills')
+async def list_skills(sid, data=None):
+    await _list_skills_impl(sid, data)
+
+
+async def _refresh_skills_impl(sid, data=None):
+    include_ineligible = bool((data or {}).get("include_ineligible", True))
+    include_disabled = bool((data or {}).get("include_disabled", True))
+    manager = _skills_manager()
+    if not manager:
+        payload = {
+            "count": 0,
+            "skills": [],
+            "error": "Skills manager unavailable",
+        }
+    else:
+        _ = manager.refresh()
+        skills = manager.list_skills(
+            include_ineligible=include_ineligible,
+            include_disabled=include_disabled,
+        )
+        payload = {"count": len(skills), "skills": skills}
+    await _emit_skills_payload(sid, payload)
+
+
+@sio.event
+async def refresh_openclaw_skills(sid, data=None):
+    await _refresh_skills_impl(sid, data)
+
+
+@sio.on('refresh_skills')
+async def refresh_skills(sid, data=None):
+    await _refresh_skills_impl(sid, data)
+
+
+async def _install_skill_zip_impl(sid, data=None):
+    filename = str((data or {}).get("filename") or "skill.zip").strip() or "skill.zip"
+    zip_b64 = (data or {}).get("zip_b64") or ""
+    replace = bool((data or {}).get("replace", True))
+
+    manager = _skills_manager()
+    if not manager:
+        await _emit_skill_install_result(sid, {
+            "ok": False,
+            "error": "Skills manager unavailable",
+        })
+        return
+
+    if not zip_b64:
+        await _emit_skill_install_result(sid, {
+            "ok": False,
+            "error": "Missing zip_b64 payload",
+        })
+        return
+
+    try:
+        raw_zip = base64.b64decode(str(zip_b64), validate=False)
+    except Exception as e:
+        await _emit_skill_install_result(sid, {
+            "ok": False,
+            "error": f"Invalid base64 ZIP payload: {e}",
+        })
+        return
+
+    try:
+        result = manager.install_from_zip_bytes(
+            raw_zip,
+            filename=filename,
+            replace=replace,
+        )
+        skills = manager.list_skills(
+            include_ineligible=True,
+            include_disabled=True,
+        )
+        await _emit_skill_install_result(sid, {
+            "ok": True,
+            "result": result,
+        })
+        await _emit_skills_payload(sid, {"count": len(skills), "skills": skills})
+    except Exception as e:
+        await _emit_skill_install_result(sid, {
+            "ok": False,
+            "error": str(e),
+        })
+
+
+@sio.event
+async def install_openclaw_skill_zip(sid, data=None):
+    await _install_skill_zip_impl(sid, data)
+
+
+@sio.on('install_skill_zip')
+async def install_skill_zip(sid, data=None):
+    await _install_skill_zip_impl(sid, data)
+
+
+async def _install_skill_source_impl(sid, data=None):
+    source = str((data or {}).get("source") or "").strip()
+    raw_skill_name = (data or {}).get("skill_name")
+    raw_skill_names = (data or {}).get("skill_names")
+    agent = str((data or {}).get("agent") or "codex").strip() or "codex"
+    global_scope = bool((data or {}).get("global_scope", False))
+    copy_files = bool((data or {}).get("copy_files", True))
+
+    manager = _skills_manager()
+    if not manager:
+        await _emit_skill_install_result(sid, {
+            "ok": False,
+            "error": "Skills manager unavailable",
+        })
+        return
+
+    if not source:
+        await _emit_skill_install_result(sid, {
+            "ok": False,
+            "error": "source is required",
+        })
+        return
+
+    skill_names = []
+    if isinstance(raw_skill_names, list):
+        skill_names.extend(str(item or "").strip() for item in raw_skill_names)
+    elif isinstance(raw_skill_names, str) and raw_skill_names.strip():
+        skill_names.extend(part.strip() for part in raw_skill_names.split(","))
+    if raw_skill_name:
+        skill_names.append(str(raw_skill_name).strip())
+    skill_names = [name for name in skill_names if name]
+
+    try:
+        result = manager.install_from_source(
+            source,
+            skill_names=skill_names,
+            agent=agent,
+            global_scope=global_scope,
+            copy_files=copy_files,
+            yes=True,
+        )
+        skills = manager.list_skills(
+            include_ineligible=True,
+            include_disabled=True,
+        )
+        await _emit_skill_install_result(sid, {
+            "ok": True,
+            "result": result,
+        })
+        await _emit_skills_payload(sid, {"count": len(skills), "skills": skills})
+    except Exception as e:
+        await _emit_skill_install_result(sid, {
+            "ok": False,
+            "error": str(e),
+        })
+
+
+@sio.event
+async def install_openclaw_skill_source(sid, data=None):
+    await _install_skill_source_impl(sid, data)
+
+
+@sio.on('install_skill_source')
+async def install_skill_source(sid, data=None):
+    await _install_skill_source_impl(sid, data)
+
+
+async def _uninstall_skill_impl(sid, data=None):
+    name = str((data or {}).get("name") or "").strip()
+    if not name:
+        await _emit_skill_uninstall_result(sid, {
+            "ok": False,
+            "error": "name is required",
+        })
+        return
+
+    manager = _skills_manager()
+    if not manager:
+        await _emit_skill_uninstall_result(sid, {
+            "ok": False,
+            "error": "Skills manager unavailable",
+        })
+        return
+
+    try:
+        result = manager.uninstall_skill(name)
+        skills = manager.list_skills(
+            include_ineligible=True,
+            include_disabled=True,
+        )
+        await _emit_skill_uninstall_result(sid, {
+            "ok": True,
+            "result": result,
+        })
+        await _emit_skills_payload(sid, {"count": len(skills), "skills": skills})
+    except Exception as e:
+        await _emit_skill_uninstall_result(sid, {
+            "ok": False,
+            "error": str(e),
+        })
+
+
+@sio.event
+async def uninstall_openclaw_skill(sid, data=None):
+    await _uninstall_skill_impl(sid, data)
+
+
+@sio.on('uninstall_skill')
+async def uninstall_skill(sid, data=None):
+    await _uninstall_skill_impl(sid, data)
+
+
+@sio.event
+async def spotify_get_status(sid, data=None):
+    _ = data
+    if not spotify_manager:
+        await sio.emit("spotify_status", {"ok": False, "error": "spotify manager unavailable"}, room=sid)
+        return
+    try:
+        await sio.emit("spotify_status", {"ok": True, "status": spotify_manager.status()}, room=sid)
+    except Exception as e:
+        await sio.emit("spotify_status", {"ok": False, "error": str(e)}, room=sid)
+
+
+@sio.event
+async def spotify_get_auth_url(sid, data=None):
+    _ = data
+    if not spotify_manager:
+        await sio.emit("spotify_auth_url", {"ok": False, "error": "spotify manager unavailable"}, room=sid)
+        return
+    try:
+        url = spotify_manager.build_auth_url()
+        await sio.emit("spotify_auth_url", {"ok": True, "url": url}, room=sid)
+    except Exception as e:
+        await sio.emit("spotify_auth_url", {"ok": False, "error": str(e)}, room=sid)
+
+
+@sio.event
+async def spotify_refresh_token(sid, data=None):
+    _ = data
+    if not spotify_manager:
+        await sio.emit("spotify_status", {"ok": False, "error": "spotify manager unavailable"}, room=sid)
+        return
+    try:
+        st = spotify_manager.refresh_access_token()
+        await sio.emit("spotify_status", {"ok": True, "status": st}, room=sid)
+    except Exception as e:
+        await sio.emit("spotify_status", {"ok": False, "error": str(e)}, room=sid)
 
 
 @sio.event
@@ -2377,18 +2877,18 @@ async def control_kasa(sid, data):
                 'ip': ip,
                 'is_on': True if action == "on" else (False if action == "off" else None),
                 'brightness': data.get('value') if action == "brightness" else None,
-            })
+            }, room=sid)
  
         else:
-             await sio.emit('error', {'msg': f"Failed to control device {ip}"})
+             await sio.emit('error', {'msg': f"Failed to control device {ip}"}, room=sid)
 
     except Exception as e:
          print(f"Error controlling kasa: {e}")
-         await sio.emit('error', {'msg': f"Kasa Control Error: {str(e)}"})
+         await sio.emit('error', {'msg': f"Kasa Control Error: {str(e)}"}, room=sid)
 
 @sio.event
 async def get_settings(sid):
-    await sio.emit('settings', SETTINGS)
+    await sio.emit('settings', SETTINGS, room=sid)
 
 @sio.event
 async def update_settings(sid, data):
@@ -2408,7 +2908,7 @@ async def update_settings(sid, data):
         SETTINGS["face_auth_enabled"] = data["face_auth_enabled"]
         # If turned OFF, maybe emit auth status true?
         if not data["face_auth_enabled"]:
-             await sio.emit('auth_status', {'authenticated': True})
+             await sio.emit('auth_status', {'authenticated': True}, room=sid)
              # Stop auth loop if running?
              if authenticator:
                  authenticator.stop() 
@@ -2472,13 +2972,13 @@ async def update_settings(sid, data):
 
     save_settings()
     # Broadcast new full settings
-    await sio.emit('settings', SETTINGS)
+    await _emit_to_frontend('settings', SETTINGS)
 
 
 # Deprecated/Mapped for compatibility if frontend still uses specific events
 @sio.event
 async def get_tool_permissions(sid):
-    await sio.emit('tool_permissions', SETTINGS["tool_permissions"])
+    await sio.emit('tool_permissions', SETTINGS["tool_permissions"], room=sid)
 
 @sio.event
 async def report_visual_state(sid, data):
@@ -2520,7 +3020,7 @@ async def update_tool_permissions(sid, data):
     if audio_loop:
         audio_loop.update_permissions(SETTINGS["tool_permissions"])
     # Broadcast update to all
-    await sio.emit('tool_permissions', SETTINGS["tool_permissions"])
+    await _emit_to_frontend('tool_permissions', SETTINGS["tool_permissions"])
 
 if __name__ == "__main__":
     uvicorn.run(

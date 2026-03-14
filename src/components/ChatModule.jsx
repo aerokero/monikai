@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Paperclip, X, Maximize2, Minimize2, MessageSquare, Send, Brain, Minus, ChevronUp, BookOpen } from "lucide-react";
+import { Paperclip, X, Maximize2, Minimize2, MessageSquare, Send, Brain, Minus, ChevronUp, BookOpen, Terminal } from "lucide-react";
 import AudioBar from "./AudioBar";
 import { useLanguage } from '../contexts/LanguageContext';
 
@@ -145,6 +145,8 @@ const ChatModule = ({
   onShareStudyPage,
   onMinimizedChange,
   onSizeChange,
+  isWindowResizing = false,
+  agenticLogs = [],
 }) => {
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
@@ -156,6 +158,13 @@ const ChatModule = ({
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [showThoughts, setShowThoughts] = useState(false);
+  const [showAgenticLog, setShowAgenticLog] = useState(() => {
+    try {
+      return localStorage.getItem("show_agentic_log") === "true";
+    } catch {
+      return false;
+    }
+  });
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -207,6 +216,16 @@ const ChatModule = ({
     socket.emit("update_settings", { show_internal_thoughts: next });
   };
 
+  const toggleAgenticLog = () => {
+    const next = !showAgenticLog;
+    setShowAgenticLog(next);
+    try {
+      localStorage.setItem("show_agentic_log", next ? "true" : "false");
+    } catch {
+      // ignore storage errors
+    }
+  };
+
   const isActive = isModularMode && activeDragElement === "chat";
 
 
@@ -224,6 +243,11 @@ const ChatModule = ({
     return list.slice(-18);
   }, [messages, historyExpanded, showThoughts]);
 
+  const visibleAgenticLogs = useMemo(() => {
+    const src = Array.isArray(agenticLogs) ? agenticLogs : [];
+    return src.slice(-120);
+  }, [agenticLogs]);
+
   const canSend = Boolean((inputValue || "").trim().length) || attachments.length > 0;
   const canNote = Boolean((inputValue || "").trim().length) && !attachments.length;
 
@@ -240,6 +264,7 @@ const ChatModule = ({
 
     setAttachments((prev) => {
       const next = [...prev];
+      const addedPreviewUrls = [];
 
       for (const f of incoming) {
         if (next.length >= MAX_FILES) {
@@ -263,6 +288,9 @@ const ChatModule = ({
 
         const isImage = (f.type || "").startsWith("image/");
         const previewUrl = isImage ? URL.createObjectURL(f) : null;
+        if (previewUrl) {
+          addedPreviewUrls.push(previewUrl);
+        }
 
         next.push({
           id: `${f.name}-${f.size}-${f.lastModified}-${Math.random().toString(16).slice(2)}`,
@@ -274,8 +302,8 @@ const ChatModule = ({
       const nextTotal = next.reduce((sum, a) => sum + (a?.file?.size || 0), 0);
       if (nextTotal > MAX_TOTAL_BYTES) {
         setAttachError(t('chat.total_size_exceeded', { size: 30 }));
-        // cofamy dodawanie: zostawiamy poprzedni stan
-        next.forEach((a) => a.previewUrl && URL.revokeObjectURL(a.previewUrl));
+        // Cofamy tylko nowe preview URL-e; stare należą do poprzedniego stanu.
+        addedPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
         return prev;
       }
 
@@ -375,7 +403,7 @@ const ChatModule = ({
       ref={rootRef}
       onDrop={onDrop}
       onDragOver={onDragOver}
-      className={`absolute flex flex-col transition-[box-shadow,border-color,height,top,left,width] duration-200
+      className={`absolute flex flex-col ${isWindowResizing ? 'transition-none' : 'transition-[box-shadow,border-color,height,top,left,width] duration-200'}
         backdrop-blur-2xl bg-black/50 border border-white/[0.14] shadow-2xl overflow-hidden rounded-xl
         ${isModularMode && isActive ? 'ring-1 ring-white/50 border-white/30' : ''}
       `}
@@ -408,6 +436,14 @@ const ChatModule = ({
             </button>
             <button
               type="button"
+              onClick={toggleAgenticLog}
+              className={`p-1.5 rounded-lg transition-colors ${showAgenticLog ? 'bg-white/20 text-emerald-300' : 'text-white/50 hover:text-white hover:bg-white/10'}`}
+              title={showAgenticLog ? "Hide Agentic Log" : "Show Agentic Log"}
+            >
+              <Terminal size={16} />
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 setHistoryExpanded((v) => !v);
                 setIsMinimized(false);
@@ -431,6 +467,26 @@ const ChatModule = ({
       {/* Messages Area */}
       {!isMinimized && (
         <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4 relative bg-black/20">
+            {showAgenticLog && (
+              <div className="rounded-xl border border-white/10 bg-black/35 overflow-hidden">
+                <div className="px-3 py-2 border-b border-white/10 text-[10px] uppercase tracking-wider text-emerald-200/90 font-mono flex items-center gap-2">
+                  <Terminal size={12} />
+                  Agentic Log
+                </div>
+                <div className="max-h-40 overflow-y-auto custom-scrollbar px-3 py-2 font-mono text-[11px] text-white/70 space-y-1">
+                  {visibleAgenticLogs.length === 0 ? (
+                    <div className="text-white/40">No agent activity yet.</div>
+                  ) : (
+                    visibleAgenticLogs.map((entry, idx) => (
+                      <div key={`agentic-${idx}`} className="break-words">
+                        <span className="text-white/45 mr-2">{">"}</span>
+                        {String(entry || "")}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
             {visibleMessages.map((msg, i) => {
               const sender = String(msg?.sender || "");
               const lower = sender.toLowerCase();

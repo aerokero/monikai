@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Heart, Utensils, Gift, Smile, Book, X, ClipboardList } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Heart, Utensils, Gift, Smile, Book, X, ClipboardList, Target } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const CompanionWindow = ({
@@ -19,9 +19,16 @@ const CompanionWindow = ({
   eatTogetherActive,
   onStartEatTogether,
   onStopEatTogether,
+  personalityState,
 }) => {
   const { t } = useLanguage();
-  const [activeTab, setActiveTab] = useState('session'); // activities, session, study
+  const [activeTab, setActiveTab] = useState('session'); // activities, session, study, quests
+
+  const activeVisibleQuests = useMemo(() => {
+    return (Array.isArray(personalityState?.quests) ? personalityState.quests : [])
+      .filter((q) => q && q.status === 'active' && (q.visibility || 'visible') === 'visible')
+      .slice(0, 8);
+  }, [personalityState]);
 
   const handleAction = (action) => {
     let text = "";
@@ -131,6 +138,10 @@ const CompanionWindow = ({
         <button onClick={() => setActiveTab('study')} className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${activeTab === 'study' ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5'}`}>
           <Book size={14} /> {t('companion.tabs.study')}
         </button>
+        <button onClick={() => setActiveTab('quests')} className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${activeTab === 'quests' ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5'}`}>
+          <Target size={14} /> {t('companion.tabs.quests')}
+          <span className="text-[10px] font-mono text-white/50">{activeVisibleQuests.length}</span>
+        </button>
       </div>
 
       {/* Content */}
@@ -176,6 +187,47 @@ const CompanionWindow = ({
               </div>
               <span className="text-sm font-medium text-white/80">{t('companion.study.japanese_together')}</span>
             </button>
+          </div>
+        )}
+
+        {activeTab === 'quests' && (
+          <div className="space-y-3">
+            {activeVisibleQuests.length === 0 ? (
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-5 text-sm text-white/45 italic">
+                {t('companion.quests.empty')}
+              </div>
+            ) : (
+              activeVisibleQuests.map((q) => {
+                const target = Math.max(1, Number(q.target || 1));
+                const progress = Math.max(0, Number(q.progress || 0));
+                const pct = Math.max(0, Math.min(100, Math.round((progress / target) * 100)));
+                return (
+                  <div key={q.id || q.title} className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3">
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-white/90 truncate">
+                          {q.title || t('personality.quest')}
+                        </div>
+                        {q.description ? (
+                          <div className="text-[11px] text-white/45 mt-1 leading-relaxed">
+                            {q.description}
+                          </div>
+                        ) : null}
+                      </div>
+                      <span className="text-[11px] text-cyan-200/80 font-mono whitespace-nowrap">
+                        {Math.min(Math.round(progress), Math.round(target))}/{Math.round(target)}
+                      </span>
+                    </div>
+                    <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
+                      <div
+                        className="h-full bg-gradient-to-r from-cyan-500 to-sky-400 transition-all duration-500 rounded-full"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         )}
 

@@ -132,6 +132,10 @@ const BrowserWindow = ({ imageSrc, logs = [], onClose, socket, position, onMouse
           </div>
         )}
 
+        <div className="absolute top-2 left-2 right-2 px-2 py-1 rounded-md bg-black/65 border border-white/10 text-[10px] text-white/70 font-mono pointer-events-none">
+          Preview only. For manual login/2FA, type in the real browser window (agent window or your attached browser).
+        </div>
+
         {/* Logs Overlay (Bottom of image area) */}
         <div
           ref={logsBoxRef}

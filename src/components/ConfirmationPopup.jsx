@@ -3,6 +3,13 @@ import { Shield, Check, X, Terminal, AlertTriangle } from 'lucide-react';
 
 const ConfirmationPopup = ({ request, onConfirm, onDeny }) => {
     if (!request) return null;
+    const policy = request?.args?.policy || {};
+    const reasonCode = request?.args?.reason_code || policy?.reason_code || '';
+    const reasonText = request?.args?.reason || '';
+    const isManualAuthStep =
+        request?.tool === 'web_action_approval' &&
+        request?.args &&
+        (request.args.action === 'manual_auth_step' || reasonCode === 'manual_auth_step');
 
     return (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
@@ -23,10 +30,24 @@ const ConfirmationPopup = ({ request, onConfirm, onDeny }) => {
                             <AlertTriangle size={24} />
                         </div>
                         <div className="space-y-1">
-                            <h3 className="text-white font-medium">Permission Required</h3>
+                            <h3 className="text-white font-medium">
+                                {isManualAuthStep ? 'Manual Login Required' : 'Permission Required'}
+                            </h3>
                             <p className="text-sm text-white/60 leading-relaxed">
-                                Monika is requesting to use an external tool. Please review the details below.
+                                {isManualAuthStep
+                                    ? 'Complete login/2FA directly in the browser, then click Allow to continue.'
+                                    : 'Monika is requesting to use an external tool. Please review the details below.'}
                             </p>
+                            {reasonCode && (
+                                <p className="text-[11px] text-white/50 font-mono mt-2">
+                                    reason: {reasonCode}
+                                </p>
+                            )}
+                            {reasonText && (
+                                <p className="text-xs text-white/60 mt-1">
+                                    {reasonText}
+                                </p>
+                            )}
                         </div>
                     </div>
 
