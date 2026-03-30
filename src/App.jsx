@@ -5,7 +5,7 @@ import Visualizer from './components/Visualizer';
 import BrowserWindow from './components/BrowserWindow';
 import ChatModule from './components/ChatModule';
 import ToolsModule from './components/ToolsModule';
-import { X, Minus, Clock, Lightbulb, Activity, Bell, AlertCircle } from 'lucide-react';
+import { X, Minus, Clock, Lightbulb, Activity, Bell, AlertCircle, Gamepad2 } from 'lucide-react';
 import ConfirmationPopup from './components/ConfirmationPopup';
 import AuthLock from './components/AuthLock';
 import KasaWindow from './components/KasaWindow';
@@ -20,6 +20,7 @@ import CompanionWindow from './components/CompanionWindow';
 import GoalsWindow from './components/GoalsWindow';
 import SessionPromptWindow from './components/SessionPromptWindow';
 import StudyWindow from './components/StudyWindow';
+import MinecraftWindow from './components/MinecraftWindow';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 
 const socket = io('http://localhost:8000');
@@ -57,7 +58,8 @@ const normalizeToolPermissions = (raw) => {
   tools: { x: window.innerWidth / 2, y: window.innerHeight - 115 },
   companion: { x: Math.round(window.innerWidth * 0.36), y: window.innerHeight / 2 },
   goals: { x: window.innerWidth / 2, y: window.innerHeight / 2 },
-  study: { x: Math.max(420, Math.round(window.innerWidth * 0.32)), y: window.innerHeight / 2 }
+  study: { x: Math.max(420, Math.round(window.innerWidth * 0.32)), y: window.innerHeight / 2 },
+  minecraft: { x: window.innerWidth - 320, y: 360 }
   });
 
 function AppContent() {
@@ -141,6 +143,7 @@ function AppContent() {
   const [showCompanionWindow, setShowCompanionWindow] = useState(false);
   const [showGoalsWindow, setShowGoalsWindow] = useState(false);
   const [showStudyWindow, setShowStudyWindow] = useState(false);
+  const [showMinecraftWindow, setShowMinecraftWindow] = useState(false);
   const [eatTogetherActive, setEatTogetherActive] = useState(false);
   const [eatTogetherMeal, setEatTogetherMeal] = useState(null);
   const [monikaMeal, setMonikaMeal] = useState("pasta");
@@ -455,13 +458,14 @@ function AppContent() {
     companion: { w: 760, h: 720 },
     goals: { w: 1220, h: 760 },
     study: { w: 1120, h: 760 },
+    minecraft: { w: 384, h: 520 },
   });
 
   const [activeDragElement, setActiveDragElement] = useState(null);
 
   // Z-Index Stacking Order (last element = highest z-index)
   const [zIndexOrder, setZIndexOrder] = useState([
-    'visualizer', 'chat', 'tools', 'video', 'screen', 'browser', 'kasa', 'reminders', 'notes', 'session_notes', 'companion', 'goals', 'study'
+    'visualizer', 'chat', 'tools', 'video', 'screen', 'browser', 'kasa', 'reminders', 'notes', 'session_notes', 'companion', 'goals', 'study', 'minecraft'
   ]);
 
   // ---------------------------------------------------------------------
@@ -2818,6 +2822,8 @@ function AppContent() {
             showCompanionWindow={showCompanionWindow}
             onToggleGoals={() => handleToggleWindow('goals', showGoalsWindow, setShowGoalsWindow)}
             showGoalsWindow={showGoalsWindow}
+            onToggleMinecraft={() => handleToggleWindow('minecraft', showMinecraftWindow, setShowMinecraftWindow)}
+            showMinecraftWindow={showMinecraftWindow}
             onResetPosition={handleResetPosition}
             activeDragElement={activeDragElement}
             position={elementPositions.tools}
@@ -2932,6 +2938,18 @@ function AppContent() {
             activeDragElement={activeDragElement}
             zIndex={getZIndex('goals')}
             personalityState={personalityState}
+          />
+        )}
+
+        {/* Minecraft Window */}
+        {showMinecraftWindow && (
+          <MinecraftWindow
+            socket={socket}
+            onClose={() => setShowMinecraftWindow(false)}
+            position={elementPositions.minecraft}
+            onMouseDown={(e) => handleMouseDown(e, 'minecraft')}
+            activeDragElement={activeDragElement}
+            zIndex={getZIndex('minecraft')}
           />
         )}
 

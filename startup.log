@@ -1,0 +1,23 @@
+
+> monikai@1.0.0 dev
+> concurrently -k "vite" "wait-on tcp:5173 && cross-env NODE_OPTIONS=--no-deprecation node electron/run-electron.js"
+
+(node:36400) [DEP0060] DeprecationWarning: The `util._extend` API is deprecated. Please use Object.assign() instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[0] 
+[0]   [32m[1mVITE[22m v7.3.1[39m  [2mready in [0m[1m409[22m[2m[0m ms[22m
+[0] 
+[0]   [32mÔ×ť[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5173[22m/[39m
+[0] [2m  [32mÔ×ť[39m  [1mNetwork[22m[2m: use [22m[1m--host[22m[2m to expose[22m
+[1] 
+[1] Starting Python backend: C:\AI\monikai\backend\server.py
+[1] Starting Python backend with: C:\Users\Bartosz\miniconda3\envs\monikai\python.exe
+[1] [Python Error]:   File "C:\AI\monikai\backend\server.py", line 248
+[1]     global audio_loop
+[1]     ^^^^^^^^^^^^^^^^^
+[1] SyntaxError: name 'audio_loop' is used prior to global declaration
+[1] 
+[1] App closing... Killing Python backend.
+[1] wait-on tcp:5173 && cross-env NODE_OPTIONS=--no-deprecation node electron/run-electron.js exited with code 0
+--> Sending SIGTERM to other processes..
+[0] vite exited with code 1

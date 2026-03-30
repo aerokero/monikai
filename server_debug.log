@@ -1,0 +1,46 @@
+WARNING:  Current configuration will not reload as not all conditions are met, please refer to documentation.
+Loaded settings: {'face_auth_enabled': False, 'show_internal_thoughts': False, 'tool_permissions': {'cancel_reminder': True, 'control_light': True, 'clear_work_memory': True, 'notes_set': True, 'run_web_agent': True, 'run_openclaw_agent': True, 'manage_agent_job': True, 'list_openclaw_skills': False, 'list_skills': False, 'get_openclaw_skill': False, 'get_skill': False, 'refresh_openclaw_skills': False, 'refresh_skills': False, 'run_openclaw_skill_command': True, 'run_skill_command': True, 'spotify_get_auth_url': False, 'spotify_get_status': False, 'spotify_get_now_playing': False, 'spotify_list_playlists': False, 'spotify_recently_played': False, 'write_file': True, 'create_project': True, 'switch_project': True, 'read_directory': True, 'read_file': True, 'list_projects': True, 'notes': False, 'update_work_memory': False, 'get_work_memory': False, 'commit_work_memory': False, 'create_directory': True, 'list_smart_devices': True, 'get_time_context': False, 'create_reminder': False, 'list_reminders': False}, 'kasa_devices': [], 'camera_flipped': False, 'camera_source': 'frontend', 'video_mode': 'none', 'camera_capture': {'fps': 1.5, 'max_size': 640, 'jpeg_quality': 70}, 'screen_capture': {'fps': 3.0, 'max_size': 1920, 'jpeg_quality': 90, 'monitor': 1, 'format': 'jpeg', 'region': None, 'stream_to_ai': False, 'mode': 'hybrid'}, 'proactivity': {'idle_nudges': {'enabled': True, 'threshold_sec': 900, 'cooldown_sec': 1800, 'min_ai_quiet_sec': 60, 'max_per_session': 3, 'max_per_hour': 4, 'topic_memory_size': 6, 'score_threshold': 0.98, 'quiet_hours_enabled': True, 'quiet_hours_start': '22:00', 'quiet_hours_end': '06:00', 'adaptive_enabled': True, 'adaptive_backoff_step': 0.7, 'adaptive_max_multiplier': 4.0, 'recent_user_memory_size': 3, 'recent_user_max_chars': 160, 'question_min_interval_sec': 1800.0, 'question_backoff_1_sec': 2700.0, 'question_backoff_2_sec': 3600.0, 'startup_grace_sec': 600.0, 'min_user_messages_before_nudge': 2}, 'reasoning': {'enabled': True, 'interval_sec': 120.0}}}
+INFO:     Started server process [21200]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+Loaded settings: {'face_auth_enabled': False, 'show_internal_thoughts': False, 'tool_permissions': {'cancel_reminder': True, 'control_light': True, 'clear_work_memory': True, 'notes_set': True, 'run_web_agent': True, 'run_openclaw_agent': True, 'manage_agent_job': True, 'list_openclaw_skills': False, 'list_skills': False, 'get_openclaw_skill': False, 'get_skill': False, 'refresh_openclaw_skills': False, 'refresh_skills': False, 'run_openclaw_skill_command': True, 'run_skill_command': True, 'spotify_get_auth_url': False, 'spotify_get_status': False, 'spotify_get_now_playing': False, 'spotify_list_playlists': False, 'spotify_recently_played': False, 'write_file': True, 'create_project': True, 'switch_project': True, 'read_directory': True, 'read_file': True, 'list_projects': True, 'notes': False, 'update_work_memory': False, 'get_work_memory': False, 'commit_work_memory': False, 'create_directory': True, 'list_smart_devices': True, 'get_time_context': False, 'create_reminder': False, 'list_reminders': False}, 'kasa_devices': [], 'camera_flipped': False, 'camera_source': 'frontend', 'video_mode': 'none', 'camera_capture': {'fps': 1.5, 'max_size': 640, 'jpeg_quality': 70}, 'screen_capture': {'fps': 3.0, 'max_size': 1920, 'jpeg_quality': 90, 'monitor': 1, 'format': 'jpeg', 'region': None, 'stream_to_ai': False, 'mode': 'hybrid'}, 'proactivity': {'idle_nudges': {'enabled': True, 'threshold_sec': 900, 'cooldown_sec': 1800, 'min_ai_quiet_sec': 60, 'max_per_session': 3, 'max_per_hour': 4, 'topic_memory_size': 6, 'score_threshold': 0.98, 'quiet_hours_enabled': True, 'quiet_hours_start': '22:00', 'quiet_hours_end': '06:00', 'adaptive_enabled': True, 'adaptive_backoff_step': 0.7, 'adaptive_max_multiplier': 4.0, 'recent_user_memory_size': 3, 'recent_user_max_chars': 160, 'question_min_interval_sec': 1800.0, 'question_backoff_1_sec': 2700.0, 'question_backoff_2_sec': 3600.0, 'startup_grace_sec': 600.0, 'min_user_messages_before_nudge': 2}, 'reasoning': {'enabled': True, 'interval_sec': 120.0}}}
+[SERVER DEBUG] Startup Event Triggered
+[SERVER DEBUG] Python Version: 3.13.11 | packaged by Anaconda, Inc. | (main, Dec 10 2025, 21:21:58) [MSC v.1929 64 bit (AMD64)]
+[SERVER DEBUG] Running Loop: <class 'asyncio.windows_events.ProactorEventLoop'>
+[SERVER DEBUG] Current Policy: <class 'asyncio.windows_events.WindowsProactorEventLoopPolicy'>
+[SERVER] Startup: Initializing Kasa Agent...
+[SERVER] Calendar Manager initialized.
+[SERVER] Reminder Manager initialized.
+[SERVER] Personality System initialized.
+[SERVER] Spotify Manager initialized. configured=True connected=True
+[SERVER] Minecraft Bot Manager initialized. host=localhost:25565 username=monikai
+[SERVER] Telegram bot service started.
+INFO:     127.0.0.1:56860 - "GET /socket.io/?transport=polling&EIO=4&t=1774894834.6559386 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56860 - "WebSocket /socket.io/?transport=websocket&EIO=4&sid=HEJvDk3nHpV24w8sAAAA&t=1774894834.9159753" [accepted]
+INFO:     connection open
+W0000 00:00:1774894834.935691   31688 face_landmarker_graph.cc:180] Sets FaceBlendshapesGraph acceleration to xnnpack by default.
+INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+W0000 00:00:1774894834.943688    5312 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1774894834.956000   34004 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+INFO:MinecraftBotManager:Starting bot subprocess: node C:\AI\monikai\backend\minecraft-bot\index.js
+INFO:MinecraftBotManager:Connecting to localhost:25565 as monikai
+INFO:MinecraftBotManager:Bot subprocess started successfully
+ERROR:MinecraftBotManager:Bot error: Unknown error
+INFO:     connection closed
+[SYSTEM NOTIFICATION] Client connected: JPg7V6-0mgHfgsQqAAAB
+[AUTH] [OK] Face Landmarker initialized.
+[AUTH] Loading reference image...
+[AUTH] [OK] Reference face landmarks extracted successfully.
+Face Auth Disabled. Auto-authenticating.
+[SERVER] [Minecraft] Starting bot connection...
+[SERVER] [Minecraft] Connection failed: 'NoneType' object has no attribute 'x'
+Client disconnected: JPg7V6-0mgHfgsQqAAAB
+INFO:     127.0.0.1:55423 - "GET /socket.io/?transport=polling&EIO=4&t=1774894847.5522773 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55423 - "WebSocket /socket.io/?transport=websocket&EIO=4&sid=3pzaqx0Pw9a_itJjAAAC&t=1774894847.8258593" [accepted]
+INFO:     connection open
+INFO:MinecraftBotManager:Starting bot subprocess: node C:\AI\monikai\backend\minecraft-bot\index.js
+INFO:MinecraftBotManager:Connecting to localhost:25565 as monikai
+INFO:MinecraftBotManager:Bot subprocess started successfully
+ERROR:MinecraftBotManager:Error reading subprocess output: 'charmap' codec can't decode byte 0x90 in position 55: character maps to <undefined>
+INFO:     connection closed

@@ -44,6 +44,8 @@ from authenticator import FaceAuthenticator
 from kasa_agent import KasaAgent
 from spotify_manager import SpotifyManager
 from telegram_bot import TelegramBotService
+from minecraft_agent import MinecraftBotManager
+from dotenv import dotenv_values
 
 def _determine_sprite(state_dict: dict) -> str:
     """
@@ -91,6 +93,7 @@ def _determine_sprite(state_dict: dict) -> str:
 
 MAIN_LOOP = None
 ACTIVE_FRONTEND_SID = None
+minecraft_bot_manager = None
 
 
 async def _emit_to_frontend(event: str, payload, room: str = None):
@@ -204,6 +207,89 @@ async def lifespan(app: FastAPI):
         spotify_manager = None
         print(f"[SERVER] Spotify Manager init failed: {e}")
 
+    # 5. Minecraft Bot Manager
+    global minecraft_bot_manager
+    try:
+        # Load Minecraft bot configuration from .env file
+        minecraft_bot_env_path = os.path.join(os.path.dirname(__file__), "minecraft-bot", ".env")
+        mc_config = dotenv_values(minecraft_bot_env_path)
+        
+        mc_host = mc_config.get("MC_HOST", "localhost")
+        mc_port = int(mc_config.get("MC_PORT", "25565"))
+        mc_username = mc_config.get("MC_USERNAME", "strawberryglass")
+        mc_auth = mc_config.get("MC_AUTH", "offline")
+        mc_version = mc_config.get("MC_VERSION", "1.20.4")
+        
+        minecraft_bot_manager = MinecraftBotManager(
+            host=mc_host,
+            port=mc_port,
+            username=mc_username,
+            auth=mc_auth,
+            version=mc_version
+        )
+        
+        print(
+            "[SERVER] Minecraft Bot Manager initialized. "
+            f"host={mc_host}:{mc_port} username={mc_username}"
+        )
+        
+        # Register perception callback  
+        async def on_minecraft_perception(event):
+            print(f"[PERCEPTION] Received event: type={event.event_type}, has_session={'Yes' if (audio_loop and audio_loop.session) else 'No'}")
+            
+            # Send to frontend
+            _schedule_emit_to_frontend('minecraft_perception', {
+                'event_type': event.event_type,
+                'data': event.data,
+                'timestamp': event.timestamp
+            })
+            
+            # Send important events to Monika via Gemini
+            if not audio_loop or not audio_loop.session:
+                print(f"[PERCEPTION] Skipping: audio_loop={audio_loop is not None}, session_exists={audio_loop.session is not None if audio_loop else 'N/A'}")
+                return
+            
+            try:
+                if event.event_type == "chat":
+                    # Chat messages from other players
+                    data = event.data or {}
+                    username = data.get("username", "Unknown")
+                    message = data.get("message", "")
+                    if message:
+                        msg = f"[Minecraft Chat] {username}: {message}"
+                        print(f"[PERCEPTION] Sending to Monika: {msg}")
+                        await audio_loop.session.send(input=msg, end_of_turn=False)
+                
+                elif event.event_type == "action_result":
+                    # Results from bot actions
+                    data = event.data or {}
+                    action = data.get("action", "unknown")
+                    success = data.get("success", False)
+                    result_msg = data.get("message", "No message")
+                    
+                    if action and not success:
+                        msg = f"[Minecraft] Action '{action}' failed: {result_msg}"
+                        print(f"[PERCEPTION] Sending to Monika: {msg}")
+                        await audio_loop.session.send(input=msg, end_of_turn=False)
+                
+                elif event.event_type == "error":
+                    # Bot errors
+                    data = event.data or {}
+                    error_msg = data.get("message", "Unknown error")
+                    msg = f"[Minecraft] Error: {error_msg}"
+                    print(f"[PERCEPTION] Sending to Monika: {msg}")
+                    await audio_loop.session.send(input=msg, end_of_turn=False)
+            
+            except Exception as e:
+                print(f"[PERCEPTION] Failed to send minecraft event to Monika: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        minecraft_bot_manager.register_perception_callback(on_minecraft_perception)
+    except Exception as e:
+        minecraft_bot_manager = None
+        print(f"[SERVER] Minecraft Bot Manager init failed: {e}")
+
     global telegram_service, telegram_task
     telegram_service = TelegramBotService.from_env(
         lambda: SETTINGS,
@@ -219,6 +305,13 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        # Stop Minecraft bot
+        if minecraft_bot_manager:
+            try:
+                await minecraft_bot_manager.stop()
+            except Exception as e:
+                print(f"[SERVER] Minecraft bot stop failed: {e}")
+        
         if telegram_service:
             try:
                 await telegram_service.stop()
@@ -1005,6 +1098,10 @@ async def start_audio(sid, data=None):
             
         )
         print("[SYSTEM NOTIFICATION] AudioLoop initialized successfully.")
+        
+        # Set Minecraft bot manager reference
+        audio_loop.minecraft_bot_manager = minecraft_bot_manager
+        
         try:
             audio_loop.note_user_activity("start_audio")
         except Exception:
@@ -3021,6 +3118,211 @@ async def update_tool_permissions(sid, data):
         audio_loop.update_permissions(SETTINGS["tool_permissions"])
     # Broadcast update to all
     await _emit_to_frontend('tool_permissions', SETTINGS["tool_permissions"])
+
+
+# --------------------------------------------------------------------------------------
+# Minecraft Bot Event Handlers
+# --------------------------------------------------------------------------------------
+
+@sio.event
+async def minecraft_connect(sid, data=None):
+    """Frontend requests to start the Minecraft bot."""
+    global minecraft_bot_manager
+    if not minecraft_bot_manager:
+        await sio.emit('error', {'msg': 'Minecraft bot manager not initialized'}, room=sid)
+        return
+    
+    try:
+        print("[SERVER] [Minecraft] Starting bot connection...")
+        success = await minecraft_bot_manager.start()
+        if not success:
+            await sio.emit('error', {'msg': 'Failed to start bot'}, room=sid)
+            return
+        
+        status = minecraft_bot_manager.get_status()
+        position = {'x': 0, 'y': 0, 'z': 0}
+        if status.position:
+            position = {'x': status.position.x, 'y': status.position.y, 'z': status.position.z}
+        
+        await sio.emit('minecraft_status', {
+            'connected': True,
+            'health': status.health,
+            'hunger': status.hunger,
+            'position': position,
+            'dimension': status.dimension,
+        }, room=sid)
+        print("[SERVER] [Minecraft] Bot connected successfully.")
+        
+        # Notify model
+        if audio_loop and audio_loop.session:
+            try:
+                await audio_loop.session.send(
+                    input="System Notification: [Minecraft] The bot is now connected to the server. You can use minecraft_* tools to interact.",
+                    end_of_turn=False
+                )
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"[SERVER] [Minecraft] Connection failed: {e}")
+        await sio.emit('error', {'msg': f'Minecraft connection failed: {e}'}, room=sid)
+
+
+@sio.event
+async def minecraft_disconnect(sid, data=None):
+    """Frontend requests to stop the Minecraft bot."""
+    global minecraft_bot_manager
+    if not minecraft_bot_manager:
+        await sio.emit('error', {'msg': 'Minecraft bot manager not initialized'}, room=sid)
+        return
+    
+    try:
+        print("[SERVER] [Minecraft] Stopping bot...")
+        await minecraft_bot_manager.stop()
+        await sio.emit('minecraft_status', {'connected': False}, room=sid)
+        print("[SERVER] [Minecraft] Bot disconnected.")
+        
+        # Notify model
+        if audio_loop and audio_loop.session:
+            try:
+                await audio_loop.session.send(
+                    input="System Notification: [Minecraft] The bot has disconnected from the server.",
+                    end_of_turn=False
+                )
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"[SERVER] [Minecraft] Disconnection error: {e}")
+        await sio.emit('error', {'msg': f'Minecraft disconnection error: {e}'}, room=sid)
+
+
+@sio.event
+async def minecraft_action(sid, data):
+    """Frontend sends a minecraft action to execute."""
+    global minecraft_bot_manager
+    if not minecraft_bot_manager:
+        await sio.emit('error', {'msg': 'Minecraft bot manager not initialized'}, room=sid)
+        return
+    
+    action_name = (data or {}).get('action')
+    params = (data or {}).get('params') or {}
+    
+    if not action_name:
+        await sio.emit('error', {'msg': 'Missing action name'}, room=sid)
+        return
+    
+    try:
+        print(f"[SERVER] [Minecraft] Executing action: {action_name} with params {params}")
+        result = await minecraft_bot_manager.send_action(action_name, params)
+        success = bool(result.get('success')) if isinstance(result, dict) else bool(result)
+        await sio.emit('minecraft_action_result', {
+            'action': action_name,
+            'success': success,
+            'result': result.get('message') if isinstance(result, dict) else ('Action sent to bot' if success else None),
+            'data': result.get('data') if isinstance(result, dict) else None,
+            'error': result.get('error') if isinstance(result, dict) else (None if success else 'Failed to send action to bot subprocess'),
+        }, room=sid)
+    except Exception as e:
+        print(f"[SERVER] [Minecraft] Action failed: {e}")
+        await sio.emit('minecraft_action_result', {
+            'action': action_name,
+            'success': False,
+            'error': str(e),
+        }, room=sid)
+
+
+@sio.event
+async def minecraft_query_status(sid, data=None):
+    """Frontend requests current bot status."""
+    global minecraft_bot_manager
+    if not minecraft_bot_manager:
+        await sio.emit('error', {'msg': 'Minecraft bot manager not initialized'}, room=sid)
+        return
+    
+    try:
+        status = minecraft_bot_manager.get_status()
+        perception = minecraft_bot_manager.get_perception_snapshot()
+        
+        position = {'x': 0, 'y': 0, 'z': 0}
+        if status.position and isinstance(status.position, dict):
+            position = {
+                'x': status.position.get('x', 0),
+                'y': status.position.get('y', 0),
+                'z': status.position.get('z', 0)
+            }
+        
+        await sio.emit('minecraft_status', {
+            'connected': status.is_connected,
+            'health': status.health,
+            'hunger': status.hunger,
+            'position': position,
+            'dimension': status.dimension,
+            'inventory': status.inventory,
+            'perception': perception,
+        }, room=sid)
+    except Exception as e:
+        print(f"[SERVER] [Minecraft] Status query failed: {e}")
+        await sio.emit('error', {'msg': f'Minecraft status query failed: {e}'}, room=sid)
+
+
+@sio.event
+async def minecraft_connect_to_server(sid, data=None, callback=None):
+    """Frontend sends a request to connect to a different Minecraft server."""
+    global minecraft_bot_manager
+    if not minecraft_bot_manager:
+        result = {'success': False, 'message': 'Minecraft bot manager not initialized'}
+        if callback:
+            callback(result)
+        return
+    
+    host = (data or {}).get('host')
+    port = (data or {}).get('port', 25565)
+    
+    if not host:
+        result = {'success': False, 'message': 'Missing host parameter'}
+        if callback:
+            callback(result)
+        return
+    
+    try:
+        print(f"[SERVER] [Minecraft] Connecting to {host}:{port}...")
+        
+        # Stop current connection
+        await minecraft_bot_manager.stop()
+        await asyncio.sleep(0.5)
+        
+        # Update connection parameters
+        minecraft_bot_manager.host = host
+        minecraft_bot_manager.port = port
+        
+        # Reconnect to new server
+        success = await minecraft_bot_manager.start()
+        
+        if success:
+            result = {'success': True, 'message': f'Connected to {host}:{port}'}
+            print(f"[SERVER] [Minecraft] Successfully connected to {host}:{port}")
+            
+            # Notify model
+            if audio_loop and audio_loop.session:
+                try:
+                    await audio_loop.session.send(
+                        input=f"System Notification: [Minecraft] Connected to server {host}:{port}. You can now play!",
+                        end_of_turn=False
+                    )
+                except Exception:
+                    pass
+        else:
+            result = {'success': False, 'message': f'Failed to connect to {host}:{port}. Check server is running and version matches.'}
+            print(f"[SERVER] [Minecraft] Failed to connect to {host}:{port}")
+        
+        if callback:
+            callback(result)
+            
+    except Exception as e:
+        result = {'success': False, 'message': f'Connection error: {str(e)}'}
+        print(f"[SERVER] [Minecraft] Connection to {host}:{port} failed: {e}")
+        if callback:
+            callback(result)
+
 
 if __name__ == "__main__":
     uvicorn.run(

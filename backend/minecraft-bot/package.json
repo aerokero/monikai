@@ -1,0 +1,33 @@
+{
+  "name": "monikai-minecraft-bot",
+  "version": "1.0.0",
+  "description": "Minecraft bot for Monikai using Mineflayer",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "keywords": [
+    "minecraft",
+    "mineflayer",
+    "bot"
+  ],
+  "author": "Monikai Project",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "lodash-es": "^4.17.21",
+    "mineflayer": "^4.36.0",
+    "mineflayer-armor-manager": "^1.0.6",
+    "mineflayer-auto-eat": "^1.2.17",
+    "mineflayer-collectblock": "^1.1.0",
+    "mineflayer-pathfinder": "^2.4.4",
+    "mineflayer-pvp": "^1.1.1",
+    "mineflayer-tool": "^1.1.5",
+    "vec3": "^0.1.8"
+  },
+  "devDependencies": {
+    "eslint": "^8.0.0"
+  }
+}

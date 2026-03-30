@@ -1,0 +1,27 @@
+[MinecraftBot] Starting bot with config: {
+  host: 'localhost',
+  port: 25565,
+  username: 'monikai_bot',
+  auth: 'offline',
+  version: '1.21.11'
+}
+[MinecraftBot] Config: {"host":"localhost","port":25565,"username":"monikai_bot","auth":"offline","version":"1.21.11"}
+[MinecraftBot] Creating bot with config: {
+  host: 'localhost',
+  port: 25565,
+  username: 'monikai_bot',
+  auth: 'offline',
+  version: '1.21.11'
+}
+[MinecraftBot] Bot created, loading plugins...
+[MinecraftBot] Pathfinder loaded
+[MinecraftBot] ArmorManager loaded
+[MinecraftBot] AutoEat loaded
+[MinecraftBot] Tool plugin loaded
+[MinecraftBot] CollectBlock loaded
+[MinecraftBot] PVP loaded
+[MinecraftBot] All plugins loaded, setting up event handlers...
+[MinecraftBot] Bot initialization completed
+Mineflayer detected that you are using a deprecated event (physicTick)! Please use this event (physicsTick) instead.
+[MinecraftBot] Login successful
+[MinecraftBot] Bot spawned successfully!

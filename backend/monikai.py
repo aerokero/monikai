@@ -54,6 +54,7 @@ from tools import tools_list
 from proactivity import ProactivityManager, IdleNudgeConfig, ReasoningConfig
 from personality import PersonalitySystem
 from openclaw_skills import OpenClawSkillManager
+from minecraft_agent import MinecraftBotManager
 
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
@@ -1530,7 +1531,7 @@ config = types.LiveConnectConfig(
     realtime_input_config=BASE_REALTIME_INPUT_CONFIG,
     proactivity=BASE_PROACTIVITY_CONFIG,
     system_instruction=SYSTEM_PROMPT,
-    tools=tools,
+    tools=tools_list,
     speech_config=types.SpeechConfig(
         voice_config=types.VoiceConfig(
             prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=GEMINI_VOICE)
@@ -1726,6 +1727,20 @@ class AudioLoop:
                 "list_events": False,
                 "delete_event": False,
                 
+                # Minecraft Bot Tools (auto-allow)
+                "minecraft_chat_message": False,
+                "minecraft_move_to_player": False,
+                "minecraft_break_block": False,
+                "minecraft_inventory_status": False,
+                "minecraft_respawn": False,
+                "minecraft_move_to_position": False,
+                "minecraft_drop_item": False,
+                "minecraft_mine_ore": False,
+                "minecraft_craft_recipe": False,
+                "minecraft_hunt_mobs": False,
+                "minecraft_navigate_to_location": False,
+                "minecraft_connect_to_server": False,
+                
                 # Read/List tools (auto-allow)
                 "read_file": False,
                 "read_directory": False,
@@ -1785,6 +1800,7 @@ class AudioLoop:
         else:
             self.reminder_manager = ReminderManager(get_time_context_fn=get_time_context, storage_dir=self.user_memory_dir, on_reminder=self.handle_reminder_fired)
         self.spotify_manager = spotify_manager
+        self.minecraft_bot_manager = None  # Set by server.py after initialization
 
         # Initialize MemoryEngine (global memory + journal)
         try:
@@ -3812,7 +3828,7 @@ class AudioLoop:
                                 "create_event",
                                 "list_events",
                                 "delete_event",
-                            ]:
+                            ] or fc.name.startswith("minecraft_"):
                                 prompt = fc.args.get("prompt", "")
 
                                 confirmation_required = self.permissions.get(fc.name, True)
@@ -4661,6 +4677,119 @@ class AudioLoop:
                                 elif fc.name == "delete_event":
                                     deleted = self.calendar_manager.delete_event(fc.args["event_id"])
                                     result_str = "Event deleted." if deleted else "Event not found."
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+
+                                # --- Minecraft Bot Tools ---
+                                elif fc.name.startswith("minecraft_"):
+                                    result_str = "Minecraft bot manager not available."
+                                    try:
+                                        from minecraft_agent import MinecraftBotManager
+                                        if not getattr(self, "minecraft_bot_manager", None):
+                                            result_str = "Minecraft bot not initialized."
+                                        else:
+                                            bot_manager = self.minecraft_bot_manager
+                                            action_name = fc.name.replace("minecraft_", "")
+                                            
+                                            # Map tool name to action name
+                                            action_mapping = {
+                                                "chat_message": "chat_message",
+                                                "move_to_player": "move_to_player",
+                                                "break_block": "break_block",
+                                                "inventory_status": "get_inventory",
+                                                "respawn": "respawn",
+                                                "move_to_position": "move_to_position",
+                                                "drop_item": "drop_item",
+                                                "mine_ore": "mine_ore",
+                                                "craft_recipe": "craft_recipe",
+                                                "hunt_mobs": "hunt_mobs",
+                                                "navigate_to_location": "navigate_to_location",
+                                            }
+                                            
+                                            action_name = action_mapping.get(action_name, action_name)
+                                            
+                                            # Extract parameters from tool args
+                                            params = {}
+                                            if fc.name == "minecraft_chat_message":
+                                                params["message"] = fc.args.get("message", "")
+                                            elif fc.name == "minecraft_move_to_player":
+                                                params["name"] = fc.args.get("player_name", "")
+                                                if "distance" in fc.args:
+                                                    params["range"] = fc.args.get("distance")
+                                            elif fc.name == "minecraft_break_block":
+                                                params["x"] = fc.args.get("x")
+                                                params["y"] = fc.args.get("y")
+                                                params["z"] = fc.args.get("z")
+                                            elif fc.name == "minecraft_move_to_position":
+                                                params["x"] = fc.args.get("x")
+                                                params["y"] = fc.args.get("y")
+                                                params["z"] = fc.args.get("z")
+                                                if "range" in fc.args:
+                                                    params["range"] = fc.args.get("range")
+                                            elif fc.name == "minecraft_drop_item":
+                                                params["name"] = fc.args.get("item_name", "")
+                                                if "count" in fc.args:
+                                                    params["count"] = fc.args.get("count")
+                                            elif fc.name == "minecraft_mine_ore":
+                                                params["ore_type"] = fc.args.get("ore_type", "stone")
+                                                if "max_blocks" in fc.args:
+                                                    params["max_blocks"] = fc.args.get("max_blocks")
+                                                if "max_distance" in fc.args:
+                                                    params["max_distance"] = fc.args.get("max_distance")
+                                            elif fc.name == "minecraft_craft_recipe":
+                                                params["recipe"] = fc.args.get("recipe", "")
+                                                if "count" in fc.args:
+                                                    params["count"] = fc.args.get("count")
+                                            elif fc.name == "minecraft_hunt_mobs":
+                                                params["mob_type"] = fc.args.get("mob_type", "zombie")
+                                                if "max_distance" in fc.args:
+                                                    params["max_distance"] = fc.args.get("max_distance")
+                                                if "max_health_loss" in fc.args:
+                                                    params["max_health_loss"] = fc.args.get("max_health_loss")
+                                            elif fc.name == "minecraft_navigate_to_location":
+                                                params["x"] = fc.args.get("x")
+                                                params["y"] = fc.args.get("y")
+                                                params["z"] = fc.args.get("z")
+                                                if "label" in fc.args:
+                                                    params["label"] = fc.args.get("label")
+                                            
+                                            # Special handler for server connection (not a bot action)
+                                            if fc.name == "minecraft_connect_to_server":
+                                                try:
+                                                    host = fc.args.get("host")
+                                                    port = fc.args.get("port", 25565)
+                                                    
+                                                    if not host:
+                                                        result_str = "Error: host parameter is required"
+                                                    else:
+                                                        # Stop current connection
+                                                        await bot_manager.stop()
+                                                        await asyncio.sleep(0.5)  # Brief pause
+                                                        
+                                                        # Update connection parameters
+                                                        bot_manager.host = host
+                                                        bot_manager.port = port
+                                                        
+                                                        # Reconnect to new server
+                                                        success = await bot_manager.start()
+                                                        
+                                                        if success:
+                                                            result_str = f"Successfully connected to {host}:{port}"
+                                                        else:
+                                                            result_str = f"Failed to connect to {host}:{port}"
+                                                except Exception as e:
+                                                    result_str = f"Error connecting to server: {str(e)}"
+                                            else:
+                                                # Execute normal action
+                                                print(f"[MINECRAFT] Executing action: {action_name} with params: {params}")
+                                                result = await bot_manager.send_action(action_name, params)
+                                                print(f"[MINECRAFT] Action result: {result}")
+                                                result_str = json.dumps(result, ensure_ascii=False, indent=2)
+                                    except ImportError:
+                                        result_str = "Minecraft module not available."
+                                    except Exception as e:
+                                        print(f"[AI DEBUG] Minecraft tool error ({fc.name}): {e}")
+                                        result_str = f"Error executing minecraft action: {e}"
+                                    
                                     function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
 
                         if function_responses:
