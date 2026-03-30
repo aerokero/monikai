@@ -4693,6 +4693,25 @@ class AudioLoop:
                                             # Map tool name to action name
                                             action_mapping = {
                                                 "chat_message": "chat_message",
+                                                "skip": "skip",
+                                                "stop_actions": "stop",
+                                                "give_up": "giveUp",
+                                                "give_player": "givePlayer",
+                                                "consume": "consume",
+                                                "equip": "equip",
+                                                "put_in_chest": "putInChest",
+                                                "take_from_chest": "takeFromChest",
+                                                "discard": "discard",
+                                                "collect_blocks": "collectBlocks",
+                                                "mine_block_at": "mineBlockAt",
+                                                "smelt_item": "smeltItem",
+                                                "clear_furnace": "clearFurnace",
+                                                "place_here": "placeHere",
+                                                "attack": "attack",
+                                                "attack_player": "attackPlayer",
+                                                "go_to_bed": "goToBed",
+                                                "activate": "activate",
+                                                "recipe_plan": "recipePlan",
                                                 "move_to_player": "move_to_player",
                                                 "break_block": "break_block",
                                                 "inventory_status": "get_inventory",
@@ -4711,6 +4730,56 @@ class AudioLoop:
                                             params = {}
                                             if fc.name == "minecraft_chat_message":
                                                 params["message"] = fc.args.get("message", "")
+                                            elif fc.name == "minecraft_skip":
+                                                params = {}
+                                            elif fc.name == "minecraft_stop_actions":
+                                                params = {}
+                                            elif fc.name == "minecraft_give_up":
+                                                params["reason"] = fc.args.get("reason", "no reason")
+                                            elif fc.name == "minecraft_give_player":
+                                                params["player_name"] = fc.args.get("player_name", "")
+                                                params["item_name"] = fc.args.get("item_name", "")
+                                                params["num"] = fc.args.get("count", 1)
+                                            elif fc.name == "minecraft_consume":
+                                                params["item_name"] = fc.args.get("item_name", "")
+                                            elif fc.name == "minecraft_equip":
+                                                params["item_name"] = fc.args.get("item_name", "")
+                                            elif fc.name == "minecraft_put_in_chest":
+                                                params["item_name"] = fc.args.get("item_name", "")
+                                                params["num"] = fc.args.get("count", 1)
+                                            elif fc.name == "minecraft_take_from_chest":
+                                                params["item_name"] = fc.args.get("item_name", "")
+                                                params["num"] = fc.args.get("count", 1)
+                                            elif fc.name == "minecraft_discard":
+                                                params["item_name"] = fc.args.get("item_name", "")
+                                                params["num"] = fc.args.get("count", 1)
+                                            elif fc.name == "minecraft_collect_blocks":
+                                                params["type"] = fc.args.get("block_type", "stone")
+                                                params["num"] = fc.args.get("count", 1)
+                                            elif fc.name == "minecraft_mine_block_at":
+                                                params["x"] = fc.args.get("x")
+                                                params["y"] = fc.args.get("y")
+                                                params["z"] = fc.args.get("z")
+                                                if "expected_block_type" in fc.args:
+                                                    params["expected_block_type"] = fc.args.get("expected_block_type")
+                                            elif fc.name == "minecraft_smelt_item":
+                                                params["item_name"] = fc.args.get("item_name", "")
+                                                params["num"] = fc.args.get("count", 1)
+                                            elif fc.name == "minecraft_clear_furnace":
+                                                params = {}
+                                            elif fc.name == "minecraft_place_here":
+                                                params["type"] = fc.args.get("block_type", "")
+                                            elif fc.name == "minecraft_attack":
+                                                params["type"] = fc.args.get("entity_type", "")
+                                            elif fc.name == "minecraft_attack_player":
+                                                params["player_name"] = fc.args.get("player_name", "")
+                                            elif fc.name == "minecraft_go_to_bed":
+                                                params = {}
+                                            elif fc.name == "minecraft_activate":
+                                                params["type"] = fc.args.get("target_type", "")
+                                            elif fc.name == "minecraft_recipe_plan":
+                                                params["item_name"] = fc.args.get("item_name", "")
+                                                params["amount"] = fc.args.get("amount", 1)
                                             elif fc.name == "minecraft_move_to_player":
                                                 params["name"] = fc.args.get("player_name", "")
                                                 if "distance" in fc.args:
@@ -4751,6 +4820,9 @@ class AudioLoop:
                                                 params["z"] = fc.args.get("z")
                                                 if "label" in fc.args:
                                                     params["label"] = fc.args.get("label")
+                                            elif fc.name == "minecraft_use_action":
+                                                action_name = fc.args.get("action", action_name)
+                                                params = fc.args.get("params", {}) if isinstance(fc.args.get("params", {}), dict) else {}
                                             
                                             # Special handler for server connection (not a bot action)
                                             if fc.name == "minecraft_connect_to_server":

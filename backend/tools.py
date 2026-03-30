@@ -408,3 +408,268 @@ minecraft_connect_to_server_tool = {
     }
 }
 tools_list[0]["function_declarations"].append(minecraft_connect_to_server_tool)
+
+# --- AIRI parity tools (extended action surface) ---
+
+minecraft_skip_tool = {
+    "name": "minecraft_skip",
+    "description": "Skip this turn without performing any world action.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {}
+    }
+}
+tools_list[0]["function_declarations"].append(minecraft_skip_tool)
+
+minecraft_stop_actions_tool = {
+    "name": "minecraft_stop_actions",
+    "description": "Force stop currently running Minecraft actions.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {}
+    }
+}
+tools_list[0]["function_declarations"].append(minecraft_stop_actions_tool)
+
+minecraft_give_up_tool = {
+    "name": "minecraft_give_up",
+    "description": "Report that the bot is currently stuck and provide reason.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "reason": {
+                "type": "STRING",
+                "description": "Short reason why the bot is stuck"
+            }
+        },
+        "required": ["reason"]
+    }
+}
+tools_list[0]["function_declarations"].append(minecraft_give_up_tool)
+
+minecraft_give_player_tool = {
+    "name": "minecraft_give_player",
+    "description": "Give an item to a player.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "player_name": {"type": "STRING", "description": "Target player name"},
+            "item_name": {"type": "STRING", "description": "Item name"},
+            "count": {"type": "INTEGER", "description": "Amount to give"}
+        },
+        "required": ["player_name", "item_name"]
+    }
+}
+tools_list[0]["function_declarations"].append(minecraft_give_player_tool)
+
+minecraft_consume_tool = {
+    "name": "minecraft_consume",
+    "description": "Eat or drink an item.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "item_name": {"type": "STRING", "description": "Food/drink item name"}
+        },
+        "required": ["item_name"]
+    }
+}
+tools_list[0]["function_declarations"].append(minecraft_consume_tool)
+
+minecraft_equip_tool = {
+    "name": "minecraft_equip",
+    "description": "Equip an item from inventory.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "item_name": {"type": "STRING", "description": "Item to equip"}
+        },
+        "required": ["item_name"]
+    }
+}
+tools_list[0]["function_declarations"].append(minecraft_equip_tool)
+
+minecraft_put_in_chest_tool = {
+    "name": "minecraft_put_in_chest",
+    "description": "Put items into nearest chest.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "item_name": {"type": "STRING", "description": "Item name"},
+            "count": {"type": "INTEGER", "description": "Amount to store"}
+        },
+        "required": ["item_name", "count"]
+    }
+}
+tools_list[0]["function_declarations"].append(minecraft_put_in_chest_tool)
+
+minecraft_take_from_chest_tool = {
+    "name": "minecraft_take_from_chest",
+    "description": "Take items from nearest chest.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "item_name": {"type": "STRING", "description": "Item name"},
+            "count": {"type": "INTEGER", "description": "Amount to take"}
+        },
+        "required": ["item_name", "count"]
+    }
+}
+tools_list[0]["function_declarations"].append(minecraft_take_from_chest_tool)
+
+minecraft_discard_tool = {
+    "name": "minecraft_discard",
+    "description": "Discard items from inventory.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "item_name": {"type": "STRING", "description": "Item name"},
+            "count": {"type": "INTEGER", "description": "Amount to discard"}
+        },
+        "required": ["item_name", "count"]
+    }
+}
+tools_list[0]["function_declarations"].append(minecraft_discard_tool)
+
+minecraft_collect_blocks_tool = {
+    "name": "minecraft_collect_blocks",
+    "description": "Collect nearest blocks of a given type.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "block_type": {"type": "STRING", "description": "Block type to collect"},
+            "count": {"type": "INTEGER", "description": "How many blocks to collect"}
+        },
+        "required": ["block_type", "count"]
+    }
+}
+tools_list[0]["function_declarations"].append(minecraft_collect_blocks_tool)
+
+minecraft_mine_block_at_tool = {
+    "name": "minecraft_mine_block_at",
+    "description": "Mine a block at exact coordinates.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "x": {"type": "NUMBER", "description": "X coordinate"},
+            "y": {"type": "NUMBER", "description": "Y coordinate"},
+            "z": {"type": "NUMBER", "description": "Z coordinate"},
+            "expected_block_type": {"type": "STRING", "description": "Optional expected block type"}
+        },
+        "required": ["x", "y", "z"]
+    }
+}
+tools_list[0]["function_declarations"].append(minecraft_mine_block_at_tool)
+
+minecraft_smelt_item_tool = {
+    "name": "minecraft_smelt_item",
+    "description": "Smelt item in nearest furnace.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "item_name": {"type": "STRING", "description": "Input item name"},
+            "count": {"type": "INTEGER", "description": "How many times to smelt"}
+        },
+        "required": ["item_name", "count"]
+    }
+}
+tools_list[0]["function_declarations"].append(minecraft_smelt_item_tool)
+
+minecraft_clear_furnace_tool = {
+    "name": "minecraft_clear_furnace",
+    "description": "Clear nearest furnace output/input slots.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {}
+    }
+}
+tools_list[0]["function_declarations"].append(minecraft_clear_furnace_tool)
+
+minecraft_place_here_tool = {
+    "name": "minecraft_place_here",
+    "description": "Place a block near current bot position.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "block_type": {"type": "STRING", "description": "Block type to place"}
+        },
+        "required": ["block_type"]
+    }
+}
+tools_list[0]["function_declarations"].append(minecraft_place_here_tool)
+
+minecraft_attack_tool = {
+    "name": "minecraft_attack",
+    "description": "Attack nearest entity of a given type.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "entity_type": {"type": "STRING", "description": "Entity type"}
+        },
+        "required": ["entity_type"]
+    }
+}
+tools_list[0]["function_declarations"].append(minecraft_attack_tool)
+
+minecraft_attack_player_tool = {
+    "name": "minecraft_attack_player",
+    "description": "Attack a specific player.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "player_name": {"type": "STRING", "description": "Target player"}
+        },
+        "required": ["player_name"]
+    }
+}
+tools_list[0]["function_declarations"].append(minecraft_attack_player_tool)
+
+minecraft_go_to_bed_tool = {
+    "name": "minecraft_go_to_bed",
+    "description": "Go to nearest bed and sleep.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {}
+    }
+}
+tools_list[0]["function_declarations"].append(minecraft_go_to_bed_tool)
+
+minecraft_activate_tool = {
+    "name": "minecraft_activate",
+    "description": "Activate nearest interactable block of given type.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "target_type": {"type": "STRING", "description": "Type such as furnace, chest, bed, door"}
+        },
+        "required": ["target_type"]
+    }
+}
+tools_list[0]["function_declarations"].append(minecraft_activate_tool)
+
+minecraft_recipe_plan_tool = {
+    "name": "minecraft_recipe_plan",
+    "description": "Plan recipe requirements for crafting.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "item_name": {"type": "STRING", "description": "Recipe output item"},
+            "amount": {"type": "INTEGER", "description": "Desired amount"}
+        },
+        "required": ["item_name"]
+    }
+}
+tools_list[0]["function_declarations"].append(minecraft_recipe_plan_tool)
+
+minecraft_use_action_tool = {
+    "name": "minecraft_use_action",
+    "description": "Execute any raw Minecraft action name with JSON params for maximum compatibility.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "action": {"type": "STRING", "description": "Raw action name"},
+            "params": {"type": "OBJECT", "description": "Raw action params"}
+        },
+        "required": ["action"]
+    }
+}
+tools_list[0]["function_declarations"].append(minecraft_use_action_tool)

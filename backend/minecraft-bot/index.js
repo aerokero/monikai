@@ -44,6 +44,31 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function findItemByNameFragment(bot, wantedName) {
+  const wanted = (wantedName || '').toLowerCase();
+  if (!wanted) return null;
+  return bot.inventory.items().find(i => i.name.toLowerCase().includes(wanted)) || null;
+}
+
+function findNearestBlockByName(bot, predicate, maxDistance = 16) {
+  const matchingIds = Object.values(bot.registry.blocksByName || {})
+    .filter(b => predicate(b.name))
+    .map(b => b.id);
+  if (matchingIds.length === 0) return null;
+
+  const pos = bot.findBlock({
+    matching: matchingIds,
+    maxDistance,
+  });
+  return pos || null;
+}
+
+async function gotoBlockIfPossible(bot, block, range = 2) {
+  if (!block) return;
+  if (!bot.pathfinder) return;
+  await bot.pathfinder.goto(new GoalNear(block.position.x, block.position.y, block.position.z, range));
+}
+
 /**
  * Send perception event to Python backend via stdout
  */
@@ -150,7 +175,36 @@ function setupActionHandler(bot) {
  * Execute action received from Python backend
  */
 async function handleAction(bot, action) {
-  const { action: actionName, params = {}, timestamp } = action;
+  let { action: actionName, params = {}, timestamp } = action;
+
+  // Normalize AIRI-style action names/params into local equivalents.
+  if (actionName === 'goToPlayer') {
+    actionName = 'move_to_player';
+    params = {
+      name: params.player_name || params.name,
+      range: params.closeness ?? params.range ?? 2,
+    };
+  } else if (actionName === 'mineBlockAt') {
+    actionName = 'break_block';
+  } else if (actionName === 'craftRecipe') {
+    actionName = 'craft_recipe';
+    params = {
+      recipe: params.recipe_name || params.recipe,
+      count: params.num ?? params.count ?? 1,
+    };
+  } else if (actionName === 'discard') {
+    actionName = 'drop_item';
+    params = {
+      name: params.item_name || params.name,
+      count: params.num ?? params.count ?? 1,
+    };
+  } else if (actionName === 'collectBlocks') {
+    actionName = 'collect_blocks';
+    params = {
+      type: params.type,
+      num: params.num ?? 1,
+    };
+  }
 
   try {
     switch (actionName) {
@@ -161,6 +215,23 @@ async function handleAction(bot, action) {
           action: actionName,
           success: true,
           message: `Sent chat message: ${params.message}`
+        });
+        break;
+
+      case 'skip':
+        sendPerceptionEvent('action_result', {
+          action: actionName,
+          success: true,
+          message: 'Skipped turn'
+        });
+        break;
+
+      case 'giveUp':
+      case 'give_up':
+        sendPerceptionEvent('action_result', {
+          action: actionName,
+          success: false,
+          message: params.reason || 'Bot reported stuck state'
         });
         break;
 
@@ -419,6 +490,579 @@ async function handleAction(bot, action) {
           });
         }
         break;
+
+      case 'consume':
+        try {
+          const wanted = (params.item_name || '').toLowerCase();
+          const items = bot.inventory.items();
+          const item = wanted
+            ? items.find(i => i.name.toLowerCase().includes(wanted))
+            : items.find(i => i.name.includes('bread') || i.name.includes('beef') || i.name.includes('porkchop') || i.name.includes('apple'));
+
+          if (!item) {
+            sendPerceptionEvent('error', {
+              action: actionName,
+              message: `No consumable item found for '${wanted || 'auto'}'`
+            });
+            break;
+          }
+
+          await bot.equip(item, 'hand');
+          await bot.consume();
+          sendPerceptionEvent('action_result', {
+            action: actionName,
+            success: true,
+            message: `Consumed ${item.name}`
+          });
+        } catch (e) {
+          sendPerceptionEvent('error', {
+            action: actionName,
+            message: `Error consuming item: ${e.message}`
+          });
+        }
+        break;
+
+      case 'equip':
+        try {
+          const wanted = (params.item_name || '').toLowerCase();
+          const item = bot.inventory.items().find(i => i.name.toLowerCase().includes(wanted));
+          if (!item) {
+            sendPerceptionEvent('error', {
+              action: actionName,
+              message: `Item '${wanted}' not found in inventory`
+            });
+            break;
+          }
+
+          await bot.equip(item, 'hand');
+          sendPerceptionEvent('action_result', {
+            action: actionName,
+            success: true,
+            message: `Equipped ${item.name}`
+          });
+        } catch (e) {
+          sendPerceptionEvent('error', {
+            action: actionName,
+            message: `Error equipping item: ${e.message}`
+          });
+        }
+        break;
+
+      case 'collect_blocks': {
+        try {
+          const blockType = (params.type || '').toLowerCase();
+          const num = Math.min(Math.max(params.num || 1, 1), 32);
+          if (!blockType) {
+            sendPerceptionEvent('error', {
+              action: actionName,
+              message: 'Block type is required'
+            });
+            break;
+          }
+
+          const blockInfo = bot.registry.blocksByName[blockType];
+          if (!blockInfo) {
+            sendPerceptionEvent('error', {
+              action: actionName,
+              message: `Unknown block type '${blockType}'`
+            });
+            break;
+          }
+
+          const positions = bot.findBlocks({ matching: blockInfo.id, maxDistance: 64, count: num });
+          if (!positions || positions.length === 0) {
+            sendPerceptionEvent('action_result', {
+              action: actionName,
+              success: false,
+              message: `No ${blockType} found nearby`
+            });
+            break;
+          }
+
+          let collected = 0;
+          for (const pos of positions) {
+            const block = bot.blockAt(pos);
+            if (!block) continue;
+            if (bot.pathfinder) {
+              await bot.pathfinder.goto(new GoalNear(pos.x, pos.y, pos.z, 1));
+            }
+            await bot.dig(block);
+            collected += 1;
+          }
+
+          sendPerceptionEvent('action_result', {
+            action: actionName,
+            success: true,
+            message: `Collected ${collected}x ${blockType}`,
+            data: { collected, type: blockType }
+          });
+        } catch (e) {
+          sendPerceptionEvent('error', {
+            action: actionName,
+            message: `Error collecting blocks: ${e.message}`
+          });
+        }
+        break;
+      }
+
+      case 'givePlayer':
+        try {
+          const playerName = params.player_name;
+          const itemName = params.item_name;
+          const num = Math.max(params.num || 1, 1);
+          const target = playerName ? bot.players[playerName]?.entity : null;
+          const item = itemName ? bot.inventory.items().find(i => i.name === itemName) : null;
+          if (!target) {
+            sendPerceptionEvent('error', {
+              action: actionName,
+              message: `Target player '${playerName}' not found`
+            });
+            break;
+          }
+          if (!item) {
+            sendPerceptionEvent('error', {
+              action: actionName,
+              message: `Item '${itemName}' not found in inventory`
+            });
+            break;
+          }
+
+          if (bot.pathfinder) {
+            await bot.pathfinder.goto(new GoalNear(target.position.x, target.position.y, target.position.z, 2));
+          }
+          await bot.toss(item.type, null, Math.min(num, item.count));
+          sendPerceptionEvent('action_result', {
+            action: actionName,
+            success: true,
+            message: `Gave ${itemName} x${Math.min(num, item.count)} to ${playerName}`
+          });
+        } catch (e) {
+          sendPerceptionEvent('error', {
+            action: actionName,
+            message: `Error giving item: ${e.message}`
+          });
+        }
+        break;
+
+      case 'attack': {
+        try {
+          const entityType = (params.type || '').toLowerCase();
+          const candidates = Object.values(bot.entities || {}).filter(entity => {
+            if (!entity || entity === bot.entity) return false;
+            if (!entity.position || !bot.entity?.position) return false;
+            if (entity.position.distanceTo(bot.entity.position) > 24) return false;
+            const name = (entity.name || '').toLowerCase();
+            return !entityType || name.includes(entityType);
+          });
+
+          const target = candidates[0];
+          if (!target) {
+            sendPerceptionEvent('action_result', {
+              action: actionName,
+              success: false,
+              message: entityType ? `No nearby entity matching '${entityType}'` : 'No nearby attack target found'
+            });
+            break;
+          }
+
+          if (bot.pathfinder) {
+            await bot.pathfinder.goto(new GoalNear(target.position.x, target.position.y, target.position.z, 2));
+          }
+          if (bot.pvp && typeof bot.pvp.attack === 'function') {
+            bot.pvp.attack(target);
+            await sleep(3000);
+            if (typeof bot.pvp.stop === 'function') bot.pvp.stop();
+          } else {
+            bot.attack(target);
+          }
+
+          sendPerceptionEvent('action_result', {
+            action: actionName,
+            success: true,
+            message: `Attacked ${target.name || target.type || 'entity'}`
+          });
+        } catch (e) {
+          sendPerceptionEvent('error', {
+            action: actionName,
+            message: `Error attacking: ${e.message}`
+          });
+        }
+        break;
+      }
+
+      case 'attackPlayer': {
+        try {
+          const playerName = (params.player_name || '').toLowerCase();
+          let targetPlayer = null;
+          for (const name of Object.keys(bot.players || {})) {
+            if (name.toLowerCase() === playerName) {
+              targetPlayer = bot.players[name];
+              break;
+            }
+          }
+          if (!targetPlayer?.entity) {
+            sendPerceptionEvent('error', {
+              action: actionName,
+              message: `Player ${params.player_name} not found`
+            });
+            break;
+          }
+
+          const entity = targetPlayer.entity;
+          if (bot.pathfinder) {
+            await bot.pathfinder.goto(new GoalNear(entity.position.x, entity.position.y, entity.position.z, 2));
+          }
+          if (bot.pvp && typeof bot.pvp.attack === 'function') {
+            bot.pvp.attack(entity);
+            await sleep(3000);
+            if (typeof bot.pvp.stop === 'function') bot.pvp.stop();
+          } else {
+            bot.attack(entity);
+          }
+
+          sendPerceptionEvent('action_result', {
+            action: actionName,
+            success: true,
+            message: `Attacked player ${targetPlayer.username}`
+          });
+        } catch (e) {
+          sendPerceptionEvent('error', {
+            action: actionName,
+            message: `Error attacking player: ${e.message}`
+          });
+        }
+        break;
+      }
+
+      case 'goToBed': {
+        try {
+          const bedBlock = findNearestBlockByName(bot, name => name.includes('bed'), 32);
+          if (!bedBlock) {
+            sendPerceptionEvent('action_result', {
+              action: actionName,
+              success: false,
+              message: 'No bed found nearby'
+            });
+            break;
+          }
+
+          await gotoBlockIfPossible(bot, bedBlock, 2);
+          await bot.sleep(bedBlock);
+          sendPerceptionEvent('action_result', {
+            action: actionName,
+            success: true,
+            message: 'Slept in a bed'
+          });
+        } catch (e) {
+          sendPerceptionEvent('error', {
+            action: actionName,
+            message: `Error going to bed: ${e.message}`
+          });
+        }
+        break;
+      }
+
+      case 'activate': {
+        try {
+          const targetType = (params.type || '').toLowerCase();
+          if (!targetType) {
+            sendPerceptionEvent('error', {
+              action: actionName,
+              message: 'Target type is required'
+            });
+            break;
+          }
+
+          const targetBlock = findNearestBlockByName(bot, name => name.includes(targetType), 16);
+          if (!targetBlock) {
+            sendPerceptionEvent('action_result', {
+              action: actionName,
+              success: false,
+              message: `No '${targetType}' block found nearby`
+            });
+            break;
+          }
+
+          await gotoBlockIfPossible(bot, targetBlock, 2);
+          await bot.activateBlock(targetBlock);
+          sendPerceptionEvent('action_result', {
+            action: actionName,
+            success: true,
+            message: `Activated nearest ${targetType}`
+          });
+        } catch (e) {
+          sendPerceptionEvent('error', {
+            action: actionName,
+            message: `Error activating block: ${e.message}`
+          });
+        }
+        break;
+      }
+
+      case 'putInChest': {
+        try {
+          const itemName = params.item_name;
+          const num = Math.max(params.num || 1, 1);
+          const chestBlock = findNearestBlockByName(bot, name => name.includes('chest'), 16);
+          if (!chestBlock) {
+            sendPerceptionEvent('error', {
+              action: actionName,
+              message: 'No chest found nearby'
+            });
+            break;
+          }
+
+          const item = findItemByNameFragment(bot, itemName);
+          if (!item) {
+            sendPerceptionEvent('error', {
+              action: actionName,
+              message: `Item '${itemName}' not in inventory`
+            });
+            break;
+          }
+
+          await gotoBlockIfPossible(bot, chestBlock, 2);
+          const chest = await bot.openContainer(chestBlock);
+          const amount = Math.min(num, item.count);
+          await chest.deposit(item.type, item.metadata, amount);
+          chest.close();
+
+          sendPerceptionEvent('action_result', {
+            action: actionName,
+            success: true,
+            message: `Put ${amount}x ${item.name} in chest`
+          });
+        } catch (e) {
+          sendPerceptionEvent('error', {
+            action: actionName,
+            message: `Error putting in chest: ${e.message}`
+          });
+        }
+        break;
+      }
+
+      case 'takeFromChest': {
+        try {
+          const itemName = params.item_name;
+          const num = Math.max(params.num || 1, 1);
+          const chestBlock = findNearestBlockByName(bot, name => name.includes('chest'), 16);
+          if (!chestBlock) {
+            sendPerceptionEvent('error', {
+              action: actionName,
+              message: 'No chest found nearby'
+            });
+            break;
+          }
+
+          const itemDef = bot.registry.itemsByName[itemName];
+          if (!itemDef) {
+            sendPerceptionEvent('error', {
+              action: actionName,
+              message: `Unknown item '${itemName}'`
+            });
+            break;
+          }
+
+          await gotoBlockIfPossible(bot, chestBlock, 2);
+          const chest = await bot.openContainer(chestBlock);
+          await chest.withdraw(itemDef.id, null, num);
+          chest.close();
+
+          sendPerceptionEvent('action_result', {
+            action: actionName,
+            success: true,
+            message: `Took ${num}x ${itemName} from chest`
+          });
+        } catch (e) {
+          sendPerceptionEvent('error', {
+            action: actionName,
+            message: `Error taking from chest: ${e.message}`
+          });
+        }
+        break;
+      }
+
+      case 'smeltItem': {
+        try {
+          const itemName = params.item_name;
+          const num = Math.max(params.num || 1, 1);
+          const furnaceBlock = findNearestBlockByName(bot, name => name.includes('furnace'), 16);
+          if (!furnaceBlock) {
+            sendPerceptionEvent('error', {
+              action: actionName,
+              message: 'No furnace found nearby'
+            });
+            break;
+          }
+
+          const inputItem = findItemByNameFragment(bot, itemName);
+          const fuelItem = findItemByNameFragment(bot, 'coal') || findItemByNameFragment(bot, 'charcoal');
+          if (!inputItem) {
+            sendPerceptionEvent('error', {
+              action: actionName,
+              message: `Input item '${itemName}' not found in inventory`
+            });
+            break;
+          }
+          if (!fuelItem) {
+            sendPerceptionEvent('error', {
+              action: actionName,
+              message: 'No fuel item (coal/charcoal) found in inventory'
+            });
+            break;
+          }
+
+          await gotoBlockIfPossible(bot, furnaceBlock, 2);
+          const furnace = await bot.openFurnace(furnaceBlock);
+          await furnace.putInput(inputItem.type, inputItem.metadata, Math.min(num, inputItem.count));
+          await furnace.putFuel(fuelItem.type, fuelItem.metadata, 1);
+          await sleep(2500);
+          try {
+            await furnace.takeOutput();
+          } catch {
+            // Output may not be ready yet; still valid to report started smelting.
+          }
+          furnace.close();
+
+          sendPerceptionEvent('action_result', {
+            action: actionName,
+            success: true,
+            message: `Smelt process started for ${itemName}`
+          });
+        } catch (e) {
+          sendPerceptionEvent('error', {
+            action: actionName,
+            message: `Error smelting item: ${e.message}`
+          });
+        }
+        break;
+      }
+
+      case 'clearFurnace': {
+        try {
+          const furnaceBlock = findNearestBlockByName(bot, name => name.includes('furnace'), 16);
+          if (!furnaceBlock) {
+            sendPerceptionEvent('error', {
+              action: actionName,
+              message: 'No furnace found nearby'
+            });
+            break;
+          }
+
+          await gotoBlockIfPossible(bot, furnaceBlock, 2);
+          const furnace = await bot.openFurnace(furnaceBlock);
+          try { await furnace.takeInput(); } catch {}
+          try { await furnace.takeFuel(); } catch {}
+          try { await furnace.takeOutput(); } catch {}
+          furnace.close();
+
+          sendPerceptionEvent('action_result', {
+            action: actionName,
+            success: true,
+            message: 'Cleared furnace slots'
+          });
+        } catch (e) {
+          sendPerceptionEvent('error', {
+            action: actionName,
+            message: `Error clearing furnace: ${e.message}`
+          });
+        }
+        break;
+      }
+
+      case 'placeHere': {
+        try {
+          const blockType = (params.type || '').toLowerCase();
+          if (!blockType) {
+            sendPerceptionEvent('error', {
+              action: actionName,
+              message: 'Block type is required'
+            });
+            break;
+          }
+
+          const item = findItemByNameFragment(bot, blockType);
+          if (!item) {
+            sendPerceptionEvent('error', {
+              action: actionName,
+              message: `No placeable item '${blockType}' in inventory`
+            });
+            break;
+          }
+
+          await bot.equip(item, 'hand');
+          const basePos = bot.entity.position.floored();
+          const reference = bot.blockAt(new Vec3(basePos.x, basePos.y - 1, basePos.z));
+          if (!reference) {
+            sendPerceptionEvent('error', {
+              action: actionName,
+              message: 'No reference block under bot to place on'
+            });
+            break;
+          }
+
+          await bot.placeBlock(reference, new Vec3(0, 1, 0));
+          sendPerceptionEvent('action_result', {
+            action: actionName,
+            success: true,
+            message: `Placed ${item.name} at current position`
+          });
+        } catch (e) {
+          sendPerceptionEvent('error', {
+            action: actionName,
+            message: `Error placing block: ${e.message}`
+          });
+        }
+        break;
+      }
+
+      case 'recipePlan': {
+        try {
+          const itemName = (params.item_name || '').toLowerCase();
+          const amount = Math.max(params.amount || 1, 1);
+          if (!itemName) {
+            sendPerceptionEvent('error', {
+              action: actionName,
+              message: 'item_name is required'
+            });
+            break;
+          }
+
+          const itemDef = bot.registry.itemsByName[itemName];
+          if (!itemDef) {
+            sendPerceptionEvent('error', {
+              action: actionName,
+              message: `Unknown recipe target '${itemName}'`
+            });
+            break;
+          }
+
+          const recipes = bot.recipesFor(itemDef.id, null, amount, null) || [];
+          const invCount = bot.inventory.items().reduce((sum, i) => i.name === itemName ? sum + i.count : sum, 0);
+
+          const message = recipes.length > 0
+            ? `Recipe available for ${itemName}. You already have ${invCount}. Planned amount: ${amount}.`
+            : `No direct craftable recipe found for ${itemName} right now. You have ${invCount}.`;
+
+          sendPerceptionEvent('action_result', {
+            action: actionName,
+            success: true,
+            message,
+            data: {
+              item_name: itemName,
+              amount,
+              inventory_count: invCount,
+              recipes_available: recipes.length,
+            }
+          });
+        } catch (e) {
+          sendPerceptionEvent('error', {
+            action: actionName,
+            message: `Error planning recipe: ${e.message}`
+          });
+        }
+        break;
+      }
 
       case 'navigate_to_location':
         if (params.x !== undefined && params.y !== undefined && params.z !== undefined) {
