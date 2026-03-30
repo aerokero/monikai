@@ -249,6 +249,15 @@ class MinecraftBotManager:
                 "action": action_name,
             }
         
+        heavy_actions = {"collectBlocks", "collect_blocks", "mine_ore", "hunt_mobs"}
+        medium_actions = {"craft_recipe", "navigate_to_location", "move_to_position"}
+        effective_timeout = timeout_seconds
+        if timeout_seconds <= 15.0:
+            if action_name in heavy_actions:
+                effective_timeout = 60.0
+            elif action_name in medium_actions:
+                effective_timeout = 30.0
+
         action_signature = self._action_signature(action_name, params)
 
         # Coalesce duplicated action+params calls while one is in flight.
@@ -258,12 +267,12 @@ class MinecraftBotManager:
                 existing_future = self._pending_actions.get(existing_id)
                 if existing_future and not existing_future.done():
                     try:
-                        return await asyncio.wait_for(asyncio.shield(existing_future), timeout=timeout_seconds)
+                        return await asyncio.wait_for(asyncio.shield(existing_future), timeout=effective_timeout)
                     except asyncio.TimeoutError:
                         return {
                             "success": False,
                             "action": action_name,
-                            "error": f"Action timed out after {timeout_seconds:.1f}s",
+                            "error": f"Action timed out after {effective_timeout:.1f}s",
                             "request_id": existing_id,
                         }
 
@@ -300,14 +309,14 @@ class MinecraftBotManager:
                 }
 
             try:
-                result = await asyncio.wait_for(future, timeout=timeout_seconds)
+                result = await asyncio.wait_for(future, timeout=effective_timeout)
                 return result
             except asyncio.TimeoutError:
                 self._remove_pending_action(request_id, action_name)
                 return {
                     "success": False,
                     "action": action_name,
-                    "error": f"Action timed out after {timeout_seconds:.1f}s",
+                    "error": f"Action timed out after {effective_timeout:.1f}s",
                     "request_id": request_id,
                 }
             

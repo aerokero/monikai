@@ -2451,6 +2451,34 @@ class AudioLoop:
         except Exception as e:
             print(f"[AI DEBUG] [ERR] Failed to clear audio queue: {e}")
 
+    def clear_out_queue(self):
+        try:
+            if not self.out_queue:
+                return
+            count = 0
+            while not self.out_queue.empty():
+                self.out_queue.get_nowait()
+                count += 1
+            if count > 0:
+                print(f"[AI DEBUG] [SEND] Cleared {count} pending realtime chunks.")
+        except Exception as e:
+            print(f"[AI DEBUG] [ERR] Failed to clear realtime queue: {e}")
+
+    def _is_ws_connection_closed_error(self, err: Exception) -> bool:
+        msg = str(err or "").lower()
+        name = type(err).__name__.lower()
+        if "connectionclosed" in name:
+            return True
+        markers = (
+            "keepalive ping timeout",
+            "no close frame received",
+            "connection closed",
+            "sent 1011",
+            "received 1011",
+            "websocket",
+        )
+        return any(m in msg for m in markers)
+
     # ----------------------------------------------------------------------------------
     # Proactivity helpers (idle nudges)
     # ----------------------------------------------------------------------------------
@@ -2747,6 +2775,11 @@ class AudioLoop:
 
                 await self.session.send(input=msg, end_of_turn=False)
             except Exception as e:
+                if self._is_ws_connection_closed_error(e):
+                    print(f"[AI DEBUG] [SEND] WebSocket closed during realtime send: {e}")
+                    self.clear_out_queue()
+                    self.clear_audio_queue()
+                    raise LiveReconnectRequested("realtime_send_ws_closed")
                 print(f"[AI DEBUG] [SEND] Failed to send realtime chunk: {e}")
 
     async def send_frame_now(self, payload: Optional[dict] = None) -> bool:
@@ -3832,6 +3865,8 @@ class AudioLoop:
                                 prompt = fc.args.get("prompt", "")
 
                                 confirmation_required = self.permissions.get(fc.name, True)
+                                if fc.name.startswith("minecraft_"):
+                                    confirmation_required = False
                                 if fc.name == "manage_agent_job":
                                     action = str(fc.args.get("action") or "").strip().lower()
                                     if action in {"status", "list"}:
@@ -4853,7 +4888,38 @@ class AudioLoop:
                                             else:
                                                 # Execute normal action
                                                 print(f"[MINECRAFT] Executing action: {action_name} with params: {params}")
-                                                result = await bot_manager.send_action(action_name, params)
+                                                async_actions = {"collectBlocks", "collect_blocks", "mine_ore", "hunt_mobs", "navigate_to_location"}
+                                                if action_name in async_actions:
+                                                    result = await bot_manager.send_action(
+                                                        action_name,
+                                                        params,
+                                                        wait_for_result=False,
+                                                    )
+                                                    result_str = json.dumps(
+                                                        {
+                                                            "success": True,
+                                                            "action": action_name,
+                                                            "message": "Action started in background. Final result will arrive via Minecraft perception events.",
+                                                            "request": result,
+                                                        },
+                                                        ensure_ascii=False,
+                                                        indent=2,
+                                                    )
+                                                    print(f"[MINECRAFT] Async action accepted: {result}")
+                                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+                                                    continue
+
+                                                timeout_seconds = 15.0
+                                                if action_name in {"collectBlocks", "collect_blocks", "mine_ore", "hunt_mobs"}:
+                                                    timeout_seconds = 60.0
+                                                elif action_name in {"craft_recipe", "navigate_to_location", "move_to_position"}:
+                                                    timeout_seconds = 30.0
+
+                                                result = await bot_manager.send_action(
+                                                    action_name,
+                                                    params,
+                                                    timeout_seconds=timeout_seconds,
+                                                )
                                                 print(f"[MINECRAFT] Action result: {result}")
                                                 result_str = json.dumps(result, ensure_ascii=False, indent=2)
                                     except ImportError:
@@ -4865,7 +4931,13 @@ class AudioLoop:
                                     function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
 
                         if function_responses:
-                            await self.session.send_tool_response(function_responses=function_responses)
+                            try:
+                                await self.session.send_tool_response(function_responses=function_responses)
+                            except Exception as e:
+                                if self._is_ws_connection_closed_error(e):
+                                    print(f"[AI DEBUG] [RECONNECT] Tool response send failed on closed WS: {e}")
+                                    raise LiveReconnectRequested("tool_response_ws_closed")
+                                raise
 
                     if self._go_away_requested and not self._ai_turn_open and not self._is_speaking:
                         raise LiveReconnectRequested("go_away")
@@ -5262,8 +5334,10 @@ class AudioLoop:
                 reconnect_requested = False
                 if isinstance(e, BaseExceptionGroup):
                     leaf_exceptions = _iter_leaf_exceptions(e)
-                    reconnect_requested = bool(leaf_exceptions) and all(
-                        isinstance(sub, LiveReconnectRequested) for sub in leaf_exceptions
+                    reconnect_requested = (
+                        bool(leaf_exceptions)
+                        and any(isinstance(sub, LiveReconnectRequested) for sub in leaf_exceptions)
+                        and all(isinstance(sub, (LiveReconnectRequested, asyncio.CancelledError)) for sub in leaf_exceptions)
                     )
                     if reconnect_requested:
                         print("[AI DEBUG] [RECONNECT] TaskGroup requested immediate reconnect (go_away).")

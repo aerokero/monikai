@@ -33,21 +33,138 @@ const config = {
   port: parseInt(process.env.MC_PORT || '25565'),
   username: process.env.MC_USERNAME || 'strawberryglass',
   auth: process.env.MC_AUTH || 'offline',
-  version: process.env.MC_VERSION || '1.20.4'
+  version: process.env.MC_VERSION || '1.20.4',
+  autoEatEnabled: String(process.env.MC_AUTOEAT || 'false').toLowerCase() === 'true'
 };
 
 // Bot instance
 let bot = null;
 let isConnected = false;
+let currentActionRequestId = null;
+let currentActionName = null;
+let lastKickReason = null;
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function formatBotError(error) {
+  if (!error) {
+    return {
+      message: 'Unknown bot error',
+      details: []
+    };
+  }
+
+  const details = [];
+  const baseMessage = error?.message || String(error);
+
+  if (Array.isArray(error?.errors) && error.errors.length > 0) {
+    for (const sub of error.errors) {
+      const code = sub?.code || 'UNKNOWN';
+      const address = sub?.address || 'unknown-address';
+      const port = sub?.port || 'unknown-port';
+      const msg = sub?.message || String(sub);
+      details.push(`${code} at ${address}:${port} (${msg})`);
+    }
+  } else if (error?.code) {
+    const address = error?.address || 'unknown-address';
+    const port = error?.port || 'unknown-port';
+    details.push(`${error.code} at ${address}:${port}`);
+  }
+
+  return {
+    message: baseMessage,
+    details
+  };
 }
 
 function findItemByNameFragment(bot, wantedName) {
   const wanted = (wantedName || '').toLowerCase();
   if (!wanted) return null;
   return bot.inventory.items().find(i => i.name.toLowerCase().includes(wanted)) || null;
+}
+
+function normalizeNickname(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9_]/g, '');
+}
+
+function levenshteinDistance(a, b) {
+  const aa = normalizeNickname(a);
+  const bb = normalizeNickname(b);
+  if (!aa) return bb.length;
+  if (!bb) return aa.length;
+
+  const prev = Array(bb.length + 1)
+    .fill(0)
+    .map((_, i) => i);
+  const curr = Array(bb.length + 1).fill(0);
+
+  for (let i = 1; i <= aa.length; i += 1) {
+    curr[0] = i;
+    for (let j = 1; j <= bb.length; j += 1) {
+      const cost = aa[i - 1] === bb[j - 1] ? 0 : 1;
+      curr[j] = Math.min(
+        prev[j] + 1,
+        curr[j - 1] + 1,
+        prev[j - 1] + cost
+      );
+    }
+    for (let j = 0; j <= bb.length; j += 1) {
+      prev[j] = curr[j];
+    }
+  }
+  return prev[bb.length];
+}
+
+function getResolvablePlayers(bot, includeSelf = false) {
+  const own = normalizeNickname(bot?.username);
+  return Object.entries(bot.players || {})
+    .filter(([name, p]) => {
+      if (!p?.entity) return false;
+      if (includeSelf) return true;
+      return normalizeNickname(name) !== own;
+    })
+    .map(([name, p]) => ({
+      username: name,
+      normalized: normalizeNickname(name),
+      player: p,
+    }));
+}
+
+function resolvePlayerByName(bot, rawName, options = {}) {
+  const { includeSelf = false } = options;
+  const query = normalizeNickname(rawName);
+  const players = getResolvablePlayers(bot, includeSelf);
+  if (!query || players.length === 0) {
+    return { target: null, resolvedName: null, reason: 'missing-query-or-players' };
+  }
+
+  const exact = players.find(p => p.normalized === query);
+  if (exact) return { target: exact.player, resolvedName: exact.username, reason: 'exact' };
+
+  const prefix = players.find(p => p.normalized.startsWith(query) || query.startsWith(p.normalized));
+  if (prefix) return { target: prefix.player, resolvedName: prefix.username, reason: 'prefix' };
+
+  const contains = players.find(p => p.normalized.includes(query) || query.includes(p.normalized));
+  if (contains) return { target: contains.player, resolvedName: contains.username, reason: 'contains' };
+
+  let best = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const candidate of players) {
+    const distance = levenshteinDistance(query, candidate.normalized);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = candidate;
+    }
+  }
+
+  const threshold = Math.max(2, Math.floor(query.length * 0.4));
+  if (best && bestDistance <= threshold) {
+    return { target: best.player, resolvedName: best.username, reason: `fuzzy:${bestDistance}` };
+  }
+
+  return { target: null, resolvedName: null, reason: 'not-found' };
 }
 
 function findNearestBlockByName(bot, predicate, maxDistance = 16) {
@@ -73,9 +190,17 @@ async function gotoBlockIfPossible(bot, block, range = 2) {
  * Send perception event to Python backend via stdout
  */
 function sendPerceptionEvent(type, data = {}) {
+  const payload = { ...(data || {}) };
+  if ((type === 'action_result' || type === 'error') && currentActionRequestId && !payload.request_id) {
+    payload.request_id = currentActionRequestId;
+  }
+  if ((type === 'action_result' || type === 'error') && currentActionName && !payload.action) {
+    payload.action = currentActionName;
+  }
+
   const event = {
     type,
-    data,
+    data: payload,
     timestamp: new Date().toISOString()
   };
   console.log(JSON.stringify(event));
@@ -175,6 +300,7 @@ function setupActionHandler(bot) {
  * Execute action received from Python backend
  */
 async function handleAction(bot, action) {
+  currentActionRequestId = action?.request_id || null;
   let { action: actionName, params = {}, timestamp } = action;
 
   // Normalize AIRI-style action names/params into local equivalents.
@@ -205,6 +331,8 @@ async function handleAction(bot, action) {
       num: params.num ?? 1,
     };
   }
+
+  currentActionName = actionName;
 
   try {
     switch (actionName) {
@@ -256,19 +384,13 @@ async function handleAction(bot, action) {
         // Move towards a player
         if (params.name) {
           try {
-            // Look for the player (case-insensitive search)
-            let targetPlayer = null;
-            const searchName = params.name.toLowerCase();
-            for (const playerName in bot.players) {
-              if (playerName.toLowerCase() === searchName) {
-                targetPlayer = bot.players[playerName];
-                break;
-              }
-            }
+            const resolved = resolvePlayerByName(bot, params.name, { includeSelf: false });
+            const targetPlayer = resolved.target;
             
             if (targetPlayer && targetPlayer.entity) {
               const range = params.range || 2;
-              console.error(`[Bot] Moving to player ${params.name} at ${targetPlayer.entity.position}`);
+              const resolvedName = resolved.resolvedName || params.name;
+              console.error(`[Bot] Moving to player '${params.name}' -> '${resolvedName}' (${resolved.reason}) at ${targetPlayer.entity.position}`);
               
               // Use pathfinder if available, otherwise use direct movement
               if (bot.pathfinder) {
@@ -285,13 +407,14 @@ async function handleAction(bot, action) {
               sendPerceptionEvent('action_result', {
                 action: actionName,
                 success: true,
-                message: `Moved towards player ${params.name}`
+                message: `Moved towards player ${resolvedName} (from '${params.name}')`
               });
             } else {
-              console.error(`[Bot] Player ${params.name} not found. Available players: ${Object.keys(bot.players).join(', ')}`);
+              const available = getResolvablePlayers(bot, false).map(p => p.username);
+              console.error(`[Bot] Player ${params.name} not found. Available players: ${available.join(', ')}`);
               sendPerceptionEvent('error', {
                 action: actionName,
-                message: `Player ${params.name} not found. Available: ${Object.keys(bot.players).join(', ')}`
+                message: `Player ${params.name} not found. Available: ${available.join(', ')}`
               });
             }
           } catch (e) {
@@ -610,7 +733,9 @@ async function handleAction(bot, action) {
           const playerName = params.player_name;
           const itemName = params.item_name;
           const num = Math.max(params.num || 1, 1);
-          const target = playerName ? bot.players[playerName]?.entity : null;
+          const resolved = resolvePlayerByName(bot, playerName, { includeSelf: false });
+          const targetName = resolved.resolvedName || playerName;
+          const target = resolved.target?.entity || null;
           const item = itemName ? bot.inventory.items().find(i => i.name === itemName) : null;
           if (!target) {
             sendPerceptionEvent('error', {
@@ -634,7 +759,7 @@ async function handleAction(bot, action) {
           sendPerceptionEvent('action_result', {
             action: actionName,
             success: true,
-            message: `Gave ${itemName} x${Math.min(num, item.count)} to ${playerName}`
+            message: `Gave ${itemName} x${Math.min(num, item.count)} to ${targetName} (from '${playerName}')`
           });
         } catch (e) {
           sendPerceptionEvent('error', {
@@ -692,14 +817,9 @@ async function handleAction(bot, action) {
 
       case 'attackPlayer': {
         try {
-          const playerName = (params.player_name || '').toLowerCase();
-          let targetPlayer = null;
-          for (const name of Object.keys(bot.players || {})) {
-            if (name.toLowerCase() === playerName) {
-              targetPlayer = bot.players[name];
-              break;
-            }
-          }
+          const playerName = params.player_name || '';
+          const resolved = resolvePlayerByName(bot, playerName, { includeSelf: false });
+          const targetPlayer = resolved.target;
           if (!targetPlayer?.entity) {
             sendPerceptionEvent('error', {
               action: actionName,
@@ -723,7 +843,7 @@ async function handleAction(bot, action) {
           sendPerceptionEvent('action_result', {
             action: actionName,
             success: true,
-            message: `Attacked player ${targetPlayer.username}`
+            message: `Attacked player ${resolved.resolvedName || targetPlayer.username || params.player_name}`
           });
         } catch (e) {
           sendPerceptionEvent('error', {
@@ -1103,6 +1223,7 @@ async function handleAction(bot, action) {
 
           const oreTargets = {
             stone: ['stone'],
+            wood: ['oak_log', 'spruce_log', 'birch_log', 'jungle_log', 'acacia_log', 'dark_oak_log', 'mangrove_log', 'cherry_log'],
             coal: ['coal_ore', 'deepslate_coal_ore'],
             iron: ['iron_ore', 'deepslate_iron_ore'],
             copper: ['copper_ore', 'deepslate_copper_ore'],
@@ -1280,6 +1401,9 @@ async function handleAction(bot, action) {
       success: false,
       error: error.message
     });
+  } finally {
+    currentActionRequestId = null;
+    currentActionName = null;
   }
 }
 
@@ -1304,8 +1428,12 @@ async function initBot() {
     console.error('[MinecraftBot] Pathfinder loaded');
     bot.loadPlugin(ArmorManager);
     console.error('[MinecraftBot] ArmorManager loaded');
-    bot.loadPlugin(autoEat);
-    console.error('[MinecraftBot] AutoEat loaded');
+    if (config.autoEatEnabled) {
+      bot.loadPlugin(autoEat);
+      console.error('[MinecraftBot] AutoEat loaded');
+    } else {
+      console.error('[MinecraftBot] AutoEat disabled (set MC_AUTOEAT=true to enable)');
+    }
     bot.loadPlugin(toolPlugin);
     console.error('[MinecraftBot] Tool plugin loaded');
     bot.loadPlugin(collectBlock);
@@ -1331,21 +1459,51 @@ async function initBot() {
       setupActionHandler(bot);
     });
 
-    bot.on('end', () => {
+    bot.on('kicked', (reason, loggedIn) => {
+      const reasonText = reason ? String(reason) : 'unknown kick reason';
+      lastKickReason = reasonText;
+      console.error(`[MinecraftBot] Kicked from server (loggedIn=${loggedIn}): ${reasonText}`);
+      sendPerceptionEvent('error', {
+        message: `Kicked from server: ${reasonText}`,
+        kicked: true,
+        logged_in: !!loggedIn,
+      });
+    });
+
+    bot.on('death', () => {
+      console.error('[MinecraftBot] Bot died in-game');
+      sendPerceptionEvent('action_result', {
+        action: 'status',
+        success: false,
+        message: 'Bot died in-game',
+        dead: true,
+      });
+    });
+
+    bot.on('end', (reason) => {
       isConnected = false;
-      console.error('[MinecraftBot] Bot disconnected');
+      const endReason = reason ? String(reason) : null;
+      const combinedReason = lastKickReason || endReason || 'Connection ended';
+      console.error(`[MinecraftBot] Bot disconnected: ${combinedReason}`);
       sendPerceptionEvent('disconnected', {
-        reason: 'Connection ended'
+        reason: combinedReason,
+        ended_reason: endReason,
+        kicked_reason: lastKickReason,
       });
       process.exit(0);
     });
 
     bot.on('error', (error) => {
       console.error('[MinecraftBot ERROR]', error);
-      const errorMessage = error?.message || String(error) || JSON.stringify(error);
+      const formatted = formatBotError(error);
+      const detailSuffix = formatted.details.length > 0
+        ? ` | causes: ${formatted.details.join(' ; ')}`
+        : '';
+      const errorMessage = `${formatted.message}${detailSuffix}`;
       console.error('[Bot Error Event]', errorMessage);
       sendPerceptionEvent('error', {
         message: errorMessage,
+        causes: formatted.details,
         full_error: String(error),
         stack: error?.stack
       });

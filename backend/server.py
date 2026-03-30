@@ -279,6 +279,24 @@ async def lifespan(app: FastAPI):
                     msg = f"[Minecraft] Error: {error_msg}"
                     print(f"[PERCEPTION] Sending to Monika: {msg}")
                     await audio_loop.session.send(input=msg, end_of_turn=False)
+
+                elif event.event_type == "ready":
+                    # Explicitly remind Monika which player she controls.
+                    data = event.data or {}
+                    bot_name = data.get("username") or "strawberryglass"
+                    msg = (
+                        f"[Minecraft] You are now connected as player '{bot_name}'. "
+                        "When user says 'come to me', ask for their nickname if missing, then use that target."
+                    )
+                    print(f"[PERCEPTION] Sending to Monika: {msg}")
+                    await audio_loop.session.send(input=msg, end_of_turn=False)
+
+                elif event.event_type == "disconnected":
+                    data = event.data or {}
+                    reason = data.get("reason") or "Connection ended"
+                    msg = f"[Minecraft] Bot disconnected. Reason: {reason}"
+                    print(f"[PERCEPTION] Sending to Monika: {msg}")
+                    await audio_loop.session.send(input=msg, end_of_turn=False)
             
             except Exception as e:
                 print(f"[PERCEPTION] Failed to send minecraft event to Monika: {e}")
