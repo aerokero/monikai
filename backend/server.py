@@ -40,6 +40,7 @@ from dataclasses import asdict
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import monikai
+from daily_briefing import DEFAULT_SECTIONS, build_daily_briefing, fetch_weather_details, normalize_profile
 from authenticator import FaceAuthenticator
 from kasa_agent import KasaAgent
 from spotify_manager import SpotifyManager
@@ -402,6 +403,9 @@ STUDY_DIR = DATA_DIR / "study"
 last_start_params = {}
 telegram_service = None
 telegram_task = None
+DAILY_BRIEFING_CACHE = {"ts": 0.0, "lang": "pl", "payload": None}
+DAILY_BRIEFING_LAST_PROPOSAL = None
+DAILY_BRIEFING_REJECTED_UNTIL = {}
 
 
 def _safe_study_path(rel_path: str) -> Path:
@@ -482,6 +486,23 @@ DEFAULT_SETTINGS = {
         "reasoning": {
             "enabled": True,
             "interval_sec": 120.0
+        }
+    },
+    "daily_briefing": {
+        "enabled": True,
+        "cache_minutes": 20,
+        "profile": {
+            "pinned_sections": ["weather"],
+            "preferred_sections": [],
+            "auto_slots": 3,
+            "candidate_pool": list(DEFAULT_SECTIONS.keys()),
+            "proposal_policy": {
+                "enabled": True,
+                "min_confidence": 0.65,
+                "cooldown_hours": 12
+            },
+            "language_mode": "auto",
+            "max_items_per_section": 5
         }
     }
 }
@@ -676,6 +697,13 @@ def load_settings():
                                 SETTINGS["proactivity"]["idle_nudges"].update(pv)
                             else:
                                 SETTINGS["proactivity"][pk] = pv
+                    elif k == "daily_briefing" and isinstance(v, dict):
+                        SETTINGS.setdefault("daily_briefing", {})
+                        for bk, bv in v.items():
+                            if bk == "profile" and isinstance(bv, dict):
+                                SETTINGS["daily_briefing"]["profile"] = normalize_profile(bv)
+                            else:
+                                SETTINGS["daily_briefing"][bk] = bv
                     else:
                         SETTINGS[k] = v
             print(f"Loaded settings: {SETTINGS}")
@@ -689,6 +717,112 @@ def save_settings():
         print("Settings saved.")
     except Exception as e:
         print(f"Error saving settings: {e}")
+
+
+def _briefing_language(raw: str = "pl") -> str:
+    return "pl" if str(raw or "pl").lower().startswith("pl") else "en"
+
+
+def _briefing_profile() -> dict:
+    section = SETTINGS.setdefault("daily_briefing", {})
+    profile = normalize_profile(section.get("profile") or {})
+    section["profile"] = profile
+    return profile
+
+
+def _collect_briefing_context(language: str = "pl") -> tuple[list, str, str, dict]:
+    memory_entries = []
+    topic_hint = ""
+    weather_summary = ""
+    weather_details = {}
+
+    if audio_loop and getattr(audio_loop, "memory_engine", None):
+        try:
+            memory_entries = audio_loop.memory_engine.list_recent(
+                limit=25,
+                types=["fact", "preference", "event", "reflection"],
+            )
+        except Exception:
+            memory_entries = []
+
+    if audio_loop and getattr(audio_loop, "proactivity", None):
+        try:
+            topic_hint = audio_loop.proactivity.pick_topic_hint() or ""
+        except Exception:
+            topic_hint = ""
+
+    if personality_system:
+        try:
+            personality_system.update_weather(force=False)
+            weather_summary = str(getattr(personality_system.state, "weather", "") or "")
+        except Exception:
+            weather_summary = ""
+
+    try:
+        weather_details = fetch_weather_details(language=language, days=7)
+        detail_summary = str((weather_details or {}).get("summary") or "")
+        if detail_summary:
+            weather_summary = detail_summary
+    except Exception:
+        weather_details = {}
+
+    return memory_entries, topic_hint, weather_summary, weather_details
+
+
+def _is_proposal_rejected(proposal: dict) -> bool:
+    pair = f"{proposal.get('from_section')}->{proposal.get('to_section')}"
+    until = float(DAILY_BRIEFING_REJECTED_UNTIL.get(pair, 0.0) or 0.0)
+    return time.time() < until
+
+
+async def _build_daily_briefing_payload(language: str = "pl", force: bool = False) -> dict:
+    lang = _briefing_language(language)
+    cfg = SETTINGS.setdefault("daily_briefing", {})
+    if not bool(cfg.get("enabled", True)):
+        return {
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "language": lang,
+            "active_sections": [],
+            "sections": [],
+            "profile": _briefing_profile(),
+            "proposal": None,
+            "disabled": True,
+        }
+
+    cache_minutes = max(1, int(cfg.get("cache_minutes", 20)))
+    now_ts = time.time()
+    if not force and DAILY_BRIEFING_CACHE.get("payload") and DAILY_BRIEFING_CACHE.get("lang") == lang:
+        if (now_ts - float(DAILY_BRIEFING_CACHE.get("ts", 0.0))) < (cache_minutes * 60):
+            return DAILY_BRIEFING_CACHE["payload"]
+
+    profile = _briefing_profile()
+    memory_entries, topic_hint, weather_summary, weather_details = _collect_briefing_context(language=lang)
+
+    payload = build_daily_briefing(
+        profile=profile,
+        language=lang,
+        weather_summary=weather_summary,
+        weather_details=weather_details,
+        memory_entries=memory_entries,
+        topic_hint=topic_hint,
+    )
+
+    payload["section_options"] = [
+        {
+            "id": sid,
+            "title": cfg_data.get("title", {}).get(lang, cfg_data.get("title", {}).get("en", sid)),
+        }
+        for sid, cfg_data in DEFAULT_SECTIONS.items()
+    ]
+
+    proposal = payload.get("proposal")
+    if proposal and _is_proposal_rejected(proposal):
+        payload["proposal"] = None
+
+    DAILY_BRIEFING_CACHE["payload"] = payload
+    DAILY_BRIEFING_CACHE["lang"] = lang
+    DAILY_BRIEFING_CACHE["ts"] = now_ts
+    return payload
 
 # Load on startup
 load_settings()
@@ -1346,6 +1480,84 @@ async def list_calendar(sid, data=None):
     if calendar_manager:
         events = [e.__dict__ for e in calendar_manager.get_all_events()]
     await sio.emit('calendar_data', events, room=sid)
+
+
+@sio.event
+async def get_daily_briefing(sid, data=None):
+    req = data or {}
+    language = req.get("language", "pl")
+    force = bool(req.get("force", False))
+    payload = await _build_daily_briefing_payload(language=language, force=force)
+    await sio.emit("daily_briefing_data", payload, room=sid)
+
+
+@sio.event
+async def set_daily_briefing_profile(sid, data=None):
+    data = data or {}
+    profile = normalize_profile(data.get("profile") or {})
+    SETTINGS.setdefault("daily_briefing", {})["profile"] = profile
+    save_settings()
+
+    DAILY_BRIEFING_CACHE["payload"] = None
+    DAILY_BRIEFING_CACHE["ts"] = 0.0
+
+    language = data.get("language", "pl")
+    payload = await _build_daily_briefing_payload(language=language, force=True)
+    await sio.emit("daily_briefing_data", payload, room=sid)
+    await _emit_to_frontend("settings", SETTINGS)
+
+
+@sio.event
+async def accept_daily_briefing_proposal(sid, data=None):
+    req = data or {}
+    proposal = req.get("proposal") or {}
+    from_section = str(proposal.get("from_section") or "").strip().lower()
+    to_section = str(proposal.get("to_section") or "").strip().lower()
+
+    if not from_section or not to_section or to_section not in DEFAULT_SECTIONS:
+        await sio.emit("error", {"msg": "Invalid daily briefing proposal."}, room=sid)
+        return
+
+    profile = _briefing_profile()
+    pinned = [s for s in profile.get("pinned_sections", []) if s in DEFAULT_SECTIONS]
+    preferred = [s for s in profile.get("preferred_sections", []) if s in DEFAULT_SECTIONS]
+
+    if from_section in pinned:
+        pinned = [s for s in pinned if s != from_section]
+    if to_section not in pinned:
+        pinned.append(to_section)
+    if to_section not in preferred:
+        preferred.append(to_section)
+
+    profile["pinned_sections"] = pinned[:3]
+    profile["preferred_sections"] = preferred[:4]
+    SETTINGS.setdefault("daily_briefing", {})["profile"] = normalize_profile(profile)
+    save_settings()
+
+    DAILY_BRIEFING_CACHE["payload"] = None
+    DAILY_BRIEFING_CACHE["ts"] = 0.0
+    payload = await _build_daily_briefing_payload(language=req.get("language", "pl"), force=True)
+    await sio.emit("daily_briefing_data", payload, room=sid)
+    await _emit_to_frontend("settings", SETTINGS)
+
+
+@sio.event
+async def reject_daily_briefing_proposal(sid, data=None):
+    req = data or {}
+    proposal = req.get("proposal") or {}
+    from_section = str(proposal.get("from_section") or "").strip().lower()
+    to_section = str(proposal.get("to_section") or "").strip().lower()
+
+    profile = _briefing_profile()
+    cooldown_hours = int((profile.get("proposal_policy") or {}).get("cooldown_hours", 12))
+    if from_section and to_section:
+        key = f"{from_section}->{to_section}"
+        DAILY_BRIEFING_REJECTED_UNTIL[key] = time.time() + max(1, cooldown_hours) * 3600
+
+    DAILY_BRIEFING_CACHE["payload"] = None
+    DAILY_BRIEFING_CACHE["ts"] = 0.0
+    payload = await _build_daily_briefing_payload(language=req.get("language", "pl"), force=True)
+    await sio.emit("daily_briefing_data", payload, room=sid)
 
 @sio.event
 async def get_personality_status(sid):
@@ -3084,6 +3296,17 @@ async def update_settings(sid, data):
                 audio_loop.reload_capture_settings()
             except Exception:
                 pass
+
+    if "daily_briefing" in data and isinstance(data.get("daily_briefing"), dict):
+        incoming = data["daily_briefing"]
+        SETTINGS.setdefault("daily_briefing", {})
+        for k, v in incoming.items():
+            if k == "profile" and isinstance(v, dict):
+                SETTINGS["daily_briefing"]["profile"] = normalize_profile(v)
+            else:
+                SETTINGS["daily_briefing"][k] = v
+        DAILY_BRIEFING_CACHE["payload"] = None
+        DAILY_BRIEFING_CACHE["ts"] = 0.0
 
     save_settings()
     # Broadcast new full settings

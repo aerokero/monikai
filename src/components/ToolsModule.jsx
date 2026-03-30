@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mic, MicOff, Settings, Power, Video, VideoOff, Lightbulb, Globe, Monitor, FileText, CalendarDays, Heart, Target } from 'lucide-react';
+import { Mic, MicOff, Settings, Power, Video, VideoOff, Lightbulb, Globe, Monitor, FileText, CalendarDays, Heart, Target, Newspaper } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const Button = ({ onClick, isActive, disabled, icon: Icon, activeIcon: ActiveIcon, title, variant = 'default', onContextMenu }) => {
@@ -61,6 +61,8 @@ const ToolsModule = ({
     showCompanionWindow,
     onToggleGoals,
     showGoalsWindow,
+    onToggleDailyBriefing,
+    showDailyBriefingWindow,
     onResetPosition,
     activeDragElement,
 
@@ -182,6 +184,15 @@ const ToolsModule = ({
                     icon={Target} 
                     title={t('tools.goals') || "Goals"}
                     onContextMenu={(e) => { e.preventDefault(); onResetPosition('goals'); }}
+                />
+
+                <Button 
+                    onClick={onToggleDailyBriefing} 
+                    isActive={showDailyBriefingWindow} 
+                    disabled={!isConnected}
+                    icon={Newspaper} 
+                    title={t('tools.briefing') || 'Daily Briefing'}
+                    onContextMenu={(e) => { e.preventDefault(); onResetPosition('daily_briefing'); }}
                 />
 
                 <div className="w-px bg-white/10 mx-1 my-2" />

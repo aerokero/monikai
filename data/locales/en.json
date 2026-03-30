@@ -23,6 +23,7 @@
     "kasa": "Smart Home",
     "companion": "Companion",
     "goals": "Mission Log",
+    "briefing": "Daily Briefing",
     "internal_thoughts": "Internal Thoughts",
     "minecraft": "Minecraft Server",
     "settings": "Settings",
@@ -106,6 +107,21 @@
     "memory": "Memory Management",
     "import_memory": "Import file to remember",
     "language": "Language"
+  },
+  "briefing": {
+    "title": "Daily Briefing",
+    "refresh": "Refresh briefing",
+    "loading": "Loading briefing...",
+    "updated": "Updated",
+    "open": "Open source",
+    "pin": "Pin section",
+    "unpin": "Unpin section",
+    "no_items": "No briefing items yet.",
+    "dynamic_hint": "Sections are dynamic: your pinned picks + AI suggestions from recent context.",
+    "ai_proposal": "AI suggestion",
+    "swap": "Suggested swap",
+    "accept": "Accept",
+    "reject": "Reject"
   },
   "personality": {
     "state": "Monika's State",

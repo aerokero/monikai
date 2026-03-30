@@ -21,6 +21,7 @@ import GoalsWindow from './components/GoalsWindow';
 import SessionPromptWindow from './components/SessionPromptWindow';
 import StudyWindow from './components/StudyWindow';
 import MinecraftWindow from './components/MinecraftWindow';
+import DailyBriefingWindow from './components/DailyBriefingWindow';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 
 const socket = io('http://localhost:8000');
@@ -66,12 +67,13 @@ const getClampedCenterX = (preferredX, windowWidth, panelWidth, margin = 12) => 
   tools: { x: window.innerWidth / 2, y: window.innerHeight - 115 },
   companion: { x: Math.round(window.innerWidth * 0.36), y: window.innerHeight / 2 },
   goals: { x: window.innerWidth / 2, y: window.innerHeight / 2 },
+  daily_briefing: { x: window.innerWidth - 320, y: window.innerHeight / 2 },
   study: { x: Math.max(420, Math.round(window.innerWidth * 0.32)), y: window.innerHeight / 2 },
   minecraft: { x: window.innerWidth - 320, y: 360 }
   });
 
 function AppContent() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
 
   // ---------------------------------------------------------------------
   // Helpers
@@ -150,6 +152,7 @@ function AppContent() {
   const [showBrowserWindow, setShowBrowserWindow] = useState(false);
   const [showCompanionWindow, setShowCompanionWindow] = useState(false);
   const [showGoalsWindow, setShowGoalsWindow] = useState(false);
+  const [showDailyBriefingWindow, setShowDailyBriefingWindow] = useState(false);
   const [showStudyWindow, setShowStudyWindow] = useState(false);
   const [showMinecraftWindow, setShowMinecraftWindow] = useState(false);
   const [eatTogetherActive, setEatTogetherActive] = useState(false);
@@ -465,6 +468,7 @@ function AppContent() {
     session_notes: { w: 620, h: 640 },
     companion: { w: 760, h: 720 },
     goals: { w: 1220, h: 760 },
+    daily_briefing: { w: 520, h: 620 },
     study: { w: 1120, h: 760 },
     minecraft: { w: 384, h: 520 },
   });
@@ -473,7 +477,7 @@ function AppContent() {
 
   // Z-Index Stacking Order (last element = highest z-index)
   const [zIndexOrder, setZIndexOrder] = useState([
-    'visualizer', 'chat', 'tools', 'video', 'screen', 'browser', 'kasa', 'reminders', 'notes', 'session_notes', 'companion', 'goals', 'study', 'minecraft'
+    'visualizer', 'chat', 'tools', 'video', 'screen', 'browser', 'kasa', 'reminders', 'notes', 'session_notes', 'companion', 'goals', 'daily_briefing', 'study', 'minecraft'
   ]);
 
   // ---------------------------------------------------------------------
@@ -2830,6 +2834,8 @@ function AppContent() {
             showCompanionWindow={showCompanionWindow}
             onToggleGoals={() => handleToggleWindow('goals', showGoalsWindow, setShowGoalsWindow)}
             showGoalsWindow={showGoalsWindow}
+            onToggleDailyBriefing={() => handleToggleWindow('daily_briefing', showDailyBriefingWindow, setShowDailyBriefingWindow)}
+            showDailyBriefingWindow={showDailyBriefingWindow}
             onResetPosition={handleResetPosition}
             activeDragElement={activeDragElement}
             position={elementPositions.tools}
@@ -2860,6 +2866,19 @@ function AppContent() {
             onMouseDown={(e) => handleMouseDown(e, 'reminders')}
             activeDragElement={activeDragElement}
             zIndex={getZIndex('reminders')}
+          />
+        )}
+
+        {/* Daily Briefing Window */}
+        {showDailyBriefingWindow && (
+          <DailyBriefingWindow
+            socket={socket}
+            onClose={() => setShowDailyBriefingWindow(false)}
+            position={elementPositions.daily_briefing}
+            onMouseDown={(e) => handleMouseDown(e, 'daily_briefing')}
+            activeDragElement={activeDragElement}
+            zIndex={getZIndex('daily_briefing')}
+            language={language}
           />
         )}
 

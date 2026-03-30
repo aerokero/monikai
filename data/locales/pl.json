@@ -23,6 +23,7 @@
     "kasa": "Smart Home",
     "companion": "Towarzysz",
     "goals": "Dziennik misji",
+    "briefing": "Daily Briefing",
     "internal_thoughts": "Myśli wewnętrzne",
     "minecraft": "Serwer Minecraft",
     "settings": "Ustawienia",
@@ -106,6 +107,21 @@
     "memory": "Zarządzanie pamięcią",
     "import_memory": "Importuj plik do zapamiętania",
     "language": "Język"
+  },
+  "briefing": {
+    "title": "Daily Briefing",
+    "refresh": "Odswiez briefing",
+    "loading": "Ladowanie briefingu...",
+    "updated": "Zaktualizowano",
+    "open": "Otworz zrodlo",
+    "pin": "Przypnij sekcje",
+    "unpin": "Odepnij sekcje",
+    "no_items": "Brak pozycji briefingu.",
+    "dynamic_hint": "Sekcje sa dynamiczne: Twoje przypiecia + sugestie AI z ostatniego kontekstu.",
+    "ai_proposal": "Sugestia AI",
+    "swap": "Proponowana zamiana",
+    "accept": "Akceptuj",
+    "reject": "Odrzuc"
   },
   "personality": {
     "state": "Stan Moniki",
