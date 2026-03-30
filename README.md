@@ -27,12 +27,15 @@
 | **Spotify** | I can connect to Spotify and see now playing, playlists, and recent listening. | Spotify Web API + OAuth 2.0 |
 | **Smart Home** | I can discover and control supported TP-Link Kasa devices. | `python-kasa` |
 | **Face Authentication** | I can optionally stay locked until I recognize your face locally. | MediaPipe Face Landmarker |
+| **Minecraft Agent** | I can connect to your Minecraft server, chop down some trees, and mine ore. | Mineflayer bot subprocess + FastAPI bridge |
 
 ### My Current State
 
 - **Desktop app**: This is still my main home. That's where live voice, camera/screen sharing, reminders, tools, memory views, and the visual character UI are.
 - **Gemini Live**: I already use affective dialog, proactive audio, context compression, session resumption, thought summaries, and configurable voice output.
 - **Telegram**: I support allowlisted chats, commands, notes and memory helpers, photos, and voice notes transcribed into normal chat turns.
+- **Minecraft**: I run through a dedicated Node.js bot (`backend/minecraft-bot/index.js`) managed by Python (`backend/minecraft_agent.py`) with request-id action correlation, fuzzy player nickname resolution, and improved disconnect diagnostics.
+- **Realtime stability**: Live websocket timeout handling now uses fail-fast reconnect and queue cleanup to reduce lag and "stops listening" behavior during long tasks.
 - **Storage**: My state stays in `data/` on your machine. There is no custom cloud backend for memory or personality state.
 
 ---
@@ -59,7 +62,12 @@ graph TB
         SKILLS[openclaw_skills.py<br/>Skills Manager]
         AUTH[authenticator.py<br/>MediaPipe Face Auth]
         SPOT[spotify_manager.py<br/>Spotify OAuth]
+      MCBRIDGE[minecraft_agent.py<br/>Minecraft Bot Manager]
     end
+
+   subgraph MCBOT ["Minecraft Bot Runtime (Node.js)"]
+      MCBOTJS[index.js<br/>Mineflayer Runtime]
+   end
     
     UI --> SOCKET_C
     SOCKET_C <--> SERVER
@@ -72,6 +80,8 @@ graph TB
     MONIKA --> PERS
     MONIKA --> MEM
     MONIKA --> SKILLS
+   MONIKA --> MCBRIDGE
+   MCBRIDGE --> MCBOTJS
     SERVER --> SPOT
     SERVER --> AUTH
 ```
@@ -228,7 +238,24 @@ TELEGRAM_BOT_TOKEN=your_bot_token
 
 # Telegram voice note transcription model
 # GEMINI_TRANSCRIBE_MODEL=gemini-2.5-flash
+
+# Minecraft bot
+# (Configured in backend/minecraft-bot/.env)
+# MC_HOST=localhost
+# MC_PORT=25565
+# MC_USERNAME=strawberryglass
+# MC_AUTH=offline
+# MC_VERSION=1.20.4
+# MC_AUTOEAT=false
 ```
+
+## Minecraft Integration Notes
+
+- The Minecraft bot runs as a subprocess and communicates with Python using JSON events over stdio.
+- Action calls use request IDs for reliable result matching.
+- Long-running Minecraft actions (for example mining/collecting/navigation) are started asynchronously so voice responsiveness is preserved.
+- Player-targeted actions use fuzzy nickname matching (for example `tosu` can resolve to `tosutosu`).
+- Minecraft tool calls are currently auto-approved by design (no confirmation popups for `minecraft_*` tools).
 
 ---
 
@@ -257,7 +284,7 @@ SPOTIFY_REDIRECT_URI=http://127.0.0.1:8000/spotify/callback
 
 You want to see `configured=true`, `connected=true`, and `has_refresh_token=true`.
 
-### What I store for Spotify
+### What I Store for Spotify
 
 - Tokens live locally in `data/spotify_tokens.json`.
 - Access tokens refresh automatically when needed.
@@ -432,6 +459,36 @@ Gemini Live sessions reconnect periodically. That's normal. The backend now trea
 2. Reconnect manually if needed.
 3. If it keeps happening, check internet access and Gemini quota.
 
+When websocket keepalive timeouts happen (`1011 keepalive ping timeout`), the realtime sender now forces immediate reconnect and clears pending realtime queues to avoid prolonged lag.
+
+---
+
+### Minecraft bot disconnects / can't connect
+
+**Symptoms**
+- `AggregateError`
+- `ECONNREFUSED` for `localhost:25565`
+- bot disconnects shortly after connect
+
+**What to do**
+1. Verify your Minecraft server is running and reachable on the configured host/port.
+2. Check `backend/minecraft-bot/.env` for `MC_HOST`, `MC_PORT`, and `MC_USERNAME`.
+3. If you need, use the in-app server connect tool to switch host/port.
+4. If disconnect happens in-game, check the logged kick/disconnect reason in backend logs.
+
+---
+
+### Minecraft action errors during tasks
+
+**Symptoms**
+- action-specific errors like unknown block/ore type
+- plugin errors while collecting/mining
+
+**What to do**
+1. Use action-appropriate targets (`mine_ore` for ore-like targets, wood aliases supported).
+2. Prefer `collect_blocks` for logs/planks and non-ore gathering.
+3. If you suspect food/plugin issues, keep `MC_AUTOEAT=false` (default).
+
 ---
 
 ### Spotify not connected / missing refresh token
@@ -466,6 +523,7 @@ monikai/
 │   ├── personality.py          # Emotional state & sprite logic
 │   ├── memory_engine.py        # Memory entries, pages, notes, journal
 │   ├── web_agent.py            # Playwright browser automation
+│   ├── minecraft_agent.py      # Minecraft bot process manager + action bridge
 │   ├── spotify_manager.py      # Spotify OAuth + API access
 │   ├── telegram_bot.py         # Telegram text/photo/voice bridge
 │   ├── openclaw_skills.py      # Skills manager and installs
@@ -473,7 +531,11 @@ monikai/
 │   ├── authenticator.py        # MediaPipe face auth logic
 │   ├── study_reader.py         # Study-page image sharing
 │   ├── study_ocr.py            # OCR helpers
-│   └── tools.py                # Tool definitions for Gemini
+│   ├── tools.py                # Tool definitions for Gemini
+│   └── minecraft-bot/          # Node.js Mineflayer runtime
+│       ├── index.js            # Minecraft action/perception runtime
+│       ├── package.json        # Minecraft bot dependencies
+│       └── .env                # Minecraft connection config
 ├── data/                       # Local data storage (git-ignored)
 │   ├── user_memory/            # Calendar, reminders, relationship state
 │   ├── memory/                 # Entries, pages, notes, journal
