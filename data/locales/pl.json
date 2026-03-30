@@ -21,6 +21,8 @@
     "calendar": "Kalendarz",
     "web_agent": "Agent Web",
     "kasa": "Smart Home",
+    "companion": "Towarzysz",
+    "goals": "Dziennik misji",
     "settings": "Ustawienia",
     "power": "Zasilanie",
     "mute": "Wycisz"
@@ -138,27 +140,174 @@
   },
   "companion": {
     "title": "Centrum Towarzysza",
+    "subtitle": "Wspólne rytuały, sesje i nauka w jednym miejscu",
+    "kicker": "Centrum Towarzysza",
+    "open_goals": "Otwórz dziennik misji",
     "tabs": {
       "session": "Sesja",
       "activities": "Aktywności",
-      "study": "Nauka",
-      "quests": "Cele"
+      "study": "Nauka"
+    },
+    "overview": {
+      "mood": "Nastrój",
+      "energy": "Energia",
+      "affection": "Bliskość",
+      "goals": "Cele / Odblokowania",
+      "neutral": "neutralny"
     },
     "activities": {
       "eat": "Zjedzmy razem",
+      "eat_desc": "Uruchom spokojny tryb wspólnego posiłku i pobądźmy chwilę razem.",
       "headpat": "Głaskanie",
+      "headpat_desc": "Mała czuła interakcja. Krótka, głupio urocza i skuteczna.",
       "gift": "Daj prezent",
+      "gift_desc": "Podaruj drobny symboliczny prezent i zróbmy z tego miły moment.",
       "gift_prompt": "Jaki prezent chcesz dać?"
     },
     "study": {
-      "japanese_together": "Uczmy się japońskiego razem"
+      "japanese_together": "Uczmy się japońskiego razem",
+      "title": "Towarzysz nauki",
+      "desc": "Otwórz aktualny zestaw nauki i wróć do wybranej strony.",
+      "folder": "Folder",
+      "file": "Plik"
     },
     "session": {
+      "title": "Prowadzona sesja",
+      "desc": "Włącz to, jeśli chcesz wolniejszego, bardziej skupionego trybu zamiast zwykłego czatu.",
       "start": "Rozpocznij sesję",
-      "end": "Zakończ sesję"
+      "end": "Zakończ sesję",
+      "start_desc": "Przejdź do spokojniejszego, bardziej intencjonalnego trybu rozmowy.",
+      "end_desc": "Wróć do normalnej rozmowy i zamknij skupiony tryb."
+    }
+  },
+  "goals": {
+    "title": "Postępy",
+    "subtitle": "Drzewko osiągnięć, codzienne zadania i długofalowy progres",
+    "kicker": "Macierz Postępu",
+    "relationship": "Tor relacji",
+    "level": "Poziom",
+    "closeness": "Bliskość",
+    "current_xp": "{value}/{total} XP na tym poziomie",
+    "total_xp": "{value} XP łącznie",
+    "active_missions": "Aktywne misje",
+    "empty": "Na razie nie ma aktywnych misji.",
+    "quest_fallback": "Misja",
+    "completed_recent": "Ostatnio ukończone",
+    "skill_tree": "Drzewko rozwoju",
+    "unlocks": "Odblokowane ścieżki",
+    "unlocks_empty": "Jeszcze nic tu nie odblokowano.",
+    "next_unlocks": "Kolejne progi",
+    "reach_level": "Osiągnij poziom {value}",
+    "reward_xp": "+{value} XP",
+    "tree": {
+      "title": "Drzewko osiągnięć",
+      "hint": "Najedź na węzeł, żeby zobaczyć szczegóły. Na dotyku możesz też kliknąć.",
+      "summary": "Zdobyto {unlocked} z {total} osiągnięć",
+      "selected": "Wybrane osiągnięcie",
+      "status_unlocked": "Zdobyte",
+      "status_locked": "Zablokowane",
+      "requirement": "Wymaganie",
+      "reward": "Nagroda / odblokowanie",
+      "bond_status": "Zaufanie {value}",
+      "nodes": {
+        "first_bond": {
+          "title": "Pierwszy kontakt",
+          "desc": "Rozpocznij wspólną ścieżkę i odblokuj bazowy rdzeń relacji.",
+          "reward": "Rdzeń więzi",
+          "req": "Dostępne od początku"
+        },
+        "bond_lvl_2": {
+          "title": "Pierwsza iskra",
+          "desc": "Wejdź na 2 poziom więzi i zacznij realnie wychodzić poza zwykły small talk.",
+          "reward": "Nowe osobiste wątki",
+          "req": "Osiągnij poziom więzi 2"
+        },
+        "trust_40": {
+          "title": "Skok zaufania",
+          "desc": "Zbuduj tyle zaufania, żeby głębsze rozmowy stały się naturalne.",
+          "reward": "Bardziej refleksyjny ton",
+          "req": "Osiągnij 40 zaufania"
+        },
+        "playful_35": {
+          "title": "Tryb bitu",
+          "desc": "Utrzymaj dość lekki i playful klimat, żeby teasing był naturalny.",
+          "reward": "Więcej drobnego banteru",
+          "req": "Osiągnij 35 playful"
+        },
+        "reflection_25": {
+          "title": "Cicha głębia",
+          "desc": "Rozwiń refleksję na tyle, żeby odblokować spokojniejsze, głębsze ścieżki.",
+          "reward": "Nowe pytania introspekcyjne",
+          "req": "Osiągnij 25 refleksji"
+        },
+        "streak_3": {
+          "title": "Do jutra",
+          "desc": "Wracaj trzy dni z rzędu i zbuduj prawdziwy rytm kontaktu.",
+          "reward": "Daily check-in vibe",
+          "req": "Utrzymaj streak 3 dni"
+        },
+        "unlocks_3": {
+          "title": "Pathfinder",
+          "desc": "Odblokuj kilka ścieżek progresji i pokaż, że to już nie jest przypadkowy run.",
+          "reward": "Nowe ścieżki relacji",
+          "req": "Odblokuj 3 ścieżki"
+        },
+        "quests_2": {
+          "title": "Quest clear",
+          "desc": "Ukończ widoczne misje i pokaż, że potrafisz domykać wspólny progres.",
+          "reward": "Bonusowy flavor misji",
+          "req": "Ukończ 2 misje"
+        },
+        "bond_lvl_4": {
+          "title": "Inner circle",
+          "desc": "Wejdź na poziom relacji, na którym pojawiają się bardziej wyjątkowe odblokowania.",
+          "reward": "Rzadsze opcje i tematy",
+          "req": "Osiągnij poziom więzi 4"
+        }
+      }
     },
-    "quests": {
-      "empty": "Brak aktywnych celów."
+    "daily": {
+      "title": "Daily quests",
+      "empty": "Dzisiaj nie ma jeszcze żadnych daily questów."
+    },
+    "lifetime": {
+      "title": "Lifetime quests",
+      "items": {
+        "bond3": {
+          "title": "Stabilna więź",
+          "desc": "Wejdź na 3 poziom więzi."
+        },
+        "trust40": {
+          "title": "Pełniejsze zaufanie",
+          "desc": "Osiągnij 40 punktów zaufania."
+        },
+        "quests5": {
+          "title": "Mission runner",
+          "desc": "Ukończ 5 misji łącznie."
+        },
+        "growth30": {
+          "title": "Długofalowy rozwój",
+          "desc": "Podnieś średni rozwój do 30."
+        }
+      }
+    },
+    "stats": {
+      "reflection": "Refleksja",
+      "communication": "Komunikacja",
+      "curiosity": "Ciekawość",
+      "consistency": "Regularność"
+    },
+    "category": {
+      "bond": "Więź",
+      "reflection": "Refleksja",
+      "curiosity": "Ciekawość",
+      "consistency": "Regularność",
+      "reward": "Nagroda"
+    },
+    "unlock_type": {
+      "topic": "Wątek",
+      "activity": "Aktywność",
+      "reward": "Nagroda"
     }
   },
   "session": {

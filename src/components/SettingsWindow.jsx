@@ -192,7 +192,7 @@ const SettingsWindow = ({
               <button
                 onClick={() => setIsCameraFlipped(!isCameraFlipped)}
                 className={`w-12 h-6 rounded-full transition-colors relative ${
-                  isCameraFlipped ? 'bg-white' : 'bg-white/20'
+                  isCameraFlipped ? 'bg-cyan-500/70 shadow-lg shadow-cyan-500/30' : 'bg-white/20'
                 }`}
               >
                 <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
@@ -219,8 +219,8 @@ const SettingsWindow = ({
                     <span className="text-sm text-white/80 capitalize font-mono">{key.replace(/_/g, ' ')}</span>
                     <button
                       onClick={() => onTogglePermission && onTogglePermission(key)}
-                      className={`w-10 h-5 rounded-full transition-colors relative ${
-                        val ? 'bg-white' : 'bg-white/10'
+                      className={`w-10 h-5 rounded-full transition-all relative ${
+                        val ? 'bg-emerald-500/70 shadow-lg shadow-emerald-500/30' : 'bg-white/10'
                       }`}
                     >
                       <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-transform ${

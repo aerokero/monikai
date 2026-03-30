@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mic, MicOff, Settings, Power, Video, VideoOff, Lightbulb, Globe, Monitor, FileText, CalendarDays, Heart } from 'lucide-react';
+import { Mic, MicOff, Settings, Power, Video, VideoOff, Lightbulb, Globe, Monitor, FileText, CalendarDays, Heart, Target } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const Button = ({ onClick, isActive, disabled, icon: Icon, activeIcon: ActiveIcon, title, variant = 'default', onContextMenu }) => {
@@ -59,6 +59,8 @@ const ToolsModule = ({
     showBrowserWindow,
     onToggleCompanion,
     showCompanionWindow,
+    onToggleGoals,
+    showGoalsWindow,
     onResetPosition,
     activeDragElement,
 
@@ -133,6 +135,15 @@ const ToolsModule = ({
                     icon={Heart} 
                     title={t('tools.companion') || "Companion"}
                     onContextMenu={(e) => { e.preventDefault(); onResetPosition('companion'); }}
+                />
+
+                <Button 
+                    onClick={onToggleGoals} 
+                    isActive={showGoalsWindow} 
+                    disabled={!isConnected}
+                    icon={Target} 
+                    title={t('tools.goals') || "Goals"}
+                    onContextMenu={(e) => { e.preventDefault(); onResetPosition('goals'); }}
                 />
 
                 <div className="w-px bg-white/10 mx-1 my-2" />

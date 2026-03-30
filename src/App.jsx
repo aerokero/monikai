@@ -17,6 +17,7 @@ import PersonalityWindow from './components/PersonalityWindow';
 import CameraWindow from './components/CameraWindow';
 import ScreenWindow from './components/ScreenWindow';
 import CompanionWindow from './components/CompanionWindow';
+import GoalsWindow from './components/GoalsWindow';
 import SessionPromptWindow from './components/SessionPromptWindow';
 import StudyWindow from './components/StudyWindow';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
@@ -54,7 +55,8 @@ const normalizeToolPermissions = (raw) => {
   notes: { x: 270, y: 360 },
   session_notes: { x: Math.round(window.innerWidth * 0.65), y: 360 },
   tools: { x: window.innerWidth / 2, y: window.innerHeight - 115 },
-  companion: { x: window.innerWidth / 2, y: window.innerHeight / 2 },
+  companion: { x: Math.round(window.innerWidth * 0.36), y: window.innerHeight / 2 },
+  goals: { x: window.innerWidth / 2, y: window.innerHeight / 2 },
   study: { x: Math.max(420, Math.round(window.innerWidth * 0.32)), y: window.innerHeight / 2 }
   });
 
@@ -137,6 +139,7 @@ function AppContent() {
   const [showSessionNotesWindow, setShowSessionNotesWindow] = useState(false);
   const [showBrowserWindow, setShowBrowserWindow] = useState(false);
   const [showCompanionWindow, setShowCompanionWindow] = useState(false);
+  const [showGoalsWindow, setShowGoalsWindow] = useState(false);
   const [showStudyWindow, setShowStudyWindow] = useState(false);
   const [eatTogetherActive, setEatTogetherActive] = useState(false);
   const [eatTogetherMeal, setEatTogetherMeal] = useState(null);
@@ -449,7 +452,8 @@ function AppContent() {
     reminders: { w: 420, h: 560 },
     notes: { w: 500, h: 600 },
     session_notes: { w: 620, h: 640 },
-    companion: { w: 400, h: 500 },
+    companion: { w: 760, h: 720 },
+    goals: { w: 1220, h: 760 },
     study: { w: 1120, h: 760 },
   });
 
@@ -457,7 +461,7 @@ function AppContent() {
 
   // Z-Index Stacking Order (last element = highest z-index)
   const [zIndexOrder, setZIndexOrder] = useState([
-    'visualizer', 'chat', 'tools', 'video', 'screen', 'browser', 'kasa', 'reminders', 'notes', 'session_notes', 'companion', 'study'
+    'visualizer', 'chat', 'tools', 'video', 'screen', 'browser', 'kasa', 'reminders', 'notes', 'session_notes', 'companion', 'goals', 'study'
   ]);
 
   // ---------------------------------------------------------------------
@@ -2426,16 +2430,19 @@ function AppContent() {
     setVisibility(!isVisible);
   };
 
-  // Shortcut for Companion Window (Alt+C)
+  // Shortcuts for companion windows
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.altKey && (e.code === 'KeyC')) {
         handleToggleWindow('companion', showCompanionWindow, setShowCompanionWindow);
       }
+      if (e.altKey && (e.code === 'KeyG')) {
+        handleToggleWindow('goals', showGoalsWindow, setShowGoalsWindow);
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showCompanionWindow]);
+  }, [showCompanionWindow, showGoalsWindow]);
 
   const activeSessionPrompt = sessionPromptQueue.length ? sessionPromptQueue[0] : null;
 
@@ -2809,6 +2816,8 @@ function AppContent() {
             showBrowserWindow={showBrowserWindow}
             onToggleCompanion={() => handleToggleWindow('companion', showCompanionWindow, setShowCompanionWindow)}
             showCompanionWindow={showCompanionWindow}
+            onToggleGoals={() => handleToggleWindow('goals', showGoalsWindow, setShowGoalsWindow)}
+            showGoalsWindow={showGoalsWindow}
             onResetPosition={handleResetPosition}
             activeDragElement={activeDragElement}
             position={elementPositions.tools}
@@ -2893,6 +2902,8 @@ function AppContent() {
             socket={socket}
             onClose={() => setShowCompanionWindow(false)}
             position={elementPositions.companion}
+            width={elementSizes.companion?.w}
+            height={elementSizes.companion?.h}
             onMouseDown={(e) => handleMouseDown(e, 'companion')}
             activeDragElement={activeDragElement}
             zIndex={getZIndex('companion')}
@@ -2906,6 +2917,20 @@ function AppContent() {
             eatTogetherActive={eatTogetherActive}
             onStartEatTogether={startEatTogether}
             onStopEatTogether={stopEatTogether}
+            personalityState={personalityState}
+            onOpenGoals={() => handleToggleWindow('goals', showGoalsWindow, setShowGoalsWindow)}
+          />
+        )}
+
+        {showGoalsWindow && (
+          <GoalsWindow
+            onClose={() => setShowGoalsWindow(false)}
+            position={elementPositions.goals}
+            width={elementSizes.goals?.w}
+            height={elementSizes.goals?.h}
+            onMouseDown={(e) => handleMouseDown(e, 'goals')}
+            activeDragElement={activeDragElement}
+            zIndex={getZIndex('goals')}
             personalityState={personalityState}
           />
         )}

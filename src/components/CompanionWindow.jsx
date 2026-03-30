@@ -1,6 +1,46 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Heart, Utensils, Gift, Smile, Book, X, ClipboardList, Target } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Heart, Utensils, Gift, Smile, Book, X, ClipboardList, Coffee } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
+
+const TabButton = ({ active, icon: Icon, label, onClick }) => (
+  <button
+    onClick={onClick}
+    className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200 ${
+      active
+        ? 'border border-white/20 bg-white/15 text-white'
+        : 'border border-white/10 bg-black/20 text-white/60 hover:bg-white/10 hover:text-white'
+    }`}
+  >
+    <Icon size={14} />
+    <span>{label}</span>
+  </button>
+);
+
+const Surface = ({ children, className = '' }) => (
+  <div className={`rounded-xl border border-white/10 bg-black/20 ${className}`}>
+    {children}
+  </div>
+);
+
+const ActionTile = ({ icon: Icon, title, description, onClick, accentClass, wide = false, trailing = null }) => (
+  <button
+    onClick={onClick}
+    className={`group rounded-xl border border-white/10 bg-black/20 p-5 text-left transition-all hover:-translate-y-0.5 hover:border-white/20 hover:bg-white/10 ${wide ? 'col-span-2' : ''}`}
+  >
+    <div className="flex items-start gap-4">
+      <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl transition-colors ${accentClass}`}>
+        <Icon size={22} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm font-semibold text-white">{title}</div>
+          {trailing}
+        </div>
+        <div className="mt-1 text-xs leading-relaxed text-white/45">{description}</div>
+      </div>
+    </div>
+  </button>
+);
 
 const CompanionWindow = ({
   socket,
@@ -20,39 +60,34 @@ const CompanionWindow = ({
   onStartEatTogether,
   onStopEatTogether,
   personalityState,
+  width = 760,
+  height = 700,
 }) => {
   const { t } = useLanguage();
-  const [activeTab, setActiveTab] = useState('session'); // activities, session, study, quests
-
-  const activeVisibleQuests = useMemo(() => {
-    return (Array.isArray(personalityState?.quests) ? personalityState.quests : [])
-      .filter((q) => q && q.status === 'active' && (q.visibility || 'visible') === 'visible')
-      .slice(0, 8);
-  }, [personalityState]);
+  const [activeTab, setActiveTab] = useState('session');
+  const isWide = width >= 700;
 
   const handleAction = (action) => {
-    let text = "";
+    let text = '';
     switch (action) {
       case 'eat':
         if (eatTogetherActive) {
           if (onStopEatTogether) onStopEatTogether();
-          text = "*finishes our meal together* That was really nice.";
+          text = "That was nice. Let's wrap up our little meal together.";
         } else {
           if (onStartEatTogether) onStartEatTogether();
-          text = "*prepares a meal for us to eat together* Let's have a meal together! I made something nice.";
+          text = "Let's eat together for a bit. I want something cozy and low-key.";
         }
         break;
       case 'headpat':
-        text = "*gently headpats Monika*";
+        text = 'headpat for you';
         if (onHeadpat) onHeadpat();
         break;
-      case 'gift':
+      case 'gift': {
         const gift = prompt(t('companion.activities.gift_prompt'));
-        if (gift) text = `*gives you a ${gift}* I got this specifically for you!`;
+        if (gift) text = `I brought you a little gift: ${gift}.`;
         break;
-      case 'therapy_start':
-        text = "System Notification: Start Therapy/Shadow Session. Use the Session mode therapeutic protocol (Shadow Integration, grounded tone, concrete questions, no diagnosis).";
-        break;
+      }
       default:
         return;
     }
@@ -70,8 +105,8 @@ const CompanionWindow = ({
     if (studySelection?.file) setSelectedFile(studySelection.file);
   }, [studySelection?.folder, studySelection?.file]);
 
-  const activeFolder = folders.find(f => f.name === selectedFolder) || folders[0];
-  const visibleFiles = activeFolder ? (activeFolder.files || []).filter(f => !f.is_answer_key) : [];
+  const activeFolder = folders.find((f) => f.name === selectedFolder) || folders[0];
+  const visibleFiles = activeFolder ? (activeFolder.files || []).filter((f) => !f.is_answer_key) : [];
 
   useEffect(() => {
     if (!selectedFolder && activeFolder) {
@@ -87,152 +122,136 @@ const CompanionWindow = ({
 
   const openSelectedStudy = () => {
     const folder = activeFolder;
-    const fileName = selectedFile || (visibleFiles[0]?.name || "");
+    const fileName = selectedFile || visibleFiles[0]?.name || '';
     if (!folder || !fileName) return;
-    const fileEntry = (folder.files || []).find(f => f.name === fileName);
+    const fileEntry = (folder.files || []).find((f) => f.name === fileName);
     if (fileEntry && onOpenStudy) {
       onOpenStudy({ folder: folder.name, file: fileEntry.name, path: fileEntry.path });
       if (onShowStudy) onShowStudy();
     }
   };
-  const sessionIconClass = sessionActive
-    ? "bg-amber-500/30 text-amber-300 group-hover:bg-amber-500/40"
-    : "bg-amber-500/20 text-amber-300 group-hover:bg-amber-500/30";
 
+  const sessionLabel = sessionActive ? t('companion.session.end') : t('companion.session.start');
 
   return (
     <div
       id="companion"
-      className={`absolute flex flex-col bg-black/80 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden transition-shadow duration-300 ${
-        activeDragElement === 'companion' ? 'shadow-[0_0_30px_rgba(255,255,255,0.15)] border-white/30' : ''
+      className={`absolute flex flex-col overflow-hidden rounded-xl border border-white/[0.14] bg-black/55 backdrop-blur-2xl shadow-2xl transition-[box-shadow,border-color] duration-200 ${
+        activeDragElement === 'companion' ? 'ring-1 ring-white/50 border-white/30' : ''
       }`}
       style={{
-        width: 400,
-        height: 500,
+        width,
+        height,
         left: position.x,
         top: position.y,
         transform: 'translate(-50%, -50%)',
-        zIndex: zIndex
+        zIndex,
       }}
       onMouseDown={onMouseDown}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-white/5 handle cursor-grab active:cursor-grabbing" data-drag-handle>
-        <div className="flex items-center gap-2 text-white/90 font-medium">
-          <Heart size={16} className="text-pink-400" />
-          <span>{t('companion.title')}</span>
+      <div
+        className="relative border-b border-white/10 bg-white/5 px-4 py-4 handle cursor-grab active:cursor-grabbing"
+        data-drag-handle
+      >
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/8 text-white ring-1 ring-white/10">
+              <Heart size={16} />
+            </div>
+            <div className="text-sm font-medium tracking-wider text-white/90 uppercase">{t('companion.title')}</div>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-white/50 transition-colors hover:bg-red-500/20 hover:text-red-400">
+            <X size={15} />
+          </button>
         </div>
-        <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-lg transition-colors text-white/50 hover:text-white">
-          <X size={14} />
-        </button>
       </div>
 
-      {/* Tabs */}
-      <div className="flex p-2 gap-2 border-b border-white/10">
-        <button onClick={() => setActiveTab('session')} className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${activeTab === 'session' ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5'}`}>
-          <ClipboardList size={14} /> {t('companion.tabs.session')}
-        </button>
-        <button onClick={() => setActiveTab('activities')} className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${activeTab === 'activities' ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5'}`}>
-          <Smile size={14} /> {t('companion.tabs.activities')}
-        </button>
-        <button onClick={() => setActiveTab('study')} className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${activeTab === 'study' ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5'}`}>
-          <Book size={14} /> {t('companion.tabs.study')}
-        </button>
-        <button onClick={() => setActiveTab('quests')} className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${activeTab === 'quests' ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5'}`}>
-          <Target size={14} /> {t('companion.tabs.quests')}
-          <span className="text-[10px] font-mono text-white/50">{activeVisibleQuests.length}</span>
-        </button>
+      <div className="border-b border-white/10 bg-black/10 px-4 py-3">
+        <div className="grid grid-cols-3 gap-2">
+          <TabButton active={activeTab === 'session'} icon={ClipboardList} label={t('companion.tabs.session')} onClick={() => setActiveTab('session')} />
+          <TabButton active={activeTab === 'activities'} icon={Smile} label={t('companion.tabs.activities')} onClick={() => setActiveTab('activities')} />
+          <TabButton active={activeTab === 'study'} icon={Book} label={t('companion.tabs.study')} onClick={() => setActiveTab('study')} />
+        </div>
       </div>
 
-      {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-        {activeTab === 'activities' && (
-          <div className="grid grid-cols-2 gap-3">
-            <button onClick={() => handleAction('eat')} className="flex flex-col items-center justify-center gap-2 p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all hover:scale-[1.02] group">
-              <div className="w-10 h-10 rounded-full bg-orange-500/20 flex items-center justify-center text-orange-400 group-hover:bg-orange-500/30 transition-colors"><Utensils size={20} /></div>
-              <span className="text-sm font-medium text-white/80">{t('companion.activities.eat')}</span>
-            </button>
-            <button onClick={() => handleAction('headpat')} className="flex flex-col items-center justify-center gap-2 p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all hover:scale-[1.02] group">
-              <div className="w-10 h-10 rounded-full bg-pink-500/20 flex items-center justify-center text-pink-400 group-hover:bg-pink-500/30 transition-colors"><Heart size={20} /></div>
-              <span className="text-sm font-medium text-white/80">{t('companion.activities.headpat')}</span>
-            </button>
-            <button onClick={() => handleAction('gift')} className="col-span-2 flex flex-row items-center justify-center gap-3 p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all hover:scale-[1.02] group">
-              <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 group-hover:bg-purple-500/30 transition-colors"><Gift size={20} /></div>
-              <span className="text-sm font-medium text-white/80">{t('companion.activities.gift')}</span>
-            </button>
-          </div>
-        )}
+        {activeTab === 'session' ? (
+          <div className="grid grid-cols-1 gap-4">
+            <ActionTile
+              icon={Coffee}
+              title={sessionLabel}
+              description={sessionActive ? t('companion.session.end_desc') : t('companion.session.start_desc')}
+              onClick={() => {
+                if (onToggleSession) onToggleSession();
+              }}
+              accentClass={sessionActive ? 'bg-amber-500/28 text-amber-200' : 'bg-amber-500/14 text-amber-300 group-hover:bg-amber-500/24'}
+            />
 
-        {activeTab === 'session' && (
-          <div className="grid grid-cols-1 gap-3">
-            <button
-              onClick={() => { if (onToggleSession) onToggleSession(); }}
-              className="flex flex-col items-center justify-center gap-2 p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all hover:scale-[1.02] group"
-            >
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${sessionIconClass}`}>
-                <ClipboardList size={20} />
-              </div>
-              <span className="text-sm font-medium text-white/80">
-                {sessionActive ? t('companion.session.end') : t('companion.session.start')}
-              </span>
-            </button>
+            <ActionTile
+              icon={Utensils}
+              title={t('companion.activities.eat')}
+              description={t('companion.activities.eat_desc')}
+              onClick={() => handleAction('eat')}
+              accentClass={eatTogetherActive ? 'bg-orange-500/28 text-orange-200' : 'bg-orange-500/18 text-orange-300 group-hover:bg-orange-500/28'}
+              trailing={
+                eatTogetherActive ? (
+                  <span className="rounded-full border border-orange-300/20 bg-orange-300/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-orange-100/80">
+                    Active
+                  </span>
+                ) : null
+              }
+            />
           </div>
-        )}
+        ) : null}
 
-        {activeTab === 'study' && (
-          <div className="grid grid-cols-1 gap-3">
-            <button onClick={openSelectedStudy} className="flex flex-col items-center justify-center gap-2 p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all hover:scale-[1.02] group">
-              <div className="w-10 h-10 rounded-full bg-cyan-500/20 flex items-center justify-center text-cyan-300 group-hover:bg-cyan-500/30 transition-colors">
-                <Book size={20} />
-              </div>
-              <span className="text-sm font-medium text-white/80">{t('companion.study.japanese_together')}</span>
-            </button>
+        {activeTab === 'activities' ? (
+          <div className="grid grid-cols-2 gap-4">
+            <ActionTile
+              icon={Utensils}
+              title={t('companion.activities.eat')}
+              description={t('companion.activities.eat_desc')}
+              onClick={() => handleAction('eat')}
+              accentClass={eatTogetherActive ? 'bg-orange-500/28 text-orange-200' : 'bg-orange-500/18 text-orange-300 group-hover:bg-orange-500/28'}
+              trailing={
+                eatTogetherActive ? (
+                  <span className="rounded-full border border-orange-300/20 bg-orange-300/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-orange-100/80">
+                    Active
+                  </span>
+                ) : null
+              }
+            />
+            <ActionTile
+              icon={Heart}
+              title={t('companion.activities.headpat')}
+              description={t('companion.activities.headpat_desc')}
+              onClick={() => handleAction('headpat')}
+              accentClass="bg-pink-500/18 text-pink-300 group-hover:bg-pink-500/28"
+            />
+            <ActionTile
+              icon={Gift}
+              title={t('companion.activities.gift')}
+              description={t('companion.activities.gift_desc')}
+              onClick={() => handleAction('gift')}
+              accentClass="bg-violet-500/18 text-violet-300 group-hover:bg-violet-500/28"
+              wide
+            />
           </div>
-        )}
+        ) : null}
 
-        {activeTab === 'quests' && (
-          <div className="space-y-3">
-            {activeVisibleQuests.length === 0 ? (
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-5 text-sm text-white/45 italic">
-                {t('companion.quests.empty')}
-              </div>
-            ) : (
-              activeVisibleQuests.map((q) => {
-                const target = Math.max(1, Number(q.target || 1));
-                const progress = Math.max(0, Number(q.progress || 0));
-                const pct = Math.max(0, Math.min(100, Math.round((progress / target) * 100)));
-                return (
-                  <div key={q.id || q.title} className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3">
-                    <div className="flex items-start justify-between gap-3 mb-2">
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium text-white/90 truncate">
-                          {q.title || t('personality.quest')}
-                        </div>
-                        {q.description ? (
-                          <div className="text-[11px] text-white/45 mt-1 leading-relaxed">
-                            {q.description}
-                          </div>
-                        ) : null}
-                      </div>
-                      <span className="text-[11px] text-cyan-200/80 font-mono whitespace-nowrap">
-                        {Math.min(Math.round(progress), Math.round(target))}/{Math.round(target)}
-                      </span>
-                    </div>
-                    <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
-                      <div
-                        className="h-full bg-gradient-to-r from-cyan-500 to-sky-400 transition-all duration-500 rounded-full"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })
-            )}
+        {activeTab === 'study' ? (
+          <div className="grid gap-4">
+            <ActionTile
+              icon={Book}
+              title={t('companion.study.japanese_together')}
+              description={t('companion.study.desc')}
+              onClick={openSelectedStudy}
+              accentClass="bg-cyan-500/18 text-cyan-200 group-hover:bg-cyan-500/28"
+            />
           </div>
-        )}
-
+        ) : null}
       </div>
     </div>
   );
 };
+
 export default CompanionWindow;
