@@ -1,5 +1,0 @@
-[dotenv@17.3.1] injecting env (5) from .env -- tip: ⚡️ secrets for agents: https://dotenvx.com/as2
-{"type":"ready","data":{"username":"monikai_bot","position":{"x":285.5,"y":64,"z":-149.5}},"timestamp":"2026-03-30T19:12:54.168Z"}
-{"type":"status_update","data":{"health":20,"hunger":20,"position":{"x":285.5,"y":64,"z":-149.5},"dimension":"overworld","inventory":[]},"timestamp":"2026-03-30T19:12:55.182Z"}
-{"type":"status_update","data":{"health":20,"hunger":20,"position":{"x":285.5,"y":64,"z":-149.5},"dimension":"overworld","inventory":[]},"timestamp":"2026-03-30T19:12:56.182Z"}
-{"type":"status_update","data":{"health":20,"hunger":20,"position":{"x":285.5,"y":64,"z":-149.5},"dimension":"overworld","inventory":[]},"timestamp":"2026-03-30T19:12:57.197Z"}
