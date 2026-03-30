@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Heart, Utensils, Gift, Smile, Book, X, ClipboardList, Coffee } from 'lucide-react';
+import { Heart, Utensils, Gift, Smile, Book, X, ClipboardList, Coffee, Gamepad2 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const TabButton = ({ active, icon: Icon, label, onClick }) => (
@@ -60,6 +60,8 @@ const CompanionWindow = ({
   onStartEatTogether,
   onStopEatTogether,
   personalityState,
+  onToggleMinecraft,
+  showMinecraftWindow,
   width = 760,
   height = 700,
 }) => {
@@ -186,21 +188,6 @@ const CompanionWindow = ({
               }}
               accentClass={sessionActive ? 'bg-amber-500/28 text-amber-200' : 'bg-amber-500/14 text-amber-300 group-hover:bg-amber-500/24'}
             />
-
-            <ActionTile
-              icon={Utensils}
-              title={t('companion.activities.eat')}
-              description={t('companion.activities.eat_desc')}
-              onClick={() => handleAction('eat')}
-              accentClass={eatTogetherActive ? 'bg-orange-500/28 text-orange-200' : 'bg-orange-500/18 text-orange-300 group-hover:bg-orange-500/28'}
-              trailing={
-                eatTogetherActive ? (
-                  <span className="rounded-full border border-orange-300/20 bg-orange-300/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-orange-100/80">
-                    Active
-                  </span>
-                ) : null
-              }
-            />
           </div>
         ) : null}
 
@@ -234,6 +221,23 @@ const CompanionWindow = ({
               onClick={() => handleAction('gift')}
               accentClass="bg-violet-500/18 text-violet-300 group-hover:bg-violet-500/28"
               wide
+            />
+            <ActionTile
+              icon={Gamepad2}
+              title={t('companion.activities.minecraft') || 'Minecraft'}
+              description={t('companion.activities.minecraft_desc') || 'Open the Minecraft companion activity panel.'}
+              onClick={() => {
+                if (onToggleMinecraft) onToggleMinecraft();
+              }}
+              accentClass={showMinecraftWindow ? 'bg-emerald-500/28 text-emerald-200' : 'bg-emerald-500/18 text-emerald-300 group-hover:bg-emerald-500/28'}
+              trailing={
+                showMinecraftWindow ? (
+                  <span className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-emerald-100/80">
+                    Active
+                  </span>
+                ) : null
+              }
+              wide={isWide}
             />
           </div>
         ) : null}

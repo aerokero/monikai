@@ -5,7 +5,7 @@ import Visualizer from './components/Visualizer';
 import BrowserWindow from './components/BrowserWindow';
 import ChatModule from './components/ChatModule';
 import ToolsModule from './components/ToolsModule';
-import { X, Minus, Clock, Lightbulb, Activity, Bell, AlertCircle, Gamepad2 } from 'lucide-react';
+import { X, Minus, Clock, Lightbulb, Activity, Bell, AlertCircle } from 'lucide-react';
 import ConfirmationPopup from './components/ConfirmationPopup';
 import AuthLock from './components/AuthLock';
 import KasaWindow from './components/KasaWindow';
@@ -45,6 +45,14 @@ const normalizeToolPermissions = (raw) => {
   return next;
 };
 
+const getClampedCenterX = (preferredX, windowWidth, panelWidth, margin = 12) => {
+  const half = panelWidth / 2;
+  const min = half + margin;
+  const max = windowWidth - half - margin;
+  if (min > max) return Math.round(windowWidth / 2);
+  return Math.min(max, Math.max(min, preferredX));
+};
+
   const getDefaultPositions = () => ({
   video: { x: window.innerWidth - 230, y: window.innerHeight - 210 },
   screen: { x: window.innerWidth - 230, y: window.innerHeight - 210 },
@@ -53,7 +61,7 @@ const normalizeToolPermissions = (raw) => {
   browser: { x: 320, y: window.innerHeight - 315 },
   kasa: { x: window.innerWidth - 620, y: 310 },
   reminders: { x: window.innerWidth - 230, y: 340 },
-  notes: { x: 270, y: 360 },
+  notes: { x: getClampedCenterX(270, window.innerWidth, 620), y: 360 },
   session_notes: { x: Math.round(window.innerWidth * 0.65), y: 360 },
   tools: { x: window.innerWidth / 2, y: window.innerHeight - 115 },
   companion: { x: Math.round(window.innerWidth * 0.36), y: window.innerHeight / 2 },
@@ -2822,8 +2830,6 @@ function AppContent() {
             showCompanionWindow={showCompanionWindow}
             onToggleGoals={() => handleToggleWindow('goals', showGoalsWindow, setShowGoalsWindow)}
             showGoalsWindow={showGoalsWindow}
-            onToggleMinecraft={() => handleToggleWindow('minecraft', showMinecraftWindow, setShowMinecraftWindow)}
-            showMinecraftWindow={showMinecraftWindow}
             onResetPosition={handleResetPosition}
             activeDragElement={activeDragElement}
             position={elementPositions.tools}
@@ -2925,6 +2931,8 @@ function AppContent() {
             onStopEatTogether={stopEatTogether}
             personalityState={personalityState}
             onOpenGoals={() => handleToggleWindow('goals', showGoalsWindow, setShowGoalsWindow)}
+            onToggleMinecraft={() => handleToggleWindow('minecraft', showMinecraftWindow, setShowMinecraftWindow)}
+            showMinecraftWindow={showMinecraftWindow}
           />
         )}
 

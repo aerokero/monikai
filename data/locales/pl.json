@@ -23,6 +23,8 @@
     "kasa": "Smart Home",
     "companion": "Towarzysz",
     "goals": "Dziennik misji",
+    "internal_thoughts": "Myśli wewnętrzne",
+    "minecraft": "Serwer Minecraft",
     "settings": "Ustawienia",
     "power": "Zasilanie",
     "mute": "Wycisz"
@@ -162,7 +164,9 @@
       "headpat_desc": "Mała czuła interakcja. Krótka, głupio urocza i skuteczna.",
       "gift": "Daj prezent",
       "gift_desc": "Podaruj drobny symboliczny prezent i zróbmy z tego miły moment.",
-      "gift_prompt": "Jaki prezent chcesz dać?"
+      "gift_prompt": "Jaki prezent chcesz dać?",
+      "minecraft": "Zagrajmy w Minecraft",
+      "minecraft_desc": "Otwórz panel towarzysza Minecraft i połącz z Twoim światem."
     },
     "study": {
       "japanese_together": "Uczmy się japońskiego razem",
@@ -179,6 +183,10 @@
       "start_desc": "Przejdź do spokojniejszego, bardziej intencjonalnego trybu rozmowy.",
       "end_desc": "Wróć do normalnej rozmowy i zamknij skupiony tryb."
     }
+  },
+  "minecraft": {
+    "connect_to_server": "Połącz z serwerem",
+    "connecting": "Łączenie..."
   },
   "goals": {
     "title": "Postępy",

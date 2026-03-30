@@ -1,164 +1,148 @@
 import React, { useState } from 'react';
-import { X, Minus } from 'lucide-react';
+import { X } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const MinecraftWindow = ({ socket, onClose, position, onMouseDown, activeDragElement, zIndex }) => {
   const { t } = useLanguage();
   const [host, setHost] = useState('localhost');
-  const [port, setPort] = useState(25565);
+  const [port, setPort] = useState('25565');
   const [isConnecting, setIsConnecting] = useState(false);
-  const [status, setStatus] = useState('');
+
+  const parsedPort = Number.parseInt(port, 10);
+  const isPortValid = Number.isInteger(parsedPort) && parsedPort >= 1 && parsedPort <= 65535;
 
   const handleConnect = async () => {
-    if (!host) {
-      setStatus('Please enter a hostname or IP');
+    const trimmedHost = host.trim();
+    if (!trimmedHost) {
+      return;
+    }
+
+    if (!isPortValid) {
       return;
     }
 
     setIsConnecting(true);
-    setStatus('Connecting...');
 
     try {
-      // Emit minecraft_connect_to_server event to backend
-      socket.emit('minecraft_connect_to_server', { 
-        host: host.trim(), 
-        port: parseInt(port) || 25565 
-      }, (response) => {
-        if (response?.success) {
-          setStatus('Connected! ✓');
-          setTimeout(() => {
-            setStatus('');
-          }, 3000);
-        } else {
-          setStatus(`Error: ${response?.message || 'Failed to connect'}`);
-        }
+      socket.emit('minecraft_connect_to_server', {
+        host: trimmedHost,
+        port: parsedPort
+      }, () => {
         setIsConnecting(false);
       });
     } catch (err) {
-      setStatus(`Error: ${err.message}`);
       setIsConnecting(false);
     }
   };
 
-  const handleKeyPress = (e) => {
+  const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
       handleConnect();
     }
+  };
+
+  const handlePortChange = (e) => {
+    const digitsOnly = e.target.value.replace(/\D/g, '').slice(0, 5);
+
+    if (!digitsOnly) {
+      setPort('');
+      return;
+    }
+
+    const numericValue = Number.parseInt(digitsOnly, 10);
+    if (Number.isNaN(numericValue)) {
+      setPort('');
+      return;
+    }
+
+    if (numericValue > 65535) {
+      setPort('65535');
+      return;
+    }
+
+    setPort(String(numericValue));
   };
 
   return (
     <div
       id="minecraft-window"
       onMouseDown={onMouseDown}
-      className={`absolute w-96 px-6 py-4 ${
-        activeDragElement === 'minecraft' ? 'transition-none' : 'transition-all duration-200'
-      } backdrop-blur-2xl bg-gradient-to-br from-slate-900/80 to-slate-800/80 border border-amber-500/30 shadow-2xl rounded-xl`}
+      className={`absolute flex flex-col overflow-hidden rounded-xl border border-white/[0.14] bg-black/50 backdrop-blur-2xl shadow-2xl transition-[box-shadow,border-color] duration-200 ${
+        activeDragElement === 'minecraft' ? 'ring-1 ring-white/50 border-white/30' : ''
+      }`}
       style={{
         left: Math.round(position.x),
         top: Math.round(position.y),
         transform: 'translate(-50%, -50%)',
+        width: '360px',
         pointerEvents: 'auto',
         zIndex: zIndex,
       }}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-amber-500" />
-          <h2 className="text-white font-bold text-sm">Minecraft Server</h2>
-        </div>
-        <div className="flex gap-1">
-          <button
-            onClick={() => {}}
-            className="p-1 hover:bg-white/10 rounded transition-colors"
-            title="Minimize"
-          >
-            <Minus size={14} className="text-white/60" />
-          </button>
-          <button
-            onClick={onClose}
-            className="p-1 hover:bg-white/10 rounded transition-colors"
-            title="Close"
-          >
-            <X size={14} className="text-white/60" />
+      <div
+        className="relative border-b border-white/10 bg-white/5 px-4 py-4 handle cursor-grab active:cursor-grabbing"
+        data-drag-handle
+      >
+        <div className="absolute top-1.5 left-1/2 h-1 w-10 -translate-x-1/2 rounded-full bg-white/15" />
+        <div className="flex items-center justify-between gap-4">
+          <div className="text-sm font-medium tracking-wider text-white/90 uppercase">
+            {t('tools.minecraft') || 'Minecraft Server'}
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-white/50 transition-colors hover:bg-red-500/20 hover:text-red-400">
+            <X size={15} />
           </button>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="space-y-4">
-        {/* Host Input */}
+      <div className="space-y-4 p-4">
         <div>
-          <label className="block text-xs text-white/70 mb-1 font-semibold">
-            Hostname or IP
+          <label className="mb-1 block text-xs font-medium text-white/65">
+            IP
           </label>
           <input
             type="text"
             value={host}
             onChange={(e) => setHost(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="localhost, 192.168.1.1, play.example.com"
+            onKeyDown={handleKeyDown}
+            placeholder="localhost"
             disabled={isConnecting}
-            className="w-full px-3 py-2 bg-slate-950/50 border border-amber-500/30 text-white placeholder-white/30 rounded-lg focus:outline-none focus:border-amber-500/60 focus:bg-slate-900/70 text-sm transition-colors disabled:opacity-50"
+            className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder-white/30 transition-colors focus:border-white/30 focus:bg-black/40 focus:outline-none disabled:opacity-50"
           />
         </div>
 
-        {/* Port Input */}
         <div>
-          <label className="block text-xs text-white/70 mb-1 font-semibold">
-            Port <span className="text-white/40 text-xs">(default: 25565)</span>
+          <label className="mb-1 block text-xs font-medium text-white/65">
+            Port
           </label>
           <input
             type="number"
             value={port}
-            onChange={(e) => setPort(parseInt(e.target.value) || 25565)}
-            onKeyPress={handleKeyPress}
+            onChange={handlePortChange}
+            onKeyDown={handleKeyDown}
             placeholder="25565"
             disabled={isConnecting}
             min="1"
             max="65535"
-            className="w-full px-3 py-2 bg-slate-950/50 border border-amber-500/30 text-white placeholder-white/30 rounded-lg focus:outline-none focus:border-amber-500/60 focus:bg-slate-900/70 text-sm transition-colors disabled:opacity-50"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder-white/30 transition-colors focus:border-white/30 focus:bg-black/40 focus:outline-none disabled:opacity-50"
           />
+          {!isPortValid && port !== '' && (
+            <p className="mt-1 text-xs text-red-300/90">Port must be between 1 and 65535.</p>
+          )}
         </div>
 
-        {/* Status Message */}
-        {status && (
-          <div className={`text-xs px-3 py-2 rounded-lg ${
-            status.includes('Connected')
-              ? 'bg-green-500/20 text-green-300 border border-green-500/30'
-              : status.includes('Connecting')
-              ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-              : 'bg-red-500/20 text-red-300 border border-red-500/30'
-          }`}>
-            {status}
-          </div>
-        )}
-
-        {/* Connect Button */}
         <button
           onClick={handleConnect}
-          disabled={isConnecting || !host}
-          className={`w-full py-2 px-3 rounded-lg font-semibold text-sm transition-all duration-200 ${
+          disabled={isConnecting || !host.trim() || !isPortValid}
+          className={`w-full rounded-lg border px-3 py-2 text-sm font-semibold transition-all duration-200 ${
             isConnecting
-              ? 'bg-amber-500/30 text-amber-300 cursor-wait'
-              : 'bg-gradient-to-r from-amber-600/60 to-amber-500/60 hover:from-amber-600 hover:to-amber-500 text-white shadow-[0_0_15px_rgba(217,119,6,0.3)] hover:shadow-[0_0_25px_rgba(217,119,6,0.5)]'
+              ? 'cursor-wait border-cyan-300/30 bg-cyan-300/10 text-cyan-200'
+              : 'border-white/20 bg-white/10 text-white hover:bg-white/20'
           }`}
         >
-          {isConnecting ? 'Connecting...' : 'Connect to Server'}
+          {isConnecting ? (t('minecraft.connecting') || 'Connecting...') : (t('minecraft.connect_to_server') || 'Connect to Server')}
         </button>
-
-        {/* Info */}
-        <div className="text-xs text-white/40 border-t border-white/10 pt-3 mt-3">
-          <p>Once connected, Monika can play Minecraft!</p>
-          <p className="mt-1">Supported actions:</p>
-          <ul className="list-disc list-inside mt-1 space-y-0.5">
-            <li>Chat & communication</li>
-            <li>Movement & navigation</li>
-            <li>Mining & crafting</li>
-            <li>Block placement</li>
-            <li>Inventory management</li>
-          </ul>
-        </div>
       </div>
     </div>
   );

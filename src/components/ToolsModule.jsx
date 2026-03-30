@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mic, MicOff, Settings, Power, Video, VideoOff, Lightbulb, Globe, Monitor, FileText, CalendarDays, Heart, Target, Gamepad2 } from 'lucide-react';
+import { Mic, MicOff, Settings, Power, Video, VideoOff, Lightbulb, Globe, Monitor, FileText, CalendarDays, Heart, Target } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const Button = ({ onClick, isActive, disabled, icon: Icon, activeIcon: ActiveIcon, title, variant = 'default', onContextMenu }) => {
@@ -61,8 +61,6 @@ const ToolsModule = ({
     showCompanionWindow,
     onToggleGoals,
     showGoalsWindow,
-    onToggleMinecraft,
-    showMinecraftWindow,
     onResetPosition,
     activeDragElement,
 
@@ -139,24 +137,6 @@ const ToolsModule = ({
                     onContextMenu={(e) => { e.preventDefault(); onResetPosition('companion'); }}
                 />
 
-                <Button 
-                    onClick={onToggleGoals} 
-                    isActive={showGoalsWindow} 
-                    disabled={!isConnected}
-                    icon={Target} 
-                    title={t('tools.goals') || "Goals"}
-                    onContextMenu={(e) => { e.preventDefault(); onResetPosition('goals'); }}
-                />
-
-                <Button 
-                    onClick={onToggleMinecraft} 
-                    isActive={showMinecraftWindow} 
-                    disabled={!isConnected}
-                    icon={Gamepad2} 
-                    title={t('tools.minecraft') || "Play Minecraft"}
-                    onContextMenu={(e) => { e.preventDefault(); onResetPosition('minecraft'); }}
-                />
-
                 <div className="w-px bg-white/10 mx-1 my-2" />
 
                 <Button 
@@ -193,6 +173,15 @@ const ToolsModule = ({
                     icon={Lightbulb} 
                     title={t('tools.kasa')}
                     onContextMenu={(e) => { e.preventDefault(); onResetPosition('kasa'); }}
+                />
+
+                <Button 
+                    onClick={onToggleGoals} 
+                    isActive={showGoalsWindow} 
+                    disabled={!isConnected}
+                    icon={Target} 
+                    title={t('tools.goals') || "Goals"}
+                    onContextMenu={(e) => { e.preventDefault(); onResetPosition('goals'); }}
                 />
 
                 <div className="w-px bg-white/10 mx-1 my-2" />

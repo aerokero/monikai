@@ -23,6 +23,8 @@
     "kasa": "Smart Home",
     "companion": "Companion",
     "goals": "Mission Log",
+    "internal_thoughts": "Internal Thoughts",
+    "minecraft": "Minecraft Server",
     "settings": "Settings",
     "power": "Power",
     "mute": "Mute"
@@ -162,7 +164,9 @@
       "headpat_desc": "A tiny affectionate interaction. Short, silly, effective.",
       "gift": "Give a Gift",
       "gift_desc": "Send a small symbolic gift and let the moment land naturally.",
-      "gift_prompt": "What gift do you want to give?"
+      "gift_prompt": "What gift do you want to give?",
+      "minecraft": "Play Minecraft",
+      "minecraft_desc": "Open the Minecraft companion panel and connect to your world."
     },
     "study": {
       "japanese_together": "Study Japanese Together",
@@ -179,6 +183,10 @@
       "start_desc": "Switch into a slower, more intentional session flow.",
       "end_desc": "Return to normal conversation and close the focused mode."
     }
+  },
+  "minecraft": {
+    "connect_to_server": "Connect to Server",
+    "connecting": "Connecting..."
   },
   "goals": {
     "title": "Progress",
