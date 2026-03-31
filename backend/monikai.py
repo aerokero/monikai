@@ -1652,6 +1652,7 @@ class AudioLoop:
 
         self.session_mode = False
         self.session_mode_kind = "auto"
+        self.minecraft_game_mode = False
         self.therapy_engine = TherapyEngine()
 
         # SessionManager (global, no projects)
@@ -2419,6 +2420,13 @@ class AudioLoop:
             except Exception:
                 pass
 
+    def set_minecraft_game_mode(self, active: bool):
+        """Enable or disable focused Minecraft game mode."""
+        self.minecraft_game_mode = bool(active)
+        if self.minecraft_game_mode:
+            # Game mode and therapy/session mode should not run together.
+            self.session_mode = False
+
     def stop(self):
         try:
             self.flush_chat()
@@ -2494,6 +2502,10 @@ class AudioLoop:
             await asyncio.sleep(0.5)
 
             if not self.session:
+                continue
+
+            # In focused Minecraft mode, disable generic idle nudges.
+            if self.minecraft_game_mode:
                 continue
 
             should = self.proactivity.should_nudge(
@@ -2646,6 +2658,10 @@ class AudioLoop:
     async def reasoning_loop(self):
         while not self.stop_event.is_set():
             await asyncio.sleep(1.0)
+
+            # In focused Minecraft mode, skip global relationship/proactivity loops.
+            if self.minecraft_game_mode:
+                continue
 
             if self.personality:
                 # This will check if it's after 6am and reset energy once per day.
@@ -3921,6 +3937,26 @@ class AudioLoop:
                                         # No confirmation callback available -> auto-allow to avoid deadlock
                                         pass
 
+                                # In Minecraft game mode, reject non-Minecraft tools to keep focus.
+                                if self.minecraft_game_mode and not fc.name.startswith("minecraft_"):
+                                    allowed_in_game_mode = {
+                                        "get_time_context",
+                                    }
+                                    if fc.name not in allowed_in_game_mode:
+                                        function_responses.append(
+                                            types.FunctionResponse(
+                                                id=fc.id,
+                                                name=fc.name,
+                                                response={
+                                                    "result": (
+                                                        "Tool blocked: Minecraft game mode is active. "
+                                                        "Use minecraft_* tools only until game mode is disabled."
+                                                    )
+                                                },
+                                            )
+                                        )
+                                        continue
+
                                 # Execute tool
                                 if fc.name == "run_web_agent":
                                     asyncio.create_task(self.handle_web_agent_request(prompt))
@@ -4757,6 +4793,7 @@ class AudioLoop:
                                                 "craft_recipe": "craft_recipe",
                                                 "hunt_mobs": "hunt_mobs",
                                                 "navigate_to_location": "navigate_to_location",
+                                                "scan_nearby": "get_nearby_scan",
                                             }
                                             
                                             action_name = action_mapping.get(action_name, action_name)
@@ -4779,6 +4816,13 @@ class AudioLoop:
                                                 params["item_name"] = fc.args.get("item_name", "")
                                             elif fc.name == "minecraft_equip":
                                                 params["item_name"] = fc.args.get("item_name", "")
+                                            elif fc.name == "minecraft_equip_armor":
+                                                # equip_armor without params auto-equips best armor via ArmorManager
+                                                # Can optionally specify item_name and slot for specific armor
+                                                if "item_name" in fc.args:
+                                                    params["item_name"] = fc.args.get("item_name", "")
+                                                if "slot" in fc.args:
+                                                    params["slot"] = fc.args.get("slot", "")
                                             elif fc.name == "minecraft_put_in_chest":
                                                 params["item_name"] = fc.args.get("item_name", "")
                                                 params["num"] = fc.args.get("count", 1)
@@ -4855,6 +4899,9 @@ class AudioLoop:
                                                 params["z"] = fc.args.get("z")
                                                 if "label" in fc.args:
                                                     params["label"] = fc.args.get("label")
+                                            elif fc.name == "minecraft_scan_nearby":
+                                                if "range" in fc.args:
+                                                    params["range"] = fc.args.get("range")
                                             elif fc.name == "minecraft_use_action":
                                                 action_name = fc.args.get("action", action_name)
                                                 params = fc.args.get("params", {}) if isinstance(fc.args.get("params", {}), dict) else {}

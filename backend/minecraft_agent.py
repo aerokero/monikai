@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 import uuid
 from dataclasses import dataclass, asdict
 from datetime import datetime
@@ -19,6 +20,8 @@ try:
 except ImportError:
     import logging
     logger = logging.getLogger(__name__)
+
+from minecraft_state_tracker import MinecraftStateTracker
 
 
 @dataclass
@@ -92,6 +95,10 @@ class MinecraftBotManager:
         self._pending_actions: Dict[str, asyncio.Future] = {}
         self._pending_by_action: Dict[str, List[str]] = {}
         self._pending_by_signature: Dict[str, str] = {}
+        self._last_action_log_ts: Dict[str, float] = {}
+        
+        # State tracking for autonomy
+        self.state_tracker = MinecraftStateTracker()
         
         # Paths
         self._backend_dir = Path(__file__).parent
@@ -294,7 +301,17 @@ class MinecraftBotManager:
             }
             
             json_line = json.dumps(action) + "\n"
-            self.logger.info(f"[BOT] Sending action to subprocess: {action_name}")
+            noisy_actions = {"look_at_position", "get_nearby_scan", "move_to_player", "move_to_position"}
+            if action_name in noisy_actions:
+                ts = time.time()
+                prev = self._last_action_log_ts.get(action_name, 0.0)
+                if ts - prev >= 20.0:
+                    self.logger.info(f"[BOT] Sending action to subprocess (rate-limited): {action_name}")
+                    self._last_action_log_ts[action_name] = ts
+                else:
+                    self.logger.debug(f"[BOT] Sending action to subprocess: {action_name}")
+            else:
+                self.logger.info(f"[BOT] Sending action to subprocess: {action_name}")
             self._process.stdin.write(json_line.encode())
             await self._process.stdin.drain()  # Async flush
             
@@ -425,6 +442,15 @@ class MinecraftBotManager:
                 self._status.inventory = data.get("inventory", self._status.inventory)
                 self._last_perception["status"] = asdict(self._status)
                 
+                # Update state tracker with latest status
+                if self._status.position:
+                    self.state_tracker.update_from_status(
+                        position=self._status.position,
+                        health=int(self._status.health),
+                        hunger=int(self._status.hunger),
+                        dimension=self._status.dimension
+                    )
+                
             elif event_type == "chat":
                 username = data.get("username")
                 message = data.get("message")
@@ -443,6 +469,12 @@ class MinecraftBotManager:
             if event_type in {"action_result", "error"}:
                 request_id = data.get("request_id")
                 action_name = data.get("action")
+
+                # Update state tracker with scan results if get_nearby_scan action succeeded
+                if action_name == "get_nearby_scan" and event_type == "action_result":
+                    scan_data = data.get("data")
+                    if scan_data:
+                        self.state_tracker.update_nearby_scan(scan_data)
 
                 payload = {
                     "success": bool(data.get("success", event_type == "action_result")),

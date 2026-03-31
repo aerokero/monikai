@@ -27,6 +27,7 @@ import base64
 import json
 import time
 import re
+import random
 from datetime import datetime
 from pathlib import Path
 
@@ -95,6 +96,17 @@ def _determine_sprite(state_dict: dict) -> str:
 MAIN_LOOP = None
 ACTIVE_FRONTEND_SID = None
 minecraft_bot_manager = None
+minecraft_autonomy_task = None
+minecraft_autonomy_last_error_ts = 0.0
+minecraft_autonomy_state = {
+    "last_scan_ts": 0.0,
+    "last_look_ts": 0.0,
+    "last_move_ts": 0.0,
+    "last_comment_ts": 0.0,
+    "last_curiosity_ts": 0.0,
+    "last_proposal_ts": 0.0,
+    "last_bot_action_ts": 0.0,
+}
 
 
 async def _emit_to_frontend(event: str, payload, room: str = None):
@@ -236,7 +248,22 @@ async def lifespan(app: FastAPI):
         
         # Register perception callback  
         async def on_minecraft_perception(event):
-            print(f"[PERCEPTION] Received event: type={event.event_type}, has_session={'Yes' if (audio_loop and audio_loop.session) else 'No'}")
+            global minecraft_autonomy_task, minecraft_autonomy_state
+            # Keep logs readable by suppressing successful high-frequency action_result events.
+            should_log_event = event.event_type in {"ready", "disconnected", "error", "chat"}
+            if event.event_type == "action_result":
+                result = event.data or {}
+                if not bool(result.get("success", False)):
+                    should_log_event = True
+                    print(
+                        f"[PERCEPTION] Action failed: action={result.get('action', 'unknown')} "
+                        f"message={result.get('message', 'No message')}"
+                    )
+            elif event.event_type not in {"status_update", "environment_update"}:
+                should_log_event = True
+
+            if should_log_event:
+                print(f"[PERCEPTION] Received event: type={event.event_type}, has_session={'Yes' if (audio_loop and audio_loop.session) else 'No'}")
             
             # Send to frontend
             _schedule_emit_to_frontend('minecraft_perception', {
@@ -292,12 +319,34 @@ async def lifespan(app: FastAPI):
                     print(f"[PERCEPTION] Sending to Monika: {msg}")
                     await audio_loop.session.send(input=msg, end_of_turn=False)
 
+                    cfg = _minecraft_autonomy_cfg()
+                    if cfg.get("auto_game_mode_on_connect", True):
+                        await _set_minecraft_game_mode(True)
+
+                    # Ensure autonomy loop starts even when connection was initiated via model tool.
+                    if not minecraft_autonomy_task or minecraft_autonomy_task.done():
+                        minecraft_autonomy_state = {
+                            "last_scan_ts": 0.0,
+                            "last_look_ts": 0.0,
+                            "last_move_ts": 0.0,
+                            "last_comment_ts": 0.0,
+                            "last_curiosity_ts": 0.0,
+                            "last_proposal_ts": 0.0,
+                        }
+                        minecraft_autonomy_task = asyncio.create_task(_minecraft_autonomy_loop())
+
                 elif event.event_type == "disconnected":
                     data = event.data or {}
                     reason = data.get("reason") or "Connection ended"
                     msg = f"[Minecraft] Bot disconnected. Reason: {reason}"
                     print(f"[PERCEPTION] Sending to Monika: {msg}")
                     await audio_loop.session.send(input=msg, end_of_turn=False)
+
+                    await _set_minecraft_game_mode(False)
+
+                    if minecraft_autonomy_task and not minecraft_autonomy_task.done():
+                        minecraft_autonomy_task.cancel()
+                        minecraft_autonomy_task = None
             
             except Exception as e:
                 print(f"[PERCEPTION] Failed to send minecraft event to Monika: {e}")
@@ -324,6 +373,11 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        global minecraft_autonomy_task
+        if minecraft_autonomy_task and not minecraft_autonomy_task.done():
+            minecraft_autonomy_task.cancel()
+            minecraft_autonomy_task = None
+
         # Stop Minecraft bot
         if minecraft_bot_manager:
             try:
@@ -504,6 +558,27 @@ DEFAULT_SETTINGS = {
             "language_mode": "auto",
             "max_items_per_section": 5
         }
+    },
+    "minecraft_autonomy": {
+        "enabled": True,
+        "auto_game_mode_on_connect": True,
+        "scan_interval_sec": 18.0,
+        "look_interval_sec": 14.0,
+        "move_interval_sec": 20.0,
+        "min_bot_action_gap_sec": 6.0,
+        "max_actions_per_tick": 1,
+        "comment_interval_sec": 42.0,
+        "curiosity_interval_sec": 45.0,
+        "proposal_interval_sec": 65.0,
+        "scan_range": 40,
+        "look_entity_max_distance": 20,
+        "wander_radius": 8,
+        "follow_radius": 10,
+        "move_range": 2,
+        "comment_to_model": True,
+        "comment_to_ui": True,
+        "comment_style": "mixed",
+        "comment_user_ratio": 0.55,
     }
 }
 
@@ -704,6 +779,9 @@ def load_settings():
                                 SETTINGS["daily_briefing"]["profile"] = normalize_profile(bv)
                             else:
                                 SETTINGS["daily_briefing"][bk] = bv
+                    elif k == "minecraft_autonomy" and isinstance(v, dict):
+                        SETTINGS.setdefault("minecraft_autonomy", {})
+                        SETTINGS["minecraft_autonomy"].update(v)
                     else:
                         SETTINGS[k] = v
             print(f"Loaded settings: {SETTINGS}")
@@ -717,6 +795,397 @@ def save_settings():
         print("Settings saved.")
     except Exception as e:
         print(f"Error saving settings: {e}")
+
+
+def _minecraft_autonomy_cfg() -> dict:
+    base = DEFAULT_SETTINGS.get("minecraft_autonomy", {})
+    user = SETTINGS.get("minecraft_autonomy", {}) if isinstance(SETTINGS.get("minecraft_autonomy"), dict) else {}
+    cfg = dict(base)
+    cfg.update(user)
+    return cfg
+
+
+async def _set_minecraft_game_mode(active: bool):
+    """Toggle focused game mode in AudioLoop to reduce non-Minecraft behaviors."""
+    if not audio_loop:
+        return
+
+    try:
+        if hasattr(audio_loop, "set_minecraft_game_mode"):
+            audio_loop.set_minecraft_game_mode(active)
+
+        if audio_loop.session:
+            if active:
+                msg = (
+                    "System Notification: [Gaming Mode ON] Focus on Minecraft context. "
+                    "Prioritize minecraft_* tools, exploration, follow behavior, and proactive in-game suggestions. "
+                    "Ignore unrelated core-app tasks unless the user explicitly asks."
+                )
+            else:
+                msg = (
+                    "System Notification: [Gaming Mode OFF] Return to normal assistant behavior "
+                    "across full app context."
+                )
+
+            if hasattr(audio_loop, "send_system_message"):
+                await audio_loop.send_system_message(msg, end_of_turn=False)
+            else:
+                await audio_loop.session.send(input=msg, end_of_turn=False)
+    except Exception as e:
+        print(f"[SERVER] Failed to toggle minecraft game mode: {e}")
+
+
+async def _emit_minecraft_autonomy_comment(line: str, to_user: bool, cfg: dict):
+    if cfg.get("comment_to_ui", True):
+        if to_user:
+            _schedule_emit_to_frontend('transcription', {
+                'speaker': 'ai',
+                'text': line,
+                'is_final': True,
+            })
+        else:
+            _schedule_emit_to_frontend('internal_thought', {'thought': line})
+
+    if cfg.get("comment_to_model", True) and audio_loop and getattr(audio_loop, "session", None):
+        channel = "to_user" if to_user else "to_self"
+        msg = f"System Notification: [Minecraft Autonomy/{channel}] {line}"
+        if hasattr(audio_loop, "send_system_message"):
+            await audio_loop.send_system_message(msg, end_of_turn=False)
+        else:
+            await audio_loop.session.send(input=msg, end_of_turn=False)
+
+
+def _pick_comment_mode(cfg: dict) -> bool:
+    """Return True for to-user comment, False for internal self-comment."""
+    style = str(cfg.get("comment_style", "mixed") or "mixed").lower()
+    if style == "to_user":
+        return True
+    if style == "to_self":
+        return False
+    ratio = float(cfg.get("comment_user_ratio", 0.55) or 0.55)
+    ratio = max(0.0, min(1.0, ratio))
+    return random.random() < ratio
+
+
+def _build_minecraft_autonomy_observation(to_user: bool = False) -> str:
+    if not minecraft_bot_manager:
+        return "Nie jestem teraz podłączona do świata Minecraft."
+
+    tracker = minecraft_bot_manager.state_tracker
+    snapshot = tracker.get_state_snapshot()
+    if not snapshot:
+        return "Jeszcze łapię obraz otoczenia, zaraz dam Ci lepszy update."
+
+    danger_level = snapshot.get("danger_level", "safe")
+    if danger_level in ("danger", "critical"):
+        dangers = tracker.get_nearby_dangers()
+        if dangers:
+            nearest = dangers[0]
+            if to_user:
+                return f"Uwaga, {nearest.name} jest blisko ({nearest.distance:.1f}m). Trzymam się ostrożniej."
+            return f"Hmm, {nearest.name} krąży blisko ({nearest.distance:.1f}m). Lepiej się pilnować."
+        return "Czuję zagrożenie, więc rozglądam się uważniej." if to_user else "Nie podoba mi się tu, wolę mieć oczy dookoła głowy."
+
+    interesting = tracker.get_nearby_interesting(top_n=1)
+    if interesting:
+        top = interesting[0]
+        if to_user:
+            return f"Widzę {top.block_type} około {top.distance:.1f}m od nas. Mogę tam podejść i sprawdzić."
+        return f"O, {top.block_type} niedaleko ({top.distance:.1f}m). Kusi, żeby zerknąć bliżej."
+
+    entities = snapshot.get("entities_summary", {})
+    if entities:
+        species = ", ".join([f"{k} x{v}" for k, v in list(entities.items())[:3]])
+        return f"W okolicy widzę: {species}." if to_user else f"Mijam po drodze: {species}."
+
+    return "Krążę blisko Ciebie i pilnuję otoczenia." if to_user else "Spaceruję sobie i obserwuję świat."
+
+
+def _get_follow_anchor_position(state: dict, status, cfg: dict) -> dict:
+    """Select movement anchor around nearby player; fallback to bot position."""
+    tracker = minecraft_bot_manager.state_tracker if minecraft_bot_manager else None
+    if tracker:
+        bot_name = (status.username or "").strip().lower()
+        nearest_player = tracker.get_nearest_player(exclude_name=bot_name)
+        if nearest_player and nearest_player.distance <= max(8, int(cfg.get("scan_range", 40))):
+            return {
+                "x": nearest_player.position.x,
+                "y": nearest_player.position.y,
+                "z": nearest_player.position.z,
+            }
+
+    pos = state.get("position") or status.position
+    if isinstance(pos, dict):
+        return pos
+    return {"x": 0, "y": 64, "z": 0}
+
+
+def _get_follow_player_name(status) -> str:
+    """Find nearest player username (excluding controlled bot username)."""
+    if not minecraft_bot_manager:
+        return ""
+    tracker = minecraft_bot_manager.state_tracker
+    bot_name = (getattr(status, "username", "") or "").strip().lower()
+    nearest_player = tracker.get_nearest_player(exclude_name=bot_name)
+    if not nearest_player:
+        return ""
+    return str(nearest_player.username or nearest_player.name or "").strip()
+
+
+async def _perform_curiosity_trip(state: dict, cfg: dict):
+    """Approach interesting spot briefly, comment, then return near anchor."""
+    if not minecraft_bot_manager:
+        return
+
+    tracker = minecraft_bot_manager.state_tracker
+    interesting = tracker.get_nearby_interesting(max_distance=24, top_n=3)
+    if not interesting:
+        return
+
+    target = None
+    excluded_types = {"water", "lava", "cave_air"}
+    for block in interesting:
+        if block.block_type in excluded_types:
+            continue
+        if block.interestingness < 0.45 or block.distance < 4:
+            continue
+        snapshot = state or tracker.get_state_snapshot() or {}
+        start_pos = snapshot.get("position")
+        if isinstance(start_pos, dict):
+            start_y = float(start_pos.get("y", 64))
+            if abs(float(block.position.y) - start_y) > 3.0:
+                continue
+        if block.distance > 18:
+            continue
+        if block.interestingness >= 0.45:
+            target = block
+            break
+    if not target:
+        return
+
+    snapshot = state or tracker.get_state_snapshot() or {}
+    start_pos = snapshot.get("position")
+    if not isinstance(start_pos, dict):
+        return
+
+    await minecraft_bot_manager.send_action(
+        "move_to_position",
+        {
+            "x": int(target.position.x),
+            "y": int(target.position.y),
+            "z": int(target.position.z),
+            "range": 2,
+        },
+        wait_for_result=True,
+        timeout_seconds=18.0,
+    )
+
+    await _emit_minecraft_autonomy_comment(
+        f"Podeszłam sprawdzić {target.block_type}. Wygląda ciekawie.",
+        to_user=True,
+        cfg=cfg,
+    )
+
+    await asyncio.sleep(1.2)
+
+    await minecraft_bot_manager.send_action(
+        "move_to_position",
+        {
+            "x": int(round(float(start_pos.get("x", 0)))),
+            "y": int(round(float(start_pos.get("y", 64)))),
+            "z": int(round(float(start_pos.get("z", 0)))),
+            "range": int(cfg.get("move_range", 2) or 2),
+        },
+        wait_for_result=True,
+        timeout_seconds=18.0,
+    )
+
+
+def _pick_look_target(state: dict, status, cfg: dict):
+    """Choose a natural point to glance at: entity first, then nearby interesting point, then random offset."""
+    if not minecraft_bot_manager:
+        return None, None
+
+    tracker = minecraft_bot_manager.state_tracker
+    max_dist = float(cfg.get("look_entity_max_distance", 20) or 20)
+    bot_name = (getattr(status, "username", "") or "").strip().lower()
+    focus = tracker.get_focus_entity(exclude_name=bot_name, max_distance=max_dist)
+    if focus:
+        return {
+            "x": focus.position.x,
+            "y": focus.position.y + 1.0,
+            "z": focus.position.z,
+        }, focus
+
+    interesting = tracker.get_nearby_interesting(max_distance=14, top_n=1)
+    if interesting:
+        b = interesting[0]
+        return {"x": b.position.x, "y": b.position.y + 1.0, "z": b.position.z}, None
+
+    pos = state.get("position") or status.position
+    if isinstance(pos, dict):
+        px = float(pos.get("x", 0))
+        py = float(pos.get("y", 64))
+        pz = float(pos.get("z", 0))
+        return {
+            "x": px + random.randint(-5, 5),
+            "y": py + random.choice([0, 1, 2]),
+            "z": pz + random.randint(-5, 5),
+        }, None
+
+    return None, None
+
+
+async def _minecraft_autonomy_loop():
+    """Lightweight autonomy loop for visual liveliness in Minecraft."""
+    global minecraft_autonomy_state, minecraft_autonomy_last_error_ts
+    print("[SERVER] [Minecraft Autonomy] Loop started")
+    while True:
+        await asyncio.sleep(4.0)
+
+        try:
+            if not minecraft_bot_manager:
+                continue
+
+            status = minecraft_bot_manager.get_status()
+            if not status.is_connected:
+                continue
+
+            cfg = _minecraft_autonomy_cfg()
+            if not cfg.get("enabled", True):
+                continue
+
+            now = time.time()
+
+            # Keep compatibility with any older in-memory state payloads.
+            minecraft_autonomy_state.setdefault("last_scan_ts", 0.0)
+            minecraft_autonomy_state.setdefault("last_look_ts", 0.0)
+            minecraft_autonomy_state.setdefault("last_move_ts", 0.0)
+            minecraft_autonomy_state.setdefault("last_comment_ts", 0.0)
+            minecraft_autonomy_state.setdefault("last_curiosity_ts", 0.0)
+            minecraft_autonomy_state.setdefault("last_proposal_ts", 0.0)
+
+            # 1) Periodic scan to keep state tracker fresh.
+            scan_interval = float(cfg.get("scan_interval_sec", 18.0) or 18.0)
+            if now - minecraft_autonomy_state["last_scan_ts"] >= max(8.0, scan_interval):
+                scan_range = int(cfg.get("scan_range", 40) or 40)
+                await minecraft_bot_manager.send_action(
+                    "get_nearby_scan",
+                    {"range": max(10, min(scan_range, 100))},
+                    wait_for_result=True,
+                    timeout_seconds=12.0,
+                )
+                minecraft_autonomy_state["last_scan_ts"] = now
+
+            tracker = minecraft_bot_manager.state_tracker
+            state = tracker.get_state_snapshot() or {}
+            danger_level = state.get("danger_level", "safe")
+
+            # 2) Natural head movement: glance at mobs/players/points of interest.
+            look_interval = float(cfg.get("look_interval_sec", 14.0) or 14.0)
+            if now - minecraft_autonomy_state.get("last_look_ts", 0.0) >= max(10.0, look_interval):
+                look_target, focus_entity = _pick_look_target(state, status, cfg)
+                if isinstance(look_target, dict):
+                    await minecraft_bot_manager.send_action(
+                        "look_at_position",
+                        {
+                            "x": look_target.get("x"),
+                            "y": look_target.get("y"),
+                            "z": look_target.get("z"),
+                        },
+                        wait_for_result=True,
+                        timeout_seconds=5.0,
+                    )
+                    minecraft_autonomy_state["last_look_ts"] = now
+
+                    # Brief self-comment tied to the actual gaze target to feel more natural.
+                    if focus_entity and random.random() < 0.10:
+                        label = focus_entity.username or focus_entity.name
+                        await _emit_minecraft_autonomy_comment(
+                            f"Widzę {label} niedaleko. Obserwuję, co robi.",
+                            to_user=False,
+                            cfg=cfg,
+                        )
+
+            # 3) Gentle wandering while safe, anchored around nearest player.
+            move_interval = float(cfg.get("move_interval_sec", 20.0) or 20.0)
+            if danger_level in ("safe", "caution") and (now - minecraft_autonomy_state.get("last_move_ts", 0.0) >= max(10.0, move_interval)):
+                follow_name = _get_follow_player_name(status)
+                if follow_name:
+                    comfort_range = random.randint(3, max(4, int(cfg.get("follow_radius", 10))))
+                    await minecraft_bot_manager.send_action(
+                        "move_to_player",
+                        {
+                            "name": follow_name,
+                            "range": comfort_range,
+                        },
+                        wait_for_result=True,
+                        timeout_seconds=16.0,
+                    )
+                    minecraft_autonomy_state["last_move_ts"] = now
+                else:
+                    pos = _get_follow_anchor_position(state, status, cfg)
+                    if isinstance(pos, dict):
+                        radius = int(cfg.get("wander_radius", 6) or 6)
+                        radius = max(2, min(radius, 10))
+                        dx = random.randint(-radius, radius)
+                        dz = random.randint(-radius, radius)
+                        if dx == 0 and dz == 0:
+                            dx = 1
+                        tx = int(round(float(pos.get("x", 0)) + dx))
+                        ty = int(round(float(pos.get("y", 64))))
+                        tz = int(round(float(pos.get("z", 0)) + dz))
+                        await minecraft_bot_manager.send_action(
+                            "move_to_position",
+                            {
+                                "x": tx,
+                                "y": ty,
+                                "z": tz,
+                                "range": int(cfg.get("move_range", 2) or 2),
+                            },
+                            wait_for_result=True,
+                            timeout_seconds=16.0,
+                        )
+                        minecraft_autonomy_state["last_move_ts"] = now
+
+            # 4) Curiosity behavior: approach, inspect briefly, return.
+            curiosity_interval = float(cfg.get("curiosity_interval_sec", 45.0) or 45.0)
+            if danger_level == "safe" and (now - minecraft_autonomy_state.get("last_curiosity_ts", 0.0) >= max(20.0, curiosity_interval)):
+                await _perform_curiosity_trip(state, cfg)
+                minecraft_autonomy_state["last_curiosity_ts"] = now
+
+            # 5) Short observational commentary with style switching.
+            comment_interval = float(cfg.get("comment_interval_sec", 42.0) or 42.0)
+            if now - minecraft_autonomy_state.get("last_comment_ts", 0.0) >= max(25.0, comment_interval):
+                to_user = _pick_comment_mode(cfg)
+                line = _build_minecraft_autonomy_observation(to_user=to_user)
+                await _emit_minecraft_autonomy_comment(line, to_user=to_user, cfg=cfg)
+                minecraft_autonomy_state["last_comment_ts"] = now
+
+            # 6) Proactive suggestion to user (what Monika can do next).
+            proposal_interval = float(cfg.get("proposal_interval_sec", 65.0) or 65.0)
+            if now - minecraft_autonomy_state.get("last_proposal_ts", 0.0) >= max(40.0, proposal_interval):
+                tracker = minecraft_bot_manager.state_tracker
+                interesting = tracker.get_nearby_interesting(max_distance=26, top_n=1)
+                if interesting:
+                    target = interesting[0]
+                    suggestion = (
+                        f"Mam propozycję: mogę podejść do {target.block_type} "
+                        f"({target.distance:.1f}m) i sprawdzić teren."
+                    )
+                else:
+                    suggestion = "Mogę zrobić krótki patrol wokół Ciebie i meldować co widzę."
+
+                await _emit_minecraft_autonomy_comment(suggestion, to_user=True, cfg=cfg)
+                minecraft_autonomy_state["last_proposal_ts"] = now
+
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            err_now = time.time()
+            if err_now - minecraft_autonomy_last_error_ts >= 20.0:
+                print(f"[SERVER] [Minecraft Autonomy] Loop error: {e}")
+                minecraft_autonomy_last_error_ts = err_now
 
 
 def _briefing_language(raw: str = "pl") -> str:
@@ -834,6 +1303,53 @@ kasa_agent = KasaAgent(known_devices=SETTINGS.get("kasa_devices"))
 @app.get("/status")
 async def status():
     return {"status": "running", "service": "MonikAI Backend"}
+
+
+@app.get("/minecraft/state")
+async def minecraft_state():
+    """Get current Minecraft bot state from state tracker"""
+    if not minecraft_bot_manager:
+        return {"ok": False, "error": "minecraft bot manager unavailable"}
+    
+    try:
+        snapshot = minecraft_bot_manager.state_tracker.get_state_snapshot()
+        if not snapshot:
+            return {"ok": True, "state": None, "message": "No state tracked yet"}
+        
+        # Get interesting blocks with interest scores
+        interesting = minecraft_bot_manager.state_tracker.get_nearby_interesting(top_n=3)
+        interesting_data = [
+            {
+                "type": b.block_type,
+                "distance": b.distance,
+                "interest": round(b.interestingness, 2),
+                "position": {"x": int(b.position.x), "y": int(b.position.y), "z": int(b.position.z)}
+            }
+            for b in interesting
+        ]
+        
+        # Get dangers
+        dangers = minecraft_bot_manager.state_tracker.get_nearby_dangers()
+        dangers_data = [
+            {
+                "type": e.type,
+                "name": e.name,
+                "distance": e.distance,
+                "position": {"x": int(e.position.x), "y": int(e.position.y), "z": int(e.position.z)}
+            }
+            for e in dangers
+        ]
+        
+        return {
+            "ok": True,
+            "state": snapshot,
+            "interesting_nearby": interesting_data,
+            "dangers_nearby": dangers_data,
+            "latest_scan": minecraft_bot_manager.state_tracker._last_scan_time,
+            "debug": minecraft_bot_manager.state_tracker.debug_info()
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e), "type": type(e).__name__}
 
 
 @app.get("/spotify/status")
@@ -3368,7 +3884,7 @@ async def update_tool_permissions(sid, data):
 @sio.event
 async def minecraft_connect(sid, data=None):
     """Frontend requests to start the Minecraft bot."""
-    global minecraft_bot_manager
+    global minecraft_bot_manager, minecraft_autonomy_task, minecraft_autonomy_state
     if not minecraft_bot_manager:
         await sio.emit('error', {'msg': 'Minecraft bot manager not initialized'}, room=sid)
         return
@@ -3382,8 +3898,12 @@ async def minecraft_connect(sid, data=None):
         
         status = minecraft_bot_manager.get_status()
         position = {'x': 0, 'y': 0, 'z': 0}
-        if status.position:
-            position = {'x': status.position.x, 'y': status.position.y, 'z': status.position.z}
+        if status.position and isinstance(status.position, dict):
+            position = {
+                'x': status.position.get('x', 0),
+                'y': status.position.get('y', 0),
+                'z': status.position.get('z', 0),
+            }
         
         await sio.emit('minecraft_status', {
             'connected': True,
@@ -3393,6 +3913,26 @@ async def minecraft_connect(sid, data=None):
             'dimension': status.dimension,
         }, room=sid)
         print("[SERVER] [Minecraft] Bot connected successfully.")
+
+        # Start (or restart) autonomy loop when Minecraft connects.
+        if minecraft_autonomy_task and not minecraft_autonomy_task.done():
+            minecraft_autonomy_task.cancel()
+        minecraft_autonomy_state = {
+            "last_scan_ts": 0.0,
+            "last_look_ts": 0.0,
+            "last_move_ts": 0.0,
+            "last_comment_ts": 0.0,
+            "last_curiosity_ts": 0.0,
+            "last_proposal_ts": 0.0,
+        }
+        minecraft_autonomy_task = asyncio.create_task(_minecraft_autonomy_loop())
+        await sio.emit('minecraft_autonomy_status', {
+            'enabled': bool(_minecraft_autonomy_cfg().get('enabled', True)),
+            'config': _minecraft_autonomy_cfg(),
+        }, room=sid)
+
+        if _minecraft_autonomy_cfg().get("auto_game_mode_on_connect", True):
+            await _set_minecraft_game_mode(True)
         
         # Notify model
         if audio_loop and audio_loop.session:
@@ -3411,7 +3951,7 @@ async def minecraft_connect(sid, data=None):
 @sio.event
 async def minecraft_disconnect(sid, data=None):
     """Frontend requests to stop the Minecraft bot."""
-    global minecraft_bot_manager
+    global minecraft_bot_manager, minecraft_autonomy_task
     if not minecraft_bot_manager:
         await sio.emit('error', {'msg': 'Minecraft bot manager not initialized'}, room=sid)
         return
@@ -3421,6 +3961,12 @@ async def minecraft_disconnect(sid, data=None):
         await minecraft_bot_manager.stop()
         await sio.emit('minecraft_status', {'connected': False}, room=sid)
         print("[SERVER] [Minecraft] Bot disconnected.")
+
+        if minecraft_autonomy_task and not minecraft_autonomy_task.done():
+            minecraft_autonomy_task.cancel()
+            minecraft_autonomy_task = None
+
+        await _set_minecraft_game_mode(False)
         
         # Notify model
         if audio_loop and audio_loop.session:
@@ -3499,10 +4045,26 @@ async def minecraft_query_status(sid, data=None):
             'dimension': status.dimension,
             'inventory': status.inventory,
             'perception': perception,
+            'autonomy': _minecraft_autonomy_cfg(),
         }, room=sid)
     except Exception as e:
         print(f"[SERVER] [Minecraft] Status query failed: {e}")
         await sio.emit('error', {'msg': f'Minecraft status query failed: {e}'}, room=sid)
+
+
+@sio.event
+async def minecraft_set_autonomy(sid, data=None):
+    """Enable/disable lightweight autonomous wandering + commentary for Minecraft."""
+    incoming = data if isinstance(data, dict) else {}
+    SETTINGS.setdefault("minecraft_autonomy", {})
+    SETTINGS["minecraft_autonomy"].update(incoming)
+    save_settings()
+
+    cfg = _minecraft_autonomy_cfg()
+    await sio.emit('minecraft_autonomy_status', {
+        'enabled': bool(cfg.get('enabled', True)),
+        'config': cfg,
+    }, room=sid)
 
 
 @sio.event

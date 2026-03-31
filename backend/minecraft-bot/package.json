@@ -24,6 +24,7 @@
     "mineflayer-collectblock": "^1.1.0",
     "mineflayer-pathfinder": "^2.4.4",
     "mineflayer-pvp": "^1.1.1",
+    "mineflayer-statemachine": "^1.2.0",
     "mineflayer-tool": "^1.1.5",
     "vec3": "^0.1.8"
   },

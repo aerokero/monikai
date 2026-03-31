@@ -175,20 +175,20 @@ tools_list[0]["function_declarations"].append(minecraft_chat_message_tool)
 
 minecraft_move_to_player_tool = {
     "name": "minecraft_move_to_player",
-    "description": "Move towards a specific player.",
+    "description": "Move towards a player. If player name is not specified, will follow the only available player (or closest if multiple exist).",
     "parameters": {
         "type": "OBJECT",
         "properties": {
             "player_name": {
                 "type": "STRING",
-                "description": "Name of the player to move towards."
+                "description": "Name of the player to move towards. If not provided, will auto-select the only available player or follow the closest one."
             },
             "distance": {
                 "type": "NUMBER",
                 "description": "Stop at this distance from the player (default: 2 blocks)."
             }
         },
-        "required": ["player_name"]
+        "required": []
     }
 }
 
@@ -477,7 +477,7 @@ tools_list[0]["function_declarations"].append(minecraft_consume_tool)
 
 minecraft_equip_tool = {
     "name": "minecraft_equip",
-    "description": "Equip an item from inventory.",
+    "description": "Equip an item from inventory. Armor items are automatically equipped to the correct slot (helmet→head, chestplate→torso, leggings→legs, boots→feet, shield→off-hand).",
     "parameters": {
         "type": "OBJECT",
         "properties": {
@@ -487,6 +487,17 @@ minecraft_equip_tool = {
     }
 }
 tools_list[0]["function_declarations"].append(minecraft_equip_tool)
+
+minecraft_equip_armor_tool = {
+    "name": "minecraft_equip_armor",
+    "description": "Automatically equip the best available armor from your inventory to the correct armor slots (head, chest, legs, feet). Armor is prioritized by protection level. Call this whenever you pick up armor or want to gear up.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {},
+        "required": []
+    }
+}
+tools_list[0]["function_declarations"].append(minecraft_equip_armor_tool)
 
 minecraft_put_in_chest_tool = {
     "name": "minecraft_put_in_chest",
@@ -659,6 +670,19 @@ minecraft_recipe_plan_tool = {
     }
 }
 tools_list[0]["function_declarations"].append(minecraft_recipe_plan_tool)
+
+minecraft_scan_nearby_tool = {
+    "name": "minecraft_scan_nearby",
+    "description": "Scan the nearby area for interesting things to notice or explore. Returns entities (mobs, players), ores, water, lava, caves, and other notable features. Useful for understanding what's around you and making decisions about what to investigate.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "range": {"type": "INTEGER", "description": "Search radius in blocks (10-100, default 50)"}
+        },
+        "required": []
+    }
+}
+tools_list[0]["function_declarations"].append(minecraft_scan_nearby_tool)
 
 minecraft_use_action_tool = {
     "name": "minecraft_use_action",
