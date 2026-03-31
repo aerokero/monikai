@@ -18,6 +18,8 @@ data/study/
 data/study/Genki 1 - Study Book.pdf
 data/settings.json
 data/reference.jpg
+data/spotify_tokens.json
+data/spotify_oauth_state.json
 
 # Node.js
 node_modules/
