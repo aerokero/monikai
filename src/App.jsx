@@ -23,6 +23,11 @@ import StudyWindow from './components/StudyWindow';
 import MinecraftWindow from './components/MinecraftWindow';
 import DailyBriefingWindow from './components/DailyBriefingWindow';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
+import { LayoutProvider } from './contexts/LayoutContext';
+import { ModeProvider } from './contexts/ModeContext';
+import { RealtimeProvider } from './contexts/RealtimeContext';
+import AdaptiveShell from './layout/AdaptiveShell';
+import { isAdaptiveShellEnabled } from './config/uiFlags';
 
 const socket = io('http://localhost:8000');
 const { ipcRenderer } = window.require('electron');
@@ -2992,33 +2997,48 @@ function AppContent() {
 }
 
 function App() {
+  const adaptiveShellEnabled = isAdaptiveShellEnabled();
+
   return (
     <LanguageProvider>
-      <style>{`
-        ::-webkit-scrollbar {
-          width: 6px;
-          height: 6px;
-        }
-        ::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        ::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.1);
-          border-radius: 3px;
-          transition: background 0.2s ease;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-          background: rgba(255, 255, 255, 0.4);
-        }
-        ::-webkit-scrollbar-corner {
-          background: transparent;
-        }
-        * {
-          scrollbar-width: thin;
-          scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
-        }
-      `}</style>
-      <AppContent />
+      <LayoutProvider>
+        <ModeProvider>
+          <RealtimeProvider socket={socket}>
+            <style>{`
+              ::-webkit-scrollbar {
+                width: 6px;
+                height: 6px;
+              }
+              ::-webkit-scrollbar-track {
+                background: transparent;
+              }
+              ::-webkit-scrollbar-thumb {
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 3px;
+                transition: background 0.2s ease;
+              }
+              ::-webkit-scrollbar-thumb:hover {
+                background: rgba(255, 255, 255, 0.4);
+              }
+              ::-webkit-scrollbar-corner {
+                background: transparent;
+              }
+              * {
+                scrollbar-width: thin;
+                scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+              }
+            `}</style>
+
+            {adaptiveShellEnabled ? (
+              <AdaptiveShell>
+                <AppContent />
+              </AdaptiveShell>
+            ) : (
+              <AppContent />
+            )}
+          </RealtimeProvider>
+        </ModeProvider>
+      </LayoutProvider>
     </LanguageProvider>
   );
 }
