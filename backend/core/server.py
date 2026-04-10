@@ -31,22 +31,17 @@ import random
 from datetime import datetime
 from pathlib import Path
 
-from study_reader import StudyReader
-from study_ocr import ocr_image_bytes
+from ..integrations.media.study_reader import StudyReader
+from ..integrations.media.study_ocr import ocr_image_bytes
 from dataclasses import asdict
 
-
-
-# Ensure we can import monikai
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-import monikai
-from daily_briefing import DEFAULT_SECTIONS, build_daily_briefing, fetch_weather_details, normalize_profile
-from authenticator import FaceAuthenticator
-from kasa_agent import KasaAgent
-from spotify_manager import SpotifyManager
-from telegram_bot import TelegramBotService
-from minecraft_agent import MinecraftBotManager
+from . import monikai
+from ..ai.daily_briefing import DEFAULT_SECTIONS, build_daily_briefing, fetch_weather_details, normalize_profile
+from ..integrations.media.authenticator import FaceAuthenticator
+from ..agents.kasa_agent import KasaAgent
+from ..agents.spotify_manager import SpotifyManager
+from ..agents.telegram_bot import TelegramBotService
+from ..integrations.games.minecraft_agent import MinecraftBotManager
 from dotenv import dotenv_values
 
 def _determine_sprite(state_dict: dict) -> str:
@@ -2732,7 +2727,7 @@ async def journal_finalize(sid, data):
 @sio.event
 async def session_mode_set(sid, data):
     try:
-        from session_modes import get_session_mode_message, DEFAULT_KIND
+        from .session_modes import get_session_mode_message, DEFAULT_KIND
 
         active = bool((data or {}).get("active", False))
         # Always keep session mode in AUTO so Monika can decide depth/pace.

@@ -1,4 +1,4 @@
-from tools import tools_list
+from backend.tools import tools_list
 decls = tools_list[0].get('function_declarations', [])
 minecraft = [d for d in decls if 'minecraft' in d.get('name', '')]
 print(f'Total tools: {len(decls)}')

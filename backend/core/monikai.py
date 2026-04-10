@@ -28,9 +28,9 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import uuid
 from pathlib import Path
-from memory_engine import MemoryEngine
-from session_manager import SessionManager
-from therapy_engine import TherapyEngine
+from ..ai.memory_engine import MemoryEngine
+from .session_manager import SessionManager
+from ..ai.therapy_engine import TherapyEngine
 
 from dataclasses import dataclass, asdict
 from typing import Optional, Dict, Any, Callable, List, Tuple
@@ -50,11 +50,11 @@ if sys.version_info < (3, 11, 0):
     asyncio.TaskGroup = taskgroup.TaskGroup
     asyncio.ExceptionGroup = exceptiongroup.ExceptionGroup
 
-from tools import tools_list
-from proactivity import ProactivityManager, IdleNudgeConfig, ReasoningConfig
-from personality import PersonalitySystem
-from openclaw_skills import OpenClawSkillManager
-from minecraft_agent import MinecraftBotManager
+from ..tools import tools_list
+from ..ai.proactivity import ProactivityManager, IdleNudgeConfig, ReasoningConfig
+from ..ai.personality import PersonalitySystem
+from ..tools.openclaw_skills import OpenClawSkillManager
+from ..integrations.games.minecraft_agent import MinecraftBotManager
 
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
@@ -1541,8 +1541,8 @@ config = types.LiveConnectConfig(
 
 pya = pyaudio.PyAudio()
 
-from web_agent import WebAgent
-from kasa_agent import KasaAgent
+from ..agents.web_agent import WebAgent
+from ..agents.kasa_agent import KasaAgent
 
 
 class LiveReconnectRequested(Exception):
@@ -4754,7 +4754,7 @@ class AudioLoop:
                                 elif fc.name.startswith("minecraft_"):
                                     result_str = "Minecraft bot manager not available."
                                     try:
-                                        from minecraft_agent import MinecraftBotManager
+                                        from ..integrations.games.minecraft_agent import MinecraftBotManager
                                         if not getattr(self, "minecraft_bot_manager", None):
                                             result_str = "Minecraft bot not initialized."
                                         else:
