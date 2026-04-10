@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-import monikai
+from ..core import monikai
 
 
 TELEGRAM_API_BASE = "https://api.telegram.org"

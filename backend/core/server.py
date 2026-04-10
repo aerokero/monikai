@@ -445,7 +445,7 @@ loop_task = None
 authenticator = None
 kasa_agent = KasaAgent()
 BASE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = BASE_DIR.parent / "data"
+DATA_DIR = BASE_DIR.parent.parent / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 SETTINGS_FILE = DATA_DIR / "settings.json"
 STUDY_DIR = DATA_DIR / "study"
@@ -4124,7 +4124,7 @@ async def minecraft_connect_to_server(sid, data=None, callback=None):
 
 if __name__ == "__main__":
     uvicorn.run(
-        "server:app_socketio", 
+        app_socketio,
         host="127.0.0.1", 
         port=8000, 
         reload=False, # Reload enabled causes spawn of worker which might miss the event loop policy patch

@@ -6,10 +6,16 @@ __pycache__/
 venv/
 .venv/
 env/
+.pytest_cache/
+*.egg-info/
+*-info/
+pip-log.txt
+pip-delete-this-directory.txt
 
 # MonikAI Specific Local Data
 dist/backend/user_memory/
 dist/backend/long_term_memory/
+backend/data/
 data/long_term_memory
 data/user_memory/
 data/memory/
@@ -20,6 +26,18 @@ data/settings.json
 data/reference.jpg
 data/spotify_tokens.json
 data/spotify_oauth_state.json
+
+# Runtime logs and local databases
+*.log
+*.db
+*.sqlite
+*.sqlite3
+server_debug.log
+startup.log
+backend/data/memory/index/memory.db
+
+# Nested environment files
+*/.env
 
 # Node.js
 node_modules/
@@ -32,6 +50,9 @@ yarn-error.log*
 dist-electron/
 release/
 out/
+
+# Build and cache directories
+.cache/
 
 # IDE
 .vscode/

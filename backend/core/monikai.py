@@ -107,7 +107,7 @@ client = genai.Client(http_options={"api_version": GEMINI_API_VERSION}, api_key=
 # Settings + Time Context
 # --------------------------------------------------------------------------------------
 BASE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = BASE_DIR.parent / "data"
+DATA_DIR = BASE_DIR.parent.parent / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 SETTINGS_PATH = DATA_DIR / "settings.json"
 

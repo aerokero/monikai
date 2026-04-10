@@ -103,8 +103,8 @@ function resolvePythonCandidates() {
 
 function startPythonBackend() {
     return new Promise((resolve, reject) => {
-        const scriptPath = path.join(__dirname, '../backend/server.py');
-        console.log(`Starting Python backend: ${scriptPath}`);
+        const backendModule = 'backend.core.server';
+        console.log(`Starting Python backend module: ${backendModule}`);
 
         const candidates = resolvePythonCandidates();
 
@@ -121,8 +121,8 @@ function startPythonBackend() {
             }
 
             console.log(`Starting Python backend with: ${command}`);
-            const backendProcess = spawn(command, ['-u', scriptPath], {
-                cwd: path.join(__dirname, '../backend'),
+            const backendProcess = spawn(command, ['-u', '-m', backendModule], {
+                cwd: path.join(__dirname, '..'),
                 env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
             });
 
