@@ -423,7 +423,7 @@ const ChatModule = ({
       >
         <div className="flex items-center gap-3">
           <MessageSquare size={18} className="text-white" />
-          <span className="text-sm font-medium tracking-wider text-white/90 uppercase">{t('chat.title')}</span>
+          <span className="text-base font-medium tracking-wider text-white/90 uppercase">{t('chat.title')}</span>
         </div>
         <div className="flex items-center gap-2">
             <button
@@ -469,11 +469,11 @@ const ChatModule = ({
         <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4 relative bg-black/20">
             {showAgenticLog && (
               <div className="rounded-xl border border-white/10 bg-black/35 overflow-hidden">
-                <div className="px-3 py-2 border-b border-white/10 text-[10px] uppercase tracking-wider text-emerald-200/90 font-mono flex items-center gap-2">
+                <div className="px-3 py-2 border-b border-white/10 text-[12px] uppercase tracking-wider text-emerald-200/90 font-mono flex items-center gap-2">
                   <Terminal size={12} />
                   Agentic Log
                 </div>
-                <div className="max-h-40 overflow-y-auto custom-scrollbar px-3 py-2 font-mono text-[11px] text-white/70 space-y-1">
+                <div className="max-h-40 overflow-y-auto custom-scrollbar px-3 py-2 font-mono text-[13px] text-white/70 space-y-1">
                   {visibleAgenticLogs.length === 0 ? (
                     <div className="text-white/40">No agent activity yet.</div>
                   ) : (
@@ -497,18 +497,18 @@ const ChatModule = ({
                 <div key={i} className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
                   <div className="flex items-center gap-2 mb-1">
                     <span
-                      className={`text-[10px] uppercase tracking-wider font-bold ${
+                      className={`text-[12px] uppercase tracking-wider font-bold ${
                         isUser ? 'text-white' : isThought ? 'text-gray-500' : 'text-purple-400'
                       }`}
                     >
                       {isThought ? t('chat.monika_thought') : (sender || "…")}
                     </span>
                     {msg?.time ? (
-                      <span className="text-[10px] text-white/30 font-mono">{msg.time}</span>
+                      <span className="text-[11px] text-white/30 font-mono">{msg.time}</span>
                     ) : null}
                   </div>
 
-                  <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words border ${
+                  <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-base leading-relaxed whitespace-pre-wrap break-words border ${
                     isUser 
                       ? 'bg-white/10 border-white/20 text-white rounded-tr-sm' 
                       : isThought
@@ -543,7 +543,7 @@ const ChatModule = ({
               onKeyDown={onKeyDown}
               placeholder={t('chat.placeholder')}
               rows={1}
-              className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-white/50 resize-none custom-scrollbar"
+              className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-base text-white placeholder:text-white/30 focus:outline-none focus:border-white/50 resize-none custom-scrollbar"
               style={{ minHeight: '50px' }}
             />
 
@@ -565,11 +565,11 @@ const ChatModule = ({
                           className="h-7 w-7 rounded-lg object-cover border border-white/10"
                         />
                       ) : (
-                        <div className="h-7 w-7 rounded-lg bg-black/30 border border-white/10 flex items-center justify-center text-[10px] text-white/50">
+                        <div className="h-7 w-7 rounded-lg bg-black/30 border border-white/10 flex items-center justify-center text-[11px] text-white/50">
                           FILE
                         </div>
                       )}
-                      <div className="max-w-[240px] truncate text-[12px] text-white/75">
+                      <div className="max-w-[240px] truncate text-[14px] text-white/75">
                         {a.file?.name}
                       </div>
                       <button
@@ -586,10 +586,10 @@ const ChatModule = ({
               </div>
             ) : null}
 
-            {attachError ? <div className="mt-2 text-[11px] text-red-300/80">{attachError}</div> : null}
+            {attachError ? <div className="mt-2 text-[13px] text-red-300/80">{attachError}</div> : null}
 
             <div className="flex items-center justify-between gap-3">
-              <div className="text-[11px] text-white/35">
+              <div className="text-[13px] text-white/35">
                 {t('chat.shift_enter')}
                 {attachments.length ? (
                   <span className="ml-2 text-white/25">
@@ -614,7 +614,7 @@ const ChatModule = ({
                     onClick={() => onShareStudyPage && onShareStudyPage()}
                     disabled={!onShareStudyPage}
                     className={[
-                      "px-3 py-2 rounded-lg border transition-all flex items-center gap-2 text-[11px]",
+                      "px-3 py-2 rounded-lg border transition-all flex items-center gap-2 text-[13px]",
                       onShareStudyPage
                         ? "bg-emerald-500/15 border-emerald-400/50 text-emerald-100 hover:bg-emerald-500/25"
                         : "bg-white/5 border-white/10 text-white/30 cursor-not-allowed",

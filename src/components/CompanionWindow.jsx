@@ -64,6 +64,8 @@ const CompanionWindow = ({
   showMinecraftWindow,
   width = 760,
   height = 700,
+  embedded = false,
+  allowMinecraft = true,
 }) => {
   const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState('session');
@@ -138,10 +140,10 @@ const CompanionWindow = ({
   return (
     <div
       id="companion"
-      className={`absolute flex flex-col overflow-hidden rounded-xl border border-white/[0.14] bg-black/55 backdrop-blur-2xl shadow-2xl transition-[box-shadow,border-color] duration-200 ${
+      className={`${embedded ? 'monika-embedded-panel' : 'absolute'} flex flex-col overflow-hidden rounded-xl border border-white/[0.14] bg-black/55 backdrop-blur-2xl shadow-2xl transition-[box-shadow,border-color] duration-200 ${
         activeDragElement === 'companion' ? 'ring-1 ring-white/50 border-white/30' : ''
       }`}
-      style={{
+      style={embedded ? undefined : {
         width,
         height,
         left: position.x,
@@ -149,11 +151,11 @@ const CompanionWindow = ({
         transform: 'translate(-50%, -50%)',
         zIndex,
       }}
-      onMouseDown={onMouseDown}
+      onMouseDown={embedded ? undefined : onMouseDown}
     >
       <div
-        className="relative border-b border-white/10 bg-white/5 px-4 py-4 handle cursor-grab active:cursor-grabbing"
-        data-drag-handle
+        className={`relative border-b border-white/10 bg-white/5 px-4 py-4 handle ${embedded ? '' : 'cursor-grab active:cursor-grabbing'}`}
+        data-drag-handle={embedded ? undefined : true}
       >
         <div className="flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
@@ -162,9 +164,11 @@ const CompanionWindow = ({
             </div>
             <div className="text-sm font-medium tracking-wider text-white/90 uppercase">{t('companion.title')}</div>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-white/50 transition-colors hover:bg-red-500/20 hover:text-red-400">
-            <X size={15} />
-          </button>
+          {!embedded && (
+            <button onClick={onClose} className="rounded-lg p-1.5 text-white/50 transition-colors hover:bg-red-500/20 hover:text-red-400">
+              <X size={15} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -222,23 +226,25 @@ const CompanionWindow = ({
               accentClass="bg-violet-500/18 text-violet-300 group-hover:bg-violet-500/28"
               wide
             />
-            <ActionTile
-              icon={Gamepad2}
-              title={t('companion.activities.minecraft') || 'Minecraft'}
-              description={t('companion.activities.minecraft_desc') || 'Open the Minecraft companion activity panel.'}
-              onClick={() => {
-                if (onToggleMinecraft) onToggleMinecraft();
-              }}
-              accentClass={showMinecraftWindow ? 'bg-emerald-500/28 text-emerald-200' : 'bg-emerald-500/18 text-emerald-300 group-hover:bg-emerald-500/28'}
-              trailing={
-                showMinecraftWindow ? (
-                  <span className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-emerald-100/80">
-                    Active
-                  </span>
-                ) : null
-              }
-              wide={isWide}
-            />
+            {allowMinecraft && (
+              <ActionTile
+                icon={Gamepad2}
+                title={t('companion.activities.minecraft') || 'Minecraft'}
+                description={t('companion.activities.minecraft_desc') || 'Open the Minecraft companion activity panel.'}
+                onClick={() => {
+                  if (onToggleMinecraft) onToggleMinecraft();
+                }}
+                accentClass={showMinecraftWindow ? 'bg-emerald-500/28 text-emerald-200' : 'bg-emerald-500/18 text-emerald-300 group-hover:bg-emerald-500/28'}
+                trailing={
+                  showMinecraftWindow ? (
+                    <span className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-emerald-100/80">
+                      Active
+                    </span>
+                  ) : null
+                }
+                wide={isWide}
+              />
+            )}
           </div>
         ) : null}
 

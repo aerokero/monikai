@@ -229,7 +229,7 @@ const Visualizer = ({
           initial={{ opacity: 0, y: 14, x: characterX }}
           animate={{
             opacity: 1,
-            y: vnState === STATE.MONIKA ? characterY - 2 : characterY,
+            y: characterAnchorBottom ? characterY : (vnState === STATE.MONIKA ? characterY - 2 : characterY),
             x: characterX,
           }}
           transition={{ duration: characterTransitionMs }}

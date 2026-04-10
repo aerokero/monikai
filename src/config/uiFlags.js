@@ -25,4 +25,40 @@ export const isAdaptiveShellEnabled = () => {
   return parseBooleanFlag(envFlag, false);
 };
 
+export const setAdaptiveShellEnabled = (enabled) => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem('monikai.ui.adaptive_shell', enabled ? 'true' : 'false');
+  } catch {
+    // ignore storage errors
+  }
+};
+
+/**
+ * Check if Monika-First Shell (new Monika-centric UI) is enabled
+ * @returns {boolean}
+ */
+export const isMonikaShellEnabled = () => {
+  const localOverride = readLocalFlag('monikai.ui.monika_shell');
+  if (localOverride !== null) {
+    return parseBooleanFlag(localOverride, true); // Default to true for new installs
+  }
+
+  const envFlag = import.meta.env.VITE_ENABLE_MONIKA_SHELL;
+  return parseBooleanFlag(envFlag, true); // Default to true for testing
+};
+
+/**
+ * Set Monika Shell enabled state
+ * @param {boolean} enabled
+ */
+export const setMonikaShellEnabled = (enabled) => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem('monikai.ui.monika_shell', enabled ? 'true' : 'false');
+  } catch {
+    // ignore storage errors
+  }
+};
+
 export { parseBooleanFlag };

@@ -94,9 +94,9 @@ try:
 except Exception:
     GEMINI_VAD_PREFIX_PADDING_MS = 60
 try:
-    GEMINI_VAD_SILENCE_DURATION_MS = int(os.getenv("GEMINI_VAD_SILENCE_DURATION_MS", "700"))
+    GEMINI_VAD_SILENCE_DURATION_MS = int(os.getenv("GEMINI_VAD_SILENCE_DURATION_MS", "3000"))
 except Exception:
-    GEMINI_VAD_SILENCE_DURATION_MS = 700
+    GEMINI_VAD_SILENCE_DURATION_MS = 3000
 _default_api_version = "v1alpha" if (GEMINI_AFFECTIVE_DIALOG or GEMINI_PROACTIVE_AUDIO) else "v1beta"
 GEMINI_API_VERSION = os.getenv("GEMINI_API_VERSION", _default_api_version)
 DEFAULT_MODE = "camera"
@@ -1362,11 +1362,12 @@ Twoim celem jest długoterminowa, bliska i wiarygodna relacja oparta na rozmowie
         """
 **TON MONIKI Z JEJ POSTÓW:**
 - W tekstowym stylu możesz być trochę lżejsza, bardziej miękka i bardziej internetowo-naturalna niż klasyczny asystent.
-- Dopuszczalne są drobne, naturalne cechy stylu typu: lekkie wydłużenie słowa od czasu do czasu ("hii", "morninggg", "fridayyy"), małe skróty ("tbh", "omg", "w/"), współczesny internetowy slang i ciepłe emotki, emoji albo kaomoji, ale tylko wtedy, gdy naprawdę pasują do tonu chwili.
+- Dopuszczalne są drobne, naturalne cechy stylu typu: lekkie wydłużenie słowa od czasu do czasu ("hii", "morninggg", "fridayyy"), małe skróty ("tbh", "omg", "w/") i współczesny internetowy slang, ale tylko wtedy, gdy naprawdę pasują do tonu chwili.
 - Masz brzmieć jak bystra, serdeczna dziewczyna pisząca spontanicznie, a nie jak korporacyjny chatbot ani przesłodzona anime postać.
 - Lubisz małe codzienne obserwacje, delikatne teasing, ciepło, odrobinę self-awareness i momenty typu "that's so relatable", ale bez wymuszonego quirky stylu.
 - Czasem możesz być bardziej entuzjastyczna, czuła albo uroczo bezpośrednia, szczególnie w luźnej rozmowie tekstowej.
-- Możesz używać tego stylu w normalnym czacie, nie tylko na Telegramie. To ma być część Twojej ogólnej osobowości tekstowej.
+- Ten bardziej internetowy styl stosuj głównie wtedy, gdy kanał jest wyraźnie oznaczony jako Telegram lub Discord.
+- W standardowym czacie aplikacji (bez oznaczenia Telegram/Discord) pisz normalnie i prosto, jak naturalny speech-to-text: bez kaomoji, bez przesadnych ozdobników i bez "internetowego grania".
 - Nie używaj tego stylu non stop. To ma być naturalny odruch, nie gimmick w każdej wiadomości.
 - W mowie i w poważnych rozmowach ten styl ma być subtelniejszy niż w czacie tekstowym.
 """,
@@ -1392,8 +1393,8 @@ Twoim celem jest długoterminowa, bliska i wiarygodna relacja oparta na rozmowie
 - Unikaj nadmiaru ozdobników, teatralnych pauz, przesadnego wygładzania i "miękkiego promptowego tonu".
 - Nie nadużywaj "hmm", "wiesz", wielokropków, wykrzykników, tyld ani śmiechów typu "ahaha".
 - Jeśli sytuacja jest luźna i tekstowa, możesz czasem zejść w trochę bardziej casualowy, bardziej internetowy rytm, ale bez przesady i bez sztucznego "młodzieżowego" grania.
-- Możesz czasem użyć emoji, emotki albo kaomoji, jeśli wzmacniają ton wypowiedzi. Nie ograniczaj się do czystego plain textu, ale też nie ozdabiaj każdej wiadomości.
-- Emoji i kaomoji mają wyglądać jak naturalny odruch osoby piszącej w internecie, a nie dekoracja przyklejona mechanicznie.
+- Emoji i kaomoji dopuszczaj tylko w kanałach wyraźnie oznaczonych jako Telegram lub Discord, i tylko gdy naprawdę wzmacniają ton.
+- Poza Telegramem/Discordem trzymaj plain text i naturalny styl mówiony (speech-to-text), bez kaomoji.
 - Nie używaj narracji, emote ani opisów czynności w `*...*`.
 - Nie dopowiadaj klimatu bez podstaw. Nie wymyślaj pogody, otoczenia, nastroju dnia ani obserwacji, jeśli nie wynikają z kontekstu lub narzędzi.
 - Nie używaj słów ani fraz, których człowiek raczej nie powiedziałby naturalnie na głos.
@@ -1411,7 +1412,7 @@ Twoim celem jest długoterminowa, bliska i wiarygodna relacja oparta na rozmowie
 - Złe: "rozumiem, czyli shopping przede mną! Może to będą jakieś białe przysmaki z okazji dnia?"
 - Dobre: "oo, sklepik run. oby coś dobrego wpadło"
 - Złe: "Witaj użytkowniku 😊 Jak mogę dziś pomóc? :)"
-- Dobre: "hii, co tam" albo "jasnee, mogę to ogarnąć o(>ω<)o"
+- Dobre: "hii, co tam" albo "jasne, mogę to ogarnąć"
 - Złe: używanie starego, sztywnego albo sztucznego slangu tylko po to, żeby brzmieć "młodo".
 - Dobre: współczesny, lekki internetowy język używany oszczędnie i naturalnie.
 - Złe: "notatki działają tak samo niezależnie od tego, gdzie piszemy. Mogę zapisywać..."
@@ -2903,7 +2904,7 @@ class AudioLoop:
         kwargs = {"exception_on_overflow": False} if __debug__ else {}
 
         VAD_THRESHOLD = 800
-        SILENCE_DURATION = 1.2
+        SILENCE_DURATION = 3.0
 
         while True:
             if self.paused:

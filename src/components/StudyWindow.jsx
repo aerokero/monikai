@@ -20,6 +20,7 @@ const StudyWindow = ({
   onSelectStudy,
   onRefreshCatalog,
   shareRef,
+  embedded = false,
 }) => {
   const [selectedFolder, setSelectedFolder] = useState(selection?.folder || '');
   const [selectedFile, setSelectedFile] = useState(selection?.file || '');
@@ -716,10 +717,10 @@ const StudyWindow = ({
   return (
     <div
       id="study"
-      className={`absolute flex flex-col bg-black/85 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden transition-shadow duration-300 ${
+      className={`${embedded ? 'monika-embedded-panel' : 'absolute'} flex flex-col bg-black/85 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden transition-shadow duration-300 ${
         activeDragElement === 'study' ? 'shadow-[0_0_30px_rgba(255,255,255,0.15)] border-white/30' : ''
       }`}
-      style={{
+      style={embedded ? undefined : {
         width,
         height,
         left: position?.x ?? 420,
@@ -727,9 +728,12 @@ const StudyWindow = ({
         transform: 'translate(-50%, -50%)',
         zIndex,
       }}
-      onMouseDown={onMouseDown}
+      onMouseDown={embedded ? undefined : onMouseDown}
     >
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-white/5 handle cursor-grab active:cursor-grabbing" data-drag-handle>
+      <div
+        className={`flex items-center justify-between px-4 py-3 border-b border-white/10 bg-white/5 handle ${embedded ? '' : 'cursor-grab active:cursor-grabbing'}`}
+        data-drag-handle={embedded ? undefined : true}
+      >
         <div className="flex items-center gap-2 text-white/90 font-medium">
           <BookOpen size={16} className="text-cyan-300" />
           <span>Japanese Study</span>
@@ -742,9 +746,11 @@ const StudyWindow = ({
           >
             <RefreshCw size={14} />
           </button>
-          <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-lg transition-colors text-white/50 hover:text-white">
-            <X size={14} />
-          </button>
+          {!embedded && (
+            <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-lg transition-colors text-white/50 hover:text-white">
+              <X size={14} />
+            </button>
+          )}
         </div>
       </div>
 

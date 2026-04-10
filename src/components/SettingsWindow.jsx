@@ -39,6 +39,10 @@ const SettingsWindow = ({
   onUploadSkillZip,
   onInstallSkillSource,
   onUninstallSkill,
+  adaptiveShellEnabled = false,
+  onToggleAdaptiveShell,
+  monikaShellEnabled = false,
+  onToggleMonikaShell,
   onClose
 }) => {
   const { t, language, setLanguage } = useLanguage();
@@ -130,6 +134,46 @@ const SettingsWindow = ({
               >
                 Polski
               </button>
+            </div>
+          </section>
+
+          {/* Interface Mode */}
+          <section className="space-y-4">
+            <h3 className="text-sm font-medium text-white uppercase tracking-widest flex items-center gap-2">
+              <Cpu size={16} />
+              Interface
+            </h3>
+
+            <div className="bg-white/5 p-4 rounded-lg border border-white/10 space-y-3">
+              <div>
+                <p className="text-sm text-white/85">UI Mode</p>
+                <p className="text-xs text-white/55 mt-1">
+                  Switch between legacy floating layout and the new adaptive Monika-first interface.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => onToggleMonikaShell && onToggleMonikaShell(false)}
+                  className={`p-3 rounded-lg border text-left transition-all ${
+                    !monikaShellEnabled
+                      ? 'bg-white/20 border-white/50 text-white'
+                      : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'
+                  }`}
+                >
+                  Legacy UI
+                </button>
+                <button
+                  onClick={() => onToggleMonikaShell && onToggleMonikaShell(true)}
+                  className={`p-3 rounded-lg border text-left transition-all ${
+                    monikaShellEnabled
+                      ? 'bg-white/20 border-white/50 text-white'
+                      : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'
+                  }`}
+                >
+                  New Adaptive UI
+                </button>
+              </div>
             </div>
           </section>
 

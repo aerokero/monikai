@@ -5,7 +5,7 @@ import Visualizer from './components/Visualizer';
 import BrowserWindow from './components/BrowserWindow';
 import ChatModule from './components/ChatModule';
 import ToolsModule from './components/ToolsModule';
-import { X, Minus, Clock, Lightbulb, Activity, Bell, AlertCircle } from 'lucide-react';
+import { X, Minus, Clock, Lightbulb, Activity, Bell, AlertCircle, Newspaper, MessageSquare, GraduationCap, Target, ScrollText, Heart } from 'lucide-react';
 import ConfirmationPopup from './components/ConfirmationPopup';
 import AuthLock from './components/AuthLock';
 import KasaWindow from './components/KasaWindow';
@@ -21,13 +21,22 @@ import GoalsWindow from './components/GoalsWindow';
 import SessionPromptWindow from './components/SessionPromptWindow';
 import StudyWindow from './components/StudyWindow';
 import MinecraftWindow from './components/MinecraftWindow';
+import MinecraftConnectPopup from './components/MinecraftConnectPopup';
 import DailyBriefingWindow from './components/DailyBriefingWindow';
+import GoodbyePopup from './components/GoodbyePopup';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { LayoutProvider } from './contexts/LayoutContext';
+import { useLayout } from './contexts/LayoutContext';
 import { ModeProvider } from './contexts/ModeContext';
 import { RealtimeProvider } from './contexts/RealtimeContext';
+import { useSettings } from './contexts/SettingsContext';
 import AdaptiveShell from './layout/AdaptiveShell';
-import { isAdaptiveShellEnabled } from './config/uiFlags';
+import AdaptiveCommandRail from './layout/AdaptiveCommandRail';
+import { isAdaptiveShellEnabled, setAdaptiveShellEnabled, isMonikaShellEnabled, setMonikaShellEnabled } from './config/uiFlags';
+import MonikaShell from './layout/MonikaShell';
+import { MonikaContextProvider } from './contexts/MonikaContext';
+import { SettingsProvider } from './contexts/SettingsContext';
+import { AudioVideoProvider } from './contexts/AudioVideoContext';
 
 const socket = io('http://localhost:8000');
 const { ipcRenderer } = window.require('electron');
@@ -77,8 +86,15 @@ const getClampedCenterX = (preferredX, windowWidth, panelWidth, margin = 12) => 
   minecraft: { x: window.innerWidth - 320, y: 360 }
   });
 
-function AppContent() {
+function AppContent({
+  adaptiveShellEnabled,
+  onToggleAdaptiveShell,
+  monikaShellEnabled,
+  onToggleMonikaShell,
+}) {
   const { t, language } = useLanguage();
+  const { activePanelId, isPortrait, setActivePanelId, registerPanel, setPanelVisibility } = useLayout();
+  const { showSettings, setShowSettings } = useSettings();
 
   // ---------------------------------------------------------------------
   // Helpers
@@ -116,6 +132,20 @@ function AppContent() {
     };
   }, []);
 
+  // Listen for close app request from Electron
+  useEffect(() => {
+    if (!ipcRenderer) return;
+    
+    const handleCloseRequest = () => {
+      setShowGoodbyePopup(true);
+    };
+    
+    ipcRenderer.on('request-close-app', handleCloseRequest);
+    return () => {
+      ipcRenderer.off('request-close-app', handleCloseRequest);
+    };
+  }, []);
+
   // ---------------------------------------------------------------------
   // Core State
   // ---------------------------------------------------------------------
@@ -137,6 +167,24 @@ function AppContent() {
   });
   const [settingsLoaded, setSettingsLoaded] = useState(false);
 
+  // Logout function - kill server and close app
+  const handleLogout = () => {
+    // Kill the backend server
+    if (socket && socket.connected) {
+      socket.emit('kill_server');
+      socket.disconnect();
+    }
+    // Close the window
+    window.close();
+  };
+
+  // Set Monika's temporary mood (for UI interactions like avoiding quit button)
+  const handleMonikaTemporaryMood = (mood) => {
+    if (!socket) return;
+    // Emit mood change through socket
+    socket.emit('update_personality', { mood });
+  };
+
   const [isConnected, setIsConnected] = useState(true);
   const [isMuted, setIsMuted] = useState(true);
   const [isVideoOn, setIsVideoOn] = useState(false);
@@ -156,6 +204,7 @@ function AppContent() {
   const [showSessionNotesWindow, setShowSessionNotesWindow] = useState(false);
   const [showBrowserWindow, setShowBrowserWindow] = useState(false);
   const [showCompanionWindow, setShowCompanionWindow] = useState(false);
+  const [showGoodbyePopup, setShowGoodbyePopup] = useState(false);
   const [showGoalsWindow, setShowGoalsWindow] = useState(false);
   const [showDailyBriefingWindow, setShowDailyBriefingWindow] = useState(false);
   const [showStudyWindow, setShowStudyWindow] = useState(false);
@@ -434,7 +483,6 @@ function AppContent() {
   const [selectedMicId, setSelectedMicId] = useState(() => localStorage.getItem('selectedMicId') || '');
   const [selectedSpeakerId, setSelectedSpeakerId] = useState(() => localStorage.getItem('selectedSpeakerId') || '');
   const [selectedWebcamId, setSelectedWebcamId] = useState(() => localStorage.getItem('selectedWebcamId') || '');
-  const [showSettings, setShowSettings] = useState(false);
   const [showPersonalityWindow, setShowPersonalityWindow] = useState(false);
   const [toolPermissions, setToolPermissions] = useState({});
   const [skills, setSkills] = useState([]);
@@ -522,6 +570,39 @@ function AppContent() {
   // Toasts (System notifications)
   // ---------------------------------------------------------------------
   const [toasts, setToasts] = useState([]);
+
+  useEffect(() => {
+    if (!adaptiveShellEnabled) return;
+    registerPanel('chat', { dock: 'bottom-rail', collapsed: false, priority: 100 });
+    registerPanel('daily_briefing', { dock: 'right-dock', collapsed: true, priority: 90 });
+    registerPanel('companion', { dock: 'bottom-rail', collapsed: true, priority: 70 });
+    registerPanel('goals', { dock: 'bottom-rail', collapsed: true, priority: 65 });
+    registerPanel('study', { dock: 'bottom-rail', collapsed: true, priority: 60 });
+    registerPanel('notes', { dock: 'bottom-rail', collapsed: true, priority: 55 });
+    registerPanel('reminders', { dock: 'bottom-rail', collapsed: true, priority: 50 });
+  }, [adaptiveShellEnabled, registerPanel]);
+
+  useEffect(() => {
+    if (!adaptiveShellEnabled) return;
+    setPanelVisibility('chat', true);
+    setPanelVisibility('daily_briefing', showDailyBriefingWindow);
+    setPanelVisibility('companion', showCompanionWindow);
+    setPanelVisibility('goals', showGoalsWindow);
+    setPanelVisibility('study', showStudyWindow);
+    setPanelVisibility('notes', showNotesWindow);
+    setPanelVisibility('reminders', showRemindersWindow);
+    setPanelVisibility('minecraft', showMinecraftWindow);
+  }, [
+    adaptiveShellEnabled,
+    setPanelVisibility,
+    showDailyBriefingWindow,
+    showCompanionWindow,
+    showGoalsWindow,
+    showStudyWindow,
+    showNotesWindow,
+    showRemindersWindow,
+    showMinecraftWindow,
+  ]);
   const makeId = () =>
     (typeof crypto !== "undefined" && crypto.randomUUID)
       ? crypto.randomUUID()
@@ -770,6 +851,75 @@ function AppContent() {
         return;
       }
 
+      if (adaptiveShellEnabled) {
+        const contentHeight = Math.max(420, height - topBarHeight);
+        const railPad = isPortrait ? 84 : 74;
+        const chatW = Math.min(isPortrait ? width - 34 : width - 48, isPortrait ? 680 : 860);
+        const chatH = Math.min(isPortrait ? 280 : 300, Math.max(230, Math.round(contentHeight * 0.35)));
+        const chatTop = Math.max(
+          topBarHeight + 12,
+          contentHeight - chatH - railPad,
+        );
+
+        const briefingW = Math.min(isPortrait ? 470 : 540, width - 24);
+        const briefingX = Math.round(width - briefingW / 2 - 12);
+        const briefingY = isPortrait
+          ? Math.round(topBarHeight + 180)
+          : Math.round((height - topBarHeight) * 0.46);
+
+        const companionW = Math.min(width - (isPortrait ? 10 : 40), isPortrait ? 860 : 760);
+        const companionH = Math.min(isPortrait ? 560 : 700, height - topBarHeight - railPad - 12);
+        const companionX = Math.round(width / 2);
+        const companionY = isPortrait
+          ? Math.round(height - railPad - companionH / 2)
+          : Math.round(height / 2);
+
+        const goalsW = Math.min(width - (isPortrait ? 10 : 40), isPortrait ? 920 : 1220);
+        const goalsH = Math.min(isPortrait ? 620 : 760, height - topBarHeight - railPad - 12);
+        const goalsX = Math.round(width / 2);
+        const goalsY = isPortrait
+          ? Math.round(height - railPad - goalsH / 2)
+          : Math.round(height / 2);
+
+        const studyW = Math.min(width - (isPortrait ? 10 : 34), isPortrait ? 980 : 1160);
+        const studyH = Math.min(isPortrait ? 640 : 760, height - topBarHeight - railPad - 10);
+        const studyX = Math.round(width / 2);
+        const studyY = isPortrait
+          ? Math.round(height - railPad - studyH / 2)
+          : Math.round(height * 0.48);
+
+        const notesW = Math.min(width - (isPortrait ? 10 : 36), isPortrait ? 900 : 620);
+        const notesH = Math.min(isPortrait ? 540 : 600, height - topBarHeight - railPad - 18);
+        const notesX = Math.round(width / 2);
+        const notesY = isPortrait
+          ? Math.round(height - railPad - notesH / 2)
+          : Math.round(height * 0.52);
+
+        setElementSizes((prev) => ({
+          ...prev,
+          chat: { w: chatW, h: chatH },
+          companion: { w: companionW, h: companionH },
+          goals: { w: goalsW, h: goalsH },
+          study: { w: studyW, h: studyH },
+          notes: { w: notesW, h: notesH },
+        }));
+
+        setElementPositions((prev) => ({
+          ...prev,
+          chat: { x: Math.round(width / 2), y: chatTop },
+          daily_briefing: { x: briefingX, y: briefingY },
+          companion: { x: companionX, y: companionY },
+          goals: { x: goalsX, y: goalsY },
+          study: { x: studyX, y: studyY },
+          notes: { x: notesX, y: notesY },
+          tools: { x: Math.round(width / 2), y: height - 100 },
+          video: { x: width - 230, y: height - 210 },
+          screen: { x: width - 230, y: height - 210 },
+        }));
+
+        return;
+      }
+
       const baseChatMax = width - sidePad * 2;
       const focusMode = sessionMode.active || showStudyWindow;
       const focusInset = focusMode ? Math.min(360, Math.round(width * 0.26)) : 0;
@@ -843,7 +993,7 @@ function AppContent() {
     };
 
     layout();
-  }, [viewport.w, viewport.h, sessionMode.active, showStudyWindow]);
+  }, [viewport.w, viewport.h, sessionMode.active, showStudyWindow, adaptiveShellEnabled, isPortrait]);
 
   // ---------------------------------------------------------------------
   // Update refs when state changes
@@ -2284,18 +2434,11 @@ function AppContent() {
   const handleMaximize = () => ipcRenderer.send('window-maximize');
 
   const handleCloseRequest = () => {
-    const closeWindow = () => ipcRenderer.send('window-close');
+    setShowGoodbyePopup(true);
+  };
 
-    if (socket.connected) {
-      console.log('[APP] Sending shutdown signal to backend...');
-      socket.emit('shutdown', {}, () => {
-        console.log('[APP] Shutdown acknowledged');
-        closeWindow();
-      });
-      setTimeout(closeWindow, 500);
-    } else {
-      closeWindow();
-    }
+  const handleConfirmClose = () => {
+    // Intentionally fake: visual-only flow, no AI message and no real close.
   };
 
   const handleFileUpload = (e) => {
@@ -2451,19 +2594,26 @@ function AppContent() {
     setVisibility(!isVisible);
   };
 
+  const toggleWindowSmart = (windowId, isVisible, setVisibility) => {
+    if (adaptiveShellEnabled) {
+      setActivePanelId(windowId);
+    }
+    handleToggleWindow(windowId, isVisible, setVisibility);
+  };
+
   // Shortcuts for companion windows
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.altKey && (e.code === 'KeyC')) {
-        handleToggleWindow('companion', showCompanionWindow, setShowCompanionWindow);
+        toggleWindowSmart('companion', showCompanionWindow, setShowCompanionWindow);
       }
       if (e.altKey && (e.code === 'KeyG')) {
-        handleToggleWindow('goals', showGoalsWindow, setShowGoalsWindow);
+        toggleWindowSmart('goals', showGoalsWindow, setShowGoalsWindow);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showCompanionWindow, showGoalsWindow]);
+  }, [showCompanionWindow, showGoalsWindow, adaptiveShellEnabled]);
 
   const activeSessionPrompt = sessionPromptQueue.length ? sessionPromptQueue[0] : null;
 
@@ -2480,7 +2630,7 @@ function AppContent() {
       viewportH: viewport.h,
     };
   }, [elementPositions.chat, elementSizes.chat, viewport.h]);
-  const PHONE_MONIKA_SCALE_MAX = 1.15;
+  const PHONE_MONIKA_SCALE_MAX = 1.20;
   const PHONE_DESK_BOTTOM_INSET_MIN = 214;
   const PHONE_DESK_CHAT_GAP_MAX = 2;
   const focusMode = sessionMode.active || showStudyWindow;
@@ -2489,14 +2639,27 @@ function AppContent() {
   const chatBaseHeight = elementSizes.chat?.h ?? 320;
   const currentChatHeight = chatLiveHeight || chatBaseHeight;
   const visibleChatTop = chatTop + (chatBaseHeight - currentChatHeight);
-  const characterShift = Math.round(chatCenterX - viewport.w / 2) - 12;
+  const baseCharacterShift = monikaShellEnabled
+    ? 0
+    : Math.round(chatCenterX - viewport.w / 2) - 12;
+  const adaptiveAttentionShift = useMemo(() => {
+    if (monikaShellEnabled) return 0;
+    if (!adaptiveShellEnabled) return 0;
+    if (activePanelId === 'daily_briefing') return 68;
+    if (activePanelId === 'study') return -58;
+    if (activePanelId === 'notes') return -34;
+    if (activePanelId === 'goals') return 34;
+    if (activePanelId === 'chat') return 0;
+    return 0;
+  }, [monikaShellEnabled, adaptiveShellEnabled, activePanelId]);
+  const characterShift = baseCharacterShift + adaptiveAttentionShift;
   const viewportAspect = viewport.w / Math.max(viewport.h, 1);
   const isCompactViewport = viewport.h < 1100;
   const stackedViewportFactor = Math.max(0, Math.min(1, (1.02 - viewportAspect) / 0.22));
   const isStackedViewport = stackedViewportFactor > 0 || (viewport.w < 980 && viewport.h > 820);
   const eatTogetherLift = eatTogetherActive ? (isCompactViewport ? -160 : -120) : 0;
   const isTableScene = vnScene !== 'outside';
-  const useGroundedCharacterLayout = isTableScene;
+  const useGroundedCharacterLayout = true;
   const chatMinimizedOffset = useMemo(() => {
     if (!isTableScene) return 0;
     const baseH = elementSizes.chat?.h ?? 320;
@@ -2520,7 +2683,8 @@ function AppContent() {
     + (isCompactViewport ? -70 : 0)
     + fullscreenLowering
     + chatMinimizedOffset;
-  const groundedCharacterY = 0;
+  const groundedCharacterYBase = Math.max(145, Math.min(310, Math.round(viewport.h * 0.235)));
+  const groundedCharacterY = isPortrait ? groundedCharacterYBase - 50 : groundedCharacterYBase;
   const characterY = useGroundedCharacterLayout ? groundedCharacterY : defaultCharacterY;
 
   const characterScale = useMemo(() => {
@@ -2529,22 +2693,251 @@ function AppContent() {
     const sizeFactor = Math.min(viewport.w / refW, viewport.h / refH);
     const t = Math.max(0, Math.min(1, (sizeFactor - 0.85) / 0.25));
     const baseScale = 1.05 + 0.15 * t;
-    const tableScale = isTableScene ? (isCompactViewport ? 0.9 : 0.94) : 1.0;
+    const tableScale = isTableScene ? (isCompactViewport ? 0.96 : 1.01) : 1.0;
     const groundedScale = useGroundedCharacterLayout
       ? 1 + (PHONE_MONIKA_SCALE_MAX - 1) * stackedViewportFactor
       : 1.0;
-    return baseScale * (isCompactViewport ? 0.9 : 1.0) * tableScale * groundedScale;
+    return baseScale * (isCompactViewport ? 0.9 : 1.0) * tableScale * groundedScale * 1.5;
   }, [viewport.w, viewport.h, isCompactViewport, isTableScene, useGroundedCharacterLayout, stackedViewportFactor]);
   const characterBottomOffset = useMemo(() => {
     if (!useGroundedCharacterLayout) return 0;
-    const deskBottomInset = 260 - (260 - PHONE_DESK_BOTTOM_INSET_MIN) * stackedViewportFactor;
-    const deskChatGap = 0 + PHONE_DESK_CHAT_GAP_MAX * stackedViewportFactor;
-    const offset = viewport.h - visibleChatTop - deskBottomInset * characterScale + deskChatGap;
-    return Math.max(0, Math.round(offset));
-  }, [useGroundedCharacterLayout, viewport.h, visibleChatTop, characterScale, stackedViewportFactor]);
+    return 0;
+  }, [useGroundedCharacterLayout]);
 
+  // If MonikaShell (Monika-First Adaptive UI) is enabled, render it instead of legacy VN layout
+  if (monikaShellEnabled) {
+    return (
+      <AudioVideoProvider
+        isMuted={isMuted}
+        toggleMute={toggleMute}
+        isVideoOn={isVideoOn}
+        toggleVideo={toggleVideo}
+        visionMode={visionMode}
+        toggleScreenCapture={toggleScreenCapture}
+        isConnected={isConnected}
+        togglePower={togglePower}
+        onLogout={handleLogout}
+        onMonikaTemporaryMood={handleMonikaTemporaryMood}
+      >
+      <>
+        {isLockScreenVisible && (
+          <AuthLock
+            socket={socket}
+            onAuthenticated={() => setIsAuthenticated(true)}
+            onAnimationComplete={() => setIsLockScreenVisible(false)}
+          />
+        )}
+
+        {showPersonalityWindow && <PersonalityWindow state={personalityState} />}
+
+        <div className="fixed top-16 right-4 z-[100] flex flex-col gap-3 pointer-events-none">
+          {toasts.map(t => (
+            <div
+              key={t.id}
+              className="pointer-events-auto w-80 bg-black/60 backdrop-blur-2xl border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-right-5 fade-in duration-300"
+            >
+              <div className="p-4 flex gap-3">
+                <div className="shrink-0 mt-0.5">
+                  {t.variant === 'error' ? (
+                    <div className="w-8 h-8 rounded-full bg-red-500/10 flex items-center justify-center text-red-400 border border-red-500/20">
+                      <AlertCircle size={16} />
+                    </div>
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white border border-white/20">
+                      <Bell size={16} />
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-white/90 leading-relaxed break-words">
+                    {t.text}
+                  </p>
+                </div>
+                <button
+                  onClick={() => dismissToast(t.id)}
+                  className="shrink-0 -mt-1 -mr-1 p-1.5 text-white/30 hover:text-white hover:bg-white/10 rounded-lg transition-colors h-fit"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <MonikaShell
+          // Visualizer props
+          audioData={aiAudioData}
+          intensity={aiLevel}
+          width={viewport.w}
+          height={viewport.h}
+          backgroundSrc={vnBackground}
+          layers={masLayers}
+          sprites={{
+            idle: isConnected ? "/vn/ai_idle.png" : "/vn/ai_sleeping.png",
+            listen: "/vn/ai_listen.png",
+            talk: ["/vn/ai_talk_1.png", "/vn/ai_talk_2.png"],
+          }}
+          isAssistantSpeaking={aiSpeaking}
+          isUserSpeaking={userSpeaking}
+          characterScale={characterScale}
+          characterY={characterY}
+          characterX={characterShift}
+          characterAnchorBottom={useGroundedCharacterLayout}
+          characterBottomOffset={characterBottomOffset}
+          characterTransitionMs={isChatMinimizeAnimating ? 0 : 0.35}
+          headpatActive={headpatActive}
+          petpetSrc="/petpet.gif"
+          // Context + personality
+          personalityState={personalityState}
+          // Chat state (for panels)
+          messages={messages}
+          inputValue={inputValue}
+          setInputValue={setInputValue}
+          handleSend={handleSend}
+          socket={socket}
+          userSpeaking={userSpeaking}
+          micAudioData={micAudioData}
+          language={language}
+          studyCatalog={studyCatalog}
+          studySelection={studySelection}
+          onSelectStudy={handleSelectStudy}
+          onRefreshCatalog={fetchStudyCatalog}
+          shareRef={studyShareRef}
+          onShareStudyPage={() => studyShareRef.current && studyShareRef.current()}
+          agenticLogs={browserData.logs}
+          onChatMinimizedChange={setIsChatMinimized}
+          onChatSizeChange={setChatLiveHeight}
+          sessionActive={sessionMode.active}
+          onToggleSession={toggleSessionMode}
+          eatTogetherActive={eatTogetherActive}
+          onStartEatTogether={startEatTogether}
+          onStopEatTogether={stopEatTogether}
+          onHeadpat={triggerHeadpat}
+          onToggleMinecraft={() => toggleWindowSmart('minecraft', showMinecraftWindow, setShowMinecraftWindow)}
+          showMinecraftWindow={showMinecraftWindow}
+        />
+
+        {visionMode === 'screen' && (
+          <ScreenWindow
+            imageSrc={visionFrame}
+            onClose={toggleScreenCapture}
+            position={elementPositions.screen}
+            onMouseDown={(e) => handleMouseDown(e, 'screen')}
+            activeDragElement={activeDragElement}
+            zIndex={getZIndex('screen')}
+          />
+        )}
+
+        {isVideoOn && (
+          <CameraWindow
+            videoRef={videoRef}
+            isCameraFlipped={isCameraFlipped}
+            onClose={toggleVideo}
+            position={elementPositions.video}
+            onMouseDown={(e) => handleMouseDown(e, 'video')}
+            activeDragElement={activeDragElement}
+            zIndex={getZIndex('video')}
+          />
+        )}
+
+        {activeSessionPrompt && (
+          <SessionPromptWindow
+            prompt={activeSessionPrompt}
+            position={sessionPromptPosition}
+            onClose={popSessionPrompt}
+            onSubmit={(payload) => {
+              handleSessionPromptSubmit(payload);
+              popSessionPrompt();
+            }}
+            onSketchSave={(payload) => {
+              handleSessionSketchSave(payload);
+              popSessionPrompt();
+            }}
+            zIndex={95}
+          />
+        )}
+
+        <MinecraftConnectPopup
+          socket={socket}
+          isOpen={showMinecraftWindow}
+          onClose={() => setShowMinecraftWindow(false)}
+          onConnected={({ message }) => {
+            if (message) pushToast(message, 'system', 3200);
+          }}
+        />
+
+        {/* Settings Modal (overlay on top of MonikaShell) */}
+        {showSettings && (
+          <SettingsWindow
+            socket={socket}
+            micDevices={micDevices}
+            speakerDevices={speakerDevices}
+            webcamDevices={webcamDevices}
+            selectedMicId={selectedMicId}
+            setSelectedMicId={setSelectedMicId}
+            selectedSpeakerId={selectedSpeakerId}
+            setSelectedSpeakerId={setSelectedSpeakerId}
+            selectedWebcamId={selectedWebcamId}
+            setSelectedWebcamId={setSelectedWebcamId}
+            isCameraFlipped={isCameraFlipped}
+            setIsCameraFlipped={setIsCameraFlipped}
+            toolPermissions={toolPermissions}
+            onTogglePermission={handleTogglePermission}
+            handleFileUpload={handleFileUpload}
+            skills={skills}
+            skillsLoading={skillsLoading}
+            skillsActionBusy={skillsActionBusy}
+            onRefreshSkills={handleRefreshSkills}
+            onUploadSkillZip={handleSkillZipUpload}
+            onInstallSkillSource={handleInstallSkillSource}
+            onUninstallSkill={handleUninstallSkill}
+            adaptiveShellEnabled={adaptiveShellEnabled}
+            onToggleAdaptiveShell={onToggleAdaptiveShell}
+            monikaShellEnabled={monikaShellEnabled}
+            onToggleMonikaShell={onToggleMonikaShell}
+            onClose={() => setShowSettings(false)}
+          />
+        )}
+
+        <ConfirmationPopup
+          request={activeConfirmationRequest}
+          onConfirm={handleConfirmTool}
+          onDeny={handleDenyTool}
+        />
+
+        {/* Goodbye Popup - app close flow */}
+        {showGoodbyePopup && (
+          <GoodbyePopup
+            initialGenderHint={personalityState?.player_gender || personalityState?.user_gender || personalityState?.gender || null}
+            onConfirm={(genderText) => {
+              setShowGoodbyePopup(false);
+              handleConfirmClose(genderText);
+            }}
+            onCancel={() => {
+              setShowGoodbyePopup(false);
+            }}
+          />
+        )}
+      </>
+      </AudioVideoProvider>
+    );
+  }
+
+  // Legacy VN Layout (when MonikaShell disabled)
   return (
-    <div className="h-screen w-screen bg-black text-white/85 font-sans overflow-hidden flex flex-col relative selection:bg-white/10 selection:text-white">
+    <AudioVideoProvider
+      isMuted={isMuted}
+      toggleMute={toggleMute}
+      isVideoOn={isVideoOn}
+      toggleVideo={toggleVideo}
+      visionMode={visionMode}
+      toggleScreenCapture={toggleScreenCapture}
+      isConnected={isConnected}
+      togglePower={togglePower}
+      onLogout={handleLogout}
+      onMonikaTemporaryMood={handleMonikaTemporaryMood}
+    >
+      <div className="h-screen w-screen bg-black text-white/85 font-sans overflow-hidden flex flex-col relative selection:bg-white/10 selection:text-white">
       {isLockScreenVisible && (
         <AuthLock
           socket={socket}
@@ -2705,6 +3098,45 @@ function AppContent() {
 
       {/* Main Content (over VN background) */}
       <div className="flex-1 relative z-10">
+        {adaptiveShellEnabled && isPortrait && (showCompanionWindow || showGoalsWindow || showStudyWindow || showNotesWindow) && (
+          <div
+            className="adaptive-sheet-backdrop"
+            onClick={() => {
+              if (showStudyWindow) {
+                setShowStudyWindow(false);
+                return;
+              }
+              if (showGoalsWindow) {
+                setShowGoalsWindow(false);
+                return;
+              }
+              if (showNotesWindow) {
+                setShowNotesWindow(false);
+                return;
+              }
+              setShowCompanionWindow(false);
+            }}
+          />
+        )}
+
+        {adaptiveShellEnabled && (
+          <div className="adaptive-insight-dock" onMouseEnter={() => setActivePanelId('daily_briefing')}>
+            <div className="adaptive-insight-dock__card">
+              <div className="adaptive-insight-dock__title">Monika Briefing</div>
+              <div className="adaptive-insight-dock__meta">
+                Calm intelligence feed in a side dock, tuned for glance-first reading.
+              </div>
+              <button
+                type="button"
+                className="adaptive-insight-dock__action"
+                onClick={() => toggleWindowSmart('daily_briefing', showDailyBriefingWindow, setShowDailyBriefingWindow)}
+              >
+                {showDailyBriefingWindow ? 'Hide Briefing' : 'Open Briefing'}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Screen Window */}
         {visionMode === 'screen' && (
           <ScreenWindow
@@ -2755,6 +3187,10 @@ function AppContent() {
             onUploadSkillZip={handleSkillZipUpload}
             onInstallSkillSource={handleInstallSkillSource}
             onUninstallSkill={handleUninstallSkill}
+            adaptiveShellEnabled={adaptiveShellEnabled}
+            onToggleAdaptiveShell={onToggleAdaptiveShell}
+            monikaShellEnabled={monikaShellEnabled}
+            onToggleMonikaShell={onToggleMonikaShell}
             onClose={() => setShowSettings(false)}
           />
         )}
@@ -2804,16 +3240,80 @@ function AppContent() {
           position={elementPositions.chat}
           width={elementSizes.chat.w}
           height={elementSizes.chat.h}
-          onMouseDown={() => {}}
+          onMouseDown={() => {
+            if (adaptiveShellEnabled) {
+              setActivePanelId('chat');
+            }
+          }}
           userSpeaking={userSpeaking}
           micAudioData={micAudioData}
-          zIndex={10}
+          zIndex={adaptiveShellEnabled ? 55 : 10}
           studyModeActive={showStudyWindow}
           onShareStudyPage={() => studyShareRef.current && studyShareRef.current()}
           onMinimizedChange={setIsChatMinimized}
           onSizeChange={setChatLiveHeight}
           isWindowResizing={isWindowResizing}
         />
+
+        {adaptiveShellEnabled && (
+          <AdaptiveCommandRail
+            title="Monika Command Rail"
+            items={[
+              {
+                id: 'chat',
+                label: 'Chat',
+                icon: <MessageSquare size={14} />,
+                active: true,
+                onClick: () => setActivePanelId('chat'),
+              },
+              {
+                id: 'companion',
+                label: 'Companion',
+                icon: <Heart size={14} />,
+                active: showCompanionWindow,
+                onClick: () => {
+                  toggleWindowSmart('companion', showCompanionWindow, setShowCompanionWindow);
+                },
+              },
+              {
+                id: 'briefing',
+                label: 'Briefing',
+                icon: <Newspaper size={14} />,
+                active: showDailyBriefingWindow,
+                onClick: () => {
+                  toggleWindowSmart('daily_briefing', showDailyBriefingWindow, setShowDailyBriefingWindow);
+                },
+              },
+              {
+                id: 'study',
+                label: 'Study',
+                icon: <GraduationCap size={14} />,
+                active: showStudyWindow,
+                onClick: () => {
+                  toggleWindowSmart('study', showStudyWindow, setShowStudyWindow);
+                },
+              },
+              {
+                id: 'goals',
+                label: 'Goals',
+                icon: <Target size={14} />,
+                active: showGoalsWindow,
+                onClick: () => {
+                  toggleWindowSmart('goals', showGoalsWindow, setShowGoalsWindow);
+                },
+              },
+              {
+                id: 'notes',
+                label: 'Notes',
+                icon: <ScrollText size={14} />,
+                active: showNotesWindow,
+                onClick: () => {
+                  toggleWindowSmart('notes', showNotesWindow, setShowNotesWindow);
+                },
+              },
+            ]}
+          />
+        )}
 
         {/* Tools Module */}
           <ToolsModule
@@ -2827,19 +3327,19 @@ function AppContent() {
             onToggleVideo={toggleVideo}
             onToggleScreenCapture={toggleScreenCapture}
             onToggleSettings={() => setShowSettings(!showSettings)}
-            onToggleReminders={() => handleToggleWindow('reminders', showRemindersWindow, setShowRemindersWindow)}
+            onToggleReminders={() => toggleWindowSmart('reminders', showRemindersWindow, setShowRemindersWindow)}
             showRemindersWindow={showRemindersWindow}
-            onToggleNotes={() => handleToggleWindow('notes', showNotesWindow, setShowNotesWindow)}
+            onToggleNotes={() => toggleWindowSmart('notes', showNotesWindow, setShowNotesWindow)}
             showNotesWindow={showNotesWindow}
-            onToggleKasa={() => handleToggleWindow('kasa', showKasaWindow, setShowKasaWindow)}
+            onToggleKasa={() => toggleWindowSmart('kasa', showKasaWindow, setShowKasaWindow)}
             showKasaWindow={showKasaWindow}
-            onToggleBrowser={() => handleToggleWindow('browser', showBrowserWindow, setShowBrowserWindow)}
+            onToggleBrowser={() => toggleWindowSmart('browser', showBrowserWindow, setShowBrowserWindow)}
             showBrowserWindow={showBrowserWindow}
-            onToggleCompanion={() => handleToggleWindow('companion', showCompanionWindow, setShowCompanionWindow)}
+            onToggleCompanion={() => toggleWindowSmart('companion', showCompanionWindow, setShowCompanionWindow)}
             showCompanionWindow={showCompanionWindow}
-            onToggleGoals={() => handleToggleWindow('goals', showGoalsWindow, setShowGoalsWindow)}
+            onToggleGoals={() => toggleWindowSmart('goals', showGoalsWindow, setShowGoalsWindow)}
             showGoalsWindow={showGoalsWindow}
-            onToggleDailyBriefing={() => handleToggleWindow('daily_briefing', showDailyBriefingWindow, setShowDailyBriefingWindow)}
+            onToggleDailyBriefing={() => toggleWindowSmart('daily_briefing', showDailyBriefingWindow, setShowDailyBriefingWindow)}
             showDailyBriefingWindow={showDailyBriefingWindow}
             onResetPosition={handleResetPosition}
             activeDragElement={activeDragElement}
@@ -2880,9 +3380,15 @@ function AppContent() {
             socket={socket}
             onClose={() => setShowDailyBriefingWindow(false)}
             position={elementPositions.daily_briefing}
-            onMouseDown={(e) => handleMouseDown(e, 'daily_briefing')}
-            activeDragElement={activeDragElement}
-            zIndex={getZIndex('daily_briefing')}
+            onMouseDown={(e) => {
+              if (adaptiveShellEnabled) {
+                setActivePanelId('daily_briefing');
+                return;
+              }
+              handleMouseDown(e, 'daily_briefing');
+            }}
+            activeDragElement={adaptiveShellEnabled ? null : activeDragElement}
+            zIndex={adaptiveShellEnabled ? 72 : getZIndex('daily_briefing')}
             language={language}
           />
         )}
@@ -2893,9 +3399,15 @@ function AppContent() {
             socket={socket}
             onClose={() => setShowNotesWindow(false)}
             position={elementPositions.notes}
-            onMouseDown={(e) => handleMouseDown(e, 'notes')}
-            activeDragElement={activeDragElement}
-            zIndex={getZIndex('notes')}
+            onMouseDown={(e) => {
+              if (adaptiveShellEnabled) {
+                setActivePanelId('notes');
+                if (isPortrait) return;
+              }
+              handleMouseDown(e, 'notes');
+            }}
+            activeDragElement={adaptiveShellEnabled && isPortrait ? null : activeDragElement}
+            zIndex={adaptiveShellEnabled ? 78 : getZIndex('notes')}
           />
         )}
 
@@ -2921,9 +3433,15 @@ function AppContent() {
             position={elementPositions.study}
             width={elementSizes.study.w}
             height={elementSizes.study.h}
-            onMouseDown={(e) => handleMouseDown(e, 'study')}
-            activeDragElement={activeDragElement}
-            zIndex={getZIndex('study')}
+            onMouseDown={(e) => {
+              if (adaptiveShellEnabled) {
+                setActivePanelId('study');
+                if (isPortrait) return;
+              }
+              handleMouseDown(e, 'study');
+            }}
+            activeDragElement={adaptiveShellEnabled && isPortrait ? null : activeDragElement}
+            zIndex={adaptiveShellEnabled ? 79 : getZIndex('study')}
             catalog={studyCatalog}
             selection={studySelection}
             onSelectStudy={handleSelectStudy}
@@ -2940,13 +3458,25 @@ function AppContent() {
             position={elementPositions.companion}
             width={elementSizes.companion?.w}
             height={elementSizes.companion?.h}
-            onMouseDown={(e) => handleMouseDown(e, 'companion')}
-            activeDragElement={activeDragElement}
-            zIndex={getZIndex('companion')}
+            onMouseDown={(e) => {
+              if (adaptiveShellEnabled) {
+                setActivePanelId('companion');
+                if (isPortrait) return;
+              }
+              handleMouseDown(e, 'companion');
+            }}
+            activeDragElement={adaptiveShellEnabled && isPortrait ? null : activeDragElement}
+            zIndex={adaptiveShellEnabled ? 76 : getZIndex('companion')}
             studyCatalog={studyCatalog}
             studySelection={studySelection}
             onOpenStudy={handleSelectStudy}
-            onShowStudy={() => setShowStudyWindow(true)}
+            onShowStudy={() => {
+              if (!showStudyWindow) {
+                toggleWindowSmart('study', showStudyWindow, setShowStudyWindow);
+              } else if (adaptiveShellEnabled) {
+                setActivePanelId('study');
+              }
+            }}
             onHeadpat={triggerHeadpat}
             sessionActive={sessionMode.active}
             onToggleSession={toggleSessionMode}
@@ -2954,9 +3484,23 @@ function AppContent() {
             onStartEatTogether={startEatTogether}
             onStopEatTogether={stopEatTogether}
             personalityState={personalityState}
-            onOpenGoals={() => handleToggleWindow('goals', showGoalsWindow, setShowGoalsWindow)}
-            onToggleMinecraft={() => handleToggleWindow('minecraft', showMinecraftWindow, setShowMinecraftWindow)}
+            onOpenGoals={() => toggleWindowSmart('goals', showGoalsWindow, setShowGoalsWindow)}
+            onToggleMinecraft={() => toggleWindowSmart('minecraft', showMinecraftWindow, setShowMinecraftWindow)}
             showMinecraftWindow={showMinecraftWindow}
+          />
+        )}
+
+        {/* Goodbye Popup - only for closing app */}
+        {showGoodbyePopup && (
+          <GoodbyePopup
+            initialGenderHint={personalityState?.player_gender || personalityState?.user_gender || personalityState?.gender || null}
+            onConfirm={(genderText) => {
+              setShowGoodbyePopup(false);
+              handleConfirmClose(genderText);
+            }}
+            onCancel={() => {
+              setShowGoodbyePopup(false);
+            }}
           />
         )}
 
@@ -2966,9 +3510,15 @@ function AppContent() {
             position={elementPositions.goals}
             width={elementSizes.goals?.w}
             height={elementSizes.goals?.h}
-            onMouseDown={(e) => handleMouseDown(e, 'goals')}
-            activeDragElement={activeDragElement}
-            zIndex={getZIndex('goals')}
+            onMouseDown={(e) => {
+              if (adaptiveShellEnabled) {
+                setActivePanelId('goals');
+                if (isPortrait) return;
+              }
+              handleMouseDown(e, 'goals');
+            }}
+            activeDragElement={adaptiveShellEnabled && isPortrait ? null : activeDragElement}
+            zIndex={adaptiveShellEnabled ? 77 : getZIndex('goals')}
             personalityState={personalityState}
           />
         )}
@@ -2993,17 +3543,33 @@ function AppContent() {
         />
       </div>
     </div>
+    </AudioVideoProvider>
   );
 }
 
 function App() {
-  const adaptiveShellEnabled = isAdaptiveShellEnabled();
+  const [adaptiveShellEnabled, setAdaptiveShellEnabledState] = useState(() => isAdaptiveShellEnabled());
+  const [monikaShellEnabled, setMonikaShellEnabledState] = useState(() => isMonikaShellEnabled());
+
+  const handleToggleAdaptiveShell = useCallback((enabled) => {
+    const next = Boolean(enabled);
+    setAdaptiveShellEnabled(next);
+    setAdaptiveShellEnabledState(next);
+  }, []);
+
+  const handleToggleMonikaShell = useCallback((enabled) => {
+    const next = Boolean(enabled);
+    setMonikaShellEnabled(next);
+    setMonikaShellEnabledState(next);
+  }, []);
 
   return (
     <LanguageProvider>
-      <LayoutProvider>
-        <ModeProvider>
-          <RealtimeProvider socket={socket}>
+      <MonikaContextProvider>
+        <SettingsProvider>
+          <LayoutProvider>
+            <ModeProvider>
+              <RealtimeProvider socket={socket}>
             <style>{`
               ::-webkit-scrollbar {
                 width: 6px;
@@ -3029,16 +3595,28 @@ function App() {
               }
             `}</style>
 
-            {adaptiveShellEnabled ? (
+            {!monikaShellEnabled && adaptiveShellEnabled ? (
               <AdaptiveShell>
-                <AppContent />
+                <AppContent
+                  adaptiveShellEnabled={adaptiveShellEnabled}
+                  onToggleAdaptiveShell={handleToggleAdaptiveShell}
+                  monikaShellEnabled={monikaShellEnabled}
+                  onToggleMonikaShell={handleToggleMonikaShell}
+                />
               </AdaptiveShell>
             ) : (
-              <AppContent />
+              <AppContent
+                adaptiveShellEnabled={adaptiveShellEnabled}
+                onToggleAdaptiveShell={handleToggleAdaptiveShell}
+                monikaShellEnabled={monikaShellEnabled}
+                onToggleMonikaShell={handleToggleMonikaShell}
+              />
             )}
           </RealtimeProvider>
         </ModeProvider>
       </LayoutProvider>
+        </SettingsProvider>
+      </MonikaContextProvider>
     </LanguageProvider>
   );
 }

@@ -10,6 +10,7 @@ const getViewport = () => ({
 export const LayoutProvider = ({ children }) => {
   const [viewport, setViewport] = useState(getViewport);
   const [panelRegistry, setPanelRegistry] = useState({});
+  const [panelVisibility, setPanelVisibilityState] = useState({});
   const [activePanelId, setActivePanelId] = useState(null);
 
   useEffect(() => {
@@ -50,18 +51,49 @@ export const LayoutProvider = ({ children }) => {
     });
   }, []);
 
+  const setPanelVisibility = useCallback((panelId, isVisible) => {
+    if (!panelId) return;
+    setPanelVisibilityState((prev) => {
+      if (prev[panelId] === Boolean(isVisible)) return prev;
+      return {
+        ...prev,
+        [panelId]: Boolean(isVisible),
+      };
+    });
+  }, []);
+
+  const togglePanelVisibility = useCallback((panelId) => {
+    if (!panelId) return;
+    setPanelVisibilityState((prev) => ({
+      ...prev,
+      [panelId]: !prev[panelId],
+    }));
+  }, []);
+
   const value = useMemo(() => {
     const isPortrait = viewport.height >= viewport.width;
     return {
       viewport,
       isPortrait,
       panelRegistry,
+      panelVisibility,
       activePanelId,
       setActivePanelId,
       registerPanel,
       updatePanel,
+      setPanelVisibility,
+      togglePanelVisibility,
     };
-  }, [viewport, panelRegistry, activePanelId, registerPanel, updatePanel]);
+  }, [
+    viewport,
+    panelRegistry,
+    panelVisibility,
+    activePanelId,
+    registerPanel,
+    updatePanel,
+    setPanelVisibility,
+    togglePanelVisibility,
+  ]);
 
   return <LayoutContext.Provider value={value}>{children}</LayoutContext.Provider>;
 };

@@ -65,12 +65,34 @@ function createWindow() {
             });
     };
 
+    const broadcastWindowState = () => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        mainWindow.webContents.send('window-maximized-changed', mainWindow.isMaximized());
+    };
+
     loadFrontend();
+
+    mainWindow.webContents.on('did-finish-load', broadcastWindowState);
+    mainWindow.on('maximize', broadcastWindowState);
+    mainWindow.on('unmaximize', broadcastWindowState);
+
+    // Intercept close event to show goodbye popup instead of instant close
+    mainWindow.on('close', (e) => {
+        // Allow close if explicitly confirmed (forceClose flag set)
+        if (mainWindow.forceClose) {
+            return; // Let the close proceed
+        }
+        
+        // Otherwise, prevent default close and show goodbye popup
+        e.preventDefault();
+        mainWindow.webContents.send('request-close-app');
+    });
 
     mainWindow.on('closed', () => {
         mainWindow = null;
     });
 }
+    console.log('[ELECTRON] Close event intercepted, sending request to show popup');
 
 function resolvePythonCandidates() {
     const candidates = [];
@@ -180,6 +202,20 @@ app.whenReady().then(() => {
 
     ipcMain.on('window-close', () => {
         if (mainWindow) mainWindow.close();
+    });
+
+    // Allow React to confirm close after showing goodbye popup
+    ipcMain.on('confirm-close-app', () => {
+        if (mainWindow) {
+            // Allow the close event to proceed
+            mainWindow.forceClose = true;
+            mainWindow.close();
+        }
+    });
+
+    ipcMain.handle('window-is-maximized', () => {
+        if (!mainWindow || mainWindow.isDestroyed()) return false;
+        return mainWindow.isMaximized();
     });
 
     ipcMain.handle('reveal-memory-page', (_event, payload) => {

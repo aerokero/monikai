@@ -53,6 +53,7 @@ out/
 
 # Build and cache directories
 .cache/
+.tmp-vite-plan-build/
 
 # IDE
 .vscode/

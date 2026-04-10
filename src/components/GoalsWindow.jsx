@@ -76,6 +76,7 @@ const GoalsWindow = ({
   personalityState,
   width = 1080,
   height = 760,
+  embedded = false,
 }) => {
   const { t } = useLanguage();
   const isStackedLayout = width < 1120;
@@ -324,10 +325,10 @@ const GoalsWindow = ({
     <div
       id="goals"
       ref={rootRef}
-      className={`absolute flex flex-col overflow-hidden rounded-xl border border-white/[0.14] bg-black/55 backdrop-blur-2xl shadow-2xl transition-[box-shadow,border-color] duration-200 ${
+      className={`${embedded ? 'monika-embedded-panel' : 'absolute'} flex flex-col overflow-hidden rounded-xl border border-white/[0.14] bg-black/55 backdrop-blur-2xl shadow-2xl transition-[box-shadow,border-color] duration-200 ${
         activeDragElement === 'goals' ? 'ring-1 ring-white/50 border-white/30' : ''
       }`}
-      style={{
+      style={embedded ? undefined : {
         width,
         height,
         left: position.x,
@@ -335,9 +336,12 @@ const GoalsWindow = ({
         transform: 'translate(-50%, -50%)',
         zIndex,
       }}
-      onMouseDown={onMouseDown}
+      onMouseDown={embedded ? undefined : onMouseDown}
     >
-      <div className="relative border-b border-white/10 bg-white/5 px-4 py-4 handle cursor-grab active:cursor-grabbing" data-drag-handle>
+      <div
+        className={`relative border-b border-white/10 bg-white/5 px-4 py-4 handle ${embedded ? '' : 'cursor-grab active:cursor-grabbing'}`}
+        data-drag-handle={embedded ? undefined : true}
+      >
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-3">
@@ -349,9 +353,11 @@ const GoalsWindow = ({
               </div>
             </div>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-white/50 transition-colors hover:bg-red-500/20 hover:text-red-400">
-            <X size={16} />
-          </button>
+          {!embedded && (
+            <button onClick={onClose} className="rounded-lg p-1.5 text-white/50 transition-colors hover:bg-red-500/20 hover:text-red-400">
+              <X size={16} />
+            </button>
+          )}
         </div>
       </div>
 

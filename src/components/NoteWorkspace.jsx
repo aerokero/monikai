@@ -409,6 +409,10 @@ const NoteWorkspace = ({
   compact = false,
   hideCategories = false,
   hidePaths = false,
+  shellMode = false,
+  shellWidth = 0,
+  singlePage = false,
+  titleOverride = '',
 }) => {
   const { t } = useLanguage();
   const [notesText, setNotesText] = useState('');
@@ -439,6 +443,10 @@ const NoteWorkspace = ({
   const pagesRef = useRef([]);
   const hideCategoryUI = Boolean(hideCategories);
   const showPaths = !hidePaths;
+  const isShellNarrow = shellMode && shellWidth > 0 && shellWidth < 880;
+  const isShellCompact = shellMode && shellWidth > 0 && shellWidth < 640;
+  const useStackedHeaderLayout = isShellCompact && !shellMode;
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const normalizedBase = useMemo(() => (basePath || '').replace(/\\/g, '/').replace(/\/+$/, ''), [basePath]);
   const normalizedFilter = useMemo(() => (filterPrefix || '').replace(/\\/g, '/').replace(/\/+$/, ''), [filterPrefix]);
@@ -595,6 +603,16 @@ const NoteWorkspace = ({
     if (!onContentChange) return;
     onContentChange({ text: notesText, path: pagePath });
   }, [notesText, pagePath, onContentChange]);
+
+  useEffect(() => {
+    if (singlePage) {
+      setSidebarOpen(false);
+      return;
+    }
+    if (!isShellNarrow) {
+      setSidebarOpen(false);
+    }
+  }, [singlePage, isShellNarrow]);
 
   const scheduleSave = (text) => {
     if (!socket) return;
@@ -939,6 +957,7 @@ const NoteWorkspace = ({
   const activePage = visiblePages.find(p => p.path === pagePath)
     || filteredPages.find(p => p.path === pagePath)
     || null;
+  const effectiveTitle = titleOverride || activePage?.title || t('notes.untitled');
 
   const createPage = () => {
     if (!socket) return;
@@ -1052,7 +1071,7 @@ const NoteWorkspace = ({
   };
 
   const openContextMenu = (e, path) => {
-    if (!path) return;
+    if (!path || singlePage) return;
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY, path });
   };
@@ -1096,7 +1115,7 @@ const NoteWorkspace = ({
   };
 
   const startTitleEdit = (path) => {
-    if (!path) return;
+    if (!path || singlePage) return;
     const normalized = path.replace(/\\/g, '/');
     const currentTitle = pages.find(p => p.path === normalized)?.title || activePage?.title || t('notes.untitled');
     setTitleEdit({ path: normalized, value: currentTitle });
@@ -1146,6 +1165,66 @@ const NoteWorkspace = ({
   }, [titleEdit?.path]);
 
   const toolbarButton = 'p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-colors';
+  const shellSimpleToolbar = Boolean(shellMode);
+  const toolbarItems = shellSimpleToolbar
+    ? [
+        {
+          id: 'bold',
+          title: t('notes.toolbar.bold'),
+          icon: Bold,
+          action: () => wrapSelection('**', '**', { perLine: true }),
+        },
+        {
+          id: 'italic',
+          title: t('notes.toolbar.italic'),
+          icon: Italic,
+          action: () => wrapSelection('*', '*', { perLine: true }),
+        },
+        {
+          id: 'bulleted',
+          title: t('notes.toolbar.bulleted'),
+          icon: List,
+          action: () => toggleBulletList(),
+        },
+        {
+          id: 'numbered',
+          title: t('notes.toolbar.numbered'),
+          icon: ListOrdered,
+          action: () => toggleNumberedList(),
+        },
+      ]
+    : [
+        {
+          id: 'bold',
+          title: t('notes.toolbar.bold'),
+          icon: Bold,
+          action: () => wrapSelection('**', '**', { perLine: true }),
+        },
+        {
+          id: 'italic',
+          title: t('notes.toolbar.italic'),
+          icon: Italic,
+          action: () => wrapSelection('*', '*', { perLine: true }),
+        },
+        {
+          id: 'highlight',
+          title: t('notes.toolbar.highlight'),
+          icon: Highlighter,
+          action: () => applyHighlight(),
+        },
+        {
+          id: 'bulleted',
+          title: t('notes.toolbar.bulleted'),
+          icon: List,
+          action: () => toggleBulletList(),
+        },
+        {
+          id: 'numbered',
+          title: t('notes.toolbar.numbered'),
+          icon: ListOrdered,
+          action: () => toggleNumberedList(),
+        },
+      ];
   const slashCommands = [
     { id: 'h1', label: t('notes.commands.heading1'), hint: '#', action: () => applyHeading(1) },
     { id: 'h2', label: t('notes.commands.heading2'), hint: '##', action: () => applyHeading(2) },
@@ -1156,104 +1235,145 @@ const NoteWorkspace = ({
   ];
 
   return (
-    <div className={`flex h-full min-h-0 ${compact ? 'text-[11px]' : 'text-sm'}`}>
-      <div className={`shrink-0 border-r border-white/10 bg-white/5 ${compact ? 'w-44' : 'w-56'} flex flex-col`}>
-        <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between">
-          <div className="text-[10px] text-white/60 uppercase tracking-wider">{t('notes.title')}</div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setShowNewPage(v => !v)}
-              className="p-1 rounded-md bg-white/10 hover:bg-white/20 text-white/70"
-              title={t('notes.new_page')}
-            >
-              <Plus size={12} />
-            </button>
-            <button
-              onClick={deletePage}
-              className="p-1 rounded-md bg-white/10 hover:bg-red-500/20 text-white/70 hover:text-red-300"
-              title={t('notes.delete_page')}
-            >
-              <Trash2 size={12} />
-            </button>
-          </div>
-        </div>
+    <div className={`relative flex h-full min-h-0 ${compact ? 'text-[11px]' : 'text-sm'}`}>
+      {!singlePage && isShellNarrow && sidebarOpen ? (
+        <button
+          type="button"
+          aria-label="Close notes sidebar"
+          className="absolute inset-0 z-20 bg-black/55 backdrop-blur-[1px]"
+          onClick={() => setSidebarOpen(false)}
+        />
+      ) : null}
 
-        {!hideCategoryUI && (
-          <div className="px-3 py-2 border-b border-white/10">
-            <div className="text-[9px] text-white/40 uppercase tracking-wider mb-1">{t('notes.category_label')}</div>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full bg-black/30 border border-white/10 rounded-md px-2 py-1 text-[11px] text-white/70 focus:outline-none focus:border-white/30"
-            >
-              <option value="all">{t('notes.category_all')}</option>
-              {categories.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {showNewPage && (
-          <div className="px-3 py-2 border-b border-white/10 space-y-2">
-            <input
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              className="w-full bg-black/30 border border-white/10 rounded-md px-2 py-1 text-[11px] text-white/70 focus:outline-none focus:border-white/30"
-              placeholder={t('notes.new_title_placeholder')}
-            />
-            {!hideCategoryUI && (
-              <input
-                value={newCategory}
-                onChange={(e) => setNewCategory(e.target.value)}
-                className="w-full bg-black/30 border border-white/10 rounded-md px-2 py-1 text-[11px] text-white/70 focus:outline-none focus:border-white/30"
-                placeholder={t('notes.new_category_placeholder')}
-              />
-            )}
-            <button
-              onClick={createPage}
-              className="w-full px-2 py-1 rounded-md bg-white/15 hover:bg-white/25 text-white/80 text-[11px]"
-            >
-              {t('notes.create')}
-            </button>
-          </div>
-        )}
-
-        <div className="flex-1 overflow-y-auto custom-scrollbar px-2 py-2 space-y-1">
-          {visiblePages.length === 0 && (
-            <div className="text-[10px] text-white/30 px-2 py-1">{t('notes.empty_pages')}</div>
-          )}
-          {visiblePages.map(p => {
-            const isActive = p.path === pagePath;
-            return (
+      {!singlePage && (
+        <div
+          className={
+            isShellNarrow
+              ? `absolute inset-y-0 left-0 z-30 flex w-[min(280px,calc(100%-0.75rem))] flex-col border-r border-white/10 bg-[linear-gradient(180deg,rgba(32,22,36,0.96),rgba(14,11,18,0.98))] shadow-2xl transition-transform duration-200 ${
+                  sidebarOpen ? 'translate-x-0' : '-translate-x-full pointer-events-none'
+                }`
+              : `shrink-0 border-r border-white/10 bg-white/5 ${compact ? 'w-44' : shellMode ? 'w-52' : 'w-56'} flex flex-col`
+          }
+        >
+          <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between gap-2">
+            <div className="text-[10px] text-white/60 uppercase tracking-wider">{t('notes.title')}</div>
+            <div className="flex items-center gap-1">
               <button
-                key={p.path}
-                onClick={() => {
-                  setPagePath(p.path);
-                  requestNotes(p.path);
-                }}
-                onContextMenu={(e) => openContextMenu(e, p.path)}
-                className={`w-full text-left px-2 py-1.5 rounded-md transition-colors ${
-                  isActive ? 'bg-white/20 text-white' : 'bg-white/5 text-white/60 hover:bg-white/10'
-                }`}
+                onClick={() => setShowNewPage(v => !v)}
+                className="p-1 rounded-md bg-white/10 hover:bg-white/20 text-white/70"
+                title={t('notes.new_page')}
               >
-                <div className="text-[11px] font-medium">{p.title || t('notes.untitled')}</div>
-                {showPaths && (
-                  <div className="text-[9px] text-white/35 truncate">{stripPrefix(p.path) || p.path}</div>
-                )}
+                <Plus size={12} />
               </button>
-            );
-          })}
+              <button
+                onClick={deletePage}
+                className="p-1 rounded-md bg-white/10 hover:bg-red-500/20 text-white/70 hover:text-red-300"
+                title={t('notes.delete_page')}
+              >
+                <Trash2 size={12} />
+              </button>
+              {isShellNarrow ? (
+                <button
+                  onClick={() => setSidebarOpen(false)}
+                  className="px-2 py-1 rounded-md bg-white/10 hover:bg-white/20 text-[10px] text-white/70"
+                >
+                  Close
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          {!hideCategoryUI && (
+            <div className="px-3 py-2 border-b border-white/10">
+              <div className="text-[9px] text-white/40 uppercase tracking-wider mb-1">{t('notes.category_label')}</div>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full bg-black/30 border border-white/10 rounded-md px-2 py-1 text-[11px] text-white/70 focus:outline-none focus:border-white/30"
+              >
+                <option value="all">{t('notes.category_all')}</option>
+                {categories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {showNewPage && (
+            <div className="px-3 py-2 border-b border-white/10 space-y-2">
+              <input
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                className="w-full bg-black/30 border border-white/10 rounded-md px-2 py-1 text-[11px] text-white/70 focus:outline-none focus:border-white/30"
+                placeholder={t('notes.new_title_placeholder')}
+              />
+              {!hideCategoryUI && (
+                <input
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                  className="w-full bg-black/30 border border-white/10 rounded-md px-2 py-1 text-[11px] text-white/70 focus:outline-none focus:border-white/30"
+                  placeholder={t('notes.new_category_placeholder')}
+                />
+              )}
+              <button
+                onClick={createPage}
+                className="w-full px-2 py-1 rounded-md bg-white/15 hover:bg-white/25 text-white/80 text-[11px]"
+              >
+                {t('notes.create')}
+              </button>
+            </div>
+          )}
+
+          <div className="flex-1 overflow-y-auto custom-scrollbar px-2 py-2 space-y-1">
+            {visiblePages.length === 0 && (
+              <div className="text-[10px] text-white/30 px-2 py-1">{t('notes.empty_pages')}</div>
+            )}
+            {visiblePages.map(p => {
+              const isActive = p.path === pagePath;
+              return (
+                <button
+                  key={p.path}
+                  onClick={() => {
+                    setPagePath(p.path);
+                    requestNotes(p.path);
+                    if (isShellNarrow) {
+                      setSidebarOpen(false);
+                    }
+                  }}
+                  onContextMenu={(e) => openContextMenu(e, p.path)}
+                  className={`w-full text-left px-2 py-1.5 rounded-md transition-colors ${
+                    isActive ? 'bg-white/20 text-white' : 'bg-white/5 text-white/60 hover:bg-white/10'
+                  }`}
+                >
+                  <div className="text-[11px] font-medium">{p.title || t('notes.untitled')}</div>
+                  {showPaths && (
+                    <div className="text-[9px] text-white/35 truncate">{stripPrefix(p.path) || p.path}</div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="flex-1 min-h-0 flex flex-col bg-black/20">
         <div
-          className="px-4 py-3 border-b border-white/10 flex items-center justify-between gap-4"
+          className={`px-4 border-b border-white/10 flex gap-3 ${
+            useStackedHeaderLayout ? 'py-2.5 flex-col items-start' : 'py-3 items-center justify-between'
+          }`}
           onContextMenu={(e) => openContextMenu(e, pagePath)}
         >
-          <div className="min-w-0">
-            {titleEdit?.path === pagePath ? (
+          <div className={`min-w-0 flex-1 ${!singlePage && isShellNarrow ? 'flex items-center gap-2' : ''}`}>
+            {!singlePage && isShellNarrow ? (
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.07] px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-white/65"
+              >
+                Pages
+                <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[9px]">{visiblePages.length}</span>
+              </button>
+            ) : null}
+            {titleEdit?.path === pagePath && !singlePage ? (
               <input
                 ref={titleInputRef}
                 value={titleEdit.value}
@@ -1275,94 +1395,64 @@ const NoteWorkspace = ({
               />
             ) : (
               <button
-                className="text-sm font-semibold text-white truncate text-left"
+                className={`text-left truncate ${shellMode ? 'text-[13px]' : 'text-sm'} font-semibold text-white ${isShellNarrow ? 'min-w-0 flex-1' : ''}`}
                 onClick={() => startTitleEdit(pagePath)}
-                title={t('notes.rename')}
+                title={singlePage ? effectiveTitle : t('notes.rename')}
               >
-                {activePage?.title || t('notes.untitled')}
+                {effectiveTitle}
               </button>
             )}
-            {showPaths && (
+            {showPaths && !singlePage && (
               <div className="text-[10px] text-white/35 truncate">{stripPrefix(pagePath) || pagePath}</div>
             )}
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {status === 'saving' && (
-              <div className="flex items-center gap-1 text-[10px] text-white/40">
-                <Loader2 size={12} className="animate-spin" />
-                {t('notes.saving')}
-              </div>
-            )}
-            {status === 'saved' && (
-              <div className="flex items-center gap-1 text-[10px] text-white/40">
-                <Check size={12} className="text-green-400" />
-                {t('notes.saved')}
-              </div>
-            )}
-            <div className="text-[10px] text-white/40 uppercase tracking-wider">
-              {isPreview ? t('notes.live_preview') : t('notes.source')}
+          <div className={`flex items-center gap-2 shrink-0 ${useStackedHeaderLayout ? 'self-stretch justify-between w-full' : ''}`}>
+            <div className="flex items-center gap-2">
+              {status === 'saving' && (
+                <div className="flex items-center gap-1 text-[10px] text-white/40">
+                  <Loader2 size={12} className="animate-spin" />
+                  {t('notes.saving')}
+                </div>
+              )}
+              {status === 'saved' && (
+                <div className="flex items-center gap-1 text-[10px] text-white/40">
+                  <Check size={12} className="text-green-400" />
+                  {t('notes.saved')}
+                </div>
+              )}
             </div>
-            <button
-              onClick={() => {
-                setIsPreview(!isPreview);
-              }}
-              className={`p-1.5 rounded-lg transition-colors ${isPreview ? 'bg-white/20 text-white' : 'text-white/50 hover:text-white hover:bg-white/10'}`}
-              title={isPreview ? t('notes.toggle_markdown') : t('notes.toggle_rich')}
-            >
-              {isPreview ? <Edit2 size={16} /> : <Eye size={16} />}
-            </button>
+            <div className="flex items-center gap-2">
+              {!shellSimpleToolbar ? (
+                <div className="text-[10px] text-white/40 uppercase tracking-wider">
+                  {isPreview ? t('notes.live_preview') : t('notes.source')}
+                </div>
+              ) : null}
+              <button
+                onClick={() => {
+                  setIsPreview(!isPreview);
+                }}
+                className={`p-1.5 rounded-lg transition-colors ${isPreview ? 'bg-white/20 text-white' : 'text-white/50 hover:text-white hover:bg-white/10'}`}
+                title={isPreview ? t('notes.toggle_markdown') : t('notes.toggle_rich')}
+              >
+                {isPreview ? <Edit2 size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
           </div>
         </div>
 
         <div className="px-3 py-2 border-b border-white/10 bg-black/30 flex flex-wrap items-center gap-1" data-toolbar-popup>
-          <button
-            onClick={() => {
-              wrapSelection('**', '**', { perLine: true });
-            }}
-            className={toolbarButton}
-            title={t('notes.toolbar.bold')}
-          >
-            <Bold size={14} />
-          </button>
-          <button
-            onClick={() => {
-              wrapSelection('*', '*', { perLine: true });
-            }}
-            className={toolbarButton}
-            title={t('notes.toolbar.italic')}
-          >
-            <Italic size={14} />
-          </button>
-          <button
-            onClick={() => {
-              applyHighlight();
-            }}
-            className={toolbarButton}
-            title={t('notes.toolbar.highlight')}
-          >
-            <Highlighter size={14} />
-          </button>
-
-          <div className="w-px h-4 bg-white/10 mx-1" />
-
-          <button
-            onClick={() => {
-              toggleBulletList();
-            }}
-            className={toolbarButton}
-            title={t('notes.toolbar.bulleted')}
-          >
-            <List size={14} />
-          </button>
-          <button
-            onClick={() => {
-              toggleNumberedList();
-            }}
-            className={toolbarButton}
-            title={t('notes.toolbar.numbered')}
-          >
-            <ListOrdered size={14} />
-          </button>
+          {toolbarItems.map((item, index) => {
+            const Icon = item.icon;
+            const isDividerSpot = !shellSimpleToolbar && index === 3;
+            return (
+              <React.Fragment key={item.id}>
+                {isDividerSpot ? <div className="w-px h-4 bg-white/10 mx-1" /> : null}
+                <button onClick={item.action} className={toolbarButton} title={item.title}>
+                  <Icon size={14} />
+                </button>
+              </React.Fragment>
+            );
+          })}
         </div>
 
         <div className="flex-1 min-h-0 relative group bg-black/10 overflow-hidden">
@@ -1370,7 +1460,7 @@ const NoteWorkspace = ({
             <>
               <div
                 ref={overlayRef}
-                className="absolute inset-0 p-5 text-[13px] leading-relaxed whitespace-pre-wrap break-words pointer-events-none overflow-y-scroll scrollbar-hide text-white/85"
+                className={`absolute inset-0 ${shellMode ? 'p-4' : 'p-5'} text-[13px] leading-relaxed whitespace-pre-wrap break-words pointer-events-none overflow-y-scroll scrollbar-hide text-white/85`}
                 aria-hidden="true"
               >
                 <MarkdownOverlay content={notesText} />
@@ -1382,7 +1472,7 @@ const NoteWorkspace = ({
                 onScroll={handleScroll}
                 onKeyDown={handleLiveKeyDown}
                 placeholder={t('notes.editor_placeholder')}
-                className="absolute inset-0 w-full h-full bg-transparent p-5 text-[13px] leading-relaxed whitespace-pre-wrap break-words outline-none placeholder:text-white/20 text-transparent caret-white resize-none overflow-y-scroll custom-scrollbar selection:bg-white/20 selection:text-transparent"
+                className={`absolute inset-0 w-full h-full bg-transparent ${shellMode ? 'p-4' : 'p-5'} text-[13px] leading-relaxed whitespace-pre-wrap break-words outline-none placeholder:text-white/20 text-transparent caret-white resize-none overflow-y-scroll custom-scrollbar selection:bg-white/20 selection:text-transparent`}
                 spellCheck={false}
               />
             </>
@@ -1393,13 +1483,12 @@ const NoteWorkspace = ({
               onChange={(e) => updateText(e.target.value)}
               onScroll={handleScroll}
               placeholder={t('notes.editor_placeholder')}
-              className="absolute inset-0 w-full h-full bg-transparent p-5 text-sm font-mono leading-relaxed whitespace-pre-wrap break-words outline-none placeholder:text-white/20 text-white/80 caret-white resize-none overflow-y-scroll custom-scrollbar"
+              className={`absolute inset-0 w-full h-full bg-transparent ${shellMode ? 'p-4' : 'p-5'} text-sm font-mono leading-relaxed whitespace-pre-wrap break-words outline-none placeholder:text-white/20 text-white/80 caret-white resize-none overflow-y-scroll custom-scrollbar`}
               spellCheck={false}
             />
           )}
           <div className="absolute inset-0 pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] mix-blend-overlay" />
         </div>
-
       </div>
 
       {slashMenu && typeof document !== 'undefined' && createPortal(

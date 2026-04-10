@@ -4122,6 +4122,17 @@ async def minecraft_connect_to_server(sid, data=None, callback=None):
             callback(result)
 
 
+@sio.event
+async def kill_server(sid, data=None):
+    """Kill the server when quit button is clicked."""
+    print("[SERVER] Kill server requested from frontend")
+    # Give a brief moment for the response to send
+    await asyncio.sleep(0.1)
+    # Exit the entire application
+    import os
+    os._exit(0)
+
+
 if __name__ == "__main__":
     uvicorn.run(
         app_socketio,
