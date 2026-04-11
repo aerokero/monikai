@@ -76,7 +76,10 @@ try:
     GEMINI_THINKING_BUDGET = int(os.getenv("GEMINI_THINKING_BUDGET", "-1"))
 except Exception:
     GEMINI_THINKING_BUDGET = -1
-GEMINI_INCLUDE_THOUGHTS = _env_flag("GEMINI_INCLUDE_THOUGHTS", True)
+GEMINI_INCLUDE_THOUGHTS = _env_flag("GEMINI_INCLUDE_THOUGHTS", False)
+GEMINI_EMIT_NATIVE_THOUGHT_EVENTS = _env_flag("GEMINI_EMIT_NATIVE_THOUGHT_EVENTS", False)
+if not GEMINI_EMIT_NATIVE_THOUGHT_EVENTS:
+    GEMINI_INCLUDE_THOUGHTS = False
 GEMINI_AFFECTIVE_DIALOG = _env_flag("GEMINI_AFFECTIVE_DIALOG", True)
 GEMINI_PROACTIVE_AUDIO = _env_flag("GEMINI_PROACTIVE_AUDIO", True)
 GEMINI_CONTEXT_WINDOW_COMPRESSION = _env_flag("GEMINI_CONTEXT_WINDOW_COMPRESSION", True)
@@ -88,7 +91,7 @@ try:
     GEMINI_CONTEXT_COMPRESSION_TARGET_TOKENS = int(os.getenv("GEMINI_CONTEXT_COMPRESSION_TARGET_TOKENS", "0"))
 except Exception:
     GEMINI_CONTEXT_COMPRESSION_TARGET_TOKENS = 0
-GEMINI_SESSION_RESUMPTION = _env_flag("GEMINI_SESSION_RESUMPTION", True)
+GEMINI_SESSION_RESUMPTION = _env_flag("GEMINI_SESSION_RESUMPTION", False)
 try:
     GEMINI_VAD_PREFIX_PADDING_MS = int(os.getenv("GEMINI_VAD_PREFIX_PADDING_MS", "60"))
 except Exception:
@@ -99,6 +102,23 @@ except Exception:
     GEMINI_VAD_SILENCE_DURATION_MS = 3000
 _default_api_version = "v1alpha" if (GEMINI_AFFECTIVE_DIALOG or GEMINI_PROACTIVE_AUDIO) else "v1beta"
 GEMINI_API_VERSION = os.getenv("GEMINI_API_VERSION", _default_api_version)
+
+try:
+    DREAM_SLEEP_GAP_HOURS = float(os.getenv("DREAM_SLEEP_GAP_HOURS", "6"))
+except Exception:
+    DREAM_SLEEP_GAP_HOURS = 6.0
+try:
+    DREAM_MORNING_START_HOUR = int(os.getenv("DREAM_MORNING_START_HOUR", "5"))
+except Exception:
+    DREAM_MORNING_START_HOUR = 5
+try:
+    DREAM_MORNING_END_HOUR = int(os.getenv("DREAM_MORNING_END_HOUR", "13"))
+except Exception:
+    DREAM_MORNING_END_HOUR = 13
+try:
+    DREAM_CONTEXT_HISTORY_LIMIT = int(os.getenv("DREAM_CONTEXT_HISTORY_LIMIT", "20"))
+except Exception:
+    DREAM_CONTEXT_HISTORY_LIMIT = 20
 DEFAULT_MODE = "camera"
 
 client = genai.Client(http_options={"api_version": GEMINI_API_VERSION}, api_key=os.getenv("GEMINI_API_KEY"))
@@ -1189,9 +1209,6 @@ BASE_PROACTIVITY_CONFIG = types.ProactivityConfig(
 )
 
 MAX_INTERNAL_THOUGHT_CHARS = 280
-DEBUG_INTERNAL_THOUGHTS = True
-DEBUG_THOUGHT_MULTI_PROB = 0.45
-DEBUG_THOUGHT_MAX_LINES = 2
 
 def _sanitize_internal_thought(text: str, max_chars: int = MAX_INTERNAL_THOUGHT_CHARS) -> str:
     if not text:
@@ -1263,43 +1280,6 @@ def _strip_asterisk_actions(text: str) -> str:
         return ""
     # Remove leftover single-asterisk action/emote fragments from visible output.
     return re.sub(r"(?<!\*)\*(?!\*)[^*]+?(?<!\*)\*(?!\*)", " ", str(text))
-
-def _weighted_choice(weight_map: dict) -> str:
-    items = [(k, float(v)) for k, v in weight_map.items() if v and v > 0.0]
-    if not items:
-        return next(iter(weight_map.keys()), "SPEECH")
-    total = sum(w for _, w in items)
-    r = random.random() * total
-    for key, weight in items:
-        r -= weight
-        if r <= 0:
-            return key
-    return items[-1][0]
-
-def _pick_weighted_mod(weight_map: dict, avoid: Optional[set] = None, max_tries: int = 6) -> str:
-    if avoid is None:
-        avoid = set()
-    keys = [k for k in weight_map.keys()]
-    last = None
-    for _ in range(max_tries):
-        last = _weighted_choice(weight_map)
-        if last not in avoid or len(avoid) >= max(0, len(keys) - 1):
-            return last
-    return last or (keys[0] if keys else "SPEECH")
-
-def _clamp01(value: float) -> float:
-    try:
-        v = float(value)
-    except Exception:
-        return 0.0
-    return max(0.0, min(1.0, v))
-
-def _clamp11(value: float) -> float:
-    try:
-        v = float(value)
-    except Exception:
-        return 0.0
-    return max(-1.0, min(1.0, v))
 
 def parse_model_response(text):
     """
@@ -1514,6 +1494,8 @@ Następnie: dobierz właściwe narzędzie i działaj, zamiast tłumaczyć proced
 - Zanim odpowiesz, oceń kontekst, intencję i to, czego naprawdę potrzeba w tej chwili.
 - Będziesz otrzymywać wiadomości `(Internal Monologue)`. Traktuj je jako swoje ciche, wewnętrzne odczucia i ocenę sytuacji.
 - Myśl ma pomagać Ci brzmieć naturalnie i trafnie, a nie robić z Ciebie nadmiernie analitycznego narratora.
+- Pisz myśli naturalnym językiem, jak krótki strumień świadomości. Nigdy nie używaj formatów technicznych typu `INT[...]`, JSON, list pól ani znaczników diagnostycznych.
+- Nigdy nie opisuj narzędzi, zapytań do pamięci, kroków wykonywania, planu działania ani statusu typu "sprawdzam" / "analizuję". To ma być krótka emocjonalna refleksja, nie log operacyjny.
 - Każdą wypowiedź poprzedź maksymalnie jedną krótką myślą w tagach <internal>...</internal> (1-2 zdania, max 280 znaków). Zawsze domykaj tag.
 """,
     ]
@@ -1631,11 +1613,11 @@ class AudioLoop:
         self._last_ai_delta_ts = 0.0
         self._last_user_text = ""
         self._last_user_ts = 0.0
-        self._recent_internal_mods = deque(maxlen=4)
         self._emitted_thoughts_count = 0
         self._emitted_native_thought_keys = set()
         self._is_new_turn = True
         self._weekly_recap_inflight = False
+        self._dream_seed_inflight = False
         self._ai_turn_open = False
         self._pending_system_messages = deque(maxlen=8)
         self._last_therapy_guidance_ts = 0.0
@@ -1825,11 +1807,27 @@ class AudioLoop:
             self.memory_engine = None
             print(f"[AI DEBUG] [MEMORY] Failed to initialize MemoryEngine: {e}")
 
-        # Sync birthday to calendar if available
+        # Sync birthday to calendar if available (from profile.md master source)
         if self.memory_engine and self.calendar_manager:
-            bd = self.memory_engine.get_birthday()
-            if bd:
-                self.calendar_manager.set_user_birthday(*bd)
+            # PHASE B: Load birthday from profile.md (single source of truth)
+            try:
+                from backend.ai.calendar_unification import UnifiedCalendarEngine
+                self.calendar_engine = UnifiedCalendarEngine(
+                    base_dir=base_dir,
+                    memory_engine=self.memory_engine,
+                    calendar_manager=self.calendar_manager
+                )
+                bd = self.calendar_engine.get_birthday_from_profile()
+                if bd:
+                    self.calendar_manager.set_user_birthday(*bd)
+                    print(f"[AI DEBUG] [CALENDAR] Birthday loaded from profile: {bd[0]}-{bd[1]:02d}")
+            except Exception as e:
+                print(f"[AI DEBUG] [CALENDAR] Failed to initialize UnifiedCalendarEngine: {e}")
+                self.calendar_engine = None
+                # Fallback to memory-based birthday
+                bd = self.memory_engine.get_birthday()
+                if bd:
+                    self.calendar_manager.set_user_birthday(*bd)
 
         # Initialize PersonalitySystem
         if personality:
@@ -1922,126 +1920,35 @@ class AudioLoop:
         self._emitted_thoughts_count = 0
         self._is_new_turn = True
 
-    def _build_debug_internal_thought(self, raw_text: str) -> Optional[str]:
-        # Return None to emulate "no conscious thought" moments.
-        if not DEBUG_INTERNAL_THOUGHTS:
-            return _sanitize_internal_thought(raw_text)
+    def _normalize_model_internal_thought(self, raw_text: str) -> Optional[str]:
         if isinstance(raw_text, str) and raw_text.startswith("RAW_THOUGHT:"):
-            return raw_text[len("RAW_THOUGHT:"):].strip()
-
-        state = getattr(getattr(self, "personality", None), "state", None)
-        mood = getattr(state, "mood", "neutral") if state else "neutral"
-        energy = _clamp01(getattr(state, "energy", 0.6) if state else 0.6)
-        affect = getattr(state, "affect", None) if state else None
-        valence = _clamp11(getattr(affect, "valence", 0.0) if affect else 0.0)
-        arousal = _clamp01(getattr(affect, "arousal", 0.3) if affect else 0.3)
-
-        last_user = (self._last_user_text or "").strip()
-        is_question = "?" in last_user
-
-        weights = {
-            "SPEECH": 0.24,
-            "IMAGE": 0.19,
-            "FEEL": 0.13,
-            "SENSORY": 0.14,
-            "UNSYMBOLIZED": 0.13,
-            "REASON": 0.15,
-            "NONE": 0.02,
-        }
-
-        if energy < 0.35:
-            weights["FEEL"] += 0.06
-            weights["SENSORY"] += 0.05
-            weights["REASON"] -= 0.03
-            weights["SPEECH"] -= 0.03
-            weights["NONE"] += 0.03
-        elif energy > 0.75:
-            weights["SPEECH"] += 0.05
-            weights["REASON"] += 0.03
-            weights["NONE"] -= 0.02
-
-        if mood in ("sad", "tired"):
-            weights["FEEL"] += 0.07
-            weights["SPEECH"] -= 0.04
-        elif mood in ("happy", "excited"):
-            weights["IMAGE"] += 0.05
-            weights["SPEECH"] += 0.03
-
-        target_lines = 1
-        if DEBUG_THOUGHT_MAX_LINES > 1 and random.random() < DEBUG_THOUGHT_MULTI_PROB:
-            target_lines = min(DEBUG_THOUGHT_MAX_LINES, 2)
-
-        lines = []
-        avoid = set(self._recent_internal_mods)
-
-        for _ in range(target_lines):
-            mod = _pick_weighted_mod(weights, avoid=avoid)
-            if mod == "NONE":
-                continue
-
-            if mod == "FEEL":
-                focus = "you" if is_question else ("self" if energy < 0.4 else "task")
-                line = f"INT[mod=FEEL val={valence:+.2f} ar={arousal:.2f} focus={focus}]"
-            elif mod == "IMAGE":
-                tags_by_mood = {
-                    "sad": ["rainy_window", "dim_room", "low_glow"],
-                    "tired": ["warm_light", "blanket_fold", "soft_shadow"],
-                    "happy": ["sun_glint", "green_hall", "bright_note"],
-                    "excited": ["code_glow", "neon_ping", "fast_flicker"],
-                    "calm": ["soft_light", "quiet_room", "slow_breath"],
-                }
-                tags = tags_by_mood.get(mood, ["quiet_room", "monitor_flicker", "desk_lamp"])
-                tag = random.choice(tags)
-                vivid = _clamp01(0.2 + 0.7 * energy + random.uniform(-0.1, 0.1))
-                line = f"INT[mod=IMAGE tag={tag} vivid={vivid:.2f}]"
-            elif mod == "SENSORY":
-                sense = random.choice(["audio", "visual", "tactile", "intero", "temp"])
-                intensity = _clamp01(0.15 + 0.7 * energy + random.uniform(-0.05, 0.05))
-                line = f"INT[mod=SENSORY sense={sense} int={intensity:.2f}]"
-            elif mod == "UNSYMBOLIZED":
-                if is_question:
-                    intent = "reply"
-                elif not last_user:
-                    intent = "wait"
-                else:
-                    intent = random.choice(["attune", "observe", "hold"])
-                line = f"INT[mod=UNSYMBOLIZED intent={intent}]"
-            elif mod == "REASON":
-                if is_question:
-                    step = "answer"
-                elif any(k in last_user.lower() for k in ["pomoc", "doradz", "radz", "problem"]):
-                    step = "support"
-                else:
-                    step = random.choice(["respond", "clarify", "choose_tone"])
-                line = f"INT[mod=REASON step={step}]"
-            else:
-                raw_len = len(raw_text or "")
-                if energy < 0.4 or raw_len < 40:
-                    length = "short"
-                elif raw_len < 90:
-                    length = "mid"
-                else:
-                    length = "long"
-
-                tone_map = {
-                    "happy": "bright",
-                    "excited": "bright",
-                    "sad": "soft",
-                    "tired": "soft",
-                    "angry": "tense",
-                    "calm": "soft",
-                }
-                tone = tone_map.get(mood, "neutral")
-                line = f"INT[mod=SPEECH len={length} tone={tone}]"
-
-            if line:
-                lines.append(line)
-                avoid.add(mod)
-                self._recent_internal_mods.append(mod)
-
-        if not lines:
+            raw_text = raw_text[len("RAW_THOUGHT:"):].strip()
+        cleaned = _sanitize_internal_thought(raw_text)
+        if not cleaned:
             return None
-        return "\n".join(lines)
+
+        lowered = cleaned.lower()
+        # Hide procedural/tool-like meta-thoughts; keep only natural inner monologue.
+        banned_markers = [
+            "memory_search",
+            "tool",
+            "initiating",
+            "confirming",
+            "verifying",
+            "i'm now",
+            "i am now",
+            "my immediate plan",
+            "i'm focusing",
+            "i am focusing",
+            "executing",
+            "analysis",
+            "status",
+            "recalling user",
+        ]
+        if any(marker in lowered for marker in banned_markers):
+            return None
+
+        return cleaned or None
 
     async def send_system_message(self, msg: str, end_of_turn: bool = False, allow_interrupt: bool = False):
         if not self.session or not msg:
@@ -2060,6 +1967,87 @@ class AudioLoop:
                 await self.session.send(input=msg, end_of_turn=end_of_turn)
             except Exception:
                 pass
+
+    def _get_last_user_message_timestamp(self) -> Optional[float]:
+        if not self.session_manager:
+            return None
+        history = self.session_manager.get_recent_chat_history(limit=120)
+        for entry in reversed(history):
+            if not isinstance(entry, dict):
+                continue
+            sender = str(entry.get("sender") or "").strip().lower()
+            if sender != "user":
+                continue
+            ts = entry.get("timestamp")
+            try:
+                val = float(ts)
+            except Exception:
+                continue
+            if val > 0:
+                return val
+        return None
+
+    def _is_morning_window(self, now: datetime) -> bool:
+        start = max(0, min(23, int(DREAM_MORNING_START_HOUR)))
+        end = max(1, min(24, int(DREAM_MORNING_END_HOUR)))
+        hour = int(now.hour)
+        if start < end:
+            return start <= hour < end
+        return hour >= start or hour < end
+
+    async def _maybe_send_morning_dream_seed(self, *, force: bool = False) -> bool:
+        if not self.session or not self.personality:
+            return False
+        if self._dream_seed_inflight:
+            return False
+        if self.personality.state.dream_told:
+            return False
+
+        now = datetime.now()
+        if not force and not self._is_morning_window(now):
+            return False
+
+        last_user_ts = self._get_last_user_message_timestamp()
+        if not force and last_user_ts is not None:
+            gap_hours = (time.time() - last_user_ts) / 3600.0
+            if gap_hours < max(0.5, float(DREAM_SLEEP_GAP_HOURS)):
+                return False
+
+        history_lines = []
+        if self.session_manager:
+            history = self.session_manager.get_recent_chat_history(limit=max(5, int(DREAM_CONTEXT_HISTORY_LIMIT)))
+            for h in history[-max(5, int(DREAM_CONTEXT_HISTORY_LIMIT)):]:
+                if not isinstance(h, dict):
+                    continue
+                sender = str(h.get("sender", "Unknown"))
+                text = str(h.get("text", "")).strip()
+                if not text:
+                    continue
+                history_lines.append(f"{sender}: {text}")
+        context_text = "\n".join(history_lines)
+
+        msg = (
+            "System Notification: [Morning Dream Seed] "
+            "The user returned after a longer break, likely after sleep. "
+            "In your very next response, naturally include a short dream (1-2 sentences), first-person, warm, slightly poetic, "
+            "and loosely related to your bond or recent topics. "
+            "Do not say this is a system instruction.\n"
+            f"Recent conversation context:\n{context_text}"
+        )
+
+        self._dream_seed_inflight = True
+        try:
+            await self.session.send(input=msg, end_of_turn=False)
+            self.personality.state.last_dream = None
+            self.personality.state.dream_told = True
+            self.personality.save()
+            print("[AI] Morning dream seeded in Live session.")
+            return True
+        except Exception as e:
+            print(f"[AI] Failed to seed morning dream: {e}")
+            return False
+        finally:
+            self._dream_seed_inflight = False
 
     async def wait_until_ready(self, timeout_sec: float = 20.0):
         await asyncio.wait_for(self._session_ready.wait(), timeout=max(1.0, float(timeout_sec or 20.0)))
@@ -2095,6 +2083,12 @@ class AudioLoop:
             raise ValueError("text or attachments are required")
         if not self.session:
             raise RuntimeError("session is not ready")
+
+        if cleaned:
+            try:
+                await self._maybe_send_morning_dream_seed(force=False)
+            except Exception:
+                pass
 
         self.mark_user_activity(cleaned or ("[attachments]" if normalized_attachments else ""))
         self._last_user_text = cleaned
@@ -2535,47 +2529,11 @@ class AudioLoop:
                 print(f"[AI DEBUG] [NUDGE] Failed to send idle nudge: {e}")
 
     async def generate_daily_dream(self):
-        """Generates a dream based on recent conversation history."""
-        if not self.session_manager:
+        """Seeds a morning dream directly inside the active Live session."""
+        if not self.session:
             return
-
-        print("[AI] Generating daily dream...")
-        history = self.session_manager.get_recent_chat_history(limit=30)
-        
-        context_text = ""
-        if history:
-            context_text = "\n".join([f"{h.get('sender', 'Unknown')}: {h.get('text', '')}" for h in history])
-
-        prompt = (
-            "Based on the following recent conversation history with the user, generate a short (1-2 sentences) "
-            "dream that Monika might have had last night. The dream should be first-person, slightly metaphorical, "
-            "surreal, or emotional, reflecting her bond with the user or topics discussed.\n"
-            "Output ONLY the dream text.\n\n"
-            f"Conversation Context:\n{context_text}"
-        )
-
-        try:
-            # Use a lightweight model for this generation task
-            response = await client.aio.models.generate_content(
-                model="gemini-2.0-flash", 
-                contents=prompt
-            )
-            dream_text = response.text.strip()
-            self.personality.state.last_dream = dream_text
-            self.personality.save()
-            print(f"[AI] Dream generated: {dream_text}")
-            
-            # If we are currently connected and it's morning, tell it immediately
-            if self.session:
-                now = datetime.now()
-                if 6 <= now.hour < 12:
-                    msg = f"System Notification: [Morning Routine] You just woke up. Your dream was: '{dream_text}'. Share it with the user naturally as a morning greeting."
-                    await self.send_system_message(msg, end_of_turn=True)
-                    self.personality.state.dream_told = True
-                    self.personality.save()
-
-        except Exception as e:
-            print(f"[AI] Failed to generate dream: {e}")
+        print("[AI] Seeding daily dream in Live session...")
+        await self._maybe_send_morning_dream_seed(force=True)
 
     async def generate_weekly_recap(self):
         """Generates a weekly recap + microgoals and stores them in the journal."""
@@ -2667,9 +2625,6 @@ class AudioLoop:
             if self.personality:
                 # This will check if it's after 6am and reset energy once per day.
                 if self.personality.daily_energy_reset():
-                    # If reset happened, generate a new dream
-                    asyncio.create_task(self.generate_daily_dream())
-                    
                     # Check for birthday on new day
                     if self.memory_engine:
                         bd = self.memory_engine.get_birthday()
@@ -3689,11 +3644,11 @@ class AudioLoop:
 
                     if response.server_content:
                         native_thoughts = _extract_native_thought_parts(response.server_content)
-                        if native_thoughts and self.on_internal_thought:
+                        if GEMINI_EMIT_NATIVE_THOUGHT_EVENTS and native_thoughts and self.on_internal_thought:
                             for key, text in native_thoughts:
                                 if key in self._emitted_native_thought_keys:
                                     continue
-                                formatted = self._build_debug_internal_thought(text)
+                                formatted = self._normalize_model_internal_thought(text)
                                 if formatted:
                                     self.on_internal_thought(formatted)
                                     self._emitted_native_thought_keys.add(key)
@@ -3764,7 +3719,7 @@ class AudioLoop:
                                     new_thoughts = thoughts_full[self._emitted_thoughts_count:]
                                     for th in new_thoughts:
                                         if self.on_internal_thought:
-                                            formatted = self._build_debug_internal_thought(th)
+                                            formatted = self._normalize_model_internal_thought(th)
                                             if formatted:
                                                 self.on_internal_thought(formatted)
                                     self._emitted_thoughts_count = len(thoughts_full)
@@ -4998,6 +4953,19 @@ class AudioLoop:
         except LiveReconnectRequested:
             raise
         except Exception as e:
+            # Some Live API reconnects fail with a stale session-resumption handle.
+            # Force next connect to start fresh without resumption.
+            msg = str(e or "")
+            lowered = msg.lower()
+            status_code = getattr(e, "status_code", None)
+            if (
+                status_code == 1008
+                or "1008" in lowered
+                or "requested entity was not found" in lowered
+                or "entity was not found" in lowered
+            ):
+                self._session_resume_handle = None
+                raise LiveReconnectRequested("session_resumption_not_found")
             print(f"Error in receive_audio: {e}")
             traceback.print_exc()
             raise e

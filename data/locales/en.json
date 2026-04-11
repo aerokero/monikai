@@ -28,7 +28,20 @@
     "minecraft": "Minecraft Server",
     "settings": "Settings",
     "power": "Power",
-    "mute": "Mute"
+    "mute": "Mute",
+    "ai_on": "AI On",
+    "ai_off": "AI Off",
+    "microphone_on": "Microphone On",
+    "microphone_off": "Microphone Off",
+    "camera_on": "Camera On",
+    "camera_off": "Camera Off",
+    "share_screen_on": "Share Screen",
+    "share_screen_off": "Stop Sharing",
+    "logout": "Logout",
+    "dont_leave_me": "Don't leave me!",
+    "study": "Study",
+    "chat": "Chat",
+    "profile": "Profile"
   },
   "chat": {
     "title": "Conversation",
@@ -48,7 +61,20 @@
     "prepare_failed": "I failed to prepare the attachments.",
     "sent_attachments": "sent attachments",
     "you": "You",
-    "monika_thought": "Monika (thought)"
+    "monika_thought": "Monika (thought)",
+    "no_messages": "No messages yet.",
+    "start_conversation": "Start a conversation with Monika!",
+    "no_attachments": "No attachments yet",
+    "add_files": "Add files to share with Monika",
+    "chat_tab": "Chat",
+    "activities_tab": "Activities",
+    "attach_file_tab": "Attach a File",
+    "thoughts_tab": "Thoughts",
+    "settings_tab": "Settings",
+    "internal_thoughts": "Internal Thoughts",
+    "thoughts_visible": "Monika's thoughts are visible",
+    "enable_thoughts": "Enable to see Monika's inner thoughts",
+    "no_thoughts": "No thoughts recorded yet."
   },
   "schedule": {
     "title": "Schedule",
@@ -81,6 +107,7 @@
     "today": "Today",
     "tomorrow": "Tomorrow",
     "no_items": "Nothing scheduled.",
+    "no_items_day": "No items on this day",
     "create_hint": "Create one above or just let me know.",
     "loading": "Loading schedule...",
     "no_items_day": "Nothing for this day.",
@@ -110,6 +137,8 @@
   },
   "briefing": {
     "title": "Daily Briefing",
+    "subtitle": "Curated intelligence from global sources.",
+    "breaking": "BREAKING",
     "refresh": "Refresh briefing",
     "loading": "Loading briefing...",
     "updated": "Updated",
@@ -117,7 +146,9 @@
     "pin": "Pin section",
     "unpin": "Unpin section",
     "no_items": "No briefing items yet.",
+    "no_items": "No items available",
     "dynamic_hint": "Sections are dynamic: your pinned picks + AI suggestions from recent context.",
+    "dynamic_hint": "This section is dynamically populated based on your preferences and global trends.",
     "ai_proposal": "AI suggestion",
     "swap": "Suggested swap",
     "accept": "Accept",
@@ -334,8 +365,15 @@
       "reward": "Reward"
     }
   },
-  "session": {
-    "notes_title": "Session Notes"
+  "panels": {
+    "chat": "Chat",
+    "study": "Study",
+    "notes": "Notes",
+    "daily_briefing": "Briefing",
+    "companion": "Companion",
+    "goals": "Goals",
+    "calendar": "Calendar",
+    "profile": "Profile"
   },
   "notes": {
     "title": "Notes",

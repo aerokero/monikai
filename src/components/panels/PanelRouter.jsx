@@ -12,6 +12,8 @@ import StudyShellPanel from './StudyShellPanel';
 import NotesShellPanel from './NotesShellPanel';
 import DailyBriefingShellPanel from './DailyBriefingShellPanel';
 import GoalsShellPanel from './GoalsShellPanel';
+import CalendarShellPanel from './CalendarShellPanel';
+import ProfileShellPanel from './ProfileShellPanel';
 
 const PANEL_COMPONENTS = {
   chat: ChatPanel,
@@ -20,6 +22,8 @@ const PANEL_COMPONENTS = {
   daily_briefing: DailyBriefingShellPanel,
   companion: CompanionWindow,
   goals: GoalsShellPanel,
+  calendar: CalendarShellPanel,
+  profile: ProfileShellPanel,
 };
 
 /**
@@ -114,6 +118,14 @@ const PanelRouter = ({
       case 'goals':
         return {
           personalityState,
+        };
+      case 'calendar':
+        return {
+          socket,
+        };
+      case 'profile':
+        return {
+          socket,
         };
       case 'chat':
       default:

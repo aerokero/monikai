@@ -5,10 +5,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { useMonika } from '../../contexts/MonikaContext';
+import { useLanguage } from '../../contexts/LanguageContext';
 import { getPanelById } from '../../config/panelRegistry';
 
 const ContextBar = () => {
   const { activeContext } = useMonika();
+  const { t } = useLanguage();
   const [currentTime, setCurrentTime] = useState('');
   
   const panel = getPanelById(activeContext);
@@ -45,7 +47,7 @@ const ContextBar = () => {
           <>
             <div className="text-white/70">
               <span className="font-medium text-white/90">
-                {panel.displayName}
+                {t('panels.' + panel.id)}
               </span>
               <span className="text-white/40 mx-2">•</span>
               <span className="text-white/50">

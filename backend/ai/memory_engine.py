@@ -23,6 +23,7 @@ class MemoryEntry:
     updated_at: str
     source: Dict[str, Any]
     data: Dict[str, Any]
+    importance_score: float = 0.5
 
 
 class MemoryEngine:
@@ -45,6 +46,10 @@ class MemoryEngine:
         self.entries_path = self.memory_dir / "entries.jsonl"
         self.index_dir = self.memory_dir / "index"
         self.db_path = self.index_dir / "memory.db"
+        
+        # Connection pooling: singleton connection with timeout
+        self._connection = None
+        self._connection_timeout = 30.0
 
         self._init_language_config()
         self.bootstrap()
@@ -138,15 +143,34 @@ class MemoryEngine:
         self._date_iso_re = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
 
     # ------------------------------------------------------------------
-    # DB
+    # DB (with connection pooling)
     # ------------------------------------------------------------------
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+        """Return singleton connection with pooling. Retry if busy."""
+        if self._connection is not None:
+            try:
+                # Test connection is alive
+                self._connection.execute("SELECT 1")
+                return self._connection
+            except Exception:
+                self._connection = None
+        
+        # New connection with timeout
+        self._connection = sqlite3.connect(str(self.db_path), timeout=self._connection_timeout)
+        self._connection.row_factory = sqlite3.Row
+        return self._connection
+    
+    def __del__(self):
+        """Cleanup: close connection on destroy."""
+        if hasattr(self, '_connection') and self._connection:
+            try:
+                self._connection.close()
+            except Exception:
+                pass
 
     def _ensure_schema(self) -> None:
-        with self._connect() as conn:
+        conn = self._connect()
+        try:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS entries (
@@ -165,13 +189,15 @@ class MemoryEngine:
                     updated_at TEXT,
                     source TEXT,
                     data TEXT,
-                    hash TEXT
+                    hash TEXT,
+                    importance_score REAL DEFAULT 0.5
                 )
                 """
             )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_type ON entries(type)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_hash ON entries(hash)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_status ON entries(status)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_importance ON entries(importance_score DESC)")
             conn.execute(
                 """
                 CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
@@ -183,6 +209,12 @@ class MemoryEngine:
                 )
                 """
             )
+            conn.commit()
+        except Exception as e:
+            print(f"[MEMORY] Schema creation error: {e}")
+        finally:
+            # Don't close - pooling keeps it alive
+            pass
 
     # ------------------------------------------------------------------
     # Helpers
@@ -248,6 +280,85 @@ class MemoryEngine:
         tokens = re.findall(r"[A-Za-z0-9ĄĆĘŁŃÓŚŹŻąćęłńóśźż]+", query or "")
         return " AND ".join(tokens) if tokens else ""
 
+    def _is_plausible_name(self, candidate: str) -> bool:
+        c = str(candidate or "").strip()
+        if not c:
+            return False
+        if len(c) < 3 or len(c) > 30:  # Min 3 chars to avoid "Bo", "m", "n"
+            return False
+        if not re.fullmatch(r"[A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż\-]+", c):
+            return False
+
+        # Extended banned list (includes common false positives)
+        banned = {
+            "jestem", "bardzo", "bo", "ehm", "aha", "okej", "ok", "tak", "nie", "czesc", "cześć",
+            "hello", "hi", "heya", "name", "user", "pamietasz", "pamiętasz", "jak", "mam", "imie", "imię",
+            "memory", "search", "tool", "confirming", "verifying", "initiating",
+            "craft", "crafting", "tata", "mm", "nn", "yes", "no", "maybe", "well",
+            "because", "thing", "stuff", "something", "anything", "nothing",
+        }
+        if c.lower() in banned:
+            return False
+        return True
+
+    # ------------------------------------------------------------------
+    # Importance Scoring
+    # ------------------------------------------------------------------
+    def score_importance(
+        self,
+        type_: str,
+        content: str,
+        confidence: float,
+        entities: List[str],
+        tags: List[str],
+    ) -> float:
+        """
+        Score importance (0-1) based on formula:
+        importance = α×actionability + β×confidence + γ×entity_count + δ×tag_specificity
+        
+        Higher scores: structured facts with dates/people/actions
+        Lower scores: vague fragments
+        """
+        # Weights
+        W_ACTIONABLE = 0.4
+        W_CONFIDENCE = 0.3
+        W_ENTITIES = 0.2
+        W_TAGS = 0.1
+        
+        # 1. Actionability: does it contain dates, people, or actions?
+        actionable = 0.3  # Default: low
+        content_lower = content.lower()
+        if any(keyword in content_lower for keyword in ["ma", "będzie", "może", "trzeba", "2026", "kwiecień", "maj"]):
+            actionable = 1.0  # High: contains dates/actions
+        elif type_ in ["event", "action", "deadline", "plan"]:
+            actionable = 0.9
+        elif type_ in ["fact", "preference"]:
+            actionable = 0.6
+        elif type_ == "memory_note":
+            actionable = 0.2  # Low: vague context fragments
+        
+        # 2. Confidence score (direct)
+        conf_score = min(1.0, max(0.0, confidence))
+        
+        # 3. Entity count (more entities = more context)
+        entity_score = min(1.0, len(entities) / 3.0)
+        
+        # 4. Tag specificity (specific tags > generic)
+        tag_score = 0.0
+        meaningful_tags = [t.lower() for t in tags if t and not t.startswith("topic:")]
+        if meaningful_tags:
+            tag_score = 0.7 + (0.3 * min(len(meaningful_tags) / 5.0, 1.0))
+        
+        # Combined score
+        score = (
+            W_ACTIONABLE * actionable +
+            W_CONFIDENCE * conf_score +
+            W_ENTITIES * entity_score +
+            W_TAGS * tag_score
+        )
+        
+        return min(1.0, max(0.0, score))
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -264,6 +375,10 @@ class MemoryEngine:
         source: Optional[Dict[str, Any]] = None,
         data: Optional[Dict[str, Any]] = None,
     ) -> Tuple[str, str]:
+        # Validation: type must not be empty
+        if not type or not str(type).strip():
+            raise ValueError("entry.type cannot be empty")
+        
         if not content or not str(content).strip():
             raise ValueError("content is required")
 
@@ -278,8 +393,12 @@ class MemoryEngine:
             source["session_id"] = self.session_manager.get_current_session_id()
 
         entry_hash = self._hash_entry(type, content, entities)
+        
+        # Compute importance score
+        importance_score = self.score_importance(type, content, confidence, entities, tags)
 
-        with self._connect() as conn:
+        conn = self._connect()
+        try:
             existing = conn.execute(
                 "SELECT id FROM entries WHERE hash = ? AND type = ? AND status = 'active'",
                 (entry_hash, type),
@@ -295,8 +414,9 @@ class MemoryEngine:
                 """
                 INSERT INTO entries (
                     id, type, content, tags, tags_text, entities, entities_text,
-                    origin, confidence, stability, status, created_at, updated_at, source, data, hash
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    origin, confidence, stability, status, created_at, updated_at, source, data, hash,
+                    importance_score
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     entry_id,
@@ -315,6 +435,7 @@ class MemoryEngine:
                     json.dumps(source, ensure_ascii=False),
                     json.dumps(data, ensure_ascii=False),
                     entry_hash,
+                    importance_score,
                 ),
             )
 
@@ -324,6 +445,11 @@ class MemoryEngine:
                     "INSERT INTO entries_fts(rowid, content, tags, entities) VALUES (?, ?, ?, ?)",
                     (row["rowid"], content, tags_text, entities_text),
                 )
+            
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            raise
 
         self._write_jsonl({
             "op": "add",
@@ -343,6 +469,19 @@ class MemoryEngine:
                 "data": data,
             },
         })
+
+        # PHASE D: Extract entities and link to KG (if KG available)
+        try:
+            if hasattr(self, 'kg_engine') and self.kg_engine:
+                self.kg_engine.extract_entities_from_memory_entry(
+                    entry_id=entry_id,
+                    content=content,
+                    entry_type=type,
+                    tags=tags,
+                    entities=entities,
+                )
+        except Exception as e:
+            print(f"[KG] Entity extraction failed for {entry_id}: {e}")
 
         self._emit({"kind": "memory_add", "id": entry_id, "type": type})
         return entry_id, "ok"
@@ -454,6 +593,52 @@ class MemoryEngine:
         with self._connect() as conn:
             rows = conn.execute(sql, params).fetchall()
         return [self._row_to_dict(r) for r in rows]
+    
+    def list_entries(
+        self,
+        limit: int = 500,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+        status: str = "active",
+        types: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        List entries with optional time range filtering.
+        
+        Args:
+            limit: Max entries to return
+            start_time: ISO format datetime (inclusive)
+            end_time: ISO format datetime (inclusive)
+            status: Filter by status ('active', 'inactive', 'archived', etc.)
+            types: Filter by entry type list
+        
+        Returns: List of entries matching criteria
+        """
+        types = self._normalize_tags(types)
+        sql = "SELECT * FROM entries WHERE status = ?"
+        params = [status]
+        
+        if start_time:
+            sql += " AND created_at >= ?"
+            params.append(start_time)
+        
+        if end_time:
+            sql += " AND created_at <= ?"
+            params.append(end_time)
+        
+        if types:
+            sql += " AND type IN ({})".format(",".join(["?"] * len(types)))
+            params.extend(types)
+        
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(int(limit))
+        
+        conn = self._connect()
+        try:
+            rows = conn.execute(sql, params).fetchall()
+            return [self._row_to_dict(r) for r in rows]
+        finally:
+            pass  # Keep connection alive for pooling
 
     def _row_to_dict(self, row: sqlite3.Row) -> Dict[str, Any]:
         return {
@@ -470,6 +655,7 @@ class MemoryEngine:
             "updated_at": row["updated_at"],
             "source": json.loads(row["source"] or "{}"),
             "data": json.loads(row["data"] or "{}"),
+            "importance_score": row["importance_score"] if "importance_score" in row.keys() else 0.5,
         }
 
     # ------------------------------------------------------------------
@@ -680,7 +866,7 @@ class MemoryEngine:
         m = self._name_re.search(raw) or self._name_re2.search(raw)
         if m:
             candidate = m.group(1).strip()
-            if candidate:
+            if self._is_plausible_name(candidate):
                 cand_norm = candidate[:1].upper() + candidate[1:]
                 self.add_entry(
                     type="fact",
@@ -693,7 +879,7 @@ class MemoryEngine:
                 )
 
         # Single-token name
-        if self._single_token_name_re.fullmatch(raw):
+        if self._single_token_name_re.fullmatch(raw) and self._is_plausible_name(raw):
             self.add_entry(
                 type="fact",
                 content=f"Imię użytkownika: {raw}" if self.language == "pl" else f"User's name: {raw}",
@@ -773,6 +959,92 @@ class MemoryEngine:
     # ------------------------------------------------------------------
     # Birthday helper
     # ------------------------------------------------------------------
+    def get_user_name(self) -> Optional[str]:
+        """
+        Get user's name with deterministic, confidence-based selection.
+        
+        Strategy:
+        1. Collect ALL name candidates from recent memories + profile
+        2. Score each candidate by confidence
+        3. Return best match (highest confidence, then most recent)
+        4. Never return same candidate twice (deterministic)
+        """
+        candidates = []  # List of (name, confidence, updated_at, source)
+        
+        # Source 1: Recent facts and events with explicit name data
+        items = self.list_recent(limit=40, types=["fact", "event"])
+        for it in items:
+            data = it.get("data") or {}
+            name = data.get("name")
+            if isinstance(name, str) and self._is_plausible_name(name):
+                confidence = it.get("confidence", 0.6)
+                updated_at = it.get("updated_at", "")
+                candidates.append((name.strip(), confidence, updated_at, "data_field"))
+
+            # Source 2: Check tags + content for embedded name patterns
+            tags = [str(t).strip().lower() for t in (it.get("tags") or []) if str(t).strip()]
+            if "name" not in tags:
+                continue
+
+            content = str(it.get("content") or "").strip()
+            if not content:
+                continue
+
+            m = re.search(
+                r"(?:Imię użytkownika:|User's name:)\s*([A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż][A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż\-]{1,30})",
+                content,
+                re.IGNORECASE,
+            )
+            if m and self._is_plausible_name(m.group(1)):
+                confidence = it.get("confidence", 0.6)
+                updated_at = it.get("updated_at", "")
+                candidates.append((m.group(1).strip(), confidence, updated_at, "content_pattern"))
+
+        # Source 3: Profile file (highest priority source - manually saved)
+        try:
+            profile_path = self.base_dir / "long_term_memory" / "profile.md"
+            if profile_path.exists():
+                txt = profile_path.read_text(encoding="utf-8", errors="ignore")
+                m = re.search(r"-\s*\*\*user_name\*\*:\s*([^\n\r]+)", txt, re.IGNORECASE)
+                if m:
+                    candidate_name = m.group(1).strip()
+                    if self._is_plausible_name(candidate_name):
+                        # Profile is master source, give it high confidence
+                        candidates.append((candidate_name, 0.99, "9999-12-31T00:00:00", "profile_master"))
+        except Exception:
+            pass
+        
+        # Sort: highest confidence first, then most recent, then by source priority
+        # Profile master (0.99) > other (0.6-0.9)
+        def sort_key(item):
+            name, confidence, updated_at, source = item
+            # Priorities: profile_master > data_field > content_pattern
+            source_priority = {"profile_master": 0, "data_field": 1, "content_pattern": 2}
+            priority = source_priority.get(source, 3)
+            # Sort by: -confidence (descending), -updated_at (descending), +source_priority (ascending)
+            # Negate confidence and updated_at for descending order
+            return (-confidence, -len(updated_at), priority)  # Longer timestamp = more recent
+        
+        candidates.sort(key=sort_key)
+        
+        # Remove duplicate names, keep best version
+        seen_names = set()
+        best_candidates = []
+        for name, confidence, updated_at, source in candidates:
+            if name.lower() not in seen_names:
+                best_candidates.append((name, confidence, updated_at, source))
+                seen_names.add(name.lower())
+        
+        # Return best candidate with confidence threshold
+        CONFIDENCE_THRESHOLD = 0.5  # Only accept names with minimum confidence
+        if best_candidates and best_candidates[0][1] >= CONFIDENCE_THRESHOLD:
+            best_name = best_candidates[0][0]
+            best_confidence = best_candidates[0][1]
+            print(f"[MEMORY] Selecting name '{best_name}' (confidence={best_confidence:.2f}, source={best_candidates[0][3]})")
+            return best_name
+        
+        return None
+
     def get_birthday(self) -> Optional[Tuple[int, int]]:
         items = self.list_recent(limit=20, types=["event", "fact"])
         for it in items:

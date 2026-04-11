@@ -192,7 +192,7 @@ const DailyBriefingWindow = ({
           </div>
           <div>
             <div className="text-lg font-semibold tracking-tight text-white">{t('briefing.title')}</div>
-            <div className="text-[11px] text-white/45">Curated intelligence from global sources.</div>
+            <div className="text-[11px] text-white/45">{t('briefing.subtitle')}</div>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -219,7 +219,7 @@ const DailyBriefingWindow = ({
       <div className="px-4 py-3 shrink-0 border-b border-white/10 bg-white/[0.02]">
         <div className="rounded-md border border-white/10 bg-white/[0.03] overflow-hidden">
           <div className="flex items-center gap-2 px-3 py-2 text-xs text-white/80">
-            <span className="text-[10px] font-bold tracking-wide text-red-300 bg-red-500/20 px-1.5 py-0.5 rounded-sm border border-red-400/30">BREAKING</span>
+            <span className="text-[10px] font-bold tracking-wide text-red-300 bg-red-500/20 px-1.5 py-0.5 rounded-sm border border-red-400/30">{t('briefing.breaking')}</span>
             <span className="truncate">{breakingItem?.title || t('briefing.no_items')}</span>
           </div>
         </div>

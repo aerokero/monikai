@@ -8,6 +8,7 @@ import React, { useState } from 'react';
 import { useMonika } from '../../contexts/MonikaContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useAudioVideo } from '../../contexts/AudioVideoContext';
+import { useLanguage } from '../../contexts/LanguageContext';
 import useLayoutMode from '../../hooks/useLayoutMode';
 import { getAllPanels } from '../../config/panelRegistry';
 import * as Icons from 'lucide-react';
@@ -17,6 +18,7 @@ const RailNav = () => {
   const { openSettings } = useSettings();
   const { isMuted, toggleMute, isVideoOn, toggleVideo, visionMode, toggleScreenCapture, isConnected, togglePower, onLogout, onMonikaTemporaryMood } = useAudioVideo();
   const { layoutMode } = useLayoutMode();
+  const { t } = useLanguage();
   
   // Quit button floating state
   const [quitHoverOffset, setQuitHoverOffset] = useState({ x: 0, y: 0 });
@@ -87,7 +89,7 @@ const RailNav = () => {
                 }
               `}
               aria-label={panel.ariaLabel}
-              title={panel.displayName}
+              title={t('panels.' + panel.id)}
               aria-current={isActive ? 'page' : undefined}
             >
               <IconComponent size={20} />
@@ -101,7 +103,7 @@ const RailNav = () => {
                   opacity-0 group-hover:opacity-100 transition-opacity
                   z-50
                 ">
-                  {panel.displayName}
+                  {t('panels.' + panel.id)}
                 </div>
               )}
             </button>
@@ -126,7 +128,7 @@ const RailNav = () => {
             }
           `}
           aria-label="AI Power"
-          title={isConnected ? 'AI On' : 'AI Off'}
+          title={isConnected ? t('tools.ai_on') : t('tools.ai_off')}
         >
           <Icons.Power size={20} />
           
@@ -138,7 +140,7 @@ const RailNav = () => {
               opacity-0 group-hover:opacity-100 transition-opacity
               z-50
             ">
-              {isConnected ? 'AI On' : 'AI Off'}
+              {isConnected ? t('tools.ai_on') : t('tools.ai_off')}
             </div>
           )}
         </button>
@@ -158,7 +160,7 @@ const RailNav = () => {
             }
           `}
           aria-label="Microphone"
-          title={isMuted ? 'Microphone Off' : 'Microphone On'}
+          title={isMuted ? t('tools.microphone_off') : t('tools.microphone_on')}
         >
           <Icons.Mic size={20} />
           
@@ -170,7 +172,7 @@ const RailNav = () => {
               opacity-0 group-hover:opacity-100 transition-opacity
               z-50
             ">
-              {isMuted ? 'Microphone Off' : 'Microphone On'}
+              {isMuted ? t('tools.microphone_off') : t('tools.microphone_on')}
             </div>
           )}
         </button>
@@ -190,7 +192,7 @@ const RailNav = () => {
             }
           `}
           aria-label="Camera"
-          title={isVideoOn ? 'Camera On' : 'Camera Off'}
+          title={isVideoOn ? t('tools.camera_on') : t('tools.camera_off')}
         >
           <Icons.Video size={20} />
           
@@ -202,7 +204,7 @@ const RailNav = () => {
               opacity-0 group-hover:opacity-100 transition-opacity
               z-50
             ">
-              {isVideoOn ? 'Camera On' : 'Camera Off'}
+              {isVideoOn ? t('tools.camera_on') : t('tools.camera_off')}
             </div>
           )}
         </button>
@@ -222,7 +224,7 @@ const RailNav = () => {
             }
           `}
           aria-label="Screen Share"
-          title={visionMode === 'screen' ? 'Screen Sharing' : 'Share Screen'}
+          title={visionMode === 'screen' ? t('tools.share_screen_off') : t('tools.share_screen_on')}
         >
           <Icons.Share2 size={20} />
           
@@ -234,7 +236,7 @@ const RailNav = () => {
               opacity-0 group-hover:opacity-100 transition-opacity
               z-50
             ">
-              {visionMode === 'screen' ? 'Screen Sharing' : 'Share Screen'}
+              {visionMode === 'screen' ? t('tools.share_screen_off') : t('tools.share_screen_on')}
             </div>
           )}
         </button>
@@ -255,7 +257,7 @@ const RailNav = () => {
             bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/80 border border-transparent
           `}
           aria-label="Settings"
-          title="Settings"
+          title={t('tools.settings')}
         >
           <Icons.Settings size={20} />
           
@@ -268,7 +270,7 @@ const RailNav = () => {
               opacity-0 group-hover:opacity-100 transition-opacity
               z-50
             ">
-              Settings
+              {t('tools.settings')}
             </div>
           )}
         </button>
@@ -295,7 +297,7 @@ const RailNav = () => {
             transitionTimingFunction: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
           }}
           aria-label="Logout"
-          title="Logout"
+          title={t('tools.logout')}
         >
           <Icons.LogOut size={20} />
           
@@ -308,7 +310,7 @@ const RailNav = () => {
               opacity-0 group-hover:opacity-100 transition-opacity
               z-50
             ">
-              {isQuitHovered ? "Don't leave me!" : "Logout"}
+              {isQuitHovered ? t('tools.dont_leave_me') : t('tools.logout')}
             </div>
           )}
         </button>

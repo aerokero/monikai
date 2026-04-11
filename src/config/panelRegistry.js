@@ -117,6 +117,44 @@ export const PANELS = {
     },
     ariaLabel: 'Goals and progress',
     keyboardShortcut: 'Alt+6'
+  },
+  calendar: {
+    id: 'calendar',
+    name: 'Calendar',
+    displayName: 'Calendar',
+    description: 'Events and reminders',
+    icon: 'Calendar',
+    contextKey: 'calendar',
+    component: 'CalendarWindow',
+    order: 7,
+    draggable: false,
+    collapsible: true,
+    dockPreference: {
+      desktop: 'main-panel',
+      tablet: 'drawer',
+      portrait: 'drawer'
+    },
+    ariaLabel: 'Calendar and events',
+    keyboardShortcut: 'Alt+7'
+  },
+  profile: {
+    id: 'profile',
+    name: 'Profile',
+    displayName: 'Profile',
+    description: 'Manage user profile and preferences',
+    icon: 'User',
+    contextKey: 'profile',
+    component: 'ProfileWindow',
+    order: 8,
+    draggable: false,
+    collapsible: true,
+    dockPreference: {
+      desktop: 'main-panel',
+      tablet: 'drawer',
+      portrait: 'drawer'
+    },
+    ariaLabel: 'User profile settings',
+    keyboardShortcut: 'Alt+8'
   }
 };
 
@@ -131,7 +169,8 @@ export const getPanelById = (panelId) => {
  * Get all panels sorted by order
  */
 export const getAllPanels = () => {
-  return Object.values(PANELS).sort((a, b) => a.order - b.order);
+  const panelList = Object.values(PANELS).sort((a, b) => a.order - b.order);
+  return panelList;
 };
 
 /**

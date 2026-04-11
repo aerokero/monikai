@@ -1499,10 +1499,50 @@ async def connect(sid, environ):
 
 @sio.event
 async def disconnect(sid):
-    global ACTIVE_FRONTEND_SID
+    """
+    Handle client disconnect:
+    1. Clear active frontend SID
+    2. Generate session-end recap (PHASE B)
+    3. Generate daily recap (PHASE C)
+    4. Create memory summary
+    """
+    global ACTIVE_FRONTEND_SID, audio_loop
     if ACTIVE_FRONTEND_SID == sid:
         ACTIVE_FRONTEND_SID = None
     print(f"Client disconnected: {sid}")
+    
+    # PHASE B + C: Generate recaps at session end
+    try:
+        if audio_loop and hasattr(audio_loop, 'session_manager'):
+            session_id = audio_loop.session_manager.get_current_session_id()
+            session_path = audio_loop.session_manager.get_current_session_path()
+            
+            if session_id and session_path:
+                # Get session times from meta.json
+                meta_file = session_path / "meta.json"
+                if meta_file.exists():
+                    import json
+                    meta = json.loads(meta_file.read_text())
+                    session_start = meta.get("started_at", datetime.now().isoformat())
+                    session_end = datetime.now().isoformat()
+                    
+                    # PHASE B: Generate session recap if calendar_engine available
+                    if hasattr(audio_loop, 'calendar_engine'):
+                        recap = audio_loop.calendar_engine.generate_session_recap(
+                            session_start=session_start,
+                            session_end=session_end,
+                            session_summary=None
+                        )
+                        print(f"[CALENDAR] Session recap generated: {session_id}")
+                    
+                    # PHASE C: Generate daily recap if recap_generator available
+                    if hasattr(audio_loop, 'recap_generator'):
+                        today = datetime.now().strftime("%Y-%m-%d")
+                        daily_recap = audio_loop.recap_generator.generate_daily_recap(date=today)
+                        if daily_recap:
+                            print(f"[RECAP] Daily recap generated for {today}")
+    except Exception as e:
+        print(f"[RECAP] Error generating recaps on disconnect: {e}")
 
 @sio.event
 async def start_audio(sid, data=None):
@@ -1690,12 +1730,13 @@ async def start_audio(sid, data=None):
         print(f"[SYSTEM NOTIFICATION] Internal Thought: {thought}")
         _schedule_emit_to_frontend('internal_thought', {'thought': thought})
         
-        # Always emit to chat log so frontend can toggle visibility retroactively
-        _schedule_emit_to_frontend('transcription', {
-            "sender": "Monika (Thought)",
-            "text": f"{thought}",
-            "is_new": True
-        })
+        # Emit to chat log only when user enabled thought visibility.
+        if bool(SETTINGS.get("show_internal_thoughts", False)):
+            _schedule_emit_to_frontend('transcription', {
+                "sender": "Monika (Thought)",
+                "text": f"{thought}",
+                "is_new": True
+            })
 
     def on_reminders_updated():
         try:
@@ -1764,6 +1805,52 @@ async def start_audio(sid, data=None):
         
         # Set Minecraft bot manager reference
         audio_loop.minecraft_bot_manager = minecraft_bot_manager
+        
+        # PHASE B: Set calendar_engine for unified calendar system
+        try:
+            from backend.ai.calendar_unification import UnifiedCalendarEngine
+            audio_loop.calendar_engine = UnifiedCalendarEngine(
+                base_dir=data_dir,
+                memory_engine=getattr(audio_loop, 'memory_engine', None),
+                calendar_manager=calendar_manager
+            )
+        except Exception as e:
+            print(f"[CALENDAR] Warning: Could not initialize UnifiedCalendarEngine in audio_loop: {e}")
+        
+        # PHASE C: Set recap_generator for daily recaps and hierarchical compression
+        try:
+            from backend.ai.daily_recap_generator import DailyRecapGenerator
+            audio_loop.recap_generator = DailyRecapGenerator(
+                base_dir=data_dir,
+                memory_engine=getattr(audio_loop, 'memory_engine', None)
+            )
+        except Exception as e:
+            print(f"[RECAP] Warning: Could not initialize DailyRecapGenerator in audio_loop: {e}")
+        
+        # PHASE D: Set kg_engine for knowledge graph and entity linking
+        try:
+            from backend.ai.user_knowledge_graph import UserKnowledgeGraph
+            audio_loop.kg_engine = UserKnowledgeGraph(
+                base_dir=data_dir,
+                memory_engine=getattr(audio_loop, 'memory_engine', None)
+            )
+            # Also link KG to memory engine for auto-extraction
+            if getattr(audio_loop, 'memory_engine', None):
+                audio_loop.memory_engine.kg_engine = audio_loop.kg_engine
+        except Exception as e:
+            print(f"[KG] Warning: Could not initialize UserKnowledgeGraph in audio_loop: {e}")
+        
+        # PHASE E: Set adaptive_retriever for multi-source query routing
+        try:
+            from backend.ai.adaptive_retriever import AdaptiveRetriever
+            audio_loop.adaptive_retriever = AdaptiveRetriever(
+                base_dir=data_dir,
+                memory_engine=getattr(audio_loop, 'memory_engine', None),
+                kg_engine=getattr(audio_loop, 'kg_engine', None),
+                calendar_manager=calendar_manager,
+            )
+        except Exception as e:
+            print(f"[RETRIEVER] Warning: Could not initialize AdaptiveRetriever in audio_loop: {e}")
         
         try:
             audio_loop.note_user_activity("start_audio")
@@ -1981,7 +2068,17 @@ async def _debounced_vn_scene_check():
 @sio.event
 async def list_reminders(sid, data=None):
     """Frontend requests current reminder list."""
-    await sio.emit('reminders_list', {'reminders': _serialize_reminders()}, room=sid)
+    result = {'reminders': _serialize_reminders()}
+    await sio.emit('reminders_list', result, room=sid)
+    return result
+
+
+@sio.event
+async def reminders_list(sid, data=None):
+    """Compatibility handler for clients that request reminders via reminders_list event."""
+    result = {'reminders': _serialize_reminders()}
+    await sio.emit('reminders_list', result, room=sid)
+    return result
 
 
 @sio.event
@@ -2259,11 +2356,37 @@ async def user_input(sid, data):
         print("[SERVER DEBUG] [Error] Session is None. Cannot send text.")
         return
 
+    async def _send_with_reconnect_retry(input_payload, end_of_turn=False):
+        try:
+            await audio_loop.session.send(input=input_payload, end_of_turn=end_of_turn)
+            return True
+        except Exception as e:
+            msg = str(e or "")
+            if "1008" not in msg and "Requested entity was not found" not in msg:
+                raise
+            # Session likely flipped during reconnect; wait for fresh session and retry once.
+            try:
+                await audio_loop.wait_until_ready(timeout_sec=6.0)
+                if audio_loop.session:
+                    await audio_loop.session.send(input=input_payload, end_of_turn=end_of_turn)
+                    return True
+            except Exception:
+                pass
+            raise
+
     if text or attachments:
         if text:
             print(f"[SERVER DEBUG] Sending message to model: '{text}'")
         if attachments:
             print(f"[SERVER DEBUG] Received {len(attachments)} attachment(s).")
+
+        asks_name = False
+        if text:
+            try:
+                t_norm = str(text).strip().lower()
+                asks_name = bool(re.search(r"\b(jak\s+mam\s+na\s+imię|jak\s+mam\s+na\s+imie|pamiętasz\s+jak\s+mam\s+na\s+imię|pamietasz\s+jak\s+mam\s+na\s+imie|what\s+is\s+my\s+name|remember\s+my\s+name)\b", t_norm))
+            except Exception:
+                asks_name = False
 
         sent_visual = False
         sent_screen_ocr = False
@@ -2454,25 +2577,40 @@ async def user_input(sid, data):
                 pass
 
         # Inject memory context (global memory engine)
-        if text and audio_loop and getattr(audio_loop, "build_memory_context", None):
+        if text and (not asks_name) and audio_loop and getattr(audio_loop, "build_memory_context", None):
             try:
                 mem_ctx = audio_loop.build_memory_context(text)
                 if mem_ctx:
-                    await audio_loop.session.send(input=mem_ctx, end_of_turn=False)
+                    await _send_with_reconnect_retry(mem_ctx, end_of_turn=False)
+            except Exception:
+                pass
+
+        # Deterministic name-recall helper: if user asks for their name, provide direct memory hint.
+        if text and audio_loop and getattr(audio_loop, "memory_engine", None):
+            try:
+                if asks_name and hasattr(audio_loop.memory_engine, "get_user_name"):
+                    remembered_name = audio_loop.memory_engine.get_user_name()
+                    if remembered_name:
+                        hint = (
+                            "System Notification: [Memory Recall] "
+                            f"The user's name in memory is: {remembered_name}. "
+                            "Answer directly and naturally. Do not say you are checking memory now."
+                        )
+                        await _send_with_reconnect_retry(hint, end_of_turn=False)
             except Exception:
                 pass
                 
         if text:
             try:
-                await audio_loop.session.send(input=text, end_of_turn=True)
+                await _send_with_reconnect_retry(text, end_of_turn=True)
                 print(f"[SERVER DEBUG] Message sent to model successfully.")
             except Exception as e:
                 print(f"[SERVER DEBUG] Failed to send message to model: {e}")
                 await _emit_to_frontend('status', {'msg': 'Connection lost. Reconnecting...'})
         else:
             try:
-                await audio_loop.session.send(
-                    input="System Notification: User sent attachments without additional text.",
+                await _send_with_reconnect_retry(
+                    "System Notification: User sent attachments without additional text.",
                     end_of_turn=True,
                 )
                 print(f"[SERVER DEBUG] Attachments-only message sent to model.")
@@ -4131,6 +4269,211 @@ async def kill_server(sid, data=None):
     # Exit the entire application
     import os
     os._exit(0)
+
+
+@sio.event
+async def calendar_get_events(sid, data=None):
+    """Frontend requests upcoming calendar events."""
+    try:
+        if not calendar_manager:
+            result = {'events': [], 'error': 'Calendar not available'}
+            await sio.emit('error', {'msg': 'Calendar not available'}, room=sid)
+            return result
+        
+        events = calendar_manager.get_all_events()
+        events_list = [
+            {
+                'id': e.id,
+                'summary': e.summary,
+                'start_iso': e.start_iso,
+                'end_iso': e.end_iso,
+                'description': e.description or '',
+                'is_birthday': getattr(e, 'is_birthday', False)
+            }
+            for e in events
+        ]
+        
+        # Sort by start time
+        events_list.sort(key=lambda x: x['start_iso'])
+        
+        print(f"[SERVER] Sending {len(events_list)} calendar events to frontend")
+        
+        result = {'events': events_list}
+        await sio.emit('calendar_events', result, room=sid)
+        return result
+    except Exception as e:
+        print(f"[SERVER] Error in calendar_get_events: {e}")
+        result = {'events': [], 'error': str(e)}
+        await sio.emit('error', {'msg': f"Failed to get calendar events: {e}"}, room=sid)
+        return result
+
+
+@sio.event
+async def calendar_get_birthdays(sid, data=None):
+    """Frontend requests birthday entries from profile.md."""
+    try:
+        birthdays = []
+        
+        # Read from profile.md in long_term_memory
+        profile_path = DATA_DIR / "long_term_memory" / "profile.md"
+        if profile_path.exists():
+            import re
+            content = profile_path.read_text(encoding='utf-8', errors='ignore')
+            
+            # Look for birthday field in markdown (e.g., "Birthday: 1990-01-15")
+            birth_match = re.search(r'(?:Birthday|Birthdate|DOB)[:\s]+(\d{4}-\d{2}-\d{2}|[A-Za-z]+ \d{1,2},? \d{4})', content)
+            if birth_match:
+                birthdays.append({
+                    'date': birth_match.group(1),
+                    'label': 'Your Birthday'
+                })
+        
+        # Also check profile.json if it exists
+        profile_json_path = DATA_DIR / "long_term_memory" / "profile_meta.json"
+        if profile_json_path.exists():
+            try:
+                import json
+                profile_data = json.loads(profile_json_path.read_text())
+                if profile_data.get('birthday'):
+                    birthdays.append({
+                        'date': profile_data['birthday'],
+                        'label': 'Your Birthday'
+                    })
+            except:
+                pass
+        
+        print(f"[SERVER] Sending {len(birthdays)} birthdays to frontend")
+        
+        result = {'birthdays': birthdays}
+        await sio.emit('calendar_birthdays', result, room=sid)
+        return result
+    except Exception as e:
+        print(f"[SERVER] Error in calendar_get_birthdays: {e}")
+        result = {'birthdays': [], 'error': str(e)}
+        await sio.emit('error', {'msg': f"Failed to get birthdays: {e}"}, room=sid)
+        return result
+
+
+@sio.event
+async def memory_get_profile(sid, data=None):
+    """Frontend requests to load user profile."""
+    try:
+        profile = {
+            'user_name': '',
+            'gender': '',
+            'birthday': '',
+            'location': '',
+            'occupation': '',
+            'interests': '',
+            'personality_traits': ''
+        }
+        
+        # Try to load from profile_meta.json
+        profile_meta_path = DATA_DIR / "long_term_memory" / "profile_meta.json"
+        if profile_meta_path.exists():
+            try:
+                import json
+                profile_data = json.loads(profile_meta_path.read_text())
+                profile.update({
+                    'user_name': profile_data.get('user_name', ''),
+                    'gender': profile_data.get('gender', ''),
+                    'birthday': profile_data.get('birthday', ''),
+                    'location': profile_data.get('location', ''),
+                    'occupation': profile_data.get('occupation', ''),
+                    'interests': profile_data.get('interests', ''),
+                    'personality_traits': profile_data.get('personality_traits', '')
+                })
+            except:
+                pass
+        
+        print(f"[SERVER] Sending user profile to frontend")
+        
+        result = {'profile': profile}
+        await sio.emit('memory_profile', result, room=sid)
+        return result
+    except Exception as e:
+        print(f"[SERVER] Error in memory_get_profile: {e}")
+        result = {'profile': {}, 'error': str(e)}
+        await sio.emit('error', {'msg': f"Failed to get profile: {e}"}, room=sid)
+        return result
+
+
+@sio.event
+async def memory_update_profile(sid, data):
+    """Frontend submits updated user profile."""
+    try:
+        profile = data.get('profile', {}) if isinstance(data, dict) else {}
+        
+        if not profile:
+            result = {'success': False, 'error': 'No profile data provided'}
+            await sio.emit('error', {'msg': 'No profile data provided'}, room=sid)
+            return result
+        
+        # Ensure directory exists
+        profile_meta_path = DATA_DIR / "long_term_memory" / "profile_meta.json"
+        profile_meta_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Save to profile_meta.json
+        import json
+        profile_data = {
+            'user_name': profile.get('user_name', '').strip(),
+            'gender': profile.get('gender', '').strip(),
+            'birthday': profile.get('birthday', '').strip(),
+            'location': profile.get('location', '').strip(),
+            'occupation': profile.get('occupation', '').strip(),
+            'interests': profile.get('interests', '').strip(),
+            'personality_traits': profile.get('personality_traits', '').strip(),
+            'updated_at': datetime.now().isoformat()
+        }
+        
+        profile_meta_path.write_text(json.dumps(profile_data, indent=2, ensure_ascii=False), encoding='utf-8')
+        
+        # Also update profile.md with basic info
+        profile_md_path = DATA_DIR / "long_term_memory" / "profile.md"
+        profile_md_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        md_content = f"""# User Profile
+
+**Name:** {profile_data['user_name']}
+
+**Gender:** {profile_data['gender']} 
+
+**Birthday:** {profile_data['birthday']}
+
+**Location:** {profile_data['location']}
+
+**Occupation:** {profile_data['occupation']}
+
+**Interests:** {profile_data['interests']}
+
+**Personality Traits:** {profile_data['personality_traits']}
+
+*Last updated: {profile_data['updated_at']}*
+"""
+        profile_md_path.write_text(md_content, encoding='utf-8')
+        
+        print(f"[SERVER] User profile updated: {profile_data['user_name']}")
+        
+        # Notify the model if session is active
+        if audio_loop and audio_loop.session:
+            try:
+                msg = f"System Notification: User profile was updated: Name={profile_data['user_name']}, Gender={profile_data['gender']}, Birthday={profile_data['birthday']}, Location={profile_data['location']}, Occupation={profile_data['occupation']}."
+                if hasattr(audio_loop, "send_system_message"):
+                    await audio_loop.send_system_message(msg, end_of_turn=False)
+                else:
+                    await audio_loop.session.send(input=msg, end_of_turn=False)
+            except Exception as e:
+                print(f"[SERVER] Failed to notify model about profile update: {e}")
+        
+        result = {'success': True, 'profile': profile_data}
+        await sio.emit('memory_profile', result, room=sid)
+        await sio.emit('status', {'msg': 'Profile saved successfully'}, room=sid)
+        return result
+    except Exception as e:
+        print(f"[SERVER] Error in memory_update_profile: {e}")
+        result = {'success': False, 'error': str(e)}
+        await sio.emit('error', {'msg': f"Failed to update profile: {e}"}, room=sid)
+        return result
 
 
 if __name__ == "__main__":

@@ -587,14 +587,14 @@ const ChatPanel = ({
         {viewMode === 'thoughts' && (
           <div className="rounded-[16px] border border-white/20 bg-white/10 overflow-hidden">
             <div className="px-4 py-3 border-b border-white/20 bg-white/15">
-              <h3 className="text-sm font-semibold text-white/90">Internal Thoughts</h3>
+              <h3 className="text-sm font-semibold text-white/90">{t('chat.internal_thoughts')}</h3>
               <p className="text-sm text-white/60 mt-1">
-                {showThoughts ? "Monika's thoughts are visible" : "Enable to see Monika's inner thoughts"}
+                {showThoughts ? t('chat.thoughts_visible') : t('chat.enable_thoughts')}
               </p>
             </div>
             <div className="p-4 space-y-3 max-h-96 overflow-y-auto">
               {visibleMessages.filter(m => String(m?.sender || '').includes('(Thought)')).length === 0 ? (
-                <p className="text-sm text-white/60">No thoughts recorded yet.</p>
+                <p className="text-sm text-white/60">{t('chat.no_thoughts')}</p>
               ) : (
                 visibleMessages
                   .filter(m => String(m?.sender || '').includes('(Thought)'))
@@ -690,7 +690,7 @@ const ChatPanel = ({
               viewMode === 'chat' ? 'text-[#8b3d6f] font-semibold' : 'text-[#a67a92] hover:text-[#7d4766]'
             }`}
           >
-            Chat
+            {t('chat.chat_tab')}
           </button>
           <span className="text-[#c7a2b8]">|</span>
 
@@ -700,7 +700,7 @@ const ChatPanel = ({
               viewMode === 'activities' ? 'text-[#8b3d6f] font-semibold' : 'text-[#a67a92] hover:text-[#7d4766]'
             }`}
           >
-            Activities
+            {t('chat.activities_tab')}
           </button>
           <span className="text-[#c7a2b8]">|</span>
 
@@ -708,9 +708,9 @@ const ChatPanel = ({
             type="button"
             onClick={() => fileInputRef.current?.click()}
             className="transition-colors px-1 text-[#a67a92] hover:text-[#7d4766]"
-            title="Attach a file"
+            title={t('chat.attach_file_tab')}
           >
-            Attach a File
+            {t('chat.attach_file_tab')}
             {attachments.length > 0 && (
               <span className="ml-0.5 text-red-500 font-bold">({attachments.length})</span>
             )}
@@ -723,7 +723,7 @@ const ChatPanel = ({
               showThoughts ? 'text-[#8b3d6f] font-semibold' : 'text-[#a67a92] hover:text-[#7d4766]'
             }`}
           >
-            Thoughts
+            {t('chat.thoughts_tab')}
           </button>
           <span className="text-[#c7a2b8]">|</span>
 
@@ -732,7 +732,7 @@ const ChatPanel = ({
             onClick={onOpenSettings}
             className="transition-colors px-1 text-[#a67a92] hover:text-[#7d4766]"
           >
-            Settings
+            {t('chat.settings_tab')}
           </button>
 
           {hasAgenticActivity && (
