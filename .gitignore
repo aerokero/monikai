@@ -30,6 +30,9 @@ data/spotify_oauth_state.json      # OAuth state (SECURITY: Never commit)
 # Monika After Story Directory (Large game files)
 Monika After Story/
 
+# Optional Skills (Integration modules, install separately)
+skills/
+
 # Runtime logs and local databases
 *.log
 *.db
