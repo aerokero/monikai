@@ -4,12 +4,15 @@ import os
 from datetime import datetime
 from typing import List, Dict, Optional, Any, Set
 import uuid
+from ..core.config import UNLOCKS_CATALOG_PATH, UNLOCKS_STATE_PATH
 
 
 class UnlockTracker:
     """Manages feature and narrative unlocks"""
 
-    def __init__(self, unlocks_catalog_path: str = "data/unlocks/unlocks_catalog.json"):
+    def __init__(self, unlocks_catalog_path: str = None):
+        if unlocks_catalog_path is None:
+            unlocks_catalog_path = str(UNLOCKS_CATALOG_PATH)
         self.catalog_path = unlocks_catalog_path
         self.catalog = self._load_catalog()
         self.active_unlocks: Set[str] = set()  # IDs of unlocked features
@@ -192,8 +195,10 @@ class UnlockTracker:
         self.pending_notifications = []
         return notifications
 
-    def save_state(self, filepath: str = "data/user_memory/unlocks_state.json") -> bool:
+    def save_state(self, filepath: str = None) -> bool:
         """Save unlock state to file"""
+        if filepath is None:
+            filepath = str(UNLOCKS_STATE_PATH)
         try:
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
             data = {
@@ -206,8 +211,10 @@ class UnlockTracker:
         except (IOError, OSError):
             return False
 
-    def load_state(self, filepath: str = "data/user_memory/unlocks_state.json") -> bool:
+    def load_state(self, filepath: str = None) -> bool:
         """Load unlock state from file"""
+        if filepath is None:
+            filepath = str(UNLOCKS_STATE_PATH)
         try:
             if not os.path.exists(filepath):
                 return False

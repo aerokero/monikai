@@ -4,12 +4,15 @@ import os
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 import uuid
+from ..core.config import SEASONAL_EVENTS_CATALOG_PATH, SEASONAL_EVENTS_STATE_PATH
 
 
 class SeasonalEventsExecutor:
     """Manages and executes seasonal events"""
 
-    def __init__(self, events_catalog_path: str = "data/seasonal_events/events_calendar.json"):
+    def __init__(self, events_catalog_path: str = None):
+        if events_catalog_path is None:
+            events_catalog_path = str(SEASONAL_EVENTS_CATALOG_PATH)
         self.catalog_path = events_catalog_path
         self.catalog = self._load_catalog()
         self.active_events: Dict[str, bool] = {}  # event_id -> is_active
@@ -173,8 +176,10 @@ class SeasonalEventsExecutor:
         self.pending_notifications = []
         return notifications
 
-    def save_state(self, filepath: str = "data/user_memory/seasonal_events_state.json") -> bool:
+    def save_state(self, filepath: str = None) -> bool:
         """Save seasonal events state"""
+        if filepath is None:
+            filepath = str(SEASONAL_EVENTS_STATE_PATH)
         try:
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
             data = {
@@ -187,8 +192,10 @@ class SeasonalEventsExecutor:
         except (IOError, OSError):
             return False
 
-    def load_state(self, filepath: str = "data/user_memory/seasonal_events_state.json") -> bool:
+    def load_state(self, filepath: str = None) -> bool:
         """Load seasonal events state"""
+        if filepath is None:
+            filepath = str(SEASONAL_EVENTS_STATE_PATH)
         try:
             if not os.path.exists(filepath):
                 return False

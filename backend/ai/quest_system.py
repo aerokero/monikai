@@ -6,6 +6,7 @@ from typing import List, Dict, Optional, Any
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 import uuid
+from ..core.config import QUESTS_CATALOG_PATH, QUESTS_DIR
 
 
 class QuestStatus(Enum):
@@ -58,7 +59,9 @@ class Quest:
 class QuestSystem:
     """Manages daily quests and quest tracking"""
 
-    def __init__(self, quest_catalog_path: str = "data/quests/quest_catalog.json"):
+    def __init__(self, quest_catalog_path: str = None):
+        if quest_catalog_path is None:
+            quest_catalog_path = str(QUESTS_CATALOG_PATH)
         self.quest_catalog_path = quest_catalog_path
         self.catalog = self._load_catalog()
         self.active_quests: List[Quest] = []
@@ -206,8 +209,10 @@ class QuestSystem:
         self.active_quests = [q for q in self.active_quests if not q.is_expired()]
         return before - len(self.active_quests)
 
-    def save_quests(self, filepath: str = "data/sessions/current_quests.json") -> bool:
+    def save_quests(self, filepath: str = None) -> bool:
         """Save active quests to file"""
+        if filepath is None:
+            filepath = str(QUESTS_DIR / "current_quests.json")
         try:
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
             with open(filepath, "w") as f:
@@ -216,8 +221,10 @@ class QuestSystem:
         except (IOError, OSError):
             return False
 
-    def load_quests(self, filepath: str = "data/sessions/current_quests.json") -> bool:
+    def load_quests(self, filepath: str = None) -> bool:
         """Load quests from file"""
+        if filepath is None:
+            filepath = str(QUESTS_DIR / "current_quests.json")
         try:
             if not os.path.exists(filepath):
                 return False

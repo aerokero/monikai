@@ -4,12 +4,15 @@ import os
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 import uuid
+from ..core.config import STORIES_CATALOG_PATH, NARRATIVE_STATE_PATH
 
 
 class NarrativeEngine:
     """Manages story progression, triggers, and narrative state"""
 
-    def __init__(self, stories_catalog_path: str = "data/stories/stories_catalog.json"):
+    def __init__(self, stories_catalog_path: str = None):
+        if stories_catalog_path is None:
+            stories_catalog_path = str(STORIES_CATALOG_PATH)
         self.catalog_path = stories_catalog_path
         self.catalog = self._load_catalog()
         self.active_stories: Dict[str, Any] = {}  # Currently playing stories
@@ -274,8 +277,10 @@ class NarrativeEngine:
         self.pending_notifications = []
         return notifications
 
-    def save_state(self, filepath: str = "data/user_memory/narrative_state.json") -> bool:
+    def save_state(self, filepath: str = None) -> bool:
         """Save narrative state to file"""
+        if filepath is None:
+            filepath = str(NARRATIVE_STATE_PATH)
         try:
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
             data = {
@@ -289,8 +294,10 @@ class NarrativeEngine:
         except (IOError, OSError):
             return False
 
-    def load_state(self, filepath: str = "data/user_memory/narrative_state.json") -> bool:
+    def load_state(self, filepath: str = None) -> bool:
         """Load narrative state from file"""
+        if filepath is None:
+            filepath = str(NARRATIVE_STATE_PATH)
         try:
             if not os.path.exists(filepath):
                 return False

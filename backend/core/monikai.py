@@ -31,6 +31,7 @@ from pathlib import Path
 from ..ai.memory_engine import MemoryEngine
 from .session_manager import SessionManager
 from ..ai.therapy_engine import TherapyEngine
+from .config import DATA_DIR, SETTINGS_PATH
 
 from dataclasses import dataclass, asdict
 from typing import Optional, Dict, Any, Callable, List, Tuple
@@ -127,10 +128,6 @@ client = genai.Client(http_options={"api_version": GEMINI_API_VERSION}, api_key=
 # --------------------------------------------------------------------------------------
 # Settings + Time Context
 # --------------------------------------------------------------------------------------
-BASE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = BASE_DIR.parent.parent / "data"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-SETTINGS_PATH = DATA_DIR / "settings.json"
 
 
 def load_settings_safe() -> dict:

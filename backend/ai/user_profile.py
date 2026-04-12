@@ -4,6 +4,7 @@ import os
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, asdict, field
+from ..core.config import PROFILE_PATH
 
 
 @dataclass
@@ -50,7 +51,9 @@ class UserProfile:
 class UserProfileManager:
     """Manages user profile creation, loading, and persistence"""
 
-    def __init__(self, profile_path: str = "data/user_memory/profile.json"):
+    def __init__(self, profile_path: str = None):
+        if profile_path is None:
+            profile_path = str(PROFILE_PATH)
         self.profile_path = profile_path
         self.profile: Optional[UserProfile] = None
 

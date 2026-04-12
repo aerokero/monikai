@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import List, Dict, Optional, Any
 from dataclasses import dataclass, field, asdict
 import uuid
+from ..core.config import ACHIEVEMENTS_CATALOG_PATH, ACHIEVEMENTS_STATE_PATH
 
 
 @dataclass
@@ -21,7 +22,9 @@ class UnlockedAchievement:
 class AchievementTracker:
     """Tracks and manages achievement unlocking"""
 
-    def __init__(self, achievements_catalog_path: str = "data/achievements/achievements_catalog.json"):
+    def __init__(self, achievements_catalog_path: str = None):
+        if achievements_catalog_path is None:
+            achievements_catalog_path = str(ACHIEVEMENTS_CATALOG_PATH)
         self.catalog_path = achievements_catalog_path
         self.catalog = self._load_catalog()
         self.unlocked_achievements: Dict[str, UnlockedAchievement] = {}
@@ -248,8 +251,10 @@ class AchievementTracker:
         self.pending_notifications = []
         return notifications
 
-    def save_achievements(self, filepath: str = "data/user_memory/achievements.json") -> bool:
+    def save_achievements(self, filepath: str = None) -> bool:
         """Save unlocked achievements to file"""
+        if filepath is None:
+            filepath = str(ACHIEVEMENTS_STATE_PATH)
         try:
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
             data = {
@@ -262,8 +267,10 @@ class AchievementTracker:
         except (IOError, OSError):
             return False
 
-    def load_achievements(self, filepath: str = "data/user_memory/achievements.json") -> bool:
+    def load_achievements(self, filepath: str = None) -> bool:
         """Load unlocked achievements from file"""
+        if filepath is None:
+            filepath = str(ACHIEVEMENTS_STATE_PATH)
         try:
             if not os.path.exists(filepath):
                 return False

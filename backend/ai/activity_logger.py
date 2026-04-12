@@ -4,6 +4,7 @@ import os
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 import uuid
+from ..core.config import QUESTS_CATALOG_PATH, ACTIVITY_LOG_PATH
 
 
 class ActivityLogger:
@@ -12,11 +13,13 @@ class ActivityLogger:
     Conversation-based analysis only (no realtime tracking).
     """
 
-    def __init__(self, activity_patterns_path: str = "data/quests/quest_catalog.json"):
+    def __init__(self, activity_patterns_path: str = None):
         """
         Initialize with quest catalog that contains activity patterns.
         Patterns are extracted from quest conditions.
         """
+        if activity_patterns_path is None:
+            activity_patterns_path = str(QUESTS_CATALOG_PATH)
         self.activity_patterns = self._load_patterns(activity_patterns_path)
         self.activity_log: List[Dict[str, Any]] = []
         self.pending_notifications: List[Dict[str, Any]] = []
@@ -194,8 +197,10 @@ class ActivityLogger:
         self.pending_notifications = []
         return notifications
 
-    def save_log(self, filepath: str = "data/user_memory/activity_log.json") -> bool:
+    def save_log(self, filepath: str = None) -> bool:
         """Save activity log to file"""
+        if filepath is None:
+            filepath = str(ACTIVITY_LOG_PATH)
         try:
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
             with open(filepath, "w") as f:
@@ -204,8 +209,10 @@ class ActivityLogger:
         except (IOError, OSError):
             return False
 
-    def load_log(self, filepath: str = "data/user_memory/activity_log.json") -> bool:
+    def load_log(self, filepath: str = None) -> bool:
         """Load activity log from file"""
+        if filepath is None:
+            filepath = str(ACTIVITY_LOG_PATH)
         try:
             if not os.path.exists(filepath):
                 return False

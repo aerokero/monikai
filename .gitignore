@@ -12,20 +12,22 @@ env/
 pip-log.txt
 pip-delete-this-directory.txt
 
-# MonikAI Specific Local Data
-dist/backend/user_memory/
-dist/backend/long_term_memory/
-backend/data/
-data/long_term_memory
-data/user_memory/
-data/memory/
-data/sessions/
-data/study/
+# MonikAI Specific - Runtime Data (User Generated, Should Not Be Committed)
+# All data files are stored in /data/ directory
+backend/data/                      # Any sync/cache copies of data in backend
+data/long_term_memory/             # Long-term memory snapshots
+data/user_memory/                  # User profile, personality, calendar, reminders, activity log
+data/memory/                       # Full-text search index and pages
+data/sessions/                     # Session history and conversation logs
+data/kg/                          # Knowledge graph database
+data/study/                        # Study materials and PDFs
 data/study/Genki 1 - Study Book.pdf
-data/settings.json
-data/reference.jpg
-data/spotify_tokens.json
-data/spotify_oauth_state.json
+data/settings.json                 # User-specific settings (contains local config)
+data/reference.jpg                 # Reference image
+data/spotify_tokens.json           # OAuth tokens (SECURITY: Never commit)
+data/spotify_oauth_state.json      # OAuth state (SECURITY: Never commit)
+
+# Monika After Story Directory (Large game files)
 Monika After Story/
 
 # Runtime logs and local databases
@@ -35,7 +37,6 @@ Monika After Story/
 *.sqlite3
 server_debug.log
 startup.log
-backend/data/memory/index/memory.db
 
 # Nested environment files
 */.env

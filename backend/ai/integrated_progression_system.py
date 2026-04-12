@@ -15,6 +15,7 @@ from backend.ai.unlock_tracker import UnlockTracker
 from backend.ai.narrative_engine import NarrativeEngine
 from backend.ai.activity_logger import ActivityLogger
 from backend.ai.seasonal_events_executor import SeasonalEventsExecutor
+from backend.core.config import METRICS_STATE_PATH
 
 
 class IntegratedProgressionSystem:
@@ -46,7 +47,7 @@ class IntegratedProgressionSystem:
         # Try to load profile
         if self.profile_manager.load_profile():
             # Load all subsystem states
-            self.metrics_engine.load_from_dict(self._load_json("data/user_memory/metrics_state.json", {}))
+            self.metrics_engine.load_from_dict(self._load_json(str(METRICS_STATE_PATH), {}))
             self.quest_system.load_quests()
             self.achievement_tracker.load_achievements()
             self.unlock_tracker.load_state()
@@ -292,7 +293,7 @@ class IntegratedProgressionSystem:
         try:
             self.profile_manager.save_profile()
             self._save_json(
-                "data/user_memory/metrics_state.json",
+                str(METRICS_STATE_PATH),
                 self.metrics_engine.save_to_dict()
             )
             self.quest_system.save_quests()
