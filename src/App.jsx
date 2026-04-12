@@ -2,27 +2,13 @@ import React, { useEffect, useLayoutEffect, useState, useRef, useMemo, useCallba
 import io from 'socket.io-client';
 
 import Visualizer from './components/Visualizer';
-import BrowserWindow from './components/BrowserWindow';
-import ChatModule from './components/ChatModule';
-import ToolsModule from './components/ToolsModule';
-import { X, Minus, Clock, Lightbulb, Activity, Bell, AlertCircle, Newspaper, MessageSquare, GraduationCap, Target, ScrollText, Heart } from 'lucide-react';
+import { X, Minus, Bell, AlertCircle } from 'lucide-react';
 import ConfirmationPopup from './components/ConfirmationPopup';
 import AuthLock from './components/AuthLock';
-import KasaWindow from './components/KasaWindow';
-import SettingsWindow from './components/SettingsWindow';
-import RemindersWindow from './components/RemindersWindow';
-import NotesWindow from './components/NotesWindow';
-import SessionNotesWindow from './components/SessionNotesWindow';
 import PersonalityWindow from './components/PersonalityWindow';
-import CameraWindow from './components/CameraWindow';
-import ScreenWindow from './components/ScreenWindow';
-import CompanionWindow from './components/CompanionWindow';
-import GoalsWindow from './components/GoalsWindow';
 import SessionPromptWindow from './components/SessionPromptWindow';
-import StudyWindow from './components/StudyWindow';
 import MinecraftWindow from './components/MinecraftWindow';
 import MinecraftConnectPopup from './components/MinecraftConnectPopup';
-import DailyBriefingWindow from './components/DailyBriefingWindow';
 import GoodbyePopup from './components/GoodbyePopup';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { LayoutProvider } from './contexts/LayoutContext';
@@ -197,18 +183,9 @@ function AppContent({
   const [browserData, setBrowserData] = useState({ image: null, logs: [] });
   const [confirmationQueue, setConfirmationQueue] = useState([]);
 
-  const [kasaDevices, setKasaDevices] = useState([]);
-  const [showKasaWindow, setShowKasaWindow] = useState(false);
-  const [showRemindersWindow, setShowRemindersWindow] = useState(false);
-  const [showNotesWindow, setShowNotesWindow] = useState(false);
-  const [showSessionNotesWindow, setShowSessionNotesWindow] = useState(false);
-  const [showBrowserWindow, setShowBrowserWindow] = useState(false);
-  const [showCompanionWindow, setShowCompanionWindow] = useState(false);
   const [showGoodbyePopup, setShowGoodbyePopup] = useState(false);
-  const [showGoalsWindow, setShowGoalsWindow] = useState(false);
-  const [showDailyBriefingWindow, setShowDailyBriefingWindow] = useState(false);
-  const [showStudyWindow, setShowStudyWindow] = useState(false);
   const [showMinecraftWindow, setShowMinecraftWindow] = useState(false);
+  const [showStudyWindow, setShowStudyWindow] = useState(false);
   const [eatTogetherActive, setEatTogetherActive] = useState(false);
   const [eatTogetherMeal, setEatTogetherMeal] = useState(null);
   const [monikaMeal, setMonikaMeal] = useState("pasta");
@@ -241,7 +218,6 @@ function AppContent({
   const [sceneOverrideUntil, setSceneOverrideUntil] = useState(0);
   const prevSceneRef = useRef(null);
   const eatPrevSceneRef = useRef(null);
-  const showStudyWindowRef = useRef(showStudyWindow);
   const eatTogetherActiveRef = useRef(eatTogetherActive);
 
   const isNightHour = (date) => {
@@ -493,13 +469,6 @@ function AppContent({
   const [sessionPromptQueue, setSessionPromptQueue] = useState([]);
   const [studyCatalog, setStudyCatalog] = useState({ folders: [] });
   const [studySelection, setStudySelection] = useState({ folder: '', file: '', path: '' });
-  useEffect(() => {
-    if (sessionMode.active) {
-      setShowSessionNotesWindow(true);
-    } else {
-      setShowSessionNotesWindow(false);
-    }
-  }, [sessionMode.active]);
 
   // ---------------------------------------------------------------------
   // Modular/Windowed State (kept for your movable windows)
@@ -574,33 +543,15 @@ function AppContent({
   useEffect(() => {
     if (!adaptiveShellEnabled) return;
     registerPanel('chat', { dock: 'bottom-rail', collapsed: false, priority: 100 });
-    registerPanel('daily_briefing', { dock: 'right-dock', collapsed: true, priority: 90 });
-    registerPanel('companion', { dock: 'bottom-rail', collapsed: true, priority: 70 });
-    registerPanel('goals', { dock: 'bottom-rail', collapsed: true, priority: 65 });
-    registerPanel('study', { dock: 'bottom-rail', collapsed: true, priority: 60 });
-    registerPanel('notes', { dock: 'bottom-rail', collapsed: true, priority: 55 });
-    registerPanel('reminders', { dock: 'bottom-rail', collapsed: true, priority: 50 });
   }, [adaptiveShellEnabled, registerPanel]);
 
   useEffect(() => {
     if (!adaptiveShellEnabled) return;
     setPanelVisibility('chat', true);
-    setPanelVisibility('daily_briefing', showDailyBriefingWindow);
-    setPanelVisibility('companion', showCompanionWindow);
-    setPanelVisibility('goals', showGoalsWindow);
-    setPanelVisibility('study', showStudyWindow);
-    setPanelVisibility('notes', showNotesWindow);
-    setPanelVisibility('reminders', showRemindersWindow);
     setPanelVisibility('minecraft', showMinecraftWindow);
   }, [
     adaptiveShellEnabled,
     setPanelVisibility,
-    showDailyBriefingWindow,
-    showCompanionWindow,
-    showGoalsWindow,
-    showStudyWindow,
-    showNotesWindow,
-    showRemindersWindow,
     showMinecraftWindow,
   ]);
   const makeId = () =>
@@ -1019,10 +970,6 @@ function AppContent({
   }, [vnScene]);
 
   useEffect(() => {
-    showStudyWindowRef.current = showStudyWindow;
-  }, [showStudyWindow]);
-
-  useEffect(() => {
     eatTogetherActiveRef.current = eatTogetherActive;
   }, [eatTogetherActive]);
 
@@ -1247,7 +1194,7 @@ function AppContent({
       } else if (!isNight && (weather.includes('sunny') || weather.includes('clear'))) {
          clothesFolder = 'sundress_white';
          outfitName = "White Sundress";
-      } else if (!isNight && (showNotesWindow || showSessionNotesWindow || mood.includes('focus') || mood.includes('thinking') || mood.includes('learning') || mood.includes('studying'))) {
+      } else if (!isNight && (showStudyWindow || sessionMode.active || mood.includes('focus') || mood.includes('thinking') || mood.includes('learning') || mood.includes('studying'))) {
          clothesFolder = 'blazerless';
          outfitName = "School Uniform (Blazerless)";
       } else if (isNight) {
@@ -1302,7 +1249,7 @@ function AppContent({
     }
 
     return { clothesFolder, hairStyle, outfitName, headAccessories, ahogeAccessory, deskAccessories };
-  }, [personalityState.mood, personalityState.affection, personalityState.weather, currentHour, currentMinute, currentMonth, currentDay, currentYear, showNotesWindow, showSessionNotesWindow, vnScene, showStudyWindow, eatTogetherActive]);
+  }, [personalityState.mood, personalityState.affection, personalityState.weather, currentHour, currentMinute, currentMonth, currentDay, currentYear, vnScene, eatTogetherActive, sessionMode.active, showStudyWindow]);
 
   // Report Visual State to Backend
   useEffect(() => {
@@ -1820,8 +1767,9 @@ function AppContent({
         logs: [...prev.logs, data?.log].filter(l => l).slice(-300)
       }));
       if (data?.image) {
-        setShowBrowserWindow(true);
-      }
+      // TODO: Restore browser window in adaptive UI
+      // setShowBrowserWindow(true);
+    }
 
       if (!elementPositions.browser) {
         const size = { w: 600, h: 450 };
@@ -1896,28 +1844,29 @@ function AppContent({
       });
     });
 
-    socket.on('kasa_devices', (devices) => {
-      console.log("Kasa Devices:", devices);
-      setKasaDevices(Array.isArray(devices) ? devices : []);
-    });
+    // TODO: Restore Kasa integration in adaptive UI
+    // socket.on('kasa_devices', (devices) => {
+    //   console.log("Kasa Devices:", devices);
+    //   setKasaDevices(Array.isArray(devices) ? devices : []);
+    // });
 
-    socket.on('kasa_update', (data) => {
-      setKasaDevices(prev => prev.map(d => {
-        if (d.ip === data.ip) {
-          return {
-            ...d,
-            is_on: data.is_on !== null ? data.is_on : d.is_on,
-            brightness: data.brightness !== null ? data.brightness : d.brightness
-          };
-        }
-        return d;
-      }));
-    });
+    // socket.on('kasa_update', (data) => {
+    //   setKasaDevices(prev => prev.map(d => {
+    //     if (d.ip === data.ip) {
+    //       return {
+    //         ...d,
+    //         is_on: data.is_on !== null ? data.is_on : d.is_on,
+    //         brightness: data.brightness !== null ? data.brightness : d.brightness
+    //       };
+    //     }
+    //     return d;
+    //   }));
+    // });
 
     socket.on('vn_scene', (payload) => {
       const scene = payload?.scene;
       if (!scene || !VN_BACKGROUNDS[scene]) return;
-      if (showStudyWindowRef.current || eatTogetherActiveRef.current) return;
+      if (eatTogetherActiveRef.current) return;
       const ttl = typeof payload?.ttl_ms === 'number' ? payload.ttl_ms : 180000;
       setVnScene(scene);
       setVnBackground(resolveVnBackground(scene, new Date()));
@@ -1980,8 +1929,8 @@ function AppContent({
       socket.off('browser_frame');
       socket.off('transcription');
       socket.off('tool_confirmation_request');
-      socket.off('kasa_devices');
-      socket.off('kasa_update');
+      // socket.off('kasa_devices'); // TODO: Restore Kasa
+      // socket.off('kasa_update'); // TODO: Restore Kasa
       socket.off('vn_scene');
       socket.off('session_mode');
       socket.off('session_prompt');
@@ -2603,19 +2552,6 @@ function AppContent({
     handleToggleWindow(windowId, isVisible, setVisibility);
   };
 
-  // Shortcuts for companion windows
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.altKey && (e.code === 'KeyC')) {
-        toggleWindowSmart('companion', showCompanionWindow, setShowCompanionWindow);
-      }
-      if (e.altKey && (e.code === 'KeyG')) {
-        toggleWindowSmart('goals', showGoalsWindow, setShowGoalsWindow);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showCompanionWindow, showGoalsWindow, adaptiveShellEnabled]);
 
   const activeSessionPrompt = sessionPromptQueue.length ? sessionPromptQueue[0] : null;
 

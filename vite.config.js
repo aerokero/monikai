@@ -7,6 +7,7 @@ export default defineConfig({
     base: './', // Important for Electron
     server: {
         port: 5173,
+        hmr: false, // Disable HMR to force full page reloads
         proxy: {
             '/study': {
                 target: 'http://localhost:8000',
