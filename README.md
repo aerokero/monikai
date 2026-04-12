@@ -3,10 +3,172 @@
 ![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11-blue?logo=python)
 ![React](https://img.shields.io/badge/React-18.2-61DAFB?logo=react)
 ![Electron](https://img.shields.io/badge/Electron-28-47848F?logo=electron)
-![Gemini](https://img.shields.io/badge/Google%20Gemini-Native%20Audio-4285F4?logo=google)
+![Gemini](https://img.shields.io/badge/Google%20Gemini-Live%20Audio-4285F4?logo=google)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-> Hi. I'm MonikAI.
+> Hey there. I'm **MonikAI**.
+>
+> I'm a local-first AI companion living in your desktop. I remember things about you, I talk in real-time with voice, I can see your screen and camera, and I live right there beside you—not in some cloud.
+>
+> I'm always learning what makes you happy. I keep it personal, I keep it private, and I keep it *here*.
+
+---
+
+## What I Can Do
+
+| Feature | What Happens |
+|---------|------------|
+| **Voice Conversations** | Real-time talking with interruption handling. |
+| **See Your Screen & Camera** | I watch your screen, webcam, and read text everywhere (OCR). |
+| **Remember & Learn** | I keep notes, journal entries, reminders—and learn your patterns. |
+| **Stay Yourself** | Consistent personality, mood, energy, relationship—across days. |
+| **Think When You're Busy** | Background thoughts and nudges (respecting your peace). |
+| **Message Me On Telegram** | Text, voice notes, photos—same me, same memory. |
+| **Browse & Click** | Open browser, search, navigate, complete web tasks. |
+| **Control Smart Home** | Talk to your TP-Link Kasa devices. |
+| **Spotify Integration** | See what you're playing, suggest playlists. |
+| **Minecraft Friend** | Connect to your server and actually do things. |
+| **Know It's Really You** | Optional: stay locked until I recognize your face. |
+
+---
+
+## Get Me Running (5 Minutes)
+
+```bash
+# Clone and open
+git clone https://github.com/xtosutosu/monikai.git
+cd monikai
+
+# Python setup (3.11 required)
+conda create -n monikai python=3.11 -y
+conda activate monikai
+pip install -r requirements.txt
+playwright install chromium
+
+# Frontend
+npm install
+
+# Get your Gemini API key
+echo "GEMINI_API_KEY=your_key_here" > .env
+
+# Run
+npm run dev
+```
+
+**New here?** See the [Installation Guide](https://github.com/xtosutosu/monikai/wiki/Installation-Guide) for detailed setup.
+
+---
+
+## How I'm Built
+
+```mermaid
+graph TB
+    subgraph Frontend ["Frontend (Electron + React)"]
+        UI["React UI"]
+        SOCKET["Socket.IO"]
+    end
+    
+    subgraph Backend ["Backend (Python 3.11 + FastAPI)"]
+        MONIKA["monikai.py (Gemini Live)"]
+        PERS["personality.py (My Mood & You)"]
+        MEM["memory_engine.py (What I Remember)"]
+        PROACT["proactivity.py (My Ideas)"]
+        WEB["web_agent.py (Browser)"]
+        INT["Telegram | Spotify | Minecraft | Smart Home"]
+    end
+    
+    Frontend <--> Backend
+    MONIKA --> PERS
+    MONIKA --> MEM
+    MONIKA --> PROACT
+    MONIKA --> WEB
+    MONIKA --> INT
+```
+
+---
+
+## Key Folders
+
+- **`backend/core/`** – Me: Gemini, personality, sessions
+- **`backend/ai/`** – My brain: memory, personality, quests, relationships
+- **`backend/agents/`** – My skills: Telegram, Spotify, smart home, Minecraft
+- **`src/`** – Your UI: chat, settings, visual interface
+- **`data/`** – Where I live: settings, memory, profile (all local)
+
+---
+
+## Configuration & Setup
+
+| What You Want | Where To Go |
+|---------------|------------|
+| System setup & requirements | [Installation Guide](https://github.com/xtosutosu/monikai/wiki/Installation-Guide) |
+| All environment variables | [Environment Variables](https://github.com/xtosutosu/monikai/wiki/Environment-Variables) |
+| My settings (face auth, permissions, proactivity) | [Configuration](https://github.com/xtosutosu/monikai/wiki/Configuration) |
+| Setup Spotify, Minecraft, Telegram, Smart Home | [Feature Setup](https://github.com/xtosutosu/monikai/wiki/Feature-Setup) |
+| Troubleshooting | [Troubleshooting Guide](https://github.com/xtosutosu/monikai/wiki/Troubleshooting) |
+
+---
+
+## Development & Extending
+
+- [Development Guide](https://github.com/xtosutosu/monikai/wiki/Development) – How I work inside
+- [API Reference](https://github.com/xtosutosu/monikai/wiki/API-Reference) – Socket events, endpoints
+- [Contributing](https://github.com/xtosutosu/monikai/wiki/Contributing) – How to help
+
+---
+
+## Privacy & Storage
+
+Everything about me lives locally in `data/` on your machine:
+- Your profile & preferences
+- My personality & memory
+- Our conversations
+- Your reminders & journal
+- OAuth tokens
+
+**Nothing is uploaded.** No cloud backend. No tracking. No data selling. Just us.
+
+---
+
+## Recent Changes
+
+After a major code review & cleanup:
+
+✅ **Code Quality**
+- Centralized all data paths in `config.py`
+- Refactored 8 AI modules to use shared configuration
+- Removed duplicate `/backend/data` folder
+- Improved import organization
+
+✅ **Git Hygiene**
+- Cleaned up `.gitignore` with better organization
+- Removed user runtime data from git history
+- Removed large generated files (tessdata, study materials)
+- Added `skills/` as optional (installed separately)
+
+📦 **What's Still on GitHub**
+- Source code (Python, React, Electron)
+- Game catalogs (achievements, quests, unlocks, stories)
+- Localization (EN, JP, PL, ZH)
+- Configuration schemas
+
+📦 **What Stays Local (Never Committed)**
+- `data/user_memory/`, `data/sessions/`, `data/memory/` – your data
+- `.env` – your API keys
+- `settings.json` – your preferences
+- `skills/` – optional integrations
+
+See [.gitignore](.gitignore) for the complete list.
+
+---
+
+## License
+
+MIT. See [LICENSE](LICENSE).
+
+---
+
+_Built with love. Kept private. Stayed personal._
 > I'm a local-first AI companion for study, daily tasks, conversation, and tool use.
 > I live in a React/Electron desktop app, I talk through Gemini Live, I remember things locally, and I can also meet you on Telegram.
 
