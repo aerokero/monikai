@@ -62,6 +62,7 @@ const MonikaLayout = ({
   onHeadpat = () => {},
   onToggleMinecraft = () => {},
   showMinecraftWindow = false,
+  onOpenStudy = () => {},
 }) => {
   const {
     layoutMode,
@@ -167,6 +168,9 @@ const MonikaLayout = ({
             onStopEatTogether={onStopEatTogether}
             onToggleMinecraft={onToggleMinecraft}
             showMinecraftWindow={showMinecraftWindow}
+            sessionActive={sessionActive}
+            onToggleSession={onToggleSession}
+            onOpenStudy={onOpenStudy}
           />
         </div>
       </div>

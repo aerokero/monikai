@@ -861,6 +861,8 @@ function AppContent({
           contentHeight - chatH - railPad,
         );
 
+        const portraitPanelTop = topBarHeight + 18;
+
         const briefingW = Math.min(isPortrait ? 470 : 540, width - 24);
         const briefingX = Math.round(width - briefingW / 2 - 12);
         const briefingY = isPortrait
@@ -868,31 +870,31 @@ function AppContent({
           : Math.round((height - topBarHeight) * 0.46);
 
         const companionW = Math.min(width - (isPortrait ? 10 : 40), isPortrait ? 860 : 760);
-        const companionH = Math.min(isPortrait ? 560 : 700, height - topBarHeight - railPad - 12);
+        const companionH = Math.min(isPortrait ? 280 : 700, height - topBarHeight - railPad - 12);
         const companionX = Math.round(width / 2);
         const companionY = isPortrait
-          ? Math.round(height - railPad - companionH / 2)
+          ? Math.round(portraitPanelTop + companionH / 2)
           : Math.round(height / 2);
 
         const goalsW = Math.min(width - (isPortrait ? 10 : 40), isPortrait ? 920 : 1220);
-        const goalsH = Math.min(isPortrait ? 620 : 760, height - topBarHeight - railPad - 12);
+        const goalsH = Math.min(isPortrait ? 310 : 760, height - topBarHeight - railPad - 12);
         const goalsX = Math.round(width / 2);
         const goalsY = isPortrait
-          ? Math.round(height - railPad - goalsH / 2)
+          ? Math.round(portraitPanelTop + goalsH / 2)
           : Math.round(height / 2);
 
         const studyW = Math.min(width - (isPortrait ? 10 : 34), isPortrait ? 980 : 1160);
-        const studyH = Math.min(isPortrait ? 640 : 760, height - topBarHeight - railPad - 10);
+        const studyH = Math.min(isPortrait ? 320 : 760, height - topBarHeight - railPad - 10);
         const studyX = Math.round(width / 2);
         const studyY = isPortrait
-          ? Math.round(height - railPad - studyH / 2)
+          ? Math.round(portraitPanelTop + studyH / 2)
           : Math.round(height * 0.48);
 
         const notesW = Math.min(width - (isPortrait ? 10 : 36), isPortrait ? 900 : 620);
-        const notesH = Math.min(isPortrait ? 540 : 600, height - topBarHeight - railPad - 18);
+        const notesH = Math.min(isPortrait ? 270 : 600, height - topBarHeight - railPad - 18);
         const notesX = Math.round(width / 2);
         const notesY = isPortrait
-          ? Math.round(height - railPad - notesH / 2)
+          ? Math.round(portraitPanelTop + notesH / 2)
           : Math.round(height * 0.52);
 
         setElementSizes((prev) => ({
@@ -2815,6 +2817,11 @@ function AppContent({
           onHeadpat={triggerHeadpat}
           onToggleMinecraft={() => toggleWindowSmart('minecraft', showMinecraftWindow, setShowMinecraftWindow)}
           showMinecraftWindow={showMinecraftWindow}
+          onOpenStudy={() => {
+            if (!showStudyWindow) {
+              toggleWindowSmart('study', showStudyWindow, setShowStudyWindow);
+            }
+          }}
         />
 
         {visionMode === 'screen' && (
@@ -3399,6 +3406,8 @@ function AppContent({
             socket={socket}
             onClose={() => setShowNotesWindow(false)}
             position={elementPositions.notes}
+            width={elementSizes.notes?.w}
+            height={elementSizes.notes?.h}
             onMouseDown={(e) => {
               if (adaptiveShellEnabled) {
                 setActivePanelId('notes');

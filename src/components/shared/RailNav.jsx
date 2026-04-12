@@ -54,7 +54,7 @@ const RailNav = () => {
     }
   };
   
-  const panels = getAllPanels();
+  const panels = getAllPanels().filter((panel) => !panel.hiddenInRail);
 
   // Determine rail className based on layout mode
   const railClassName = {

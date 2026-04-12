@@ -40,7 +40,8 @@ export const PANELS = {
       portrait: 'drawer'
     },
     ariaLabel: 'Study and learning',
-    keyboardShortcut: 'Alt+2'
+    keyboardShortcut: 'Alt+2',
+    hiddenInRail: true
   },
   notes: {
     id: 'notes',
@@ -97,7 +98,8 @@ export const PANELS = {
       portrait: 'drawer'
     },
     ariaLabel: 'Companion actions',
-    keyboardShortcut: 'Alt+5'
+    keyboardShortcut: 'Alt+5',
+    hiddenInRail: true
   },
   goals: {
     id: 'goals',

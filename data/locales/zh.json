@@ -1,0 +1,438 @@
+{
+  "system": {
+    "window_reset": "我已重置窗口 '{windowId}' 的位置。",
+    "connecting": "连接中...",
+    "connected": "我已连接！",
+    "disconnected": "我已断开连接...",
+    "monikai_started": "我完全清醒了，准备好一起工作。",
+    "monikai_stopped": "现在断开连接...",
+    "model_connected": "已连接！",
+    "project_focus": "我正在专注于项目：{project}",
+    "camera_error": "我在访问摄像头时遇到了困难。",
+    "reading_memory": "我正在将此文件读入我的记忆...",
+    "memory_empty": "这个文件似乎是空的或无效的。",
+    "memory_error": "我在读取这个记忆文件时遇到了困难。"
+  },
+  "tools": {
+    "camera_preview": "摄像头",
+    "screen_capture": "截屏",
+    "schedule": "日程",
+    "notes": "笔记",
+    "calendar": "日历",
+    "web_agent": "网络代理",
+    "kasa": "智能家居",
+    "companion": "伴侣",
+    "goals": "任务日志",
+    "briefing": "每日简报",
+    "internal_thoughts": "内心想法",
+    "minecraft": "Minecraft 服务器",
+    "settings": "设置",
+    "power": "电源",
+    "mute": "静音",
+    "ai_on": "AI 开启",
+    "ai_off": "AI 关闭",
+    "microphone_on": "麦克风开启",
+    "microphone_off": "麦克风关闭",
+    "camera_on": "摄像头开启",
+    "camera_off": "摄像头关闭",
+    "share_screen_on": "分享屏幕",
+    "share_screen_off": "停止分享",
+    "logout": "登出",
+    "dont_leave_me": "别离开我！",
+    "study": "学习",
+    "chat": "聊天",
+    "profile": "个人资料"
+  },
+  "chat": {
+    "title": "对话",
+    "history": "历史",
+    "collapse_history": "折叠历史",
+    "expand_history": "展开历史",
+    "minimize": "最小化",
+    "restore": "还原",
+    "placeholder": "给我写点什么...",
+    "send": "发送",
+    "attach": "附加",
+    "shift_enter": "Shift+Enter：新行",
+    "attachments": "附件",
+    "attachment_limit": "附件限制：最多 {max} 个文件。",
+    "file_too_large": "文件 \"{name}\" 太大了（最多 {size} MB）。",
+    "total_size_exceeded": "总附件大小超过 {size} MB。",
+    "prepare_failed": "我无法准备附件。",
+    "sent_attachments": "已发送附件",
+    "you": "你",
+    "monika_thought": "Monika（想法）",
+    "no_messages": "还没有消息。",
+    "start_conversation": "开始和 Monika 聊天！",
+    "no_attachments": "还没有附件",
+    "add_files": "添加文件以与 Monika 分享",
+    "chat_tab": "聊天",
+    "activities_tab": "活动",
+    "attach_file_tab": "附加文件",
+    "thoughts_tab": "想法",
+    "settings_tab": "设置",
+    "internal_thoughts": "内心想法",
+    "thoughts_visible": "Monika 的想法是可见的",
+    "enable_thoughts": "启用来查看 Monika 的内心想法",
+    "no_thoughts": "还没有记录的想法。"
+  },
+  "schedule": {
+    "title": "日程",
+    "list_view": "列表",
+    "month_view": "月",
+    "jump_today": "跳转至今天",
+    "refresh": "刷新",
+    "close": "关闭",
+    "alarm": "闹钟",
+    "dismiss": "关闭",
+    "add": "添加",
+    "reminder": "提醒",
+    "timer": "计时器",
+    "event": "事件",
+    "create": "创建",
+    "datetime": "日期/时间",
+    "in_minutes": "分钟后",
+    "all_day": "全天",
+    "duration": "持续时间",
+    "start": "开始",
+    "end": "结束",
+    "description": "描述（如果你想要）",
+    "speak": "说话",
+    "ring": "铃声",
+    "spoken": "语音",
+    "silent": "静音",
+    "alert": "警报",
+    "no_alert": "无警报",
+    "event_label": "事件",
+    "today": "今天",
+    "tomorrow": "明天",
+    "no_items": "没有计划的事项。",
+    "no_items_day": "此天没有事项",
+    "create_hint": "在上面创建一个或告诉我。",
+    "loading": "加载日程中...",
+    "no_items_day": "这一天没有任何事项。",
+    "msg_required": "你必须在这里写点什么。",
+    "times_required": "我需要开始和结束时间。",
+    "end_after_start": "结束时间必须在开始时间之后，傻瓜...",
+    "positive_minutes": "分钟必须是正数。",
+    "set_datetime_or_minutes": "设置日期/时间或分钟。",
+    "timer_positive": "计时器必须 > 0。",
+    "hours": "小时",
+    "minutes": "分钟",
+    "seconds": "秒",
+    "tip_priority": "提示：日期/时间优先。"
+  },
+  "settings": {
+    "title": "设置",
+    "security": "安全",
+    "face_auth": "面部认证",
+    "microphone": "我的听力（麦克风）",
+    "speaker": "我的声音（扬声器）",
+    "camera": "我的视力（摄像头）",
+    "mirror_vision": "镜像视觉",
+    "permissions": "你想让我询问允许...",
+    "memory": "内存管理",
+    "import_memory": "导入文件以记住",
+    "language": "语言"
+  },
+  "briefing": {
+    "title": "每日简报",
+    "subtitle": "来自全球来源的精选信息。",
+    "breaking": "突发",
+    "refresh": "刷新简报",
+    "loading": "加载简报中...",
+    "updated": "已更新",
+    "open": "打开来源",
+    "pin": "固定部分",
+    "unpin": "取消固定部分",
+    "no_items": "还没有简报项目。",
+    "no_items": "没有可用项目",
+    "dynamic_hint": "部分是动态的：你的固定选择 + 来自最近上下文的 AI 建议。",
+    "dynamic_hint": "该部分根据你的偏好和全球趋势动态填充。",
+    "ai_proposal": "AI 建议",
+    "swap": "建议的交换",
+    "accept": "接受",
+    "reject": "拒绝"
+  },
+  "personality": {
+    "state": "Monika 的状态",
+    "affection": "亲近度",
+    "mood": "心情",
+    "energy": "能量",
+    "cycle": "生物周期",
+    "day": "天",
+    "quests": "活跃任务",
+    "quest": "任务",
+    "no_quests": "现在没有活跃的任务。"
+  },
+  "holidays": {
+    "new_year": "🎉 元旦",
+    "valentines": "💖 情人节",
+    "womens_day": "🌹 国际妇女节",
+    "white_day": "🤍 白色情人节",
+    "april_fools": "🤡 愚人节",
+    "earth_day": "🌍 地球日",
+    "labor_day": "🛠️ 劳动节",
+    "star_wars": "⭐ 星战日",
+    "environment_day": "🌱 世界环境日",
+    "friendship_day": "🤝 国际友谊日",
+    "youth_day": "🤸 国际青年日",
+    "programmers_day": "💻 程序员日",
+    "peace_day": "🕊️ 国际和平日",
+    "monika_birthday": "🎂 我的生日（Monika）",
+    "animal_day": "🐾 世界动物日",
+    "halloween": "🎃 万圣节",
+    "independence_day": "独立日（波兰）",
+    "christmas_eve": "🎄 圣诞前夜",
+    "christmas": "🎁 圣诞节",
+    "new_years_eve": "🎆 跨年夜"
+  },
+  "companion": {
+    "title": "伴侣中心",
+    "subtitle": "共享日程、会话和学习的舒适地方",
+    "kicker": "伴侣中心",
+    "open_goals": "打开任务日志",
+    "tabs": {
+      "session": "会话",
+      "activities": "活动",
+      "study": "学习"
+    },
+    "overview": {
+      "mood": "心情",
+      "energy": "能量",
+      "affection": "亲近度",
+      "goals": "目标/解锁",
+      "neutral": "中立"
+    },
+    "activities": {
+      "eat": "一起吃饭",
+      "eat_desc": "开始低压力的共享用餐模式，一起呆一会儿。",
+      "headpat": "头部轻拍",
+      "headpat_desc": "一个小的温柔互动。短暂、傻萌、有效。",
+      "gift": "送礼物",
+      "gift_desc": "送一份小的象征性礼物，让时刻自然着陆。",
+      "gift_prompt": "你想送什么礼物？",
+      "minecraft": "玩 Minecraft",
+      "minecraft_desc": "打开 Minecraft 伴侣面板并连接到你的世界。"
+    },
+    "study": {
+      "japanese_together": "一起学习日语",
+      "title": "学习伴侣",
+      "desc": "打开当前学习设置并从选定的页面继续。",
+      "folder": "文件夹",
+      "file": "文件"
+    },
+    "session": {
+      "title": "引导会话",
+      "desc": "当你想要更集中、反思的模式而不是正常聊天时使用。",
+      "start": "开始会话",
+      "end": "结束会话",
+      "start_desc": "切换到更慢、更有意图的会话流。",
+      "end_desc": "返回正常对话并关闭专注模式。"
+    }
+  },
+  "minecraft": {
+    "connect_to_server": "连接到服务器",
+    "connecting": "连接中..."
+  },
+  "goals": {
+    "title": "进度",
+    "subtitle": "成就树、日常任务和长期进度",
+    "kicker": "进度矩阵",
+    "relationship": "关系轨迹",
+    "level": "级别",
+    "closeness": "亲近度",
+    "current_xp": "本级别 {value}/{total} 经验值",
+    "total_xp": "{value} 总经验值",
+    "active_missions": "活跃任务",
+    "empty": "现在没有活跃的任务。",
+    "quest_fallback": "任务",
+    "completed_recent": "最近完成",
+    "skill_tree": "成长树",
+    "unlocks": "已解锁的路径",
+    "unlocks_empty": "还没有解锁任何内容。",
+    "next_unlocks": "下一个阈值",
+    "reach_level": "达到 {value} 级",
+    "reward_xp": "+{value} 经验值",
+    "tree": {
+      "title": "成就树",
+      "hint": "将鼠标悬停在节点上以检查它。在触摸屏上，你可以点击它。",
+      "summary": "解锁了 {total} 个成就中的 {unlocked} 个",
+      "selected": "选定的成就",
+      "status_unlocked": "已解锁",
+      "status_locked": "已锁定",
+      "requirement": "要求",
+      "reward": "奖励/解锁",
+      "bond_status": "信任 {value}",
+      "nodes": {
+        "first_bond": {
+          "title": "第一次接触",
+          "desc": "开始共享路线并解锁关系树的基础核心。",
+          "reward": "联系核心",
+          "req": "从一开始就可用"
+        },
+        "bond_lvl_2": {
+          "title": "第一次真正的火花",
+          "desc": "达到关系等级 2 并超越最早的小对话层。",
+          "reward": "新的个人话题",
+          "req": "达到关系等级 2"
+        },
+        "trust_40": {
+          "title": "信任坠落",
+          "desc": "建立足够的信任，使深层对话开始感到自然。",
+          "reward": "更柔和的反思回复",
+          "req": "达到 40 信任"
+        },
+        "playful_35": {
+          "title": "比特模式",
+          "desc": "保持足够的轻松语调，使眩晕和挑逗感到自然。",
+          "reward": "更多轻松的玩笑",
+          "req": "达到 35 轻松度"
+        },
+        "reflection_25": {
+          "title": "安静的深度",
+          "desc": "提高反思能力足以解锁更慢、更深的分支。",
+          "reward": "新内省提示",
+          "req": "达到 25 反思"
+        },
+        "streak_3": {
+          "title": "明天见",
+          "desc": "连续回来三天并建立真正的节奏。",
+          "reward": "日常检查-in 感觉",
+          "req": "保持 3 天连胜"
+        },
+        "unlocks_3": {
+          "title": "探路者",
+          "desc": "解锁多条进度路线并展示这已经不是随机运行了。",
+          "reward": "新关系路线",
+          "req": "解锁 3 条路线"
+        },
+        "quests_2": {
+          "title": "任务完成",
+          "desc": "完成可见的任务并证明你可以一起完成循环。",
+          "reward": "奖励任务风味",
+          "req": "完成 2 个任务"
+        },
+        "bond_lvl_4": {
+          "title": "内圈",
+          "desc": "达到关系水平，其中更罕见的解锁开始出现。",
+          "reward": "更罕见的选项和话题",
+          "req": "达到关系等级 4"
+        }
+      }
+    },
+    "daily": {
+      "title": "每日任务",
+      "empty": "今天还没有每日任务。"
+    },
+    "lifetime": {
+      "title": "终身任务",
+      "items": {
+        "bond3": {
+          "title": "稳定的联系",
+          "desc": "达到关系等级 3。"
+        },
+        "trust40": {
+          "title": "更深的信任",
+          "desc": "达到 40 信任。"
+        },
+        "quests5": {
+          "title": "任务运行者",
+          "desc": "总共完成 5 个任务。"
+        },
+        "growth30": {
+          "title": "长期成长",
+          "desc": "将平均增长提高到 30。"
+        }
+      }
+    },
+    "stats": {
+      "reflection": "反思",
+      "communication": "沟通",
+      "curiosity": "好奇心",
+      "consistency": "一致性"
+    },
+    "category": {
+      "bond": "联系",
+      "reflection": "反思",
+      "curiosity": "好奇心",
+      "consistency": "一致性",
+      "reward": "奖励"
+    },
+    "unlock_type": {
+      "topic": "话题",
+      "activity": "活动",
+      "reward": "奖励"
+    }
+  },
+  "panels": {
+    "chat": "聊天",
+    "study": "学习",
+    "notes": "笔记",
+    "daily_briefing": "每日简报",
+    "companion": "伴侣",
+    "goals": "进度",
+    "calendar": "日历",
+    "profile": "个人资料"
+  },
+  "notes": {
+    "title": "笔记",
+    "placeholder": "我会为你记下重要的事情...",
+    "saved": "已保存",
+    "saving": "保存中...",
+    "new_page": "新页面",
+    "delete_page": "删除页面",
+    "category_label": "类别",
+    "category_all": "全部",
+    "new_title_placeholder": "笔记标题",
+    "new_category_placeholder": "类别（可选）",
+    "create": "创建",
+    "empty_pages": "还没有页面。",
+    "untitled": "未命名",
+    "rename": "重命名笔记",
+    "rename_prompt": "重命名笔记",
+    "confirm_delete": "删除 \"{title}\"？",
+    "name_exists": "已存在同名笔记。",
+    "live_preview": "实时预览",
+    "source": "源",
+    "toggle_markdown": "Markdown 视图",
+    "toggle_rich": "富文本视图",
+    "editor_placeholder": "在这里写笔记...",
+    "commands": {
+      "title": "命令",
+      "heading1": "标题 1",
+      "heading2": "标题 2",
+      "heading3": "标题 3",
+      "bulleted": "项目符号列表",
+      "numbered": "编号列表",
+      "quote": "引用"
+    },
+    "toolbar": {
+      "bold": "粗体",
+      "italic": "斜体",
+      "highlight": "突出显示",
+      "bulleted": "项目符号列表",
+      "numbered": "编号列表"
+    },
+    "context": {
+      "rename": "重命名笔记",
+      "duplicate": "复制笔记",
+      "delete": "删除笔记",
+      "reveal": "在文件管理器中显示"
+    }
+  },
+  "kasa": {
+    "title": "智能控制",
+    "loading": "加载设备中...",
+    "no_devices": "未找到设备。确保它们在同一网络上。",
+    "discover": "发现灯光",
+    "scanning": "扫描网络中...",
+    "rescan": "重新扫描"
+  },
+  "browser": {
+    "title": "网络代理",
+    "placeholder": "网络代理的命令...",
+    "send": "发送",
+    "waiting": "等待浏览器流中..."
+  }
+}

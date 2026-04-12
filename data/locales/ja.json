@@ -1,0 +1,438 @@
+{
+  "system": {
+    "window_reset": "ウィンドウ '{windowId}' の位置をリセットしました。",
+    "connecting": "接続中...",
+    "connected": "接続しました！",
+    "disconnected": "切断されました...",
+    "monikai_started": "完全に目覚めて、一緒に働く準備ができました。",
+    "monikai_stopped": "今切断します...",
+    "model_connected": "接続しました！",
+    "project_focus": "プロジェクト {project} に集中しています。",
+    "camera_error": "カメラにアクセスするのに問題があります。",
+    "reading_memory": "このファイルをメモリに読み込んでいます...",
+    "memory_empty": "このファイルは空であるか無効です。",
+    "memory_error": "このメモリファイルを読むのに問題があります。"
+  },
+  "tools": {
+    "camera_preview": "カメラ",
+    "screen_capture": "スクリーン キャプチャ",
+    "schedule": "スケジュール",
+    "notes": "ノート",
+    "calendar": "カレンダー",
+    "web_agent": "ウェブ エージェント",
+    "kasa": "スマート ホーム",
+    "companion": "コンパニオン",
+    "goals": "ミッション ログ",
+    "briefing": "デイリー ブリーフィング",
+    "internal_thoughts": "内部思考",
+    "minecraft": "Minecraft サーバー",
+    "settings": "設定",
+    "power": "電源",
+    "mute": "ミュート",
+    "ai_on": "AI オン",
+    "ai_off": "AI オフ",
+    "microphone_on": "マイク オン",
+    "microphone_off": "マイク オフ",
+    "camera_on": "カメラ オン",
+    "camera_off": "カメラ オフ",
+    "share_screen_on": "画面共有",
+    "share_screen_off": "共有停止",
+    "logout": "ログアウト",
+    "dont_leave_me": "行かないで！",
+    "study": "勉強",
+    "chat": "チャット",
+    "profile": "プロフィール"
+  },
+  "chat": {
+    "title": "会話",
+    "history": "履歴",
+    "collapse_history": "履歴を折りたたむ",
+    "expand_history": "履歴を展開",
+    "minimize": "最小化",
+    "restore": "復元",
+    "placeholder": "何か書いてください...",
+    "send": "送信",
+    "attach": "添付",
+    "shift_enter": "Shift+Enter：新しい行",
+    "attachments": "添付ファイル",
+    "attachment_limit": "添付ファイルの制限：最大 {max} ファイル。",
+    "file_too_large": "ファイル \"{name}\" が大きすぎます（最大 {size} MB）。",
+    "total_size_exceeded": "添付ファイルの合計サイズが {size} MB を超えています。",
+    "prepare_failed": "添付ファイルを準備できませんでした。",
+    "sent_attachments": "添付ファイルを送信",
+    "you": "あなた",
+    "monika_thought": "Monika（考え）",
+    "no_messages": "まだメッセージがありません。",
+    "start_conversation": "Monika と会話を開始してください！",
+    "no_attachments": "添付ファイルはまだありません",
+    "add_files": "Monika と共有するファイルを追加",
+    "chat_tab": "チャット",
+    "activities_tab": "アクティビティ",
+    "attach_file_tab": "ファイルを添付",
+    "thoughts_tab": "考え",
+    "settings_tab": "設定",
+    "internal_thoughts": "内部思考",
+    "thoughts_visible": "Monika の考えが見えます",
+    "enable_thoughts": "Monika の内部思考を見るために有効にします",
+    "no_thoughts": "まだ記録された考えがありません。"
+  },
+  "schedule": {
+    "title": "スケジュール",
+    "list_view": "リスト",
+    "month_view": "月",
+    "jump_today": "今日にジャンプ",
+    "refresh": "更新",
+    "close": "閉じる",
+    "alarm": "アラーム",
+    "dismiss": "閉じる",
+    "add": "追加",
+    "reminder": "リマインダー",
+    "timer": "タイマー",
+    "event": "イベント",
+    "create": "作成",
+    "datetime": "日付/時間",
+    "in_minutes": "分後",
+    "all_day": "終日",
+    "duration": "期間",
+    "start": "開始",
+    "end": "終了",
+    "description": "説明（希望の場合）",
+    "speak": "話す",
+    "ring": "リング",
+    "spoken": "音声",
+    "silent": "サイレント",
+    "alert": "アラート",
+    "no_alert": "アラートなし",
+    "event_label": "イベント",
+    "today": "今日",
+    "tomorrow": "明日",
+    "no_items": "予定はありません。",
+    "no_items_day": "この日にはアイテムがありません",
+    "create_hint": "上記で作成するか、知らせてください。",
+    "loading": "スケジュールを読み込んでいます...",
+    "no_items_day": "この日のアイテムはありません。",
+    "msg_required": "ここに何か書く必要があります。",
+    "times_required": "開始時刻と終了時刻が必要です。",
+    "end_after_start": "終了時刻は開始時刻より後である必要があります...",
+    "positive_minutes": "分は正の数である必要があります。",
+    "set_datetime_or_minutes": "日付/時間または分を設定します。",
+    "timer_positive": "タイマーは 0 より大きくする必要があります。",
+    "hours": "時間",
+    "minutes": "分",
+    "seconds": "秒",
+    "tip_priority": "ヒント：日付/時間が優先されます。"
+  },
+  "settings": {
+    "title": "設定",
+    "security": "セキュリティ",
+    "face_auth": "顔認証",
+    "microphone": "私の聴覚（マイク）",
+    "speaker": "私の声（スピーカー）",
+    "camera": "私の視力（カメラ）",
+    "mirror_vision": "ミラー ビジョン",
+    "permissions": "許可を求めたいですか...",
+    "memory": "メモリ管理",
+    "import_memory": "覚えるためにファイルをインポート",
+    "language": "言語"
+  },
+  "briefing": {
+    "title": "デイリー ブリーフィング",
+    "subtitle": "グローバル ソースからのキュレーションされたインテリジェンス。",
+    "breaking": "速報",
+    "refresh": "ブリーフィングを更新",
+    "loading": "ブリーフィングを読み込んでいます...",
+    "updated": "更新されました",
+    "open": "ソースを開く",
+    "pin": "セクションをピン留め",
+    "unpin": "セクションのピン留めを解除",
+    "no_items": "ブリーフィング アイテムはまだありません。",
+    "no_items": "利用できるアイテムがありません",
+    "dynamic_hint": "セクションは動的です：ピン留めした項目 + 最近のコンテキストからの AI 提案。",
+    "dynamic_hint": "このセクションは、あなたの好みとグローバル トレンドに基づいて動的にかりられています。",
+    "ai_proposal": "AI 提案",
+    "swap": "提案された交換",
+    "accept": "受け入れる",
+    "reject": "却下"
+  },
+  "personality": {
+    "state": "Monika の状態",
+    "affection": "親密さ",
+    "mood": "気分",
+    "energy": "エネルギー",
+    "cycle": "生物学的サイクル",
+    "day": "日",
+    "quests": "アクティブ なクエスト",
+    "quest": "クエスト",
+    "no_quests": "現在アクティブなクエストはありません。"
+  },
+  "holidays": {
+    "new_year": "🎉 元日",
+    "valentines": "💖 バレンタイン デー",
+    "womens_day": "🌹 国際女性デー",
+    "white_day": "🤍 ホワイト デー",
+    "april_fools": "🤡 エイプリル フール",
+    "earth_day": "🌍 アース デー",
+    "labor_day": "🛠️ 労働 の 日",
+    "star_wars": "⭐ スター ウォーズ デー",
+    "environment_day": "🌱 世界環境 デー",
+    "friendship_day": "🤝 国際友情 デー",
+    "youth_day": "🤸 国際青少年 デー",
+    "programmers_day": "💻 プログラマー デー",
+    "peace_day": "🕊️ 国際平和 デー",
+    "monika_birthday": "🎂 私の誕生日（Monika）",
+    "animal_day": "🐾 世界動物 デー",
+    "halloween": "🎃 ハロウィン",
+    "independence_day": "独立デー（ポーランド）",
+    "christmas_eve": "🎄 クリスマス Eve",
+    "christmas": "🎁 クリスマス デー",
+    "new_years_eve": "🎆 大晦日"
+  },
+  "companion": {
+    "title": "コンパニオン ハブ",
+    "subtitle": "共有ルーチン、セッション、学習のための快適な場所",
+    "kicker": "コンパニオン センター",
+    "open_goals": "ミッション ログを開く",
+    "tabs": {
+      "session": "セッション",
+      "activities": "アクティビティ",
+      "study": "学習"
+    },
+    "overview": {
+      "mood": "気分",
+      "energy": "エネルギー",
+      "affection": "親密さ",
+      "goals": "目標/ロック解除",
+      "neutral": "中立"
+    },
+    "activities": {
+      "eat": "一緒に食べる",
+      "eat_desc": "低圧力の共有食事モードを開始して、少しの間ハングアウトします。",
+      "headpat": "ヘッドパット",
+      "headpat_desc": "小さなアフェクショナル インタラクション。短い、バカバカしい、効果的。",
+      "gift": "ギフトをあげる",
+      "gift_desc": "小さなシンボリック ギフトを送信して、時間が自然に着陸させてください。",
+      "gift_prompt": "どのようなギフトをあげたいですか？",
+      "minecraft": "Minecraft をプレイ",
+      "minecraft_desc": "Minecraft コンパニオン パネルを開き、ワールドに接続します。"
+    },
+    "study": {
+      "japanese_together": "一緒に日本語を勉強します",
+      "title": "学習コンパニオン",
+      "desc": "現在の学習セットアップを開き、選択したページから続行します。",
+      "folder": "フォルダー",
+      "file": "ファイル"
+    },
+    "session": {
+      "title": "ガイド付きセッション",
+      "desc": "通常のチャットの代わりに、より集中した、思慮深いモードが必要な場合に使用します。",
+      "start": "セッション開始",
+      "end": "セッション終了",
+      "start_desc": "より遅く、より意図的なセッション フローに切り替えます。",
+      "end_desc": "通常の会話に戻り、フォーカス モードを閉じます。"
+    }
+  },
+  "minecraft": {
+    "connect_to_server": "サーバーに接続",
+    "connecting": "接続中..."
+  },
+  "goals": {
+    "title": "進捗",
+    "subtitle": "アチーブメント ツリー、毎日のタスク、長期の進行",
+    "kicker": "進捗マトリックス",
+    "relationship": "関係追跡",
+    "level": "レベル",
+    "closeness": "親密さ",
+    "current_xp": "このレベルで {value}/{total} XP",
+    "total_xp": "{value} 総 XP",
+    "active_missions": "アクティブ なミッション",
+    "empty": "現在アクティブなミッションはありません。",
+    "quest_fallback": "ミッション",
+    "completed_recent": "最近完了",
+    "skill_tree": "成長ツリー",
+    "unlocks": "ロック解除されたパス",
+    "unlocks_empty": "まだ何もロック解除されていません。",
+    "next_unlocks": "次のしきい値",
+    "reach_level": "レベル {value} に到達",
+    "reward_xp": "+{value} XP",
+    "tree": {
+      "title": "アチーブメント ツリー",
+      "hint": "ノードをホバーして検査します。タッチスクリーンではタップできます。",
+      "summary": "{total} 個中 {unlocked} 個のアチーブメントをロック解除",
+      "selected": "選択されたアチーブメント",
+      "status_unlocked": "ロック解除",
+      "status_locked": "ロック",
+      "requirement": "要件",
+      "reward": "報酬/ロック解除",
+      "bond_status": "信頼 {value}",
+      "nodes": {
+        "first_bond": {
+          "title": "初接触",
+          "desc": "共有ルートを開始し、関係ツリーの基本コアをロック解除します。",
+          "reward": "ボンド コア",
+          "req": "最初から利用可能"
+        },
+        "bond_lvl_2": {
+          "title": "最初の本当の火花",
+          "desc": "関係レベル 2 に到達し、最も早い小さな話のレイヤーを超えます。",
+          "reward": "新しい個人的なトピック",
+          "req": "関係レベル 2 に到達"
+        },
+        "trust_40": {
+          "title": "信頼転落",
+          "desc": "より深い会話が自然に感じるようになるまで、十分な信頼を構築します。",
+          "reward": "より柔らかな反射応答",
+          "req": "40 の信頼に到達"
+        },
+        "playful_35": {
+          "title": "ビット モード",
+          "desc": "からかいとバンターが自然に感じるようにトーンを遊び心あるものに保ちます。",
+          "reward": "より多くの遊び心のあるバンター",
+          "req": "35 の遊び心に到達"
+        },
+        "reflection_25": {
+          "title": "静かな深さ",
+          "desc": "反射を上げるのに十分なレベルで、遅く、深いブランチをロック解除します。",
+          "reward": "新しい内省的なプロンプト",
+          "req": "25 の反射に到達"
+        },
+        "streak_3": {
+          "title": "明日また会いましょう",
+          "desc": "3 日連続で戻ってきて、実際のリズムを確立します。",
+          "reward": "毎日のチェック イン フィール",
+          "req": "3 日のストリークを保つ"
+        },
+        "unlocks_3": {
+          "title": "パスファインダー",
+          "desc": "複数の進行ルートをロック解除し、これがもはやランダム実行ではないことを示します。",
+          "reward": "新しい関係ルート",
+          "req": "3 つのパスをロック解除"
+        },
+        "quests_2": {
+          "title": "クエスト クリア",
+          "desc": "目に見えるミッションを完了し、一緒にループを閉じることができることを証明します。",
+          "reward": "ボーナス クエスト フレーバー",
+          "req": "2 つのミッションを完了"
+        },
+        "bond_lvl_4": {
+          "title": "インナー サークル",
+          "desc": "より希少なロック解除が表示され始める関係レベルに到達します。",
+          "reward": "より希少なオプションとトピック",
+          "req": "関係レベル 4 に到達"
+        }
+      }
+    },
+    "daily": {
+      "title": "毎日のクエスト",
+      "empty": "今日のところまだ毎日のクエストはありません。"
+    },
+    "lifetime": {
+      "title": "ライフタイム クエスト",
+      "items": {
+        "bond3": {
+          "title": "安定ボンド",
+          "desc": "関係レベル 3 に到達します。"
+        },
+        "trust40": {
+          "title": "より深い信頼",
+          "desc": "40 の信頼に到達します。"
+        },
+        "quests5": {
+          "title": "ミッション ランナー",
+          "desc": "合計 5 つのミッションを完了します。"
+        },
+        "growth30": {
+          "title": "長期成長",
+          "desc": "平均成長を 30 に上げます。"
+        }
+      }
+    },
+    "stats": {
+      "reflection": "反射",
+      "communication": "コミュニケーション",
+      "curiosity": "好奇心",
+      "consistency": "一貫性"
+    },
+    "category": {
+      "bond": "ボンド",
+      "reflection": "反射",
+      "curiosity": "好奇心",
+      "consistency": "一貫性",
+      "reward": "報酬"
+    },
+    "unlock_type": {
+      "topic": "トピック",
+      "activity": "アクティビティ",
+      "reward": "報酬"
+    }
+  },
+  "panels": {
+    "chat": "チャット",
+    "study": "学習",
+    "notes": "ノート",
+    "daily_briefing": "ブリーフィング",
+    "companion": "コンパニオン",
+    "goals": "進捗",
+    "calendar": "カレンダー",
+    "profile": "プロフィール"
+  },
+  "notes": {
+    "title": "ノート",
+    "placeholder": "重要なことをここにメモします...",
+    "saved": "保存されました",
+    "saving": "保存中...",
+    "new_page": "新規ページ",
+    "delete_page": "ページを削除",
+    "category_label": "カテゴリ",
+    "category_all": "すべて",
+    "new_title_placeholder": "ノート タイトル",
+    "new_category_placeholder": "カテゴリ（オプション）",
+    "create": "作成",
+    "empty_pages": "まだページがありません。",
+    "untitled": "タイトルなし",
+    "rename": "ノートの名前を変更",
+    "rename_prompt": "ノートの名前を変更",
+    "confirm_delete": "\"{title}\" を削除しますか？",
+    "name_exists": "このような名前のノートは既に存在します。",
+    "live_preview": "ライブ プレビュー",
+    "source": "ソース",
+    "toggle_markdown": "Markdown ビュー",
+    "toggle_rich": "リッチ ビュー",
+    "editor_placeholder": "ここにノートを書きます...",
+    "commands": {
+      "title": "コマンド",
+      "heading1": "見出し 1",
+      "heading2": "見出し 2",
+      "heading3": "見出し 3",
+      "bulleted": "箇条書き リスト",
+      "numbered": "番号付きリスト",
+      "quote": "引用"
+    },
+    "toolbar": {
+      "bold": "太字",
+      "italic": "斜体",
+      "highlight": "ハイライト",
+      "bulleted": "箇条書き リスト",
+      "numbered": "番号付きリスト"
+    },
+    "context": {
+      "rename": "ノートの名前を変更",
+      "duplicate": "ノートを複製",
+      "delete": "ノートを削除",
+      "reveal": "ファイル マネージャーで表示"
+    }
+  },
+  "kasa": {
+    "title": "スマート コントロール",
+    "loading": "デバイスを読み込んでいます...",
+    "no_devices": "デバイスが見つかりません。同じネットワーク上にあることを確認してください。",
+    "discover": "ライトを検出",
+    "scanning": "ネットワークをスキャンしています...",
+    "rescan": "再スキャン"
+  },
+  "browser": {
+    "title": "ウェブ エージェント",
+    "placeholder": "ウェブ エージェント用のコマンド...",
+    "send": "送信",
+    "waiting": "ブラウザ ストリームを待機中..."
+  }
+}

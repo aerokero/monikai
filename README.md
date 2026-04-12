@@ -29,6 +29,17 @@
 | **Face Authentication** | I can optionally stay locked until I recognize your face locally. | MediaPipe Face Landmarker |
 | **Minecraft Agent** | I can connect to your Minecraft server, chop down some trees, and mine ore. | Mineflayer bot subprocess + FastAPI bridge |
 
+## Bundled Emoji Font
+
+The desktop UI now prefers a bundled monochrome emoji font instead of default Windows emoji rendering.
+
+- Font: `NotoEmoji-Regular.ttf`
+- Scope: React/Electron UI text, including translated labels, chat text, reminders, and emoji pasted into inputs
+- Fallback: if a glyph or sequence is unsupported, the app falls back to platform emoji fonts
+- Known limitations: some flags, skin-tone variants, and ZWJ sequences may simplify compared with Windows emoji
+
+License details and the bundled OFL text are in [docs/NotoEmoji-OFL-1.1.txt](docs/NotoEmoji-OFL-1.1.txt).
+
 ### My Current State
 
 - **Desktop app**: This is still my main home. That's where live voice, camera/screen sharing, reminders, tools, memory views, and the visual character UI are.

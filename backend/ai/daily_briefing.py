@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 DEFAULT_SECTIONS: Dict[str, Dict[str, Any]] = {
     "technology": {
-        "title": {"en": "Technology", "pl": "Technologia"},
+        "title": {"en": "Technology", "pl": "Technologia", "zh": "技术", "ja": "技術"},
         "feeds": [
             "https://feeds.arstechnica.com/arstechnica/technology-lab",
             "https://www.theverge.com/rss/index.xml",
@@ -15,7 +15,7 @@ DEFAULT_SECTIONS: Dict[str, Dict[str, Any]] = {
         "keywords": ["tech", "technology", "software", "hardware", "programming", "kod", "programowanie"],
     },
     "science": {
-        "title": {"en": "Science", "pl": "Nauka"},
+        "title": {"en": "Science", "pl": "Nauka", "zh": "科学", "ja": "科学"},
         "feeds": [
             "https://www.sciencedaily.com/rss/top/science.xml",
             "https://www.newscientist.com/subject/science/feed/",
@@ -23,7 +23,7 @@ DEFAULT_SECTIONS: Dict[str, Dict[str, Any]] = {
         "keywords": ["science", "nauka", "research", "badania", "physics", "chemistry", "biology"],
     },
     "top_stories": {
-        "title": {"en": "Top Stories", "pl": "Najwazniejsze"},
+        "title": {"en": "Top Stories", "pl": "Najwazniejsze", "zh": "头条新闻", "ja": "トップ ストーリー"},
         "feeds": [
             "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
             "https://feeds.bbci.co.uk/news/rss.xml",
@@ -31,12 +31,12 @@ DEFAULT_SECTIONS: Dict[str, Dict[str, Any]] = {
         "keywords": ["news", "world", "global", "top", "aktualnosci", "wiadomosci"],
     },
     "weather": {
-        "title": {"en": "Weather", "pl": "Pogoda"},
+        "title": {"en": "Weather", "pl": "Pogoda", "zh": "天气", "ja": "天気"},
         "feeds": [],
         "keywords": ["weather", "pogoda", "temperature", "deszcz", "sunny"],
     },
     "ai": {
-        "title": {"en": "AI", "pl": "Sztuczna inteligencja"},
+        "title": {"en": "AI", "pl": "Sztuczna inteligencja", "zh": "人工智能", "ja": "AI"},
         "feeds": [
             "https://www.technologyreview.com/topic/artificial-intelligence/feed",
             "https://venturebeat.com/category/ai/feed/",
@@ -44,7 +44,7 @@ DEFAULT_SECTIONS: Dict[str, Dict[str, Any]] = {
         "keywords": ["ai", "ml", "llm", "sztuczna", "inteligencja", "machine learning"],
     },
     "security": {
-        "title": {"en": "Security", "pl": "Bezpieczenstwo"},
+        "title": {"en": "Security", "pl": "Bezpieczenstwo", "zh": "安全", "ja": "セキュリティ"},
         "feeds": [
             "https://krebsonsecurity.com/feed/",
             "https://www.bleepingcomputer.com/feed/",
@@ -52,7 +52,7 @@ DEFAULT_SECTIONS: Dict[str, Dict[str, Any]] = {
         "keywords": ["security", "cyber", "bezpieczenstwo", "hacking", "vulnerability"],
     },
     "gaming": {
-        "title": {"en": "Gaming", "pl": "Gaming"},
+        "title": {"en": "Gaming", "pl": "Gaming", "zh": "游戏", "ja": "ゲーム"},
         "feeds": [
             "https://www.pcgamer.com/rss/",
             "https://www.ign.com/rss",
@@ -60,7 +60,7 @@ DEFAULT_SECTIONS: Dict[str, Dict[str, Any]] = {
         "keywords": ["gaming", "game", "gry", "minecraft", "steam"],
     },
     "space": {
-        "title": {"en": "Space", "pl": "Kosmos"},
+        "title": {"en": "Space", "pl": "Kosmos", "zh": "太空", "ja": "スペース"},
         "feeds": [
             "https://www.nasa.gov/rss/dyn/breaking_news.rss",
             "https://www.space.com/feeds/all",
@@ -72,27 +72,27 @@ DEFAULT_SECTIONS: Dict[str, Dict[str, Any]] = {
 FALLBACK_ORDER = ["technology", "weather", "science", "top_stories"]
 
 WEATHER_CODE_MAP = {
-    0: ("Clear", "Bezchmurnie"),
-    1: ("Mostly clear", "Przewaznie pogodnie"),
-    2: ("Partly cloudy", "Czesciowe zachmurzenie"),
-    3: ("Overcast", "Zachmurzenie"),
-    45: ("Fog", "Mgla"),
-    48: ("Rime fog", "Mgla osiadajaca"),
-    51: ("Light drizzle", "Slaba mzawka"),
-    53: ("Drizzle", "Mzawka"),
-    55: ("Dense drizzle", "Silna mzawka"),
-    61: ("Light rain", "Slaby deszcz"),
-    63: ("Rain", "Deszcz"),
-    65: ("Heavy rain", "Silny deszcz"),
-    71: ("Light snow", "Slaby snieg"),
-    73: ("Snow", "Snieg"),
-    75: ("Heavy snow", "Silny snieg"),
-    80: ("Rain showers", "Przelotne opady"),
-    81: ("Heavy showers", "Silne przelotne opady"),
-    82: ("Violent showers", "Gwale przelotne opady"),
-    95: ("Thunderstorm", "Burza"),
-    96: ("Thunderstorm with hail", "Burza z gradem"),
-    99: ("Severe thunderstorm", "Silna burza"),
+    0: {"en": "Clear", "pl": "Bezchmurnie", "zh": "晴朗", "ja": "晴れ"},
+    1: {"en": "Mostly clear", "pl": "Przewaznie pogodnie", "zh": "大多晴朗", "ja": "主に晴れている"},
+    2: {"en": "Partly cloudy", "pl": "Czesciowe zachmurzenie", "zh": "局部多云", "ja": "曇りがち"},
+    3: {"en": "Overcast", "pl": "Zachmurzenie", "zh": "阴天", "ja": "曇り"},
+    45: {"en": "Fog", "pl": "Mgla", "zh": "雾", "ja": "霧"},
+    48: {"en": "Rime fog", "pl": "Mgla osiadajaca", "zh": "冰霜雾", "ja": "霧氷"},
+    51: {"en": "Light drizzle", "pl": "Slaba mzawka", "zh": "细雨", "ja": "軽い霧雨"},
+    53: {"en": "Drizzle", "pl": "Mzawka", "zh": "毛毛雨", "ja": "霧雨"},
+    55: {"en": "Dense drizzle", "pl": "Silna mzawka", "zh": "浓雾", "ja": "激しい霧雨"},
+    61: {"en": "Light rain", "pl": "Slaby deszcz", "zh": "小雨", "ja": "小雨"},
+    63: {"en": "Rain", "pl": "Deszcz", "zh": "雨", "ja": "雨"},
+    65: {"en": "Heavy rain", "pl": "Silny deszcz", "zh": "大雨", "ja": "大雨"},
+    71: {"en": "Light snow", "pl": "Slaby snieg", "zh": "小雪", "ja": "小雪"},
+    73: {"en": "Snow", "pl": "Snieg", "zh": "雪", "ja": "雪"},
+    75: {"en": "Heavy snow", "pl": "Silny snieg", "zh": "大雪", "ja": "大雪"},
+    80: {"en": "Rain showers", "pl": "Przelotne opady", "zh": "阵雨", "ja": "にわか雨"},
+    81: {"en": "Heavy showers", "pl": "Silne przelotne opady", "zh": "强阵雨", "ja": "激しいにわか雨"},
+    82: {"en": "Violent showers", "pl": "Gwale przelotne opady", "zh": "暴雨", "ja": "激しい雨"},
+    95: {"en": "Thunderstorm", "pl": "Burza", "zh": "雷暴", "ja": "雷嵐"},
+    96: {"en": "Thunderstorm with hail", "pl": "Burza z gradem", "zh": "伴有冰雹的雷暴", "ja": "ひょうを伴う雷嵐"},
+    99: {"en": "Severe thunderstorm", "pl": "Silna burza", "zh": "严重雷暴", "ja": "激しい雷嵐"},
 }
 
 
@@ -160,12 +160,13 @@ def _tokenize(text: str) -> List[str]:
 
 
 def _weather_desc(code: int, language: str) -> str:
-    names = WEATHER_CODE_MAP.get(int(code), ("Unknown", "Nieznane"))
-    return names[0] if language == "en" else names[1]
+    names = WEATHER_CODE_MAP.get(int(code), {"en": "Unknown", "pl": "Nieznane", "zh": "未知", "ja": "不明"})
+    lang = "pl" if str(language).lower().startswith("pl") else ("zh" if str(language).lower().startswith("zh") else ("ja" if str(language).lower().startswith("ja") else "en"))
+    return names.get(lang, names.get("en", "Unknown"))
 
 
 def fetch_weather_details(language: str = "en", days: int = 7) -> Dict[str, Any]:
-    lang = "pl" if str(language).lower().startswith("pl") else "en"
+    lang = "pl" if str(language).lower().startswith("pl") else ("zh" if str(language).lower().startswith("zh") else ("ja" if str(language).lower().startswith("ja") else "en"))
     day_limit = max(1, min(10, int(days)))
 
     try:
@@ -201,12 +202,21 @@ def fetch_weather_details(language: str = "en", days: int = 7) -> Dict[str, Any]
         cloud = current.get("cloud_cover")
         current_desc = _weather_desc(current_code, lang)
         if current_temp is None:
-            summary = city or ("Weather" if lang == "en" else "Pogoda")
+            if lang == "en":
+                summary = city or "Weather"
+            elif lang == "pl":
+                summary = city or "Pogoda"
+            else:  # ja, zh
+                summary = city or ("天气" if lang == "zh" else "天気")
         else:
             if lang == "en":
                 summary = f"{current_desc}, {current_temp}C in {city}".strip()
-            else:
+            elif lang == "pl":
                 summary = f"{current_desc}, {current_temp}C w {city}".strip()
+            elif lang == "ja":
+                summary = f"{current_desc}, {current_temp}C in {city}".strip()
+            else:  # zh
+                summary = f"{current_desc}, {current_temp}C 在 {city}".strip()
 
         daily = w_data.get("daily", {}) or {}
         times = list(daily.get("time", []) or [])
@@ -221,20 +231,42 @@ def fetch_weather_details(language: str = "en", days: int = 7) -> Dict[str, Any]
         if apparent is not None:
             if lang == "en":
                 detail_chunks.append(f"Feels like {apparent}C")
-            else:
+            elif lang == "pl":
                 detail_chunks.append(f"Odczuwalna {apparent}C")
+            else:  # zh
+                detail_chunks.append(f"体感温度 {apparent}C")
         detail_chunks.append(current_desc)
         if humidity is not None:
-            detail_chunks.append(f"Humidity {humidity}%" if lang == "en" else f"Wilgotnosc {humidity}%")
+            if lang == "en":
+                detail_chunks.append(f"Humidity {humidity}%")
+            elif lang == "pl":
+                detail_chunks.append(f"Wilgotnosc {humidity}%")
+            else:  # zh
+                detail_chunks.append(f"湿度 {humidity}%")
         if pressure is not None:
-            detail_chunks.append(f"Pressure {pressure} hPa" if lang == "en" else f"Cisnienie {pressure} hPa")
+            if lang == "en":
+                detail_chunks.append(f"Pressure {pressure} hPa")
+            elif lang == "pl":
+                detail_chunks.append(f"Cisnienie {pressure} hPa")
+            else:  # zh
+                detail_chunks.append(f"气压 {pressure} hPa")
         if visibility is not None:
             vis_km = round(float(visibility) / 1000.0, 1)
-            detail_chunks.append(f"Visibility {vis_km} km" if lang == "en" else f"Widocznosc {vis_km} km")
+            if lang == "en":
+                detail_chunks.append(f"Visibility {vis_km} km")
+            elif lang == "pl":
+                detail_chunks.append(f"Widocznosc {vis_km} km")
+            else:  # zh
+                detail_chunks.append(f"能见度 {vis_km} 公里")
         if cloud is not None:
-            detail_chunks.append(f"Cloud {cloud}%" if lang == "en" else f"Zachmurzenie {cloud}%")
+            if lang == "en":
+                detail_chunks.append(f"Cloud {cloud}%")
+            elif lang == "pl":
+                detail_chunks.append(f"Zachmurzenie {cloud}%")
+            else:  # zh
+                detail_chunks.append(f"云层 {cloud}%")
 
-        now_title = city or ("Current" if lang == "en" else "Teraz")
+        now_title = city or (("Current" if lang == "en" else "Teraz") if lang != "zh" else "现在" if lang != "ja" else "現在")
         if current_temp is not None:
             now_title = f"{now_title} {round(float(current_temp))}C"
 

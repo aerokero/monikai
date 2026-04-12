@@ -10,6 +10,8 @@ const NotesWindow = ({
   onMouseDown,
   activeDragElement,
   zIndex,
+  width = 620,
+  height = 640,
   embedded = false,
 }) => {
   const { t } = useLanguage();
@@ -25,8 +27,8 @@ const NotesWindow = ({
         left: position.x,
         top: position.y,
         transform: 'translate(-50%, -50%)',
-        width: '620px',
-        height: '640px',
+        width,
+        height,
         pointerEvents: 'auto',
         zIndex,
       }}

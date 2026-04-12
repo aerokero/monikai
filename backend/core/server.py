@@ -1184,7 +1184,15 @@ async def _minecraft_autonomy_loop():
 
 
 def _briefing_language(raw: str = "pl") -> str:
-    return "pl" if str(raw or "pl").lower().startswith("pl") else "en"
+    raw_lower = str(raw or "pl").lower()
+    if raw_lower.startswith("pl"):
+        return "pl"
+    elif raw_lower.startswith("zh"):
+        return "zh"
+    elif raw_lower.startswith("ja"):
+        return "ja"
+    else:
+        return "en"
 
 
 def _briefing_profile() -> dict:

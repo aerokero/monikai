@@ -6,9 +6,22 @@ import useElementSize from '../../hooks/useElementSize';
 
 const DAYS_IN_WEEK = 7;
 const CALENDAR_WEEKS = 6;
+const LANGUAGE_LOCALES = {
+  en: 'en-US',
+  pl: 'pl-PL',
+  ja: 'ja-JP',
+  zh: 'zh-CN',
+};
+
+const EMOJI_TEXT_PRESENTATION_RE = /([\u2600-\u27BF\u{1F000}-\u{1FAFF}])(?!\uFE0E)/gu;
+
+const forceTextEmojiPresentation = (value) => {
+  const normalized = String(value || '').replace(/\uFE0F/gu, '\uFE0E');
+  return normalized.replace(EMOJI_TEXT_PRESENTATION_RE, '$1\uFE0E');
+};
 
 const CalendarShellPanel = ({ socket = null }) => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [panelRef] = useElementSize();
   const [events, setEvents] = useState([]);
   const [birthdays, setBirthdays] = useState([]);
@@ -131,18 +144,18 @@ const CalendarShellPanel = ({ socket = null }) => {
   // Helper to translate holiday and special event titles
   const getDisplayTitle = (title) => {
     if (title && typeof title === 'string' && title.startsWith('holidays.')) {
-      return t(title);
+      return forceTextEmojiPresentation(t(title));
     }
-    return title;
+    return forceTextEmojiPresentation(title);
   };
 
   // Helper to translate event descriptions
   const getDisplayDescription = (description, itemType) => {
     if (!description) return '';
     // Translate backend's hardcoded descriptions
-    if (description === 'Holiday') return 'Holiday';
-    if (description === 'Happy Birthday!' || itemType === 'birthday') return 'Happy Birthday!';
-    return description;
+    if (description === 'Holiday') return forceTextEmojiPresentation('Holiday');
+    if (description === 'Happy Birthday!' || itemType === 'birthday') return forceTextEmojiPresentation('Happy Birthday!');
+    return forceTextEmojiPresentation(description);
   };
 
   const handleDelete = (item) => {
@@ -212,19 +225,29 @@ const CalendarShellPanel = ({ socket = null }) => {
     return [...leadingBlanks, ...dayNumbers, ...trailingBlanks];
   };
 
+  const locale = LANGUAGE_LOCALES[language] || LANGUAGE_LOCALES.en;
+  const weekdayLabels = useMemo(() => {
+    const baseDate = new Date(Date.UTC(2026, 0, 4));
+    return Array.from({ length: DAYS_IN_WEEK }, (_, index) =>
+      new Intl.DateTimeFormat(locale, { weekday: 'narrow' }).format(
+        new Date(baseDate.getTime() + index * 24 * 60 * 60 * 1000),
+      ),
+    );
+  }, [locale]);
+
   return (
-    <ShellPanelFrame icon={Calendar} title="Calendar" bodyClassName="min-h-0">
+    <ShellPanelFrame icon={Calendar} title={t('panels.calendar')} bodyClassName="min-h-0">
       <div ref={panelRef} className="h-full min-h-0 p-3 overflow-y-auto">
         <div className="flex flex-col gap-4">
           {isLoading && (
             <div className="flex items-center justify-center py-12 text-white/60 text-sm">
-              Loading calendar data...
+              {t('schedule.loading')}
             </div>
           )}
 
           {!isLoading && !socket && (
             <div className="flex items-center justify-center py-12 text-white/40 text-sm">
-              Socket not connected
+              {t('system.disconnected')}
             </div>
           )}
 
@@ -234,28 +257,28 @@ const CalendarShellPanel = ({ socket = null }) => {
                 <div className="flex-1 bg-white/5 p-1 rounded-lg flex gap-1">
                   <button
                     onClick={() => setActiveTab('list')}
-                    className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-all ${activeTab === 'list' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/70'}`}
+                    className={`flex-1 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'list' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/70'}`}
                   >
-                    List
+                    {t('schedule.list_view')}
                   </button>
                   <button
                     onClick={() => setActiveTab('month')}
-                    className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-all ${activeTab === 'month' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/70'}`}
+                    className={`flex-1 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'month' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/70'}`}
                   >
-                    Month
+                    {t('schedule.month_view')}
                   </button>
                 </div>
                 <button
                   onClick={refreshData}
                   className="px-3 rounded-lg bg-white/5 border border-white/10 text-white/70 hover:bg-white/10"
-                  title="Refresh"
+                  title={t('schedule.refresh')}
                 >
                   <RefreshCw size={14} />
                 </button>
                 <button
                   onClick={() => setIsCreating((v) => !v)}
                   className={`px-3 rounded-lg border text-white transition-all ${isCreating ? 'bg-white/20 border-white/40' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
-                  title="Create"
+                  title={t('schedule.create')}
                 >
                   <Plus size={14} className={isCreating ? 'rotate-45 transition-transform' : 'transition-transform'} />
                 </button>
@@ -270,7 +293,7 @@ const CalendarShellPanel = ({ socket = null }) => {
                         onClick={() => setCreateType(type)}
                         className={`flex-1 text-xs py-1.5 rounded border transition-colors ${createType === type ? 'bg-white/20 border-white/40 text-white' : 'border-transparent text-white/40 hover:bg-white/5'}`}
                       >
-                        {type}
+                        {type === 'reminder' ? t('schedule.reminder') : t('schedule.event')}
                       </button>
                     ))}
                   </div>
@@ -278,7 +301,7 @@ const CalendarShellPanel = ({ socket = null }) => {
                     type="text"
                     value={formData.message}
                     onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-                    placeholder="Message or event title"
+                    placeholder={t('schedule.description')}
                     className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30"
                   />
                   <div className="flex gap-2">
@@ -309,18 +332,18 @@ const CalendarShellPanel = ({ socket = null }) => {
                           onChange={(e) => setFormData({ ...formData, allDay: e.target.checked })}
                           className="hidden"
                         />
-                        All day
+                        {t('schedule.all_day')}
                       </label>
                       {!formData.allDay && (
                         <div className="flex items-center gap-2">
-                          <span>Duration</span>
+                          <span>{t('schedule.duration')}</span>
                           <input
                             type="number"
                             value={formData.duration}
                             onChange={(e) => setFormData({ ...formData, duration: parseInt(e.target.value, 10) || 0 })}
                             className="w-16 bg-black/50 border border-white/10 rounded px-2 py-1 text-white"
                           />
-                          <span>min</span>
+                          <span>{t('schedule.minutes')}</span>
                         </div>
                       )}
                     </div>
@@ -329,7 +352,7 @@ const CalendarShellPanel = ({ socket = null }) => {
                     onClick={handleCreate}
                     className="w-full py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-xs font-medium"
                   >
-                    Create
+                    {t('schedule.create')}
                   </button>
                 </div>
               )}
@@ -343,7 +366,7 @@ const CalendarShellPanel = ({ socket = null }) => {
                       <div key={`${item.type}-${item.id}`} className="rounded-lg border border-white/5 bg-black/20 p-3 group">
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
-                            <div className="text-xs text-white/50">{item.time.toLocaleString()}</div>
+                            <div className="text-xs text-white/50">{item.time.toLocaleString(locale)}</div>
                             {editingItem?.id === item.id ? (
                               <input
                                 autoFocus
@@ -355,9 +378,9 @@ const CalendarShellPanel = ({ socket = null }) => {
                                 className="w-full mt-1 bg-black/50 border border-white/40 rounded px-2 py-1 text-sm text-white"
                               />
                             ) : (
-                              <div className="text-sm text-white truncate">{getDisplayTitle(item.title)}</div>
+                              <div className="text-sm text-white truncate emoji-text">{getDisplayTitle(item.title)}</div>
                             )}
-                            {!!item.description && <div className="text-xs text-white/40 mt-1 truncate">{getDisplayDescription(item.description, item.type)}</div>}
+                            {!!item.description && <div className="text-xs text-white/40 mt-1 truncate emoji-text">{getDisplayDescription(item.description, item.type)}</div>}
                           </div>
                           <div className="flex items-center gap-1">
                             {item.type !== 'birthday' && (
@@ -383,15 +406,15 @@ const CalendarShellPanel = ({ socket = null }) => {
                     <button onClick={() => setCurrentDate((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))} className="p-1 rounded text-white/60 hover:bg-white/10 hover:text-white">
                       <ChevronLeft size={16} />
                     </button>
-                    <span className="text-sm font-medium text-white/90">{currentDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</span>
+                    <span className="text-lg font-semibold text-white/90">{currentDate.toLocaleDateString(locale, { month: 'long', year: 'numeric' })}</span>
                     <button onClick={() => setCurrentDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))} className="p-1 rounded text-white/60 hover:bg-white/10 hover:text-white">
                       <ChevronRight size={16} />
                     </button>
                   </div>
 
-                  <div className="grid gap-1 text-center text-xs" style={{ gridTemplateColumns: 'repeat(7,minmax(0,1fr))' }}>
-                    {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d) => (
-                      <div key={d} className="text-white/40 py-1">{d}</div>
+                  <div className="grid gap-2 text-center text-sm" style={{ gridTemplateColumns: 'repeat(7,minmax(0,1fr))' }}>
+                    {weekdayLabels.map((d, index) => (
+                      <div key={`${d}-${index}`} className="text-white/50 py-1.5 font-medium">{d}</div>
                     ))}
                     {getMonthCells(currentDate).map((day, i) => {
                       if (!day) return <div key={i} className="rounded-lg h-8" />;
@@ -403,22 +426,22 @@ const CalendarShellPanel = ({ socket = null }) => {
                         <button
                           key={i}
                           onClick={() => setSelectedDate(cellDate)}
-                          className={`h-8 rounded-lg flex flex-col items-center justify-center transition-colors ${isSelected ? 'bg-white text-black' : isToday ? 'bg-white/20 text-white border border-white/30' : 'text-white/80 hover:bg-white/10'}`}
+                          className={`h-12 rounded-xl flex flex-col items-center justify-center transition-colors ${isSelected ? 'bg-white text-black' : isToday ? 'bg-white/20 text-white border border-white/30' : 'text-white/80 hover:bg-white/10'}`}
                         >
-                          <span>{day}</span>
-                          {hasItems && <span className={`w-1 h-1 rounded-full mt-0.5 ${isSelected ? 'bg-black' : 'bg-white'}`} />}
+                          <span className="text-base leading-none">{day}</span>
+                          {hasItems && <span className={`w-1.5 h-1.5 rounded-full mt-1 ${isSelected ? 'bg-black' : 'bg-white'}`} />}
                         </button>
                       );
                     })}
                   </div>
 
                   <div className="pt-3 border-t border-white/10 space-y-2">
-                    <div className="text-xs text-white/50 uppercase tracking-wider">{selectedDate.toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}</div>
+                    <div className="text-sm text-white/55 uppercase tracking-wider">{selectedDate.toLocaleDateString(locale, { month: 'long', day: 'numeric' })}</div>
                     {mergedItems.filter((it) => it.time.toDateString() === selectedDate.toDateString()).slice(0, 6).map((it) => (
-                      <div key={`${it.type}-${it.id}-selected`} className="text-xs text-white/80 truncate">• {it.title}</div>
+                      <div key={`${it.type}-${it.id}-selected`} className="text-sm text-white/85 truncate emoji-text">• {getDisplayTitle(it.title)}</div>
                     ))}
                     {mergedItems.filter((it) => it.time.toDateString() === selectedDate.toDateString()).length === 0 && (
-                      <div className="text-xs text-white/30 italic">{t('schedule.no_items_day')}</div>
+                      <div className="text-sm text-white/35 italic">{t('schedule.no_items_day')}</div>
                     )}
                   </div>
                 </div>

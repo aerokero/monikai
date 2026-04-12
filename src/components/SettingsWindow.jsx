@@ -113,7 +113,7 @@ const SettingsWindow = ({
               <Globe size={16} />
               {t('settings.language')}
             </h3>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-4 gap-3">
               <button
                 onClick={() => setLanguage('en')}
                 className={`p-3 rounded-lg border text-left transition-all ${
@@ -133,6 +133,26 @@ const SettingsWindow = ({
                 }`}
               >
                 Polski
+              </button>
+              <button
+                onClick={() => setLanguage('zh')}
+                className={`p-3 rounded-lg border text-left transition-all ${
+                  language === 'zh' 
+                    ? 'bg-white/20 border-white/50 text-white' 
+                    : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'
+                }`}
+              >
+                中文
+              </button>
+              <button
+                onClick={() => setLanguage('ja')}
+                className={`p-3 rounded-lg border text-left transition-all ${
+                  language === 'ja' 
+                    ? 'bg-white/20 border-white/50 text-white' 
+                    : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'
+                }`}
+              >
+                日本語
               </button>
             </div>
           </section>

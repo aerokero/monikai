@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useMemo } from 'react';
 import enLocale from '../../data/locales/en.json';
 import plLocale from '../../data/locales/pl.json';
+import zhLocale from '../../data/locales/zh.json';
+import jaLocale from '../../data/locales/ja.json';
 
 const LanguageContext = createContext();
 
@@ -25,6 +27,8 @@ const mergeDeep = (target, source) => {
 const fullTranslations = {
   en: mergeDeep({}, enLocale),
   pl: mergeDeep({}, plLocale),
+  zh: mergeDeep({}, zhLocale),
+  ja: mergeDeep({}, jaLocale),
 };
 
 export const LanguageProvider = ({ children }) => {

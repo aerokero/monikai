@@ -55,6 +55,7 @@ const MonikaShell = ({
   onHeadpat = () => {},
   onToggleMinecraft = () => {},
   showMinecraftWindow = false,
+  onOpenStudy = () => {},
 }) => {
   return (
     <div className="monika-shell h-screen w-screen bg-black text-white/85 overflow-hidden relative">
@@ -113,6 +114,7 @@ const MonikaShell = ({
           onHeadpat={onHeadpat}
           onToggleMinecraft={onToggleMinecraft}
           showMinecraftWindow={showMinecraftWindow}
+          onOpenStudy={onOpenStudy}
         />
       </div>
     </div>

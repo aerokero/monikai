@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ClipboardList,
   BookOpen,
   Brain,
   Gamepad2,
@@ -118,10 +119,10 @@ function renderMarkdown(text) {
 const ActivityTile = ({ icon: Icon, title, description, onClick, accentClass, active = false }) => (
   <button
     onClick={onClick}
-    className={`group rounded-xl border p-3 text-left transition-all hover:-translate-y-0.5 ${
+    className={`group rounded-xl border p-3 text-left transition-all duration-200 hover:-translate-y-0.5 ${
       active
-        ? 'border-white/30 bg-white/15'
-        : 'border-white/10 bg-black/20 hover:border-white/20 hover:bg-white/10'
+        ? 'border-white/35 bg-[linear-gradient(180deg,rgba(40,26,34,0.5),rgba(29,18,25,0.5))] shadow-[0_8px_24px_rgba(20,8,14,0.35)]'
+        : 'border-white/20 bg-[linear-gradient(180deg,rgba(34,22,30,0.5),rgba(24,15,21,0.5))] hover:border-white/35 hover:bg-[linear-gradient(180deg,rgba(46,30,40,0.5),rgba(31,20,27,0.5))]'
     }`}
   >
     <div className="flex items-start gap-3">
@@ -130,7 +131,7 @@ const ActivityTile = ({ icon: Icon, title, description, onClick, accentClass, ac
       </div>
       <div className="min-w-0 flex-1">
         <div className="text-sm font-semibold text-white">{title}</div>
-        <div className="mt-1 text-[13px] leading-relaxed text-white/45">{description}</div>
+        <div className="mt-1 text-[13px] leading-relaxed text-white/80">{description}</div>
       </div>
     </div>
   </button>
@@ -158,6 +159,9 @@ const ChatPanel = ({
   onStopEatTogether = null,
   onToggleMinecraft = null,
   showMinecraftWindow = false,
+  sessionActive = false,
+  onToggleSession = null,
+  onOpenStudy = null,
 }) => {
   const { t } = useLanguage();
   const rootRef = useRef(null);
@@ -290,6 +294,19 @@ const ChatPanel = ({
           return;
         }
         text = "Let's play Minecraft together!";
+        break;
+      case 'study':
+        if (typeof onOpenStudy === 'function') {
+          onOpenStudy();
+          return;
+        }
+        text = "Let's study Japanese together.";
+        break;
+      case 'session':
+        if (typeof onToggleSession === 'function') {
+          onToggleSession();
+          return;
+        }
         break;
       default:
         return;
@@ -501,37 +518,55 @@ const ChatPanel = ({
 
         {/* Activities View */}
         {viewMode === 'activities' && (
-          <div className="grid grid-cols-2 gap-3">
-            <ActivityTile
-              icon={Utensils}
-              title={t('companion.activities.eat')}
-              description={t('companion.activities.eat_desc')}
-              onClick={() => handleAction('eat')}
-              accentClass={isEatTogetherActive ? 'bg-orange-500/28 text-orange-200' : 'bg-orange-500/18 text-orange-300'}
-              active={isEatTogetherActive}
-            />
-            <ActivityTile
-              icon={Heart}
-              title={t('companion.activities.headpat')}
-              description={t('companion.activities.headpat_desc')}
-              onClick={() => handleAction('headpat')}
-              accentClass="bg-pink-500/18 text-pink-300"
-            />
-            <ActivityTile
-              icon={Gift}
-              title={t('companion.activities.gift')}
-              description={t('companion.activities.gift_desc')}
-              onClick={() => handleAction('gift')}
-              accentClass="bg-violet-500/18 text-violet-300"
-            />
-            <ActivityTile
-              icon={Gamepad2}
-              title={t('companion.activities.minecraft') || 'Minecraft'}
-              description={t('companion.activities.minecraft_desc') || 'Open the Minecraft companion activity panel.'}
-              onClick={() => handleAction('minecraft')}
-              accentClass={showMinecraftWindow ? 'bg-emerald-500/28 text-emerald-200' : 'bg-emerald-500/18 text-emerald-300'}
-              active={Boolean(showMinecraftWindow)}
-            />
+          <div className="rounded-[18px] border border-[#efbdd6] bg-[rgba(255,255,255,0.46)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.22)]">
+            <div className="grid grid-cols-2 gap-3">
+              <ActivityTile
+                icon={Utensils}
+                title={t('companion.activities.eat')}
+                description={t('companion.activities.eat_desc')}
+                onClick={() => handleAction('eat')}
+                accentClass={isEatTogetherActive ? 'bg-orange-500/32 text-orange-100' : 'bg-orange-500/22 text-orange-200'}
+                active={isEatTogetherActive}
+              />
+              <ActivityTile
+                icon={Heart}
+                title={t('companion.activities.headpat')}
+                description={t('companion.activities.headpat_desc')}
+                onClick={() => handleAction('headpat')}
+                accentClass="bg-pink-500/22 text-pink-200"
+              />
+              <ActivityTile
+                icon={Gift}
+                title={t('companion.activities.gift')}
+                description={t('companion.activities.gift_desc')}
+                onClick={() => handleAction('gift')}
+                accentClass="bg-violet-500/22 text-violet-200"
+              />
+              <ActivityTile
+                icon={Gamepad2}
+                title={t('companion.activities.minecraft') || 'Minecraft'}
+                description={t('companion.activities.minecraft_desc') || 'Open the Minecraft companion activity panel.'}
+                onClick={() => handleAction('minecraft')}
+                accentClass={showMinecraftWindow ? 'bg-emerald-500/32 text-emerald-100' : 'bg-emerald-500/22 text-emerald-200'}
+                active={Boolean(showMinecraftWindow)}
+              />
+              <ActivityTile
+                icon={BookOpen}
+                title={t('companion.study.japanese_together') || 'Japanese Study Together'}
+                description={t('companion.study.desc') || 'Open study materials and learn together.'}
+                onClick={() => handleAction('study')}
+                accentClass={studyModeActive ? 'bg-cyan-500/32 text-cyan-100' : 'bg-cyan-500/22 text-cyan-200'}
+                active={Boolean(studyModeActive)}
+              />
+              <ActivityTile
+                icon={ClipboardList}
+                title={sessionActive ? t('companion.session.end') : t('companion.session.start')}
+                description={sessionActive ? t('companion.session.end_desc') : t('companion.session.start_desc')}
+                onClick={() => handleAction('session')}
+                accentClass={sessionActive ? 'bg-amber-500/32 text-amber-100' : 'bg-amber-500/22 text-amber-200'}
+                active={Boolean(sessionActive)}
+              />
+            </div>
           </div>
         )}
 

@@ -5,6 +5,13 @@ import { useLanguage } from '../contexts/LanguageContext';
 const DAYS_IN_WEEK = 7;
 const CALENDAR_WEEKS = 6;
 
+const EMOJI_TEXT_PRESENTATION_RE = /([\u2600-\u27BF\u{1F000}-\u{1FAFF}])(?!\uFE0E)/gu;
+
+const forceTextEmojiPresentation = (value) => {
+  const normalized = String(value || '').replace(/\uFE0F/gu, '\uFE0E');
+  return normalized.replace(EMOJI_TEXT_PRESENTATION_RE, '$1\uFE0E');
+};
+
 const RemindersWindow = ({ socket, onClose, position, onMouseDown, activeDragElement, zIndex }) => {
   const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState('list'); // 'list', 'month'
@@ -408,7 +415,7 @@ const RemindersWindow = ({ socket, onClose, position, onMouseDown, activeDragEle
                               className="w-full bg-black/50 border border-white/50 rounded px-1 py-0.5 text-sm text-white focus:outline-none"
                             />
                           ) : (
-                            <p className="text-sm text-white/90 truncate">{t(item.title)}</p>
+                            <p className="text-sm text-white/90 truncate emoji-text">{forceTextEmojiPresentation(t(item.title))}</p>
                           )}
 
                           <p className="text-[10px] text-white/40">
@@ -476,7 +483,7 @@ const RemindersWindow = ({ socket, onClose, position, onMouseDown, activeDragEle
                       <span className="text-white/40 font-mono">
                         {item.time.getDate()}/{item.time.getMonth()+1}
                       </span>
-                      <span className="text-white/80 truncate flex-1">{t(item.title)}</span>
+                      <span className="text-white/80 truncate flex-1 emoji-text">{forceTextEmojiPresentation(t(item.title))}</span>
                     </div>
                   ))
                 }
