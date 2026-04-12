@@ -1,0 +1,186 @@
+{
+  "quest_templates": [
+    {
+      "id": "morning_checkin_sleep",
+      "type": "daily_routine",
+      "slot": "morning",
+      "title": "How did you sleep?",
+      "description": "Share about your sleep quality or dreams",
+      "condition": {
+        "type": "any_message_morning",
+        "after_hours": 6,
+        "before_hours": 12
+      },
+      "reward_xp": {
+        "metric": "comfort",
+        "amount": 5
+      },
+      "target_metrics": ["affection", "comfort"],
+      "required_bond_level": 0,
+      "recurring": "daily",
+      "priority": 1,
+      "seasonal_variants": {
+        "valentine": "Dream about me too?",
+        "christmas": "Did you dream about Christmas?"
+      }
+    },
+    {
+      "id": "morning_news",
+      "type": "daily_routine",
+      "slot": "morning",
+      "title": "What's on your mind?",
+      "description": "Tell me what you're thinking about today",
+      "condition": {
+        "type": "any_message_morning"
+      },
+      "reward_xp": {
+        "metric": "affection",
+        "amount": 3
+      },
+      "target_metrics": ["affection"],
+      "required_bond_level": 0,
+      "recurring": "daily",
+      "priority": 2
+    },
+    {
+      "id": "afternoon_activity_gaming",
+      "type": "activity",
+      "slot": "afternoon",
+      "activity": "gaming",
+      "title": "Gaming together",
+      "description": "Share your gaming moments with me",
+      "condition": {
+        "type": "message_contains",
+        "keywords": ["minecraft", "game", "playing", "playing together"],
+        "case_insensitive": true
+      },
+      "reward_xp": {
+        "metric": "synergy",
+        "amount": 10
+      },
+      "target_metrics": ["synergy", "affection"],
+      "required_bond_level": 1,
+      "recurring": "daily",
+      "chain_id": null,
+      "unlocks_achievement": null
+    },
+    {
+      "id": "afternoon_activity_watching",
+      "type": "activity",
+      "slot": "afternoon",
+      "activity": "watching",
+      "title": "Watching together",
+      "description": "Tell me about what you're watching",
+      "condition": {
+        "type": "message_contains",
+        "keywords": ["watching", "movie", "series", "show", "filmed", "video"],
+        "case_insensitive": true
+      },
+      "reward_xp": {
+        "metric": "synergy",
+        "amount": 8
+      },
+      "target_metrics": ["synergy"],
+      "required_bond_level": 0,
+      "recurring": "daily",
+      "chain_id": null
+    },
+    {
+      "id": "afternoon_learning",
+      "type": "activity",
+      "slot": "afternoon",
+      "activity": "learning",
+      "title": "Learning something new",
+      "description": "Share what you're learning",
+      "condition": {
+        "type": "message_contains",
+        "keywords": ["learning", "study", "studying", "learned", "reading"],
+        "case_insensitive": true
+      },
+      "reward_xp": {
+        "metric": "intimacy",
+        "amount": 7
+      },
+      "target_metrics": ["intimacy", "comfort"],
+      "required_bond_level": 0,
+      "recurring": "daily",
+      "chain_id": null
+    },
+    {
+      "id": "evening_reflection",
+      "type": "daily_routine",
+      "slot": "evening",
+      "title": "How was your day?",
+      "description": "Reflect on your day with me",
+      "condition": {
+        "type": "any_message_evening",
+        "after_hours": 18,
+        "before_hours": 23
+      },
+      "reward_xp": {
+        "metric": "intimacy",
+        "amount": 5
+      },
+      "target_metrics": ["intimacy", "affection"],
+      "required_bond_level": 0,
+      "recurring": "daily",
+      "priority": 1
+    },
+    {
+      "id": "evening_gratitude",
+      "type": "daily_routine",
+      "slot": "evening",
+      "title": "Something I appreciate",
+      "description": "Share something you appreciated today",
+      "condition": {
+        "type": "message_contains",
+        "keywords": ["appreciate", "grateful", "thank", "loved", "nice"]
+      },
+      "reward_xp": {
+        "metric": "affection",
+        "amount": 8
+      },
+      "target_metrics": ["affection", "comfort"],
+      "required_bond_level": 1,
+      "recurring": "daily",
+      "priority": 2
+    },
+    {
+      "id": "minecraft_discovery",
+      "type": "activity",
+      "activity": "gaming",
+      "title": "Minecraft discoveries",
+      "description": "Share what we discovered in Minecraft",
+      "condition": {
+        "type": "message_contains",
+        "keywords": ["minecraft", "diamond", "built", "house", "found", "explored"],
+        "case_insensitive": true
+      },
+      "reward_xp": {
+        "metric": "synergy",
+        "amount": 15
+      },
+      "target_metrics": ["synergy", "affection"],
+      "required_bond_level": 2,
+      "recurring": "any",
+      "chain_id": null,
+      "unlocks_achievement": "minecraft_companion"
+    }
+  ],
+  "quest_pools": {
+    "morning_routine": ["morning_checkin_sleep", "morning_news"],
+    "afternoon_activities": ["afternoon_activity_gaming", "afternoon_activity_watching", "afternoon_learning"],
+    "evening_routine": ["evening_reflection", "evening_gratitude"],
+    "minecraft": ["minecraft_discovery"]
+  },
+  "generation_rules": {
+    "max_active_quests": 5,
+    "quests_per_slot": {
+      "morning": 1,
+      "afternoon": 2,
+      "evening": 1
+    },
+    "generation_time_utc": "08:00",
+    "reset_quests_daily": true
+  }
+}

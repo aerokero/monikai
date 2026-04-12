@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mic, MicOff, Settings, Power, Video, VideoOff, Lightbulb, Globe, Monitor, FileText, CalendarDays, Heart, Target, Newspaper } from 'lucide-react';
+import { Mic, MicOff, Settings, Power, Video, VideoOff, Lightbulb, Globe, Monitor, FileText, CalendarDays, Heart, Target, Newspaper, TrendingUp } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const Button = ({ onClick, isActive, disabled, icon: Icon, activeIcon: ActiveIcon, title, variant = 'default', onContextMenu }) => {
@@ -61,6 +61,8 @@ const ToolsModule = ({
     showCompanionWindow,
     onToggleGoals,
     showGoalsWindow,
+    onToggleProgression,
+    showProgressionWindow,
     onToggleDailyBriefing,
     showDailyBriefingWindow,
     onResetPosition,
@@ -184,6 +186,15 @@ const ToolsModule = ({
                     icon={Target} 
                     title={t('tools.goals') || "Goals"}
                     onContextMenu={(e) => { e.preventDefault(); onResetPosition('goals'); }}
+                />
+
+                <Button 
+                    onClick={onToggleProgression} 
+                    isActive={showProgressionWindow} 
+                    disabled={!isConnected}
+                    icon={TrendingUp} 
+                    title={t('tools.progression') || "Progression"}
+                    onContextMenu={(e) => { e.preventDefault(); onResetPosition('progression'); }}
                 />
 
                 <Button 

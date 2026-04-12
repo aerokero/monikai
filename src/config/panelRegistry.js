@@ -108,7 +108,7 @@ export const PANELS = {
     description: 'Relationship progress and quests',
     icon: 'Trophy',
     contextKey: 'goals',
-    component: 'GoalsWindow',
+    component: 'GoalsShellPanel',
     order: 6,
     draggable: false,
     collapsible: true,

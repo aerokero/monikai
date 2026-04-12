@@ -53,6 +53,7 @@ if sys.version_info < (3, 11, 0):
 from ..tools import tools_list
 from ..ai.proactivity import ProactivityManager, IdleNudgeConfig, ReasoningConfig
 from ..ai.personality import PersonalitySystem
+from ..ai.personality_notifications import build_relationship_notification_lines
 from ..tools.openclaw_skills import OpenClawSkillManager
 from ..integrations.games.minecraft_agent import MinecraftBotManager
 
@@ -1556,6 +1557,7 @@ class AudioLoop:
         on_reminder_fired=None,
         on_calendar_update=None, # For local calendar
         on_personality_update=None,
+        on_personality_event=None,
         on_internal_thought=None,
         input_device_index=None,
         input_device_name=None,
@@ -1588,6 +1590,7 @@ class AudioLoop:
         self.on_memory_event = on_memory_event
         self.on_calendar_update = on_calendar_update
         self.on_personality_update = on_personality_update
+        self.on_personality_event = on_personality_event
         self.on_internal_thought = on_internal_thought
         self.on_reminder_fired = on_reminder_fired
         self.on_study_fields = on_study_fields
@@ -2644,32 +2647,18 @@ class AudioLoop:
                     notifications = []
 
                 if notifications:
-                    note_lines = []
-                    for n in notifications:
-                        ntype = (n or {}).get("type")
-                        if ntype == "weekly_recap_due":
-                            asyncio.create_task(self.generate_weekly_recap())
-                            continue
-                        if ntype == "quest_new":
-                            quest = (n or {}).get("quest") or {}
-                            if (quest.get("visibility") or "visible") == "visible":
-                                title = quest.get("title") or "Nowy cel"
-                                desc = quest.get("description") or ""
-                                note_lines.append(f"Nowy cel: {title}. {desc}")
-                        elif ntype == "quest_complete":
-                            quest = (n or {}).get("quest") or {}
-                            if (quest.get("visibility") or "visible") == "visible":
-                                title = quest.get("title") or "Cel"
-                                note_lines.append(f"Cel ukończony: {title}.")
-                        elif ntype == "unlocks":
-                            items = (n or {}).get("items") or []
-                            labels = [i.get("label") for i in items if isinstance(i, dict) and i.get("label")]
-                            if labels:
-                                note_lines.append("Odblokowane: " + "; ".join(labels))
-                        elif ntype == "level_up":
-                            lvl = (n or {}).get("level")
-                            if lvl:
-                                note_lines.append(f"Relacja awansowała na poziom {lvl}.")
+                    if self.on_personality_event:
+                        for n in notifications:
+                            try:
+                                maybe_coro = self.on_personality_event(n)
+                                if asyncio.iscoroutine(maybe_coro):
+                                    await maybe_coro
+                            except Exception as e:
+                                print(f"[AI] Failed to forward personality event: {e}")
+
+                    note_lines, weekly_recap_due = build_relationship_notification_lines(notifications)
+                    if weekly_recap_due:
+                        asyncio.create_task(self.generate_weekly_recap())
 
                     if note_lines and self.session:
                         msg = (

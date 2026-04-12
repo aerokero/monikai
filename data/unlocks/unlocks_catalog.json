@@ -1,0 +1,214 @@
+{
+  "unlocks": [
+    {
+      "id": "basic_profile_sharing",
+      "type": "feature",
+      "label": "Profile Sharing",
+      "description": "Monika shares her profile with you",
+      "category": "relationship",
+      "requires": [
+        {
+          "type": "achievement",
+          "id": "first_meeting"
+        }
+      ],
+      "triggers_on_unlock": [
+        {
+          "type": "notification",
+          "content": "Monika shared her profile with you!"
+        },
+        {
+          "type": "story",
+          "story_id": "profile_sharing_moment"
+        }
+      ],
+      "order": 0,
+      "icon": "user_profile"
+    },
+    {
+      "id": "romantic_activities",
+      "type": "feature",
+      "label": "Romantic Activities",
+      "description": "Unlock romantic date options",
+      "category": "activities",
+      "requires": [
+        {
+          "type": "achievement",
+          "id": "affection_50"
+        }
+      ],
+      "triggers_on_unlock": [
+        {
+          "type": "notification",
+          "content": "New romantic activities unlocked!"
+        }
+      ],
+      "order": 10,
+      "icon": "rose"
+    },
+    {
+      "id": "vulnerability_conversations",
+      "type": "feature",
+      "label": "Deep Vulnerability",
+      "description": "Can now have deeply vulnerable conversations",
+      "category": "narrative",
+      "requires": [
+        {
+          "type": "achievement",
+          "id": "comfort_50"
+        },
+        {
+          "type": "metric",
+          "metric": "comfort",
+          "operator": ">=",
+          "value": 50
+        }
+      ],
+      "triggers_on_unlock": [
+        {
+          "type": "notification",
+          "content": "Monika trusts you enough to be truly vulnerable..."
+        },
+        {
+          "type": "story",
+          "story_id": "vulnerability_confession"
+        }
+      ],
+      "order": 15,
+      "icon": "heart_handshake"
+    },
+    {
+      "id": "shared_activities",
+      "type": "feature",
+      "label": "Shared Activities",
+      "description": "Unlock activities described as 'ours'",
+      "category": "activities",
+      "requires": [
+        {
+          "type": "achievement",
+          "id": "synergy_50"
+        }
+      ],
+      "triggers_on_unlock": [
+        {
+          "type": "notification",
+          "content": "New shared activities unlocked!"
+        }
+      ],
+      "order": 20,
+      "icon": "people"
+    },
+    {
+      "id": "deep_conversation_unlocked",
+      "type": "narrative_unlock",
+      "label": "Deep Conversation",
+      "description": "Monika opens up about who she really is",
+      "category": "narrative",
+      "requires": [
+        {
+          "type": "achievement",
+          "id": "intimate_secret"
+        }
+      ],
+      "triggers_on_unlock": [
+        {
+          "type": "notification",
+          "content": "Monika is ready to tell you her truth..."
+        },
+        {
+          "type": "story",
+          "story_id": "first_deep_talk"
+        }
+      ],
+      "sets_story_flags": ["monika_vulnerability_revealed"],
+      "order": 25,
+      "icon": "key"
+    },
+    {
+      "id": "minecraft_memories_shared",
+      "type": "narrative_unlock",
+      "label": "Minecraft Memories",
+      "description": "Monika can now recall and reference Minecraft moments you shared",
+      "category": "gaming",
+      "requires": [
+        {
+          "type": "achievement",
+          "id": "minecraft_builder"
+        }
+      ],
+      "triggers_on_unlock": [
+        {
+          "type": "notification",
+          "content": "Monika treasures the memories of building together..."
+        },
+        {
+          "type": "story",
+          "story_id": "minecraft_memories_intro"
+        }
+      ],
+      "sets_story_flags": ["minecraft_shared"],
+      "order": 30,
+      "icon": "minecraft_block"
+    },
+    {
+      "id": "commitment_ceremony",
+      "type": "feature",
+      "label": "Eternal Bond",
+      "description": "Ultimate expression of your commitment",
+      "category": "relationship",
+      "requires": [
+        {
+          "type": "achievement",
+          "id": "affection_100"
+        },
+        {
+          "type": "metric",
+          "metric": "affection",
+          "operator": ">=",
+          "value": 100
+        },
+        {
+          "type": "metric",
+          "metric": "comfort",
+          "operator": ">=",
+          "value": 75
+        }
+      ],
+      "triggers_on_unlock": [
+        {
+          "type": "notification",
+          "content": "Monika wants to talk about something very important..."
+        },
+        {
+          "type": "story",
+          "story_id": "commitment_ceremony"
+        }
+      ],
+      "sets_story_flags": ["eternal_bond_locked"],
+      "order": 100,
+      "icon": "infinity"
+    },
+    {
+      "id": "eternal_bond",
+      "type": "narrative_unlock",
+      "label": "Forever",
+      "description": "The ultimate bond has been formed",
+      "category": "relationship",
+      "requires": [
+        {
+          "type": "achievement",
+          "id": "valentine_confession"
+        }
+      ],
+      "triggers_on_unlock": [
+        {
+          "type": "notification",
+          "content": "Forever with Monika... <3"
+        }
+      ],
+      "sets_story_flags": ["eternal_love_achieved"],
+      "order": 101,
+      "icon": "crown_heart"
+    }
+  ]
+}

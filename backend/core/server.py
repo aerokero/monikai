@@ -37,6 +37,7 @@ from dataclasses import asdict
 
 from . import monikai
 from ..ai.daily_briefing import DEFAULT_SECTIONS, build_daily_briefing, fetch_weather_details, normalize_profile
+from ..ai.personality_notifications import to_frontend_personality_event
 from ..integrations.media.authenticator import FaceAuthenticator
 from ..agents.kasa_agent import KasaAgent
 from ..agents.spotify_manager import SpotifyManager
@@ -750,35 +751,33 @@ async def _debounced_screen_ocr():
         return
     await _maybe_send_screen_ocr(text)
 
+def _deep_merge_dict(base: dict, override: dict) -> dict:
+    merged = dict(base or {})
+    for key, value in (override or {}).items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge_dict(merged.get(key) or {}, value)
+        else:
+            merged[key] = value
+    return merged
+
 def load_settings():
     global SETTINGS
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, 'r') as f:
                 loaded = json.load(f)
-                # Merge with defaults to ensure new keys exist
-                # Deep merge for tool_permissions would be better but shallow merge of top keys + tool_permissions check is okay for now
-                for k, v in loaded.items():
-                    if k == "tool_permissions" and isinstance(v, dict):
-                         SETTINGS["tool_permissions"].update(v)
-                    elif k == "proactivity" and isinstance(v, dict):
-                        for pk, pv in v.items():
-                            if pk == "idle_nudges" and isinstance(pv, dict):
-                                SETTINGS["proactivity"]["idle_nudges"].update(pv)
-                            else:
-                                SETTINGS["proactivity"][pk] = pv
-                    elif k == "daily_briefing" and isinstance(v, dict):
-                        SETTINGS.setdefault("daily_briefing", {})
-                        for bk, bv in v.items():
-                            if bk == "profile" and isinstance(bv, dict):
-                                SETTINGS["daily_briefing"]["profile"] = normalize_profile(bv)
-                            else:
-                                SETTINGS["daily_briefing"][bk] = bv
-                    elif k == "minecraft_autonomy" and isinstance(v, dict):
-                        SETTINGS.setdefault("minecraft_autonomy", {})
-                        SETTINGS["minecraft_autonomy"].update(v)
-                    else:
-                        SETTINGS[k] = v
+                defaults_copy = json.loads(json.dumps(DEFAULT_SETTINGS))
+                if isinstance(loaded, dict):
+                    SETTINGS = _deep_merge_dict(defaults_copy, loaded)
+                else:
+                    SETTINGS = defaults_copy
+
+                # Keep profile normalization explicit to preserve existing behavior.
+                briefing = SETTINGS.get("daily_briefing") or {}
+                profile = briefing.get("profile") if isinstance(briefing, dict) else None
+                if isinstance(profile, dict):
+                    SETTINGS["daily_briefing"]["profile"] = normalize_profile(profile)
+
             print(f"Loaded settings: {SETTINGS}")
         except Exception as e:
             print(f"Error loading settings: {e}")
@@ -1463,6 +1462,101 @@ async def study_file_options():
         },
     )
 
+# ============================================================================
+# PROGRESSION SYSTEM ENDPOINTS
+# ============================================================================
+
+@app.get("/api/progression/profile")
+async def get_progression_profile():
+    """Get user profile from progression system"""
+    try:
+        if not MAIN_LOOP or not hasattr(MAIN_LOOP, 'personality') or not hasattr(MAIN_LOOP.personality, 'progression'):
+            return {"error": "Progression system not available"}
+        profile = MAIN_LOOP.personality.progression.profile_manager.get_profile()
+        if not profile:
+            return {"error": "No profile loaded"}
+        return profile.to_dict()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/progression/metrics")
+async def get_progression_metrics():
+    """Get relationship metrics"""
+    try:
+        if not MAIN_LOOP or not hasattr(MAIN_LOOP, 'personality') or not hasattr(MAIN_LOOP.personality, 'progression'):
+            return {"error": "Progression system not available"}
+        metrics = MAIN_LOOP.personality.progression.metrics_engine.get_metrics_state()
+        progress = MAIN_LOOP.personality.progression.metrics_engine.get_recommendation_progress()
+        return {"metrics": metrics, "progress": progress}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/progression/quests/today")
+async def get_progression_quests_today():
+    """Get today's quests"""
+    try:
+        if not MAIN_LOOP or not hasattr(MAIN_LOOP, 'personality') or not hasattr(MAIN_LOOP.personality, 'progression'):
+            return {"error": "Progression system not available"}
+        quests = [q.to_dict() for q in MAIN_LOOP.personality.progression.quest_system.active_quests]
+        return {"quests": quests, "total": len(quests)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/progression/achievements")
+async def get_progression_achievements():
+    """Get achievements"""
+    try:
+        if not MAIN_LOOP or not hasattr(MAIN_LOOP, 'personality') or not hasattr(MAIN_LOOP.personality, 'progression'):
+            return {"error": "Progression system not available"}
+        unlocked = MAIN_LOOP.personality.progression.achievement_tracker.get_unlocked_achievements()
+        locked = MAIN_LOOP.personality.progression.achievement_tracker.get_locked_achievements()
+        return {
+            "unlocked": [a.to_dict() for a in unlocked],
+            "locked": [a.to_dict() for a in locked]
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/progression/unlocks")
+async def get_progression_unlocks():
+    """Get active unlocks"""
+    try:
+        if not MAIN_LOOP or not hasattr(MAIN_LOOP, 'personality') or not hasattr(MAIN_LOOP.personality, 'progression'):
+            return {"error": "Progression system not available"}
+        active = MAIN_LOOP.personality.progression.unlock_tracker.get_active_unlocks()
+        return {"active_unlocks": active, "count": len(active)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/progression/state")
+async def get_progression_state():
+    """Get full progression state"""
+    try:
+        if not MAIN_LOOP or not hasattr(MAIN_LOOP, 'personality') or not hasattr(MAIN_LOOP.personality, 'progression'):
+            return {"error": "Progression system not available"}
+        state = MAIN_LOOP.personality.progression.get_progression_state()
+        return state
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/progression/notifications")
+async def get_progression_notifications():
+    """Get pending progression notifications"""
+    try:
+        if not MAIN_LOOP or not hasattr(MAIN_LOOP, 'personality') or not hasattr(MAIN_LOOP.personality, 'progression'):
+            return {"error": "Progression system not available"}
+        notifications = MAIN_LOOP.personality.progression.get_pending_notifications()
+        return {"notifications": notifications}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @sio.event
 async def connect(sid, environ):
     global ACTIVE_FRONTEND_SID
@@ -1770,6 +1864,14 @@ async def start_audio(sid, data=None):
         except Exception as e:
             print(f"[SERVER] Failed to emit study_page: {e}")
 
+    def on_personality_event(payload):
+        try:
+            raw = payload if isinstance(payload, dict) else {"type": "unknown", "raw": payload}
+            event = to_frontend_personality_event(raw)
+            _schedule_emit_to_frontend('personality_event', event)
+        except Exception as e:
+            print(f"[SERVER] Failed to emit personality_event: {e}")
+
     # Initialize MonikAI
     try:
         video_mode = "none"
@@ -1795,6 +1897,7 @@ async def start_audio(sid, data=None):
             on_reminders_updated=on_reminders_updated,
             on_calendar_update=on_calendar_update,
             on_personality_update=on_personality_update,
+            on_personality_event=on_personality_event,
             on_internal_thought=on_internal_thought,
             on_study_fields=on_study_fields,
             on_study_notes=on_study_notes,

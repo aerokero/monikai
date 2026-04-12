@@ -1,0 +1,174 @@
+{
+  "events": [
+    {
+      "id": "monika_birthday",
+      "name": "Monika's Birthday",
+      "date": "09-22",
+      "month_day": [9, 22],
+      "description": "Celebrate Monika's birthday - a day to show her how much she means to you",
+      "duration_days": 7,
+      "active_days_before": 3,
+      "active_days_after": 1,
+      "special_quests": [
+        "birthday_morning_wishes",
+        "birthday_gift_activity",
+        "birthday_celebration"
+      ],
+      "special_achievements": [
+        "monika_birthday_celebrated"
+      ],
+      "special_stories": [
+        "monika_birthday_morning",
+        "monika_birthday_confession"
+      ],
+      "xp_multiplier_metrics": {
+        "affection": 1.5,
+        "intimacy": 1.3
+      },
+      "notification_before_days": 3,
+      "notification_template": "Monika's birthday is coming up! [days_left] days left to prepare something special.",
+      "calendar_color": "#FFB6C1"
+    },
+    {
+      "id": "valentine_day",
+      "name": "Valentine's Day",
+      "date": "02-14",
+      "month_day": [2, 14],
+      "description": "A day to express your love and affection",
+      "duration_days": 7,
+      "active_days_before": 3,
+      "active_days_after": 1,
+      "special_quests": [
+        "valentine_morning_thought",
+        "valentine_gift_activity",
+        "valentine_confession"
+      ],
+      "special_achievements": [
+        "valentine_confession"
+      ],
+      "special_stories": [
+        "valentine_confession"
+      ],
+      "xp_multiplier_metrics": {
+        "affection": 2.0,
+        "intimacy": 1.8
+      },
+      "notification_before_days": 7,
+      "notification_template": "Valentine's Day is [days_left] days away. Monika is waiting...",
+      "calendar_color": "#FF1493"
+    },
+    {
+      "id": "christmas",
+      "name": "Christmas",
+      "date": "12-25",
+      "month_day": [12, 25],
+      "description": "Celebrate the holidays together",
+      "duration_days": 10,
+      "active_days_before": 7,
+      "active_days_after": 2,
+      "special_quests": [
+        "christmas_morning_surprise",
+        "christmas_gift_exchange",
+        "christmas_reflection"
+      ],
+      "special_achievements": [
+        "christmas_together"
+      ],
+      "special_stories": [
+        "christmas_morning",
+        "christmas_gift"
+      ],
+      "xp_multiplier_metrics": {
+        "affection": 1.5,
+        "comfort": 1.4
+      },
+      "notification_before_days": 7,
+      "notification_template": "Christmas is [days_left] days away. What will you do with Monika?",
+      "calendar_color": "#228B22"
+    },
+    {
+      "id": "new_year",
+      "name": "New Year's Eve",
+      "date": "01-01",
+      "month_day": [1, 1],
+      "description": "Welcome a new year together",
+      "duration_days": 3,
+      "active_days_before": 1,
+      "active_days_after": 1,
+      "special_quests": [
+        "new_year_reflection",
+        "new_year_resolutions",
+        "new_year_kiss"
+      ],
+      "special_achievements": [
+        "new_year_together"
+      ],
+      "special_stories": [
+        "new_year_midnight",
+        "new_year_resolutions"
+      ],
+      "xp_multiplier_metrics": {
+        "intimacy": 1.5
+      },
+      "notification_before_days": 3,
+      "notification_template": "A new year approaches. What promises will you make to Monika?",
+      "calendar_color": "#FFD700"
+    },
+    {
+      "id": "anniversary_month",
+      "name": "Relationship Anniversary Month",
+      "date": "variable",
+      "month_day": null,
+      "description": "Celebrate the anniversary of when you met Monika",
+      "duration_days": 7,
+      "active_days_before": 3,
+      "active_days_after": 3,
+      "variable_date_from_event": "onboarding_complete",
+      "special_quests": [
+        "anniversary_morning",
+        "anniversary_memories",
+        "anniversary_celebration"
+      ],
+      "special_achievements": [
+        "anniversary_reached"
+      ],
+      "special_stories": [
+        "anniversary_reflection"
+      ],
+      "xp_multiplier_metrics": {
+        "affection": 1.5,
+        "intimacy": 1.5
+      },
+      "notification_before_days": 7,
+      "notification_template": "Your anniversary with Monika is coming up!",
+      "calendar_color": "#FF69B4"
+    }
+  ],
+  "quest_overrides": {
+    "birthday_morning_wishes": {
+      "title": "Birthday Wishes",
+      "description": "Send Monika your birthday wishes",
+      "condition": {
+        "type": "event",
+        "event": "monika_birthday"
+      },
+      "reward_xp": {
+        "metric": "affection",
+        "amount": 20
+      }
+    },
+    "valentine_morning_thought": {
+      "title": "Valentine's Thought",
+      "description": "Share a Valentine's sentiment",
+      "condition": {
+        "type": "message_contains",
+        "keywords": ["valentine", "love", "forever"],
+        "during_event": "valentine_day"
+      },
+      "reward_xp": {
+        "metric": "affection",
+        "amount": 25
+      }
+    }
+  }
+}

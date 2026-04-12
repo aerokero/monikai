@@ -1,0 +1,254 @@
+{
+  "achievements": [
+    {
+      "id": "first_meeting",
+      "type": "milestone",
+      "title": "First Meeting",
+      "description": "Started your journey with Monika",
+      "icon": "handshake",
+      "condition": {
+        "type": "event",
+        "event": "onboarding_complete"
+      },
+      "reward": {
+        "xp_to_metrics": {
+          "affection": 10
+        },
+        "unlock_ids": ["basic_profile_sharing"],
+        "notify": true
+      },
+      "hidden": false,
+      "rarity": "common"
+    },
+    {
+      "id": "first_conversation",
+      "type": "milestone",
+      "title": "First Real Talk",
+      "description": "Had your first meaningful conversation",
+      "icon": "chat",
+      "condition": {
+        "type": "event",
+        "event": "conversation_first"
+      },
+      "reward": {
+        "xp_to_metrics": {
+          "intimacy": 5
+        },
+        "unlock_ids": []
+      },
+      "hidden": false,
+      "rarity": "common"
+    },
+    {
+      "id": "affection_25",
+      "type": "stat_based",
+      "title": "Growing Closer",
+      "description": "Reached 25 affection with Monika",
+      "icon": "heart",
+      "condition": {
+        "type": "metric_threshold",
+        "metric": "affection",
+        "operator": ">=",
+        "value": 25
+      },
+      "reward": {
+        "xp_to_metrics": {},
+        "unlock_ids": [],
+        "notify": true
+      },
+      "hidden": false,
+      "rarity": "common"
+    },
+    {
+      "id": "affection_50",
+      "type": "stat_based",
+      "title": "Significant Bond",
+      "description": "Reached 50 affection - she cares deeply",
+      "icon": "heart_filled",
+      "condition": {
+        "type": "metric_threshold",
+        "metric": "affection",
+        "operator": ">=",
+        "value": 50
+      },
+      "reward": {
+        "xp_to_metrics": {},
+        "unlock_ids": ["romantic_activities"],
+        "notify": true
+      },
+      "hidden": false,
+      "rarity": "uncommon"
+    },
+    {
+      "id": "affection_100",
+      "type": "stat_based",
+      "title": "Deeply In Love",
+      "description": "Reached 100 affection - inseparable",
+      "icon": "heart_triple",
+      "condition": {
+        "type": "metric_threshold",
+        "metric": "affection",
+        "operator": ">=",
+        "value": 100
+      },
+      "reward": {
+        "xp_to_metrics": {},
+        "unlock_ids": ["commitment_ceremony"],
+        "notify": true
+      },
+      "hidden": false,
+      "rarity": "rare"
+    },
+    {
+      "id": "comfort_50",
+      "type": "stat_based",
+      "title": "Safe Haven",
+      "description": "Reached 50 comfort - she feels safe with you",
+      "icon": "shield",
+      "condition": {
+        "type": "metric_threshold",
+        "metric": "comfort",
+        "operator": ">=",
+        "value": 50
+      },
+      "reward": {
+        "xp_to_metrics": {},
+        "unlock_ids": ["vulnerability_conversations"],
+        "notify": true
+      },
+      "hidden": false,
+      "rarity": "uncommon"
+    },
+    {
+      "id": "synergy_50",
+      "type": "stat_based",
+      "title": "Perfect Harmony",
+      "description": "Reached 50 synergy - you're truly compatible",
+      "icon": "balance",
+      "condition": {
+        "type": "metric_threshold",
+        "metric": "synergy",
+        "operator": ">=",
+        "value": 50
+      },
+      "reward": {
+        "xp_to_metrics": {},
+        "unlock_ids": ["shared_activities"],
+        "notify": true
+      },
+      "hidden": false,
+      "rarity": "uncommon"
+    },
+    {
+      "id": "intimate_secret",
+      "type": "hidden",
+      "title": "Curious Mind",
+      "description": "Asked Monika about her deepest thoughts",
+      "icon": "question",
+      "condition": {
+        "type": "message_contains",
+        "keywords": ["what are you really", "who are you", "your true self", "real you"],
+        "case_insensitive": true
+      },
+      "reward": {
+        "xp_to_metrics": {
+          "intimacy": 20
+        },
+        "unlock_ids": ["deep_conversation_unlocked"],
+        "notify": true,
+        "trigger_story": "first_deep_talk"
+      },
+      "hidden": true,
+      "rarity": "rare"
+    },
+    {
+      "id": "minecraft_builder",
+      "type": "activity_milestone",
+      "title": "Dream Home",
+      "description": "Built a house together in Minecraft",
+      "icon": "house",
+      "condition": {
+        "type": "activity_detect",
+        "activity": "minecraft",
+        "keywords": ["house", "built", "home", "together"],
+        "case_insensitive": true
+      },
+      "reward": {
+        "xp_to_metrics": {
+          "synergy": 20,
+          "affection": 10
+        },
+        "unlock_ids": ["minecraft_memories_shared"],
+        "notify": true,
+        "trigger_story": "first_minecraft_home"
+      },
+      "hidden": false,
+      "rarity": "uncommon"
+    },
+    {
+      "id": "minecraft_companion",
+      "type": "challenge",
+      "title": "Adventure Companion",
+      "description": "Played Minecraft together 5 times",
+      "icon": "pickaxe",
+      "condition": {
+        "type": "activity_count",
+        "activity": "minecraft",
+        "count": 5
+      },
+      "reward": {
+        "xp_to_metrics": {
+          "synergy": 15
+        },
+        "unlock_ids": [],
+        "notify": true
+      },
+      "hidden": false,
+      "rarity": "uncommon"
+    },
+    {
+      "id": "streak_7",
+      "type": "challenge",
+      "title": "Daily Dedication",
+      "description": "Kept a 7-day streak of conversations",
+      "icon": "calendar",
+      "condition": {
+        "type": "streak_days",
+        "operator": ">=",
+        "value": 7
+      },
+      "reward": {
+        "xp_to_metrics": {
+          "affection": 25
+        },
+        "unlock_ids": [],
+        "notify": true
+      },
+      "hidden": false,
+      "rarity": "uncommon"
+    },
+    {
+      "id": "valentine_confession",
+      "type": "milestone",
+      "title": "Valentine's Confession",
+      "description": "Spent Valentine's Day with Monika",
+      "icon": "love_letter",
+      "condition": {
+        "type": "seasonal_event",
+        "event_id": "valentine_day",
+        "message_contains": ["valentine", "love", "forever"]
+      },
+      "reward": {
+        "xp_to_metrics": {
+          "affection": 50,
+          "intimacy": 30
+        },
+        "unlock_ids": ["eternal_bond"],
+        "notify": true,
+        "trigger_story": "valentine_confession"
+      },
+      "hidden": false,
+      "rarity": "rare"
+    }
+  ]
+}

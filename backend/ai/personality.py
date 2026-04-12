@@ -10,6 +10,8 @@ from pathlib import Path
 from dataclasses import dataclass, asdict, field
 from typing import Optional, Callable, List, Dict, Any
 
+from backend.ai.integrated_progression_system import IntegratedProgressionSystem
+
 # -----------------------------------------------------------------------------
 # Configuration (tune here, no settings.json yet)
 # -----------------------------------------------------------------------------
@@ -23,6 +25,8 @@ PERSONALITY_CONFIG = {
     "save_interval_sec": 6,
     "max_notifications": 6,
 }
+
+PERSONALITY_SCHEMA_VERSION = 2
 
 QUEST_TEMPLATES = [
     {
@@ -90,6 +94,8 @@ UNLOCK_CATALOG = [
     {"id": "activity_shared_goal", "type": "activity", "label": "Wspólny cel na 7 dni", "requires_level": 7},
 ]
 
+_UNLOCK_REQUIRED_FIELDS = ("id", "type", "label", "requires_level")
+
 SELF_DISCLOSURE_WORDS = {
     "czuję", "czuje", "myślę", "mysle", "boję", "boje", "martwi", "martwię",
     "tęsknię", "tesknie", "pragnę", "pragne", "chcę", "chce", "potrzebuję",
@@ -136,6 +142,36 @@ def _yesterday_key(dt: Optional[datetime] = None) -> str:
     if dt is None:
         dt = datetime.now()
     return (dt - timedelta(days=1)).strftime("%Y-%m-%d")
+
+
+def _migrate_personality_state_dict(data: Dict[str, Any]) -> Dict[str, Any]:
+    migrated = dict(data or {})
+    try:
+        version = int(migrated.get("schema_version", 1) or 1)
+    except Exception:
+        version = 1
+
+    if version < 2:
+        raw_relationship = migrated.get("relationship")
+        relationship: Dict[str, Any] = dict(raw_relationship) if isinstance(raw_relationship, dict) else {}
+        raw_affect = migrated.get("affect")
+        affect: Dict[str, Any] = dict(raw_affect) if isinstance(raw_affect, dict) else {}
+
+        if "affection" in migrated and "closeness" not in relationship:
+            relationship["closeness"] = migrated.get("affection")
+
+        if "mood" in migrated and "mood" not in affect:
+            affect["mood"] = migrated.get("mood")
+
+        if relationship:
+            migrated["relationship"] = relationship
+        if affect:
+            migrated["affect"] = affect
+
+        version = 2
+
+    migrated["schema_version"] = min(version, PERSONALITY_SCHEMA_VERSION)
+    return migrated
 
 
 # -----------------------------------------------------------------------------
@@ -232,6 +268,7 @@ class UnlockItem:
 
 @dataclass
 class PersonalityState:
+    schema_version: int = PERSONALITY_SCHEMA_VERSION
     affection: float = 0.0
     mood: str = "neutral"
     energy: float = 0.8
@@ -263,7 +300,7 @@ class PersonalityState:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "PersonalityState":
-        data = data or {}
+        data = _migrate_personality_state_dict(data or {})
         base = cls()
         raw = asdict(base)
         raw.update(data)
@@ -284,10 +321,12 @@ class PersonalityState:
         for u in raw.get("unlocks", []) or []:
             try:
                 unlocks.append(UnlockItem.from_dict(u))
-            except Exception:
+            except Exception as e:
+                print(f"[Personality] Warning: skipping malformed unlock entry: {e}")
                 continue
 
         state = cls(
+            schema_version=int(raw.get("schema_version", PERSONALITY_SCHEMA_VERSION)),
             affection=float(raw.get("affection", base.affection)),
             mood=str(raw.get("mood", base.mood)),
             energy=float(raw.get("energy", base.energy)),
@@ -315,12 +354,6 @@ class PersonalityState:
             last_weekly_recap_text=raw.get("last_weekly_recap_text", base.last_weekly_recap_text),
             last_microgoal_ts=float(raw.get("last_microgoal_ts", base.last_microgoal_ts)),
         )
-
-        # Migration from old schema
-        if "relationship" not in data and "affection" in data:
-            state.relationship.closeness = float(state.affection)
-        if "affect" not in data and "mood" in data:
-            state.affect.mood = str(state.mood)
         return state
 
 
@@ -339,8 +372,85 @@ class PersonalitySystem:
 
         self._dirty = False
         self._last_save_ts = 0.0
+        self.unlock_catalog = self._load_unlock_catalog()
+
+        # Initialize progression system
+        self.progression = IntegratedProgressionSystem(user_id="default")
+        self.progression.initialize_or_load()
 
         self.load()
+
+    @staticmethod
+    def _validated_unlock_catalog(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        validated: List[Dict[str, Any]] = []
+        seen_ids = set()
+
+        for idx, raw in enumerate(items or []):
+            if not isinstance(raw, dict):
+                print(f"[Personality] Warning: unlock at index {idx} is not an object; skipping.")
+                continue
+
+            missing = [field for field in _UNLOCK_REQUIRED_FIELDS if field not in raw]
+            if missing:
+                print(f"[Personality] Warning: unlock at index {idx} missing fields {missing}; skipping.")
+                continue
+
+            unlock_id = str(raw.get("id") or "").strip()
+            unlock_type = str(raw.get("type") or "").strip()
+            unlock_label = str(raw.get("label") or "").strip()
+            try:
+                requires_level = int(raw.get("requires_level", 1))
+            except Exception:
+                print(f"[Personality] Warning: unlock '{unlock_id or idx}' has invalid requires_level; skipping.")
+                continue
+
+            if not unlock_id or not unlock_type or not unlock_label:
+                print(f"[Personality] Warning: unlock at index {idx} has empty required fields; skipping.")
+                continue
+
+            if unlock_id in seen_ids:
+                print(f"[Personality] Warning: duplicate unlock id '{unlock_id}' detected; skipping duplicate.")
+                continue
+
+            seen_ids.add(unlock_id)
+            validated.append(
+                {
+                    "id": unlock_id,
+                    "type": unlock_type,
+                    "label": unlock_label,
+                    "requires_level": max(1, requires_level),
+                }
+            )
+
+        if not validated:
+            print("[Personality] Warning: unlock catalog is empty after validation.")
+        return validated
+
+    def _load_unlock_catalog(self) -> List[Dict[str, Any]]:
+        config_path = self.storage_dir.parent / "personality_unlocks.json"
+        loaded_items: List[Dict[str, Any]] = []
+
+        if config_path.exists():
+            try:
+                raw = json.loads(config_path.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    maybe_items = raw.get("unlocks")
+                    if isinstance(maybe_items, list):
+                        loaded_items = maybe_items
+                elif isinstance(raw, list):
+                    loaded_items = raw
+            except Exception as e:
+                print(f"[Personality] Warning: failed to load unlock catalog from {config_path}: {e}")
+
+        if loaded_items:
+            validated = self._validated_unlock_catalog(loaded_items)
+            if validated:
+                print(f"[Personality] Loaded unlock catalog from {config_path} ({len(validated)} items).")
+                return validated
+
+        fallback = self._validated_unlock_catalog(UNLOCK_CATALOG)
+        print(f"[Personality] Using built-in unlock catalog fallback ({len(fallback)} items).")
+        return fallback
 
     # ------------------------------------------------------------------
     # Persistence
@@ -360,19 +470,21 @@ class PersonalitySystem:
         if self.on_update:
             self.on_update(self.state)
 
-    def save(self, force: bool = False):
+    def save(self, force: bool = False) -> bool:
         if not self._dirty and not force:
-            return
+            return True
         now = _now_ts()
         if not force and (now - self._last_save_ts) < PERSONALITY_CONFIG["save_interval_sec"]:
-            return
+            return True
         try:
             payload = asdict(self.state)
             self.storage_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
             self._dirty = False
             self._last_save_ts = now
+            return True
         except Exception as e:
             print(f"[Personality] Failed to save state: {e}")
+            return False
 
     def _mark_dirty(self):
         self._dirty = True
@@ -634,23 +746,36 @@ class PersonalitySystem:
         })
 
     def _queue_notification(self, payload: Dict[str, Any]):
-        self.state.notifications.append(payload)
+        item = dict(payload or {})
+        if "ts" not in item:
+            item["ts"] = _now_ts()
+        if not item.get("event_id"):
+            item["event_id"] = str(uuid.uuid4())
+
+        self.state.notifications.append(item)
         if len(self.state.notifications) > PERSONALITY_CONFIG["max_notifications"]:
+            dropped = len(self.state.notifications) - PERSONALITY_CONFIG["max_notifications"]
             self.state.notifications = self.state.notifications[-PERSONALITY_CONFIG["max_notifications"]:]
+            print(f"[Personality] Warning: dropped {dropped} old notification(s) due to queue limit.")
+        self._mark_dirty()
 
     def pop_notifications(self, max_items: int = 3) -> List[Dict[str, Any]]:
         if not self.state.notifications:
             return []
-        items = self.state.notifications[:max_items]
-        self.state.notifications = self.state.notifications[max_items:]
+        original = list(self.state.notifications)
+        items = original[:max_items]
+        self.state.notifications = original[max_items:]
         self._mark_dirty()
-        self.save()
+        if not self.save(force=True):
+            self.state.notifications = original
+            self._mark_dirty()
+            return []
         return items
 
     def _unlock_new_items(self, level: int):
         existing = {u.id for u in self.state.unlocks}
         newly = []
-        for item in UNLOCK_CATALOG:
+        for item in self.unlock_catalog:
             if item["requires_level"] <= level and item["id"] not in existing:
                 unlock = UnlockItem(
                     id=item["id"],
@@ -679,7 +804,7 @@ class PersonalitySystem:
             "consistency": growth.consistency,
             "communication": growth.communication,
         }
-        focus = min(metrics, key=metrics.get)
+        focus = min(metrics.items(), key=lambda item: item[1])[0]
 
         candidates = [t for t in QUEST_TEMPLATES if t["category"] in (focus, "bond")]
         if not candidates:
@@ -738,6 +863,26 @@ class PersonalitySystem:
         self._update_quests(signals, reciprocity)
         self._ensure_microgoal()
         self._prune_quests()
+
+        # Pass message to progression system for data-driven progression
+        try:
+            progression_signals = {
+                "sentiment": signals["sentiment"],
+                "self_disclosure": signals["self_disclosure"],
+                "question": signals["question"],
+            }
+            progression_result = self.progression.observe_message(text, sender, progression_signals)
+            # Queue any progression notifications for frontend
+            if progression_result.get("notifications"):
+                for notif in progression_result["notifications"]:
+                    self.state.notifications.append({
+                        "type": "progression",
+                        "title": notif.get("title", "Progression Update"),
+                        "body": notif.get("body", ""),
+                        "ts": _now_ts(),
+                    })
+        except Exception as e:
+            print(f"[Personality] Error in progression system: {e}")
 
         self._mark_dirty()
         self.save()

@@ -26,6 +26,7 @@ data/settings.json
 data/reference.jpg
 data/spotify_tokens.json
 data/spotify_oauth_state.json
+Monika After Story/
 
 # Runtime logs and local databases
 *.log

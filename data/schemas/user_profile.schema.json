@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "User Profile Schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique user identifier"
+    },
+    "name": {
+      "type": "string",
+      "description": "User's name"
+    },
+    "birthday": {
+      "type": "string",
+      "format": "date",
+      "description": "User's birthday (YYYY-MM-DD)"
+    },
+    "timezone": {
+      "type": "string",
+      "description": "User's timezone (e.g., 'Europe/Warsaw', 'America/New_York')"
+    },
+    "interests": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Array of user interests/hobbies"
+    },
+    "preferred_activities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["conversation", "gaming", "watching", "learning", "fitness", "music", "art", "reading"]
+      },
+      "description": "Preferred activities (influences daily quest generation)"
+    },
+    "communication_style": {
+      "type": "string",
+      "description": "How user prefers to communicate (freeform text)"
+    },
+    "onboarding_completed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When onboarding was completed"
+    },
+    "profile_version": {
+      "type": "integer",
+      "default": 2,
+      "description": "Schema version for migrations"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": ["id", "name", "timezone", "profile_version"]
+}
