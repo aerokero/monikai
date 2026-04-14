@@ -40,6 +40,8 @@ from ..ai.daily_briefing import DEFAULT_SECTIONS, build_daily_briefing, fetch_we
 from ..ai.personality_notifications import to_frontend_personality_event
 from ..integrations.media.authenticator import FaceAuthenticator
 from ..agents.kasa_agent import KasaAgent
+from ..agents.hue_agent import HueAgent
+from ..agents.home_assistant_agent import HomeAssistantAgent
 from ..agents.spotify_manager import SpotifyManager
 from ..agents.telegram_bot import TelegramBotService
 from ..integrations.games.minecraft_agent import MinecraftBotManager
@@ -104,6 +106,10 @@ minecraft_autonomy_state = {
     "last_bot_action_ts": 0.0,
 }
 
+# Smart home integrations
+hue_agent = None
+home_assistant_agent = None
+
 
 async def _emit_to_frontend(event: str, payload, room: str = None):
     target_room = room if room is not None else ACTIVE_FRONTEND_SID
@@ -138,6 +144,26 @@ async def lifespan(app: FastAPI):
 
     print("[SERVER] Startup: Initializing Kasa Agent...")
     await kasa_agent.initialize()
+
+    # Initialize Hue and Home Assistant agents
+    global hue_agent, home_assistant_agent
+    
+    print("[SERVER] Startup: Initializing Hue Agent...")
+    hue_config = SETTINGS.get("smart_home", {}).get("hue", {})
+    hue_agent = HueAgent(
+        bridge_ip=hue_config.get("bridge_ip"),
+        api_key=hue_config.get("api_key")
+    )
+    await hue_agent.initialize()
+    
+    print("[SERVER] Startup: Initializing Home Assistant Agent...")
+    ha_config = SETTINGS.get("smart_home", {}).get("home_assistant", {})
+    home_assistant_agent = HomeAssistantAgent(
+        ha_url=ha_config.get("url"),
+        ha_token=ha_config.get("token"),
+        entities_filter=ha_config.get("entities_filter", ["light.*", "switch.*"])
+    )
+    await home_assistant_agent.initialize()
 
     # Initialize Global Managers (Persistent across AI sessions)
     global calendar_manager, reminder_manager, personality_system, spotify_manager
@@ -802,6 +828,8 @@ def load_settings():
         try:
             with open(SETTINGS_FILE, 'r') as f:
                 loaded = json.load(f)
+                # Apply migrations for backward compatibility
+                loaded = _migrate_settings_v1_to_v2(loaded)
                 defaults_copy = json.loads(json.dumps(DEFAULT_SETTINGS))
                 if isinstance(loaded, dict):
                     SETTINGS = _deep_merge_dict(defaults_copy, loaded)
@@ -1335,7 +1363,12 @@ async def _build_daily_briefing_payload(language: str = "pl", force: bool = Fals
 load_settings()
 
 authenticator = None
-kasa_agent = KasaAgent(known_devices=SETTINGS.get("kasa_devices"))
+# Initialize Kasa agent with devices from new smart_home structure
+kasa_devices = SETTINGS.get("smart_home", {}).get("kasa", {}).get("devices", [])
+# Fallback to old location for backward compatibility
+if not kasa_devices:
+    kasa_devices = SETTINGS.get("kasa_devices", [])
+kasa_agent = KasaAgent(known_devices=kasa_devices)
 # tool_permissions is now SETTINGS["tool_permissions"]
 
 @app.get("/status")
@@ -1949,6 +1982,10 @@ async def start_audio(sid, data=None):
             
         )
         print("[SYSTEM NOTIFICATION] AudioLoop initialized successfully.")
+        
+        # Attach smart home agents
+        audio_loop.hue_agent = hue_agent
+        audio_loop.home_assistant_agent = home_assistant_agent
         
         # Set Minecraft bot manager reference
         audio_loop.minecraft_bot_manager = minecraft_bot_manager
@@ -3597,13 +3634,14 @@ async def discover_kasa(sid):
                 "model": d["model"]
             })
         
-        # Merge with existing to preserve any manual overrides? 
-        # For now, just overwrite with latest scan result + previously known if we want to be fancy,
-        # but user asked for "Any new devices that are scanned are added there".
-        # A simple full persistence of current state is safest.
-        SETTINGS["kasa_devices"] = saved_devices
+        # Save to new smart_home.kasa.devices structure
+        if "smart_home" not in SETTINGS:
+            SETTINGS["smart_home"] = {}
+        if "kasa" not in SETTINGS["smart_home"]:
+            SETTINGS["smart_home"]["kasa"] = {}
+        SETTINGS["smart_home"]["kasa"]["devices"] = saved_devices
         save_settings()
-        print(f"[SERVER] Saved {len(saved_devices)} Kasa devices to settings.")
+        print(f"[SERVER] Saved {len(saved_devices)} Kasa devices to settings (smart_home.kasa.devices).")
         
     except Exception as e:
         print(f"Error discovering kasa: {e}")

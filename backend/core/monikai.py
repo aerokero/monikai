@@ -3607,6 +3607,59 @@ class AudioLoop:
         except Exception as e:
             print(f"[AI DEBUG] [ERR] Failed to send OpenClaw fork result to model: {e}")
 
+    async def _execute_device_action(self, agent, target: str, action: str, 
+                                     brightness: int = None, color: str = None) -> dict:
+        """
+        Execute a device action on a given smart home agent.
+        
+        Returns:
+            {"success": bool, "msg": str} - Execution result with message
+        """
+        result = {"success": False, "msg": ""}
+        
+        try:
+            if action == "turn_on":
+                success = await agent.turn_on(target)
+                if success:
+                    result["msg"] = f"Turned ON '{target}'."
+                    result["success"] = True
+                else:
+                    result["msg"] = f"Failed to turn ON '{target}'."
+                    
+            elif action == "turn_off":
+                success = await agent.turn_off(target)
+                if success:
+                    result["msg"] = f"Turned OFF '{target}'."
+                    result["success"] = True
+                else:
+                    result["msg"] = f"Failed to turn OFF '{target}'."
+                    
+            elif action == "set":
+                result["msg"] = f"Updated '{target}':"
+                result["success"] = True
+                
+                if brightness is not None:
+                    sb = await agent.set_brightness(target, brightness)
+                    if sb:
+                        result["msg"] += f" Set brightness to {brightness}%."
+                    else:
+                        result["msg"] += f" Brightness control not supported."
+                        
+                if color is not None:
+                    sc = await agent.set_color(target, color)
+                    if sc:
+                        result["msg"] += f" Set color to {color}."
+                    else:
+                        result["msg"] += f" Color control not supported."
+            else:
+                result["msg"] = f"Unknown action: {action}"
+                
+        except Exception as e:
+            result["msg"] = f"Error executing {action} on '{target}': {str(e)}"
+            result["success"] = False
+        
+        return result
+
     async def receive_audio(self):
         try:
             while True:
@@ -4324,53 +4377,74 @@ class AudioLoop:
                                     result_msg = f"Action '{action}' on '{target}' failed."
                                     success = False
 
-                                    if action == "turn_on":
-                                        success = await self.kasa_agent.turn_on(target)
-                                        if success:
-                                            result_msg = f"Turned ON '{target}'."
-                                    elif action == "turn_off":
-                                        success = await self.kasa_agent.turn_off(target)
-                                        if success:
-                                            result_msg = f"Turned OFF '{target}'."
-                                    elif action == "set":
+                                    # Multi-platform device control with fallback resolution
+                                    # Try Kasa first, then Hue, then Home Assistant
+                                    
+                                    async def execute_on_platforms():
+                                        """Execute action on available platforms and return result"""
+                                        results = []
+                                        
+                                        # Try Kasa
+                                        if self.kasa_agent:
+                                            try:
+                                                exec_result = await self._execute_device_action(
+                                                    self.kasa_agent, target, action, brightness, color
+                                                )
+                                                if exec_result["success"]:
+                                                    results.append(("kasa", exec_result))
+                                            except Exception as e:
+                                                print(f"[control_light] Kasa error: {e}")
+                                        
+                                        # Try Hue
+                                        if hasattr(self, 'hue_agent') and self.hue_agent:
+                                            try:
+                                                exec_result = await self._execute_device_action(
+                                                    self.hue_agent, target, action, brightness, color
+                                                )
+                                                if exec_result["success"]:
+                                                    results.append(("hue", exec_result))
+                                            except Exception as e:
+                                                print(f"[control_light] Hue error: {e}")
+                                        
+                                        # Try Home Assistant
+                                        if hasattr(self, 'home_assistant_agent') and self.home_assistant_agent:
+                                            try:
+                                                exec_result = await self._execute_device_action(
+                                                    self.home_assistant_agent, target, action, brightness, color
+                                                )
+                                                if exec_result["success"]:
+                                                    results.append(("home_assistant", exec_result))
+                                            except Exception as e:
+                                                print(f"[control_light] Home Assistant error: {e}")
+                                        
+                                        return results
+                                    
+                                    results = await execute_on_platforms()
+                                    
+                                    if results:
                                         success = True
-                                        result_msg = f"Updated '{target}':"
-
-                                    if success or action == "set":
-                                        if brightness is not None:
-                                            sb = await self.kasa_agent.set_brightness(target, brightness)
-                                            if sb:
-                                                result_msg += f" Set brightness to {brightness}."
-                                        if color is not None:
-                                            sc = await self.kasa_agent.set_color(target, color)
-                                            if sc:
-                                                result_msg += f" Set color to {color}."
+                                        # Build result message
+                                        if len(results) == 1:
+                                            platform, exec_result = results[0]
+                                            result_msg = exec_result["msg"]
+                                        else:
+                                            # Multiple platforms matched (rare but possible with same name)
+                                            targets = [f"{msg} ({platform})" for platform, exec_result in results 
+                                                      for msg in [exec_result["msg"]]]
+                                            result_msg = "Updated: " + "; ".join(targets)
+                                    else:
+                                        result_msg = f"Device '{target}' not found on any platform (Kasa, Hue, Home Assistant)."
+                                        success = False
 
                                     if success and self.on_device_update:
+                                        # Collect and emit updated device list from all platforms
                                         updated_list = []
-                                        for ip, dev in self.kasa_agent.devices.items():
-                                            dev_type = "unknown"
-                                            if dev.is_bulb:
-                                                dev_type = "bulb"
-                                            elif dev.is_plug:
-                                                dev_type = "plug"
-                                            elif dev.is_strip:
-                                                dev_type = "strip"
-                                            elif dev.is_dimmer:
-                                                dev_type = "dimmer"
-                                            updated_list.append(
-                                                {
-                                                    "ip": ip,
-                                                    "alias": dev.alias,
-                                                    "model": dev.model,
-                                                    "type": dev_type,
-                                                    "is_on": dev.is_on,
-                                                    "brightness": dev.brightness if dev.is_bulb or dev.is_dimmer else None,
-                                                    "hsv": dev.hsv if dev.is_bulb and dev.is_color else None,
-                                                    "has_color": dev.is_color if dev.is_bulb else False,
-                                                    "has_brightness": dev.is_dimmable if dev.is_bulb or dev.is_dimmer else False,
-                                                }
-                                            )
+                                        if self.kasa_agent:
+                                            updated_list.extend(self.kasa_agent.serialize_devices())
+                                        if hasattr(self, 'hue_agent') and self.hue_agent:
+                                            updated_list.extend(self.hue_agent.serialize_devices())
+                                        if hasattr(self, 'home_assistant_agent') and self.home_assistant_agent:
+                                            updated_list.extend(self.home_assistant_agent.serialize_devices())
                                         self.on_device_update(updated_list)
                                     elif not success and self.on_error:
                                         self.on_error(result_msg)
