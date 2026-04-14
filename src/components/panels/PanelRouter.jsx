@@ -11,7 +11,6 @@ import CompanionWindow from '../CompanionWindow';
 import StudyShellPanel from './StudyShellPanel';
 import NotesShellPanel from './NotesShellPanel';
 import DailyBriefingShellPanel from './DailyBriefingShellPanel';
-import GoalsShellPanel from './GoalsShellPanel';
 import CalendarShellPanel from './CalendarShellPanel';
 import ProfileShellPanel from './ProfileShellPanel';
 
@@ -21,7 +20,6 @@ const PANEL_COMPONENTS = {
   notes: NotesShellPanel,
   daily_briefing: DailyBriefingShellPanel,
   companion: CompanionWindow,
-  goals: GoalsShellPanel,
   calendar: CalendarShellPanel,
   profile: ProfileShellPanel,
 };

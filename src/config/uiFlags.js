@@ -15,29 +15,6 @@ const readLocalFlag = (key) => {
   }
 };
 
-export const isAdaptiveShellEnabled = () => {
-  const localOverride = readLocalFlag('monikai.ui.adaptive_shell');
-  if (localOverride !== null) {
-    return parseBooleanFlag(localOverride, false);
-  }
-
-  const envFlag = import.meta.env.VITE_ENABLE_ADAPTIVE_SHELL;
-  return parseBooleanFlag(envFlag, false);
-};
-
-export const setAdaptiveShellEnabled = (enabled) => {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem('monikai.ui.adaptive_shell', enabled ? 'true' : 'false');
-  } catch {
-    // ignore storage errors
-  }
-};
-
-/**
- * Check if Monika-First Shell (new Monika-centric UI) is enabled
- * @returns {boolean}
- */
 export const isMonikaShellEnabled = () => {
   const localOverride = readLocalFlag('monikai.ui.monika_shell');
   if (localOverride !== null) {
@@ -60,5 +37,3 @@ export const setMonikaShellEnabled = (enabled) => {
     // ignore storage errors
   }
 };
-
-export { parseBooleanFlag };

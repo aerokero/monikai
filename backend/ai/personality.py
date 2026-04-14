@@ -10,8 +10,6 @@ from pathlib import Path
 from dataclasses import dataclass, asdict, field
 from typing import Optional, Callable, List, Dict, Any
 
-from backend.ai.integrated_progression_system import IntegratedProgressionSystem
-
 # -----------------------------------------------------------------------------
 # Configuration (tune here, no settings.json yet)
 # -----------------------------------------------------------------------------
@@ -27,74 +25,6 @@ PERSONALITY_CONFIG = {
 }
 
 PERSONALITY_SCHEMA_VERSION = 2
-
-QUEST_TEMPLATES = [
-    {
-        "key": "reflect_mood",
-        "title": "Mini-refleksja",
-        "description": "Powiedz 1–2 zdania o tym, jak się dziś czujesz i dlaczego.",
-        "category": "reflection",
-        "target": 1.0,
-        "visibility": "visible",
-        "reward_xp": 18.0,
-    },
-    {
-        "key": "share_highlight",
-        "title": "Dzisiejszy moment",
-        "description": "Opowiedz o jednym drobnym momencie z dnia, który coś w Tobie zostawił.",
-        "category": "reflection",
-        "target": 1.0,
-        "visibility": "visible",
-        "reward_xp": 16.0,
-    },
-    {
-        "key": "ask_monika",
-        "title": "Pytanie do Moniki",
-        "description": "Zadaj mi jedno szczere pytanie o mnie albo o nas.",
-        "category": "curiosity",
-        "target": 1.0,
-        "visibility": "visible",
-        "reward_xp": 12.0,
-    },
-    {
-        "key": "tiny_plan",
-        "title": "Mikroplan",
-        "description": "Powiedz, co dziś chcesz zrobić jako jedną małą rzecz dla siebie.",
-        "category": "consistency",
-        "target": 1.0,
-        "visibility": "visible",
-        "reward_xp": 12.0,
-    },
-    {
-        "key": "shared_activity",
-        "title": "Wspólny pomysł",
-        "description": "Zaproponuj drobną wspólną aktywność (muzyka, mini‑gra, pytanie dnia).",
-        "category": "bond",
-        "target": 1.0,
-        "visibility": "visible",
-        "reward_xp": 14.0,
-    },
-    {
-        "key": "hidden_support",
-        "title": "Ciche wsparcie",
-        "description": "Bądź dziś dla siebie łagodny/łagodna i powiedz mi, że chcesz spokoju.",
-        "category": "reflection",
-        "target": 1.0,
-        "visibility": "hidden",
-        "reward_xp": 12.0,
-    },
-]
-
-UNLOCK_CATALOG = [
-    {"id": "topic_poetry", "type": "topic", "label": "Wątek: poezja i cytaty", "requires_level": 2},
-    {"id": "activity_playlist", "type": "activity", "label": "Wspólna playlista na tydzień", "requires_level": 3},
-    {"id": "topic_memory", "type": "topic", "label": "Wątek: wspomnienia i pierwszy raz", "requires_level": 4},
-    {"id": "activity_reflection", "type": "activity", "label": "Mini‑dziennik refleksji", "requires_level": 5},
-    {"id": "reward_scene", "type": "reward", "label": "Nowa scena i nastrój rozmowy", "requires_level": 6},
-    {"id": "activity_shared_goal", "type": "activity", "label": "Wspólny cel na 7 dni", "requires_level": 7},
-]
-
-_UNLOCK_REQUIRED_FIELDS = ("id", "type", "label", "requires_level")
 
 SELF_DISCLOSURE_WORDS = {
     "czuję", "czuje", "myślę", "mysle", "boję", "boje", "martwi", "martwię",
@@ -215,58 +145,6 @@ class GrowthState:
 
 
 @dataclass
-class Quest:
-    id: str
-    title: str
-    description: str
-    category: str
-    visibility: str
-    target: float = 1.0
-    progress: float = 0.0
-    status: str = "active"
-    reward_xp: float = 0.0
-    created_ts: float = field(default_factory=_now_ts)
-    due_ts: Optional[float] = None
-    template_key: Optional[str] = None
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Quest":
-        return cls(
-            id=str(data.get("id") or uuid.uuid4()),
-            title=str(data.get("title") or "Quest"),
-            description=str(data.get("description") or ""),
-            category=str(data.get("category") or "bond"),
-            visibility=str(data.get("visibility") or "visible"),
-            target=float(data.get("target", 1.0)),
-            progress=float(data.get("progress", 0.0)),
-            status=str(data.get("status", "active")),
-            reward_xp=float(data.get("reward_xp", 0.0)),
-            created_ts=float(data.get("created_ts", _now_ts())),
-            due_ts=data.get("due_ts"),
-            template_key=data.get("template_key"),
-        )
-
-
-@dataclass
-class UnlockItem:
-    id: str
-    type: str
-    label: str
-    unlocked_ts: float = field(default_factory=_now_ts)
-    requires_level: int = 1
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "UnlockItem":
-        return cls(
-            id=str(data.get("id") or ""),
-            type=str(data.get("type") or "reward"),
-            label=str(data.get("label") or ""),
-            unlocked_ts=float(data.get("unlocked_ts", _now_ts())),
-            requires_level=int(data.get("requires_level", 1)),
-        )
-
-
-@dataclass
 class PersonalityState:
     schema_version: int = PERSONALITY_SCHEMA_VERSION
     affection: float = 0.0
@@ -289,14 +167,7 @@ class PersonalityState:
     affect: AffectState = field(default_factory=AffectState)
     relationship: RelationshipState = field(default_factory=RelationshipState)
     growth: GrowthState = field(default_factory=GrowthState)
-    quests: List[Quest] = field(default_factory=list)
-    unlocks: List[UnlockItem] = field(default_factory=list)
     notifications: List[Dict[str, Any]] = field(default_factory=list)
-
-    last_weekly_recap_ts: float = 0.0
-    weekly_recap_pending: bool = False
-    last_weekly_recap_text: Optional[str] = None
-    last_microgoal_ts: float = 0.0
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "PersonalityState":
@@ -309,21 +180,6 @@ class PersonalityState:
         affect = AffectState(**{**asdict(base.affect), **(raw.get("affect") or {})})
         relationship = RelationshipState(**{**asdict(base.relationship), **(raw.get("relationship") or {})})
         growth = GrowthState(**{**asdict(base.growth), **(raw.get("growth") or {})})
-
-        quests = []
-        for q in raw.get("quests", []) or []:
-            try:
-                quests.append(Quest.from_dict(q))
-            except Exception:
-                continue
-
-        unlocks = []
-        for u in raw.get("unlocks", []) or []:
-            try:
-                unlocks.append(UnlockItem.from_dict(u))
-            except Exception as e:
-                print(f"[Personality] Warning: skipping malformed unlock entry: {e}")
-                continue
 
         state = cls(
             schema_version=int(raw.get("schema_version", PERSONALITY_SCHEMA_VERSION)),
@@ -346,13 +202,7 @@ class PersonalityState:
             affect=affect,
             relationship=relationship,
             growth=growth,
-            quests=quests,
-            unlocks=unlocks,
             notifications=list(raw.get("notifications") or []),
-            last_weekly_recap_ts=float(raw.get("last_weekly_recap_ts", base.last_weekly_recap_ts)),
-            weekly_recap_pending=bool(raw.get("weekly_recap_pending", base.weekly_recap_pending)),
-            last_weekly_recap_text=raw.get("last_weekly_recap_text", base.last_weekly_recap_text),
-            last_microgoal_ts=float(raw.get("last_microgoal_ts", base.last_microgoal_ts)),
         )
         return state
 
@@ -372,11 +222,6 @@ class PersonalitySystem:
 
         self._dirty = False
         self._last_save_ts = 0.0
-        self.unlock_catalog = self._load_unlock_catalog()
-
-        # Initialize progression system
-        self.progression = IntegratedProgressionSystem(user_id="default")
-        self.progression.initialize_or_load()
 
         self.load()
 
@@ -423,34 +268,8 @@ class PersonalitySystem:
             )
 
         if not validated:
-            print("[Personality] Warning: unlock catalog is empty after validation.")
+            print("[Personality] Warning: unlock catalog validation passed.")
         return validated
-
-    def _load_unlock_catalog(self) -> List[Dict[str, Any]]:
-        config_path = self.storage_dir.parent / "personality_unlocks.json"
-        loaded_items: List[Dict[str, Any]] = []
-
-        if config_path.exists():
-            try:
-                raw = json.loads(config_path.read_text(encoding="utf-8"))
-                if isinstance(raw, dict):
-                    maybe_items = raw.get("unlocks")
-                    if isinstance(maybe_items, list):
-                        loaded_items = maybe_items
-                elif isinstance(raw, list):
-                    loaded_items = raw
-            except Exception as e:
-                print(f"[Personality] Warning: failed to load unlock catalog from {config_path}: {e}")
-
-        if loaded_items:
-            validated = self._validated_unlock_catalog(loaded_items)
-            if validated:
-                print(f"[Personality] Loaded unlock catalog from {config_path} ({len(validated)} items).")
-                return validated
-
-        fallback = self._validated_unlock_catalog(UNLOCK_CATALOG)
-        print(f"[Personality] Using built-in unlock catalog fallback ({len(fallback)} items).")
-        return fallback
 
     # ------------------------------------------------------------------
     # Persistence
@@ -859,30 +678,6 @@ class PersonalitySystem:
         valence_delta = signals["sentiment"] * 0.18 + (0.05 if signals["self_disclosure"] else 0.0)
         arousal_delta = signals["arousal_hint"] + (0.05 if signals["question"] else 0.0)
         self._apply_affect(valence_delta, arousal_delta)
-
-        self._update_quests(signals, reciprocity)
-        self._ensure_microgoal()
-        self._prune_quests()
-
-        # Pass message to progression system for data-driven progression
-        try:
-            progression_signals = {
-                "sentiment": signals["sentiment"],
-                "self_disclosure": signals["self_disclosure"],
-                "question": signals["question"],
-            }
-            progression_result = self.progression.observe_message(text, sender, progression_signals)
-            # Queue any progression notifications for frontend
-            if progression_result.get("notifications"):
-                for notif in progression_result["notifications"]:
-                    self.state.notifications.append({
-                        "type": "progression",
-                        "title": notif.get("title", "Progression Update"),
-                        "body": notif.get("body", ""),
-                        "ts": _now_ts(),
-                    })
-        except Exception as e:
-            print(f"[Personality] Error in progression system: {e}")
 
         self._mark_dirty()
         self.save()

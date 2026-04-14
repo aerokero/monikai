@@ -1,9 +1,11 @@
 import asyncio
 from kasa import Discover
+from .base_agent import BaseSmartHomeAgent
 
-class KasaAgent:
+
+class KasaAgent(BaseSmartHomeAgent):
     def __init__(self, known_devices=None):
-        self.devices = {}
+        super().__init__(name="kasa")
         self.known_devices_config = [d for d in (known_devices or []) if isinstance(d, dict) and d.get("ip")]
         self._known_devices_by_ip = {str(d["ip"]): dict(d) for d in self.known_devices_config}
 

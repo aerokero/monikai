@@ -1,5 +1,17 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { useLanguage } from './LanguageContext';
+import {
+  formatMetrics,
+  formatQuestsBySlot,
+  formatAchievements,
+  formatUnlocks,
+} from '../utils/progressionTransformers';
+import {
+  registerProgressionSocketHandlers,
+  unregisterProgressionSocketHandlers,
+  emitQuestCompletion,
+  emitProfileUpdate,
+} from '../utils/progressionSocket';
 
 const ProgressionContext = createContext();
 
@@ -13,102 +25,115 @@ export const useProgression = () => {
 
 const API_BASE = 'http://localhost:8000/api/progression';
 
-export const ProgressionProvider = ({ children }) => {
+export const ProgressionProvider = ({ children, socket, pushToast }) => {
   const { lang } = useLanguage();
   
-  const [profile, setProfile] = useState(null);
-  const [metrics, setMetrics] = useState(null);
-  const [quests, setQuests] = useState([]);
-  const [achievements, setAchievements] = useState({ unlocked: [], locked: [] });
-  const [unlocks, setUnlocks] = useState([]);
-  const [notifications, setNotifications] = useState([]);
+  // State for progression data
+  const [profile, setProfileState] = useState(null);
+  const [metrics, setMetricsState] = useState(null);
+  const [quests, setQuestsState] = useState({ morning: [], afternoon: [], evening: [] });
+  const [achievements, setAchievementsState] = useState({ unlocked: [], locked: [] });
+  const [unlocks, setUnlocksState] = useState({ byCategory: {} });
+  const [notifications, setNotificationsState] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  
+  // Refs to track initialization
+  const hasInitialized = useRef(false);
+  const socketRegisteredRef = useRef(false);
 
-  // Fetch profile
+  // =====================================================================
+  // Fetch Functions (on-demand, for initial load)
+  // =====================================================================
+
   const fetchProfile = useCallback(async () => {
     try {
-      setIsLoading(true);
       const res = await fetch(`${API_BASE}/profile`);
+      if (!res.ok) throw new Error('Failed to fetch profile');
       const data = await res.json();
-      setProfile(data);
+      setProfileState(data);
       setError(null);
+      return data;
     } catch (err) {
-      console.error('Failed to fetch profile:', err);
+      console.error('[Progression] Failed to fetch profile:', err);
       setError(err.message);
-    } finally {
-      setIsLoading(false);
     }
   }, []);
 
-  // Fetch metrics
   const fetchMetrics = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/metrics`);
+      if (!res.ok) throw new Error('Failed to fetch metrics');
       const data = await res.json();
-      setMetrics(data);
+      const formatted = formatMetrics(data);
+      setMetricsState(formatted);
       setError(null);
+      return formatted;
     } catch (err) {
-      console.error('Failed to fetch metrics:', err);
+      console.error('[Progression] Failed to fetch metrics:', err);
       setError(err.message);
     }
   }, []);
 
-  // Fetch today's quests
   const fetchQuests = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/quests/today`);
+      if (!res.ok) throw new Error('Failed to fetch quests');
       const data = await res.json();
-      setQuests(data.quests || []);
+      const formatted = formatQuestsBySlot(data.quests || []);
+      setQuestsState(formatted);
       setError(null);
+      return formatted;
     } catch (err) {
-      console.error('Failed to fetch quests:', err);
+      console.error('[Progression] Failed to fetch quests:', err);
       setError(err.message);
     }
   }, []);
 
-  // Fetch achievements
   const fetchAchievements = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/achievements`);
+      if (!res.ok) throw new Error('Failed to fetch achievements');
       const data = await res.json();
-      setAchievements({
-        unlocked: data.unlocked || [],
-        locked: data.locked || [],
-      });
+      const formatted = formatAchievements(data);
+      setAchievementsState(formatted);
       setError(null);
+      return formatted;
     } catch (err) {
-      console.error('Failed to fetch achievements:', err);
+      console.error('[Progression] Failed to fetch achievements:', err);
       setError(err.message);
     }
   }, []);
 
-  // Fetch unlocks
   const fetchUnlocks = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/unlocks`);
+      if (!res.ok) throw new Error('Failed to fetch unlocks');
       const data = await res.json();
-      setUnlocks(data.active_unlocks || []);
+      const formatted = formatUnlocks(data);
+      setUnlocksState(formatted);
       setError(null);
+      return formatted;
     } catch (err) {
-      console.error('Failed to fetch unlocks:', err);
+      console.error('[Progression] Failed to fetch unlocks:', err);
       setError(err.message);
     }
   }, []);
 
-  // Fetch notifications
   const fetchNotifications = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/notifications`);
+      if (!res.ok) throw new Error('Failed to fetch notifications');
       const data = await res.json();
-      setNotifications(data.notifications || []);
+      setNotificationsState(data.notifications || []);
       setError(null);
+      return data.notifications;
     } catch (err) {
-      console.error('Failed to fetch notifications:', err);
+      console.error('[Progression] Failed to fetch notifications:', err);
+      // Don't set error for non-critical notifications
     }
   }, []);
 
-  // Fetch all data
   const fetchAll = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -122,21 +147,94 @@ export const ProgressionProvider = ({ children }) => {
       ]);
       setError(null);
     } catch (err) {
-      console.error('Failed to fetch progression data:', err);
+      console.error('[Progression] Failed to fetch progression data:', err);
       setError(err.message);
     } finally {
       setIsLoading(false);
     }
   }, [fetchProfile, fetchMetrics, fetchQuests, fetchAchievements, fetchUnlocks, fetchNotifications]);
 
-  // Auto-fetch on mount and every 10 seconds
+  // =====================================================================
+  // Socket.io Integration
+  // =====================================================================
+
   useEffect(() => {
-    fetchAll();
-    const interval = setInterval(fetchAll, 10000);
-    return () => clearInterval(interval);
-  }, [fetchAll]);
+    // Initial data fetch on mount (hydration)
+    if (!hasInitialized.current) {
+      fetchAll();
+      hasInitialized.current = true;
+    }
+
+    // Register Socket.io handlers only once
+    if (socket && !socketRegisteredRef.current) {
+      const contextActions = {
+        setMetrics: (data) => {
+          if (data.metrics) {
+            setMetricsState(data);
+          }
+        },
+        setQuests: (data) => {
+          if (data && typeof data === 'object') {
+            setQuestsState(data);
+          }
+        },
+        setAchievements: (data) => {
+          if (data && (data.unlocked || data.locked)) {
+            setAchievementsState(data);
+          }
+        },
+        setUnlocks: (data) => {
+          if (data && data.byCategory) {
+            setUnlocksState(data);
+          }
+        },
+        setNotifications: (data) => {
+          setNotificationsState(Array.isArray(data) ? data : []);
+        },
+        pushToast,
+      };
+
+      registerProgressionSocketHandlers(socket, contextActions);
+      socketRegisteredRef.current = true;
+    }
+
+    // Cleanup on unmount
+    return () => {
+      // Don't unregister handlers, keep listening for updates
+      // Only unregister if component is truly unmounting (rare)
+    };
+  }, [socket, fetchAll, pushToast]);
+
+  // =====================================================================
+  // Action Methods
+  // =====================================================================
+
+  const completeQuest = useCallback((questId) => {
+    if (socket) {
+      emitQuestCompletion(socket, questId);
+    }
+  }, [socket]);
+
+  const updateProfile = useCallback((profileFields) => {
+    if (socket) {
+      emitProfileUpdate(socket, profileFields);
+    }
+  }, [socket]);
+
+  const clearNotifications = useCallback(() => {
+    setNotificationsState([]);
+  }, []);
+
+  const removeNotification = useCallback((notificationId) => {
+    setNotificationsState(prev => prev.filter(n => n.id !== notificationId));
+  }, []);
+
+  // =====================================================================
+  // Context Value
+  // =====================================================================
 
   const value = {
+    // State
     profile,
     metrics,
     quests,
@@ -145,6 +243,8 @@ export const ProgressionProvider = ({ children }) => {
     notifications,
     isLoading,
     error,
+
+    // Fetch methods (on-demand)
     fetchProfile,
     fetchMetrics,
     fetchQuests,
@@ -152,6 +252,12 @@ export const ProgressionProvider = ({ children }) => {
     fetchUnlocks,
     fetchNotifications,
     fetchAll,
+
+    // Action methods
+    completeQuest,
+    updateProfile,
+    clearNotifications,
+    removeNotification,
   };
 
   return (

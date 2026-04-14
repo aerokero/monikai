@@ -5,10 +5,11 @@ import Visualizer from './components/Visualizer';
 import { X, Minus, Bell, AlertCircle } from 'lucide-react';
 import ConfirmationPopup from './components/ConfirmationPopup';
 import AuthLock from './components/AuthLock';
-import PersonalityWindow from './components/PersonalityWindow';
 import SessionPromptWindow from './components/SessionPromptWindow';
 import MinecraftWindow from './components/MinecraftWindow';
 import MinecraftConnectPopup from './components/MinecraftConnectPopup';
+import ScreenWindow from './components/ScreenWindow';
+import SettingsWindow from './components/SettingsWindow';
 import GoodbyePopup from './components/GoodbyePopup';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { LayoutProvider } from './contexts/LayoutContext';
@@ -16,9 +17,8 @@ import { useLayout } from './contexts/LayoutContext';
 import { ModeProvider } from './contexts/ModeContext';
 import { RealtimeProvider } from './contexts/RealtimeContext';
 import { useSettings } from './contexts/SettingsContext';
-import AdaptiveShell from './layout/AdaptiveShell';
-import AdaptiveCommandRail from './layout/AdaptiveCommandRail';
-import { isAdaptiveShellEnabled, setAdaptiveShellEnabled, isMonikaShellEnabled, setMonikaShellEnabled } from './config/uiFlags';
+import { ProgressionProvider } from './contexts/ProgressionContext';
+import { isMonikaShellEnabled, setMonikaShellEnabled } from './config/uiFlags';
 import MonikaShell from './layout/MonikaShell';
 import { MonikaContextProvider } from './contexts/MonikaContext';
 import { SettingsProvider } from './contexts/SettingsContext';
@@ -73,8 +73,6 @@ const getClampedCenterX = (preferredX, windowWidth, panelWidth, margin = 12) => 
   });
 
 function AppContent({
-  adaptiveShellEnabled,
-  onToggleAdaptiveShell,
   monikaShellEnabled,
   onToggleMonikaShell,
 }) {
@@ -459,7 +457,6 @@ function AppContent({
   const [selectedMicId, setSelectedMicId] = useState(() => localStorage.getItem('selectedMicId') || '');
   const [selectedSpeakerId, setSelectedSpeakerId] = useState(() => localStorage.getItem('selectedSpeakerId') || '');
   const [selectedWebcamId, setSelectedWebcamId] = useState(() => localStorage.getItem('selectedWebcamId') || '');
-  const [showPersonalityWindow, setShowPersonalityWindow] = useState(false);
   const [toolPermissions, setToolPermissions] = useState({});
   const [skills, setSkills] = useState([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
@@ -540,20 +537,7 @@ function AppContent({
   // ---------------------------------------------------------------------
   const [toasts, setToasts] = useState([]);
 
-  useEffect(() => {
-    if (!adaptiveShellEnabled) return;
-    registerPanel('chat', { dock: 'bottom-rail', collapsed: false, priority: 100 });
-  }, [adaptiveShellEnabled, registerPanel]);
 
-  useEffect(() => {
-    if (!adaptiveShellEnabled) return;
-    setPanelVisibility('chat', true);
-    setPanelVisibility('minecraft', showMinecraftWindow);
-  }, [
-    adaptiveShellEnabled,
-    setPanelVisibility,
-    showMinecraftWindow,
-  ]);
   const makeId = () =>
     (typeof crypto !== "undefined" && crypto.randomUUID)
       ? crypto.randomUUID()
@@ -802,7 +786,8 @@ function AppContent({
         return;
       }
 
-      if (adaptiveShellEnabled) {
+      if (false) {
+        // Legacy AdaptiveShell layout - disabled
         const contentHeight = Math.max(420, height - topBarHeight);
         const railPad = isPortrait ? 84 : 74;
         const chatW = Math.min(isPortrait ? width - 34 : width - 48, isPortrait ? 680 : 860);
@@ -946,7 +931,7 @@ function AppContent({
     };
 
     layout();
-  }, [viewport.w, viewport.h, sessionMode.active, showStudyWindow, adaptiveShellEnabled, isPortrait]);
+  }, [viewport.w, viewport.h, sessionMode.active, showStudyWindow, isPortrait]);
 
   // ---------------------------------------------------------------------
   // Update refs when state changes
@@ -2546,9 +2531,6 @@ function AppContent({
   };
 
   const toggleWindowSmart = (windowId, isVisible, setVisibility) => {
-    if (adaptiveShellEnabled) {
-      setActivePanelId(windowId);
-    }
     handleToggleWindow(windowId, isVisible, setVisibility);
   };
 
@@ -2580,16 +2562,7 @@ function AppContent({
   const baseCharacterShift = monikaShellEnabled
     ? 0
     : Math.round(chatCenterX - viewport.w / 2) - 12;
-  const adaptiveAttentionShift = useMemo(() => {
-    if (monikaShellEnabled) return 0;
-    if (!adaptiveShellEnabled) return 0;
-    if (activePanelId === 'daily_briefing') return 68;
-    if (activePanelId === 'study') return -58;
-    if (activePanelId === 'notes') return -34;
-    if (activePanelId === 'goals') return 34;
-    if (activePanelId === 'chat') return 0;
-    return 0;
-  }, [monikaShellEnabled, adaptiveShellEnabled, activePanelId]);
+  const adaptiveAttentionShift = 0; // Legacy AdaptiveShell disabled
   const characterShift = baseCharacterShift + adaptiveAttentionShift;
   const viewportAspect = viewport.w / Math.max(viewport.h, 1);
   const isCompactViewport = viewport.h < 1100;
@@ -2666,8 +2639,6 @@ function AppContent({
             onAnimationComplete={() => setIsLockScreenVisible(false)}
           />
         )}
-
-        {showPersonalityWindow && <PersonalityWindow state={personalityState} />}
 
         <div className="fixed top-16 right-4 z-[100] flex flex-col gap-3 pointer-events-none">
           {toasts.map(t => (
@@ -2865,14 +2836,7 @@ function AppContent({
 }
 
 function App() {
-  const [adaptiveShellEnabled, setAdaptiveShellEnabledState] = useState(() => isAdaptiveShellEnabled());
   const [monikaShellEnabled, setMonikaShellEnabledState] = useState(() => isMonikaShellEnabled());
-
-  const handleToggleAdaptiveShell = useCallback((enabled) => {
-    const next = Boolean(enabled);
-    setAdaptiveShellEnabled(next);
-    setAdaptiveShellEnabledState(next);
-  }, []);
 
   const handleToggleMonikaShell = useCallback((enabled) => {
     const next = Boolean(enabled);
@@ -2912,23 +2876,10 @@ function App() {
               }
             `}</style>
 
-            {!monikaShellEnabled && adaptiveShellEnabled ? (
-              <AdaptiveShell>
-                <AppContent
-                  adaptiveShellEnabled={adaptiveShellEnabled}
-                  onToggleAdaptiveShell={handleToggleAdaptiveShell}
-                  monikaShellEnabled={monikaShellEnabled}
-                  onToggleMonikaShell={handleToggleMonikaShell}
-                />
-              </AdaptiveShell>
-            ) : (
-              <AppContent
-                adaptiveShellEnabled={adaptiveShellEnabled}
-                onToggleAdaptiveShell={handleToggleAdaptiveShell}
-                monikaShellEnabled={monikaShellEnabled}
-                onToggleMonikaShell={handleToggleMonikaShell}
-              />
-            )}
+            <AppContent
+              monikaShellEnabled={monikaShellEnabled}
+              onToggleMonikaShell={handleToggleMonikaShell}
+            />
           </RealtimeProvider>
         </ModeProvider>
       </LayoutProvider>

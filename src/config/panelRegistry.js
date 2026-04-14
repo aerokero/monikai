@@ -101,25 +101,6 @@ export const PANELS = {
     keyboardShortcut: 'Alt+5',
     hiddenInRail: true
   },
-  goals: {
-    id: 'goals',
-    name: 'Goals',
-    displayName: 'Goals',
-    description: 'Relationship progress and quests',
-    icon: 'Trophy',
-    contextKey: 'goals',
-    component: 'GoalsShellPanel',
-    order: 6,
-    draggable: false,
-    collapsible: true,
-    dockPreference: {
-      desktop: 'main-panel',
-      tablet: 'drawer',
-      portrait: 'drawer'
-    },
-    ariaLabel: 'Goals and progress',
-    keyboardShortcut: 'Alt+6'
-  },
   calendar: {
     id: 'calendar',
     name: 'Calendar',

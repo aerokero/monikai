@@ -491,7 +491,23 @@ DEFAULT_SETTINGS = {
         "spotify_recently_played": False,
         "write_file": True
     },# List of {host, port, name, type}
-    "kasa_devices": [], # List of {ip, alias, model}
+    "kasa_devices": [], # DEPRECATED: Use smart_home.kasa.devices instead (kept for migration)
+    "smart_home": {
+        "kasa": {
+            "devices": []  # List of {ip, alias, model}
+        },
+        "hue": {
+            "bridge_ip": None,
+            "api_key": None,
+            "devices": []
+        },
+        "home_assistant": {
+            "url": None,
+            "token": None,
+            "entities_filter": ["light.*", "switch.*"],
+            "entities": []
+        }
+    },
     "camera_flipped": False, # Invert cursor horizontal direction
     "camera_source": "frontend", # "frontend" uses UI stream; "backend" uses OpenCV
     "video_mode": "none", # none | screen | camera
@@ -759,6 +775,26 @@ def _deep_merge_dict(base: dict, override: dict) -> dict:
         else:
             merged[key] = value
     return merged
+
+
+def _migrate_settings_v1_to_v2(settings: dict) -> dict:
+    """
+    Migrate old settings format (kasa_devices at root) to new format (smart_home.kasa.devices).
+    This is called during load_settings to automatically upgrade old configs.
+    """
+    migrated = dict(settings)
+    
+    # Migrate old kasa_devices to new smart_home.kasa.devices
+    old_kasa = migrated.pop("kasa_devices", [])
+    if old_kasa and isinstance(old_kasa, list):
+        if "smart_home" not in migrated:
+            migrated["smart_home"] = {}
+        if "kasa" not in migrated["smart_home"]:
+            migrated["smart_home"]["kasa"] = {}
+        migrated["smart_home"]["kasa"]["devices"] = old_kasa
+        print("[SETTINGS] Migrated old kasa_devices to smart_home.kasa.devices")
+    
+    return migrated
 
 def load_settings():
     global SETTINGS
