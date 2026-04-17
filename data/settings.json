@@ -1,6 +1,6 @@
 {
     "face_auth_enabled": false,
-    "show_internal_thoughts": true,
+    "show_internal_thoughts": false,
     "tool_permissions": {
         "cancel_reminder": true,
         "control_light": true,
@@ -25,6 +25,25 @@
         "write_file": true
     },
     "kasa_devices": [],
+    "smart_home": {
+        "kasa": {
+            "devices": []
+        },
+        "hue": {
+            "bridge_ip": null,
+            "api_key": null,
+            "devices": []
+        },
+        "home_assistant": {
+            "url": null,
+            "token": null,
+            "entities_filter": [
+                "light.*",
+                "switch.*"
+            ],
+            "entities": []
+        }
+    },
     "camera_flipped": false,
     "camera_source": "frontend",
     "video_mode": "none",

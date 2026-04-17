@@ -31,7 +31,7 @@ from pathlib import Path
 from ..ai.memory_engine import MemoryEngine
 from .session_manager import SessionManager
 from ..ai.therapy_engine import TherapyEngine
-from .config import DATA_DIR, SETTINGS_PATH
+from .config import BASE_DIR, DATA_DIR, SETTINGS_PATH
 
 from dataclasses import dataclass, asdict
 from typing import Optional, Dict, Any, Callable, List, Tuple

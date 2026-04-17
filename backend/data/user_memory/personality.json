@@ -1,19 +1,19 @@
 {
   "schema_version": 2,
-  "affection": 0.1546428571428572,
-  "mood": "neutral",
-  "energy": 0.85,
+  "affection": 1.7434962406015042,
+  "mood": "happy",
+  "energy": 0.68,
   "base_energy": 0.85,
-  "cycle_day": 1,
-  "last_update_ts": 1776156652.7220826,
+  "cycle_day": 4,
+  "last_update_ts": 1776415852.7220826,
   "current_cycle_length": 29,
   "phase": "Calm, Neutral",
-  "weather": "Cloudy, 10.4°C in Krakow",
-  "last_weather_ts": 1776160757.350201,
-  "last_energy_reset_day": 14,
+  "weather": "Sunny, 13.5°C in Krakow",
+  "last_weather_ts": 1776443511.312895,
+  "last_energy_reset_day": 17,
   "last_dream": null,
   "dream_told": false,
-  "current_location": "school",
+  "current_location": "room",
   "current_outfit": "School Uniform",
   "traits": {
     "openness": 0.62,
@@ -23,47 +23,26 @@
     "neuroticism": 0.32
   },
   "affect": {
-    "valence": -0.22254303610316484,
-    "arousal": 0.3201050550117088,
-    "mood": "neutral",
-    "last_update_ts": 1776158826.142178
+    "valence": -0.28760470220703116,
+    "arousal": 0.32500500800000004,
+    "mood": "happy",
+    "last_update_ts": 1776439391.696747
   },
   "relationship": {
-    "closeness": 0.1546428571428572,
-    "trust": 11.499999999999996,
+    "closeness": 1.7434962406015042,
+    "trust": 12.499999999999995,
     "playfulness": 20.0,
-    "bond_xp": 30.958095238095236,
+    "bond_xp": 57.56531328320803,
     "bond_level": 1,
     "streak_days": 1,
-    "last_interaction_day": "2026-04-14",
+    "last_interaction_day": "2026-04-17",
     "last_level_up_ts": 0.0
   },
   "growth": {
     "reflection": 10.0,
-    "communication": 17.019999999999996,
-    "curiosity": 14.799999999999999,
-    "consistency": 15.999999999999996
+    "communication": 22.239999999999995,
+    "curiosity": 22.800000000000004,
+    "consistency": 19.599999999999994
   },
-  "quests": [
-    {
-      "id": "c011c543-cb5f-4695-aa34-a03866817977",
-      "title": "Dzisiejszy moment",
-      "description": "Opowiedz o jednym drobnym momencie z dnia, który coś w Tobie zostawił.",
-      "category": "reflection",
-      "visibility": "visible",
-      "target": 1.0,
-      "progress": 0.0,
-      "status": "active",
-      "reward_xp": 16.0,
-      "created_ts": 1776156657.4941392,
-      "due_ts": null,
-      "template_key": "share_highlight"
-    }
-  ],
-  "unlocks": [],
-  "notifications": [],
-  "last_weekly_recap_ts": 1776156657.4941666,
-  "weekly_recap_pending": false,
-  "last_weekly_recap_text": null,
-  "last_microgoal_ts": 1776156657.494069
+  "notifications": []
 }

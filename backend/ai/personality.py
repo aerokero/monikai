@@ -51,6 +51,12 @@ QUESTION_WORDS = {"dlaczego", "co", "jak", "czy", "kiedy", "gdzie", "po co", "il
 
 
 # -----------------------------------------------------------------------------
+# Quest Model
+# -----------------------------------------------------------------------------
+# Quest support removed - will be reworked
+
+
+# -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
 
@@ -224,52 +230,6 @@ class PersonalitySystem:
         self._last_save_ts = 0.0
 
         self.load()
-
-    @staticmethod
-    def _validated_unlock_catalog(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        validated: List[Dict[str, Any]] = []
-        seen_ids = set()
-
-        for idx, raw in enumerate(items or []):
-            if not isinstance(raw, dict):
-                print(f"[Personality] Warning: unlock at index {idx} is not an object; skipping.")
-                continue
-
-            missing = [field for field in _UNLOCK_REQUIRED_FIELDS if field not in raw]
-            if missing:
-                print(f"[Personality] Warning: unlock at index {idx} missing fields {missing}; skipping.")
-                continue
-
-            unlock_id = str(raw.get("id") or "").strip()
-            unlock_type = str(raw.get("type") or "").strip()
-            unlock_label = str(raw.get("label") or "").strip()
-            try:
-                requires_level = int(raw.get("requires_level", 1))
-            except Exception:
-                print(f"[Personality] Warning: unlock '{unlock_id or idx}' has invalid requires_level; skipping.")
-                continue
-
-            if not unlock_id or not unlock_type or not unlock_label:
-                print(f"[Personality] Warning: unlock at index {idx} has empty required fields; skipping.")
-                continue
-
-            if unlock_id in seen_ids:
-                print(f"[Personality] Warning: duplicate unlock id '{unlock_id}' detected; skipping duplicate.")
-                continue
-
-            seen_ids.add(unlock_id)
-            validated.append(
-                {
-                    "id": unlock_id,
-                    "type": unlock_type,
-                    "label": unlock_label,
-                    "requires_level": max(1, requires_level),
-                }
-            )
-
-        if not validated:
-            print("[Personality] Warning: unlock catalog validation passed.")
-        return validated
 
     # ------------------------------------------------------------------
     # Persistence
@@ -502,7 +462,6 @@ class PersonalitySystem:
                 "level": new_level,
                 "ts": _now_ts(),
             })
-            self._unlock_new_items(new_level)
 
     def _update_growth_from_signals(self, signals: Dict[str, Any], reciprocity: bool):
         self.state.growth.communication = _clamp(
@@ -527,42 +486,10 @@ class PersonalitySystem:
         self.state.relationship.last_interaction_day = today
 
     def _update_quests(self, signals: Dict[str, Any], reciprocity: bool):
-        for q in self.state.quests:
-            if q.status != "active":
-                continue
-            if q.category == "reflection" and signals["self_disclosure"]:
-                q.progress += 1.0
-            elif q.category == "curiosity" and signals["question"]:
-                q.progress += 1.0
-            elif q.category == "bond" and (signals["sentiment"] > 0.2 or signals["laughter"]):
-                q.progress += 1.0
-            elif q.category == "consistency" and reciprocity:
-                q.progress += 1.0
-            elif q.category == "activity" and signals["length_score"] > 0.6:
-                q.progress += 1.0
+        pass  # Quests removed - will be reworked
 
-            if q.progress >= q.target:
-                self._complete_quest(q)
-
-    def _complete_quest(self, quest: Quest):
-        if quest.status == "completed":
-            return
-        quest.status = "completed"
-        quest.progress = quest.target
-        if quest.reward_xp:
-            self.state.relationship.bond_xp += quest.reward_xp
-        self._queue_notification({
-            "type": "quest_complete",
-            "quest": asdict(quest),
-            "ts": _now_ts(),
-        })
-        self._append_journal_entry({
-            "type": "quest_complete",
-            "timestamp": _now_ts(),
-            "title": quest.title,
-            "content": quest.description,
-            "category": quest.category,
-        })
+    def _complete_quest(self, quest):
+        pass  # Quests removed - will be reworked
 
     def _queue_notification(self, payload: Dict[str, Any]):
         item = dict(payload or {})
@@ -591,67 +518,11 @@ class PersonalitySystem:
             return []
         return items
 
-    def _unlock_new_items(self, level: int):
-        existing = {u.id for u in self.state.unlocks}
-        newly = []
-        for item in self.unlock_catalog:
-            if item["requires_level"] <= level and item["id"] not in existing:
-                unlock = UnlockItem(
-                    id=item["id"],
-                    type=item["type"],
-                    label=item["label"],
-                    requires_level=item["requires_level"],
-                )
-                self.state.unlocks.append(unlock)
-                newly.append(asdict(unlock))
-        if newly:
-            self._queue_notification({"type": "unlocks", "items": newly, "ts": _now_ts()})
-
     def _ensure_microgoal(self):
-        now = _now_ts()
-        if (now - self.state.last_microgoal_ts) < PERSONALITY_CONFIG["microgoal_interval_hours"] * 3600:
-            return
-
-        active = [q for q in self.state.quests if q.status == "active"]
-        if len(active) >= PERSONALITY_CONFIG["max_active_quests"]:
-            return
-
-        growth = self.state.growth
-        metrics = {
-            "reflection": growth.reflection,
-            "curiosity": growth.curiosity,
-            "consistency": growth.consistency,
-            "communication": growth.communication,
-        }
-        focus = min(metrics.items(), key=lambda item: item[1])[0]
-
-        candidates = [t for t in QUEST_TEMPLATES if t["category"] in (focus, "bond")]
-        if not candidates:
-            candidates = QUEST_TEMPLATES
-
-        template = random.choice(candidates)
-        quest = Quest(
-            id=str(uuid.uuid4()),
-            title=template["title"],
-            description=template["description"],
-            category=template["category"],
-            visibility=template["visibility"],
-            target=float(template.get("target", 1.0)),
-            reward_xp=float(template.get("reward_xp", 0.0)),
-            template_key=template.get("key"),
-        )
-        self.state.quests.append(quest)
-        self.state.last_microgoal_ts = now
-        self._queue_notification({"type": "quest_new", "quest": asdict(quest), "ts": _now_ts()})
+        pass  # Quests removed - will be reworked
 
     def _prune_quests(self):
-        now = _now_ts()
-        kept = []
-        for q in self.state.quests:
-            if q.status == "completed" and (now - q.created_ts) > 21 * 86400:
-                continue
-            kept.append(q)
-        self.state.quests = kept
+        pass  # Quests removed - will be reworked
 
     def observe_message(self, sender: str, text: str):
         if not text:
@@ -707,7 +578,6 @@ class PersonalitySystem:
             self.state.last_dream = None
             self.state.dream_told = False
 
-            self._ensure_microgoal()
             self._roll_weekly_recap_if_due()
 
             self._mark_dirty()
@@ -742,19 +612,7 @@ class PersonalitySystem:
             "prompt": journal_prompt,
         })
 
-        if microgoals:
-            for goal in microgoals[:2]:
-                quest = Quest(
-                    id=str(uuid.uuid4()),
-                    title="Mikrocel tygodnia",
-                    description=str(goal).strip(),
-                    category="reflection",
-                    visibility="visible",
-                    target=1.0,
-                    reward_xp=18.0,
-                )
-                self.state.quests.append(quest)
-                self._queue_notification({"type": "quest_new", "quest": asdict(quest), "ts": _now_ts()})
+        # Microgoals/quests removed - will be reworked
 
         self._mark_dirty()
         self.save(force=True)
@@ -826,23 +684,7 @@ class PersonalitySystem:
     # Context prompt for model
     # ------------------------------------------------------------------
     def _format_visible_quests(self) -> str:
-        visible = [q for q in self.state.quests if q.status == "active" and q.visibility == "visible"]
-        if not visible:
-            return "- brak"
-        lines = []
-        for q in visible[:3]:
-            progress = f"{int(q.progress)}/{int(q.target)}" if q.target else "0/1"
-            lines.append(f"- {q.title} ({progress})")
-        return "\n".join(lines)
-
-    def _format_recent_unlocks(self) -> str:
-        if not self.state.unlocks:
-            return "- brak"
-        recent = sorted(self.state.unlocks, key=lambda u: u.unlocked_ts, reverse=True)
-        lines = []
-        for u in recent[:3]:
-            lines.append(f"- {u.label}")
-        return "\n".join(lines)
+        return ""  # Quests removed - will be reworked
 
     def get_context_prompt(self) -> str:
         phase = self.get_cycle_phase()
@@ -870,7 +712,4 @@ class PersonalitySystem:
             f"- Trust: {int(rel.trust)} / 100, Playfulness: {int(rel.playfulness)} / 100\n"
             f"- Growth: Reflection {int(growth.reflection)}, Communication {int(growth.communication)}, Curiosity {int(growth.curiosity)}, Consistency {int(growth.consistency)}\n"
             f"\n"
-            f"**Aktywne cele (widoczne):**\n{self._format_visible_quests()}\n"
-            f"\n"
-            f"**Ostatnio odblokowane:**\n{self._format_recent_unlocks()}\n"
         )

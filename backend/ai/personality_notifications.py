@@ -12,9 +12,6 @@ def _as_utc_iso(ts: Any) -> str:
 
 def _event_type_for(notification_type: str) -> str:
     mapping = {
-        "quest_new": "relationship.quest_new",
-        "quest_complete": "relationship.quest_complete",
-        "unlocks": "relationship.unlocks",
         "level_up": "relationship.level_up",
         "weekly_recap_due": "relationship.weekly_recap_due",
     }
@@ -27,7 +24,7 @@ def to_frontend_personality_event(notification: Dict[str, Any]) -> Dict[str, Any
     ntype = str(n.get("type") or "unknown")
 
     priority = "normal"
-    if ntype in {"level_up", "unlocks"}:
+    if ntype == "level_up":
         priority = "high"
     elif ntype == "quest_complete":
         priority = "medium"
@@ -65,32 +62,6 @@ def build_relationship_notification_lines(notifications: List[Dict[str, Any]]) -
 
         if ntype == "weekly_recap_due":
             weekly_recap_due = True
-            continue
-
-        if ntype == "quest_new":
-            quest = n.get("quest") or {}
-            if (quest.get("visibility") or "visible") == "visible":
-                title = quest.get("title") or "Nowy cel"
-                desc = quest.get("description") or ""
-                lines.append(f"Nowy cel: {title}. {desc}")
-            continue
-
-        if ntype == "quest_complete":
-            quest = n.get("quest") or {}
-            if (quest.get("visibility") or "visible") == "visible":
-                title = quest.get("title") or "Cel"
-                lines.append(f"Cel ukończony: {title}.")
-            continue
-
-        if ntype == "unlocks":
-            items = n.get("items") or []
-            labels = [
-                item.get("label")
-                for item in items
-                if isinstance(item, dict) and item.get("label")
-            ]
-            if labels:
-                lines.append("Odblokowane: " + "; ".join(labels))
             continue
 
         if ntype == "level_up":
