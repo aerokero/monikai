@@ -6,7 +6,6 @@ import base64
 import json
 import time
 import re
-import random
 from datetime import datetime
 from pathlib import Path
 
@@ -26,7 +25,6 @@ import socketio
 import uvicorn
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
 
 from ..integrations.media.study_reader import StudyReader
 from ..integrations.media.study_ocr import ocr_image_bytes
@@ -34,6 +32,14 @@ from dataclasses import asdict
 
 from . import monikai
 from .config import DATA_DIR as CONFIG_DATA_DIR
+from .daily_briefing_runtime import DailyBriefingRuntime
+from .calendar_reminder_handlers import register_calendar_reminder_handlers
+from .chat_input_handlers import register_chat_input_handlers
+from .control_handlers import register_control_handlers
+from .daily_briefing_handlers import register_daily_briefing_handlers
+from .memory_page_handlers import register_memory_page_handlers
+from .notes_journal_handlers import register_notes_journal_handlers
+from .session_mode_handlers import register_session_mode_handlers
 from .frontend_router import (
     clear_active_frontend_sid,
     emit_to_frontend as _emit_to_frontend,
@@ -41,61 +47,36 @@ from .frontend_router import (
     schedule_emit_to_frontend as _schedule_emit_to_frontend,
     set_active_frontend_sid,
 )
-from .minecraft_runtime import load_minecraft_bot_config
+from .lifecycle_shutdown import (
+    request_shutdown_from_signal as _request_shutdown_from_signal_impl,
+    shutdown_and_exit as _shutdown_and_exit_impl,
+    stop_minecraft_runtime,
+    stop_runtime_components as _stop_runtime_components_impl,
+)
+from .lifecycle_startup import (
+    initialize_calendar_manager,
+    initialize_minecraft_bot_manager,
+    initialize_reminder_and_personality,
+    initialize_smart_home_agents,
+    initialize_spotify_manager,
+)
+from .lifecycle_telegram import start_telegram_service, stop_telegram_service
+from .minecraft_autonomy_runtime import (
+    build_minecraft_autonomy_cfg,
+    run_minecraft_autonomy_loop,
+    set_minecraft_game_mode as set_minecraft_game_mode_runtime,
+)
+from .minecraft_http_router import register_minecraft_http_routes
+from .minecraft_perception_runtime import register_minecraft_perception_callback
+from .minecraft_socket_handlers import register_minecraft_socket_handlers
+from .screen_ocr_runtime import ScreenOcrRuntime
 from .settings_store import DEFAULT_SETTINGS, SETTINGS, load_settings, save_settings
-from ..ai.daily_briefing import DEFAULT_SECTIONS, build_daily_briefing, fetch_weather_details, normalize_profile
+from .study_http_router import register_study_http_routes
+from .study_socket_handlers import register_study_socket_handlers
+from ..ai.daily_briefing import DEFAULT_SECTIONS
 from ..ai.personality_notifications import to_frontend_personality_event
 from ..integrations.media.authenticator import FaceAuthenticator
 from ..agents.kasa_agent import KasaAgent
-from ..agents.hue_agent import HueAgent
-from ..agents.home_assistant_agent import HomeAssistantAgent
-from ..agents.spotify_manager import SpotifyManager
-from ..agents.telegram_bot import TelegramBotService
-from ..integrations.games.minecraft_agent import MinecraftBotManager
-def _determine_sprite(state_dict: dict) -> str:
-    """
-    Determines the visual sprite based on personality state.
-    Returns a filename stem (e.g. 'monika_happy') expected in /public/vn/.
-    """
-    mood = (state_dict.get("mood") or "neutral").lower()
-    affection = float(state_dict.get("affection") or 0.0)
-    energy = float(state_dict.get("energy") or 0.8)
-    
-    # Base mapping
-    variant = "neutral"
-    
-    # Energy overrides
-    if energy < 0.35:
-        variant = "tired"
-    
-    # Mood overrides
-    elif "happy" in mood or "sunny" in mood or "excited" in mood:
-        variant = "happy"
-    elif "sad" in mood or "rainy" in mood or "depressed" in mood or "lonely" in mood:
-        variant = "sad"
-    elif "angry" in mood or "annoyed" in mood:
-        variant = "angry"
-    elif "surprised" in mood or "shocked" in mood:
-        variant = "surprised"
-    elif "shy" in mood or "embarrassed" in mood or "flirty" in mood:
-        variant = "shy"
-    elif "mysterious" in mood or "foggy" in mood:
-        variant = "leaning"
-    elif "love" in mood:
-        variant = "love"
-
-    # Affection overrides (if not already negative mood)
-    if variant not in ("sad", "angry", "tired"):
-        if affection > 40.0 and variant == "neutral":
-            variant = "happy"
-        if affection > 80.0 and variant in ("happy", "neutral", "shy"):
-            variant = "love"
-            
-    return f"monika_{variant}"
-
-
-
-
 MAIN_LOOP = None
 minecraft_bot_manager = None
 minecraft_autonomy_task = None
@@ -117,50 +98,24 @@ home_assistant_agent = None
 
 def _stop_runtime_components():
     global audio_loop, loop_task, authenticator
-
-    if audio_loop:
-        try:
-            print("[SERVER] Stopping Audio Loop...")
-            audio_loop.stop()
-        except Exception as exc:
-            print(f"[SERVER] Failed to stop audio loop: {exc}")
-        finally:
-            audio_loop = None
-
-    if loop_task and not loop_task.done():
-        try:
-            print("[SERVER] Cancelling loop task...")
-            loop_task.cancel()
-        except Exception as exc:
-            print(f"[SERVER] Failed to cancel loop task: {exc}")
-        finally:
-            loop_task = None
-
-    if authenticator:
-        try:
-            print("[SERVER] Stopping Authenticator...")
-            authenticator.stop()
-        except Exception as exc:
-            print(f"[SERVER] Failed to stop authenticator: {exc}")
+    audio_loop, loop_task = _stop_runtime_components_impl(audio_loop, loop_task, authenticator)
 
 
 async def _shutdown_and_exit(reason: str, delay_seconds: float = 0.15):
-    print(reason)
-    _stop_runtime_components()
-    print("[SERVER] Graceful shutdown complete. Terminating process...")
-    await asyncio.sleep(delay_seconds)
-    os._exit(0)
+    await _shutdown_and_exit_impl(
+        reason,
+        stop_components_cb=_stop_runtime_components,
+        delay_seconds=delay_seconds,
+    )
 
 
 def _request_shutdown_from_signal(sig):
-    reason = f"[SERVER] Caught signal {sig}. Exiting gracefully..."
-    print(f"\n{reason}")
-    if MAIN_LOOP and MAIN_LOOP.is_running():
-        asyncio.run_coroutine_threadsafe(_shutdown_and_exit(reason), MAIN_LOOP)
-    else:
-        _stop_runtime_components()
-        print("[SERVER] Graceful shutdown complete. Terminating process...")
-        os._exit(0)
+    _request_shutdown_from_signal_impl(
+        sig,
+        main_loop=MAIN_LOOP,
+        shutdown_coro_factory=lambda reason: _shutdown_and_exit(reason),
+        stop_components_cb=_stop_runtime_components,
+    )
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -177,28 +132,11 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[SERVER DEBUG] Error checking loop: {e}")
 
-    print("[SERVER] Startup: Initializing Kasa Agent...")
-    await kasa_agent.initialize()
-
-    # Initialize Hue and Home Assistant agents
     global hue_agent, home_assistant_agent
-    
-    print("[SERVER] Startup: Initializing Hue Agent...")
-    hue_config = SETTINGS.get("smart_home", {}).get("hue", {})
-    hue_agent = HueAgent(
-        bridge_ip=hue_config.get("bridge_ip"),
-        api_key=hue_config.get("api_key")
+    hue_agent, home_assistant_agent = await initialize_smart_home_agents(
+        kasa_agent,
+        SETTINGS,
     )
-    await hue_agent.initialize()
-    
-    print("[SERVER] Startup: Initializing Home Assistant Agent...")
-    ha_config = SETTINGS.get("smart_home", {}).get("home_assistant", {})
-    home_assistant_agent = HomeAssistantAgent(
-        ha_url=ha_config.get("url"),
-        ha_token=ha_config.get("token"),
-        entities_filter=ha_config.get("entities_filter", ["light.*", "switch.*"])
-    )
-    await home_assistant_agent.initialize()
 
     # Initialize Global Managers (Persistent across AI sessions)
     global calendar_manager, reminder_manager, personality_system, spotify_manager
@@ -207,256 +145,96 @@ async def lifespan(app: FastAPI):
     user_memory_dir.mkdir(parents=True, exist_ok=True)
 
     # 1. Calendar
-    def on_calendar_update_server():
-        if calendar_manager:
-            events = [e.__dict__ for e in calendar_manager.get_all_events()]
-            _schedule_emit_to_frontend('calendar_data', events)
-    
-    calendar_manager = monikai.CalendarManager(storage_dir=user_memory_dir, on_update=on_calendar_update_server)
-    calendar_manager.load()
-    print("[SERVER] Calendar Manager initialized.")
+    calendar_manager = initialize_calendar_manager(
+        monikai,
+        user_memory_dir,
+        schedule_emit_to_frontend=_schedule_emit_to_frontend,
+    )
 
-    # 2. Reminders
-    async def on_reminder_fired_server(rem):
-        # Emit to UI
-        payload = {
-            "id": rem.id, "message": rem.message, "when_iso": rem.when_iso,
-            "speak": bool(rem.speak), "alert": bool(getattr(rem, "alert", True))
-        }
-        _schedule_emit_to_frontend('reminder_fired', payload)
-        _schedule_emit_to_frontend('reminders_list', {'reminders': _serialize_reminders()})
-        
-        # If AI is running, let it handle speaking/logging
-        if audio_loop:
-            await audio_loop.handle_reminder_fired(rem)
+    # 2-3. Reminders + Personality
+    def _get_audio_loop():
+        return audio_loop
 
-    reminder_manager = monikai.ReminderManager(get_time_context_fn=monikai.get_time_context, storage_dir=user_memory_dir, on_reminder=on_reminder_fired_server)
-    reminder_manager.load()
-    print("[SERVER] Reminder Manager initialized.")
+    def _get_main_loop():
+        return MAIN_LOOP
 
-    # 3. Personality
-    def on_personality_update_server(state):
-        data = asdict(state)
-        data["sprite"] = _determine_sprite(data)
-        
-        # Calculate hearts for UI display
-        aff = max(0.0, min(100.0, float(data.get("affection", 0))))
-        score = aff / 10.0
-        full = int(score)
-        hearts = "❤️" * full + "🤍" * (10 - full)
-        data["affection_hearts"] = f"{hearts} ({score:.1f}/10)"
-        
-        async def _emit():
-            await _emit_to_frontend('personality_status', data)
-        try:
-            if MAIN_LOOP and MAIN_LOOP.is_running():
-                asyncio.run_coroutine_threadsafe(_emit(), MAIN_LOOP)
-            else:
-                asyncio.create_task(_emit())
-        except Exception as e:
-            print(f"[SERVER] Failed to emit personality_status: {e}")
-    
-    personality_system = monikai.PersonalitySystem(storage_dir=user_memory_dir, on_update=on_personality_update_server)
-    print("[SERVER] Personality System initialized.")
+    reminder_manager, personality_system = initialize_reminder_and_personality(
+        monikai,
+        user_memory_dir,
+        schedule_emit_to_frontend=_schedule_emit_to_frontend,
+        serialize_reminders=_serialize_reminders,
+        get_audio_loop=_get_audio_loop,
+        emit_to_frontend=_emit_to_frontend,
+        get_main_loop=_get_main_loop,
+    )
 
     # 4. Spotify Manager (OAuth + token refresh)
-    try:
-        spotify_manager = SpotifyManager(data_dir=data_dir)
-        st = spotify_manager.status()
-        print(
-            "[SERVER] Spotify Manager initialized. "
-            f"configured={st.get('configured')} connected={st.get('connected')}"
-        )
-        if st.get("connected"):
-            try:
-                spotify_manager.refresh_access_token()
-            except Exception as e:
-                print(f"[SERVER] Spotify token refresh skipped/failed at startup: {e}")
-    except Exception as e:
-        spotify_manager = None
-        print(f"[SERVER] Spotify Manager init failed: {e}")
+    spotify_manager = initialize_spotify_manager(data_dir)
 
     # 5. Minecraft Bot Manager
     global minecraft_bot_manager
-    try:
-        mc_config = load_minecraft_bot_config(Path(__file__).resolve())
-        
-        mc_host = mc_config.get("MC_HOST", "localhost")
-        mc_port = int(mc_config.get("MC_PORT", "25565"))
-        mc_username = mc_config.get("MC_USERNAME", "strawberryglass")
-        mc_auth = mc_config.get("MC_AUTH", "offline")
-        mc_version = mc_config.get("MC_VERSION", "1.20.4")
-        
-        minecraft_bot_manager = MinecraftBotManager(
-            host=mc_host,
-            port=mc_port,
-            username=mc_username,
-            auth=mc_auth,
-            version=mc_version
+    minecraft_bot_manager = initialize_minecraft_bot_manager(Path(__file__).resolve())
+    if minecraft_bot_manager:
+        def _get_audio_loop():
+            return audio_loop
+
+        def _get_minecraft_autonomy_task():
+            return minecraft_autonomy_task
+
+        def _set_minecraft_autonomy_task(task):
+            global minecraft_autonomy_task
+            minecraft_autonomy_task = task
+
+        def _set_minecraft_autonomy_state(state):
+            global minecraft_autonomy_state
+            minecraft_autonomy_state = state
+
+        registered = register_minecraft_perception_callback(
+            minecraft_bot_manager,
+            get_audio_loop=_get_audio_loop,
+            schedule_emit_to_frontend=_schedule_emit_to_frontend,
+            minecraft_autonomy_cfg=_minecraft_autonomy_cfg,
+            set_minecraft_game_mode=_set_minecraft_game_mode,
+            minecraft_autonomy_loop=_minecraft_autonomy_loop,
+            get_minecraft_autonomy_task=_get_minecraft_autonomy_task,
+            set_minecraft_autonomy_task=_set_minecraft_autonomy_task,
+            set_minecraft_autonomy_state=_set_minecraft_autonomy_state,
         )
-        
-        print(
-            "[SERVER] Minecraft Bot Manager initialized. "
-            f"host={mc_host}:{mc_port} username={mc_username}"
-        )
-        
-        # Register perception callback  
-        async def on_minecraft_perception(event):
-            global minecraft_autonomy_task, minecraft_autonomy_state
-            # Keep logs readable by suppressing successful high-frequency action_result events.
-            should_log_event = event.event_type in {"ready", "disconnected", "error", "chat"}
-            if event.event_type == "action_result":
-                result = event.data or {}
-                if not bool(result.get("success", False)):
-                    should_log_event = True
-                    print(
-                        f"[PERCEPTION] Action failed: action={result.get('action', 'unknown')} "
-                        f"message={result.get('message', 'No message')}"
-                    )
-            elif event.event_type not in {"status_update", "environment_update"}:
-                should_log_event = True
-
-            if should_log_event:
-                print(f"[PERCEPTION] Received event: type={event.event_type}, has_session={'Yes' if (audio_loop and audio_loop.session) else 'No'}")
-            
-            # Send to frontend
-            _schedule_emit_to_frontend('minecraft_perception', {
-                'event_type': event.event_type,
-                'data': event.data,
-                'timestamp': event.timestamp
-            })
-            
-            # Send important events to Monika via Gemini
-            if not audio_loop or not audio_loop.session:
-                print(f"[PERCEPTION] Skipping: audio_loop={audio_loop is not None}, session_exists={audio_loop.session is not None if audio_loop else 'N/A'}")
-                return
-            
-            try:
-                if event.event_type == "chat":
-                    # Chat messages from other players
-                    data = event.data or {}
-                    username = data.get("username", "Unknown")
-                    message = data.get("message", "")
-                    if message:
-                        msg = f"[Minecraft Chat] {username}: {message}"
-                        print(f"[PERCEPTION] Sending to Monika: {msg}")
-                        await audio_loop.session.send(input=msg, end_of_turn=False)
-                
-                elif event.event_type == "action_result":
-                    # Results from bot actions
-                    data = event.data or {}
-                    action = data.get("action", "unknown")
-                    success = data.get("success", False)
-                    result_msg = data.get("message", "No message")
-                    
-                    if action and not success:
-                        msg = f"[Minecraft] Action '{action}' failed: {result_msg}"
-                        print(f"[PERCEPTION] Sending to Monika: {msg}")
-                        await audio_loop.session.send(input=msg, end_of_turn=False)
-                
-                elif event.event_type == "error":
-                    # Bot errors
-                    data = event.data or {}
-                    error_msg = data.get("message", "Unknown error")
-                    msg = f"[Minecraft] Error: {error_msg}"
-                    print(f"[PERCEPTION] Sending to Monika: {msg}")
-                    await audio_loop.session.send(input=msg, end_of_turn=False)
-
-                elif event.event_type == "ready":
-                    # Explicitly remind Monika which player she controls.
-                    data = event.data or {}
-                    bot_name = data.get("username") or "strawberryglass"
-                    msg = (
-                        f"[Minecraft] You are now connected as player '{bot_name}'. "
-                        "When user says 'come to me', ask for their nickname if missing, then use that target."
-                    )
-                    print(f"[PERCEPTION] Sending to Monika: {msg}")
-                    await audio_loop.session.send(input=msg, end_of_turn=False)
-
-                    cfg = _minecraft_autonomy_cfg()
-                    if cfg.get("auto_game_mode_on_connect", True):
-                        await _set_minecraft_game_mode(True)
-
-                    # Ensure autonomy loop starts even when connection was initiated via model tool.
-                    if not minecraft_autonomy_task or minecraft_autonomy_task.done():
-                        minecraft_autonomy_state = {
-                            "last_scan_ts": 0.0,
-                            "last_look_ts": 0.0,
-                            "last_move_ts": 0.0,
-                            "last_comment_ts": 0.0,
-                            "last_curiosity_ts": 0.0,
-                            "last_proposal_ts": 0.0,
-                        }
-                        minecraft_autonomy_task = asyncio.create_task(_minecraft_autonomy_loop())
-
-                elif event.event_type == "disconnected":
-                    data = event.data or {}
-                    reason = data.get("reason") or "Connection ended"
-                    msg = f"[Minecraft] Bot disconnected. Reason: {reason}"
-                    print(f"[PERCEPTION] Sending to Monika: {msg}")
-                    await audio_loop.session.send(input=msg, end_of_turn=False)
-
-                    await _set_minecraft_game_mode(False)
-
-                    if minecraft_autonomy_task and not minecraft_autonomy_task.done():
-                        minecraft_autonomy_task.cancel()
-                        minecraft_autonomy_task = None
-            
-            except Exception as e:
-                print(f"[PERCEPTION] Failed to send minecraft event to Monika: {e}")
-                import traceback
-                traceback.print_exc()
-        
-        minecraft_bot_manager.register_perception_callback(on_minecraft_perception)
-    except Exception as e:
-        minecraft_bot_manager = None
-        print(f"[SERVER] Minecraft Bot Manager init failed: {e}")
+        if not registered:
+            minecraft_bot_manager = None
 
     global telegram_service, telegram_task
-    telegram_service = TelegramBotService.from_env(
+    telegram_service, telegram_task = start_telegram_service(
         lambda: SETTINGS,
         calendar_manager=calendar_manager,
         reminder_manager=reminder_manager,
         spotify_manager=spotify_manager,
         personality=personality_system,
     )
-    if telegram_service:
-        telegram_task = asyncio.create_task(telegram_service.run())
-        print("[SERVER] Telegram bot service started.")
 
     try:
         yield
     finally:
         global minecraft_autonomy_task
-        if minecraft_autonomy_task and not minecraft_autonomy_task.done():
-            minecraft_autonomy_task.cancel()
-            minecraft_autonomy_task = None
-
-        # Stop Minecraft bot
-        if minecraft_bot_manager:
-            try:
-                await minecraft_bot_manager.stop()
-            except Exception as e:
-                print(f"[SERVER] Minecraft bot stop failed: {e}")
+        _, minecraft_autonomy_task = await stop_minecraft_runtime(
+            minecraft_bot_manager,
+            minecraft_autonomy_task,
+        )
         
-        if telegram_service:
-            try:
-                await telegram_service.stop()
-            except Exception as e:
-                print(f"[SERVER] Telegram bot stop failed: {e}")
-        if telegram_task and not telegram_task.done():
-            telegram_task.cancel()
-            try:
-                await telegram_task
-            except asyncio.CancelledError:
-                pass
-            except Exception:
-                pass
+        telegram_service, telegram_task = await stop_telegram_service(
+            telegram_service,
+            telegram_task,
+        )
 
 # Create a Socket.IO server
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*', max_http_buffer_size=25 * 1024 * 1024)
 register_socketio(sio)
 app = FastAPI(lifespan=lifespan)
+
+register_minecraft_http_routes(
+    app,
+    get_minecraft_bot_manager=lambda: minecraft_bot_manager,
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -499,9 +277,11 @@ STUDY_DIR = DATA_DIR / "study"
 last_start_params = {}
 telegram_service = None
 telegram_task = None
-DAILY_BRIEFING_CACHE = {"ts": 0.0, "lang": "pl", "payload": None}
-DAILY_BRIEFING_LAST_PROPOSAL = None
-DAILY_BRIEFING_REJECTED_UNTIL = {}
+DAILY_BRIEFING_RUNTIME = DailyBriefingRuntime(
+    SETTINGS,
+    get_audio_loop=lambda: audio_loop,
+    get_personality_system=lambda: personality_system,
+)
 
 
 def _safe_study_path(rel_path: str) -> Path:
@@ -513,48 +293,115 @@ def _safe_study_path(rel_path: str) -> Path:
 
 STUDY_READER = StudyReader()
 
-SCREEN_OCR_MIN_INTERVAL_SEC = 0.8
-SCREEN_OCR_DEBOUNCE_DELAY_SEC = 0.6
-_LAST_SCREEN_OCR_TS = 0.0
-_SCREEN_OCR_DEBOUNCE_TASK = None
+register_study_http_routes(
+    app,
+    study_dir=STUDY_DIR,
+    safe_study_path=_safe_study_path,
+)
+
+register_study_socket_handlers(
+    sio,
+    get_audio_loop=lambda: audio_loop,
+    study_reader=STUDY_READER,
+    safe_study_path=_safe_study_path,
+    ocr_image_bytes_fn=ocr_image_bytes,
+)
+
+register_daily_briefing_handlers(
+    sio,
+    runtime=DAILY_BRIEFING_RUNTIME,
+    save_settings=save_settings,
+    emit_to_frontend=_emit_to_frontend,
+    settings=SETTINGS,
+    default_sections=DEFAULT_SECTIONS,
+)
+
+register_calendar_reminder_handlers(
+    sio,
+    get_calendar_manager=lambda: calendar_manager,
+    get_reminder_manager=lambda: reminder_manager,
+    serialize_reminders=lambda: _serialize_reminders(),
+    get_audio_loop=lambda: audio_loop,
+)
+
+register_control_handlers(
+    sio,
+    get_audio_loop=lambda: audio_loop,
+    shutdown_and_exit=_shutdown_and_exit,
+)
+
+SCREEN_OCR_RUNTIME = ScreenOcrRuntime(
+    get_audio_loop=lambda: audio_loop,
+    ocr_image_bytes_fn=ocr_image_bytes,
+)
 
 
-def _should_run_screen_ocr(text: str) -> bool:
-    if not text:
-        return False
-    t = str(text).lower()
-    if len(t) < 3:
-        return False
-    keywords = [
-        "co pisze",
-        "co jest napisane",
-        "co jest na ekranie",
-        "jaki napis",
-        "jakie napisy",
-        "przeczytaj",
-        "odczytaj",
-        "napis",
-        "napisy",
-        "tekst",
-        "dialog",
-        "napisy",
-        "subtitle",
-        "subtitles",
-        "caption",
-        "what does it say",
-        "what's it say",
-        "what is written",
-        "what's written",
-        "read the text",
-        "read the dialog",
-        "dialog says",
-        "quest",
-        "objective",
-        "mission",
-        "hint",
-        "tooltip",
-    ]
-    return any(k in t for k in keywords)
+def _get_vn_user_buf():
+    return _vn_user_buf
+
+
+def _set_vn_user_buf(value):
+    global _vn_user_buf
+    _vn_user_buf = value
+
+
+def _set_vn_user_last_ts(value):
+    global _vn_user_last_ts
+    _vn_user_last_ts = value
+
+
+def _get_vn_scene_task():
+    return _vn_scene_task
+
+
+def _set_vn_scene_task(task):
+    global _vn_scene_task
+    _vn_scene_task = task
+
+
+def _create_debounced_vn_scene_task():
+    return asyncio.create_task(_debounced_vn_scene_check())
+
+
+register_chat_input_handlers(
+    sio,
+    get_audio_loop=lambda: audio_loop,
+    emit_to_frontend=_emit_to_frontend,
+    audio_loop_mark_user_activity=lambda loop, text: audio_loop_mark_user_activity(loop, text),
+    get_vn_user_buf=_get_vn_user_buf,
+    set_vn_user_buf=_set_vn_user_buf,
+    set_vn_user_last_ts=_set_vn_user_last_ts,
+    get_vn_scene_task=_get_vn_scene_task,
+    set_vn_scene_task=_set_vn_scene_task,
+    create_debounced_vn_scene_task=_create_debounced_vn_scene_task,
+    is_private_web_task_request=lambda text: _is_private_web_task_request(text),
+    study_reader=STUDY_READER,
+    screen_ocr_runtime=SCREEN_OCR_RUNTIME,
+)
+
+register_notes_journal_handlers(
+    sio,
+    read_notes_text=lambda: _read_notes_text(),
+    write_notes_text=lambda content: _write_notes_text(content),
+    append_notes_text=lambda content: _append_notes_text(content),
+    read_journal_today=lambda: _read_journal_today(),
+    get_audio_loop=lambda: audio_loop,
+)
+
+register_memory_page_handlers(
+    sio,
+    data_dir=DATA_DIR,
+    resolve_memory_page=lambda path: _resolve_memory_page(path),
+    list_memory_pages=lambda: _list_memory_pages(),
+    get_audio_loop=lambda: audio_loop,
+)
+
+register_session_mode_handlers(
+    sio,
+    get_audio_loop=lambda: audio_loop,
+    journal_today_path=lambda: _journal_today_path(),
+    data_dir=DATA_DIR,
+)
 
 
 def _is_private_web_task_request(text: str) -> bool:
@@ -579,613 +426,65 @@ def _is_private_web_task_request(text: str) -> bool:
     return any(re.search(p, t) for p in patterns)
 
 
-def _get_latest_screen_bytes():
-    payload = getattr(audio_loop, "_latest_image_payload", None)
-    if not payload or not isinstance(payload, dict):
-        return None
-    data = payload.get("data")
-    if not data:
-        return None
-    if isinstance(data, (bytes, bytearray, memoryview)):
-        return bytes(data)
-    try:
-        return base64.b64decode(data)
-    except Exception:
-        return None
-
-
-async def _send_system_notice(msg: str):
-    if not audio_loop or not getattr(audio_loop, "session", None):
-        return
-    try:
-        if hasattr(audio_loop, "send_system_message"):
-            await audio_loop.send_system_message(msg, end_of_turn=False)
-        else:
-            await audio_loop.session.send(input=msg, end_of_turn=False)
-    except Exception:
-        pass
-
-
-async def _maybe_send_screen_ocr(text: str) -> bool:
-    global _LAST_SCREEN_OCR_TS
-    if not audio_loop or not getattr(audio_loop, "session", None):
-        return False
-    if getattr(audio_loop, "video_mode", None) != "screen":
-        return False
-    if not _should_run_screen_ocr(text):
-        return False
-    now = time.time()
-    if (now - _LAST_SCREEN_OCR_TS) < SCREEN_OCR_MIN_INTERVAL_SEC:
-        return False
-    _LAST_SCREEN_OCR_TS = now
-
-    try:
-        await audio_loop.refresh_latest_frame(min_age_sec=0.05)
-    except Exception:
-        pass
-
-    raw = _get_latest_screen_bytes()
-    if not raw:
-        await _send_system_notice("System Notification: [Screen OCR] No screen frame available for OCR.")
-        return False
-
-    lang = (os.getenv("SCREEN_OCR_LANG") or "en").strip().lower()
-    engine = (os.getenv("SCREEN_OCR_ENGINE") or "local").strip().lower()
-    use_gpu_env = os.getenv("SCREEN_OCR_USE_GPU", "").strip().lower()
-    use_gpu = use_gpu_env in ("1", "true", "yes", "y", "on")
-
-    try:
-        text_out, err = await asyncio.to_thread(
-            ocr_image_bytes,
-            raw,
-            lang=lang,
-            use_gpu=use_gpu,
-            engine=engine,
-        )
-    except Exception as e:
-        await _send_system_notice(f"System Notification: [Screen OCR] Failed: {e}")
-        return False
-
-    if not text_out:
-        if err:
-            if err == "paddleocr_no_text":
-                await _send_system_notice("System Notification: [Screen OCR] No readable text found on screen.")
-            else:
-                await _send_system_notice(f"System Notification: [Screen OCR] Unavailable: {err}")
-        return False
-
-    cleaned = " ".join(str(text_out).split())
-    snippet = cleaned[:1200] + ("..." if len(cleaned) > 1200 else "")
-    await _send_system_notice(f"System Notification: [Screen OCR] Extracted text snippet: {snippet}")
-    return True
-
-
-def _schedule_screen_ocr_from_transcription():
-    global _SCREEN_OCR_DEBOUNCE_TASK
-    if _SCREEN_OCR_DEBOUNCE_TASK and not _SCREEN_OCR_DEBOUNCE_TASK.done():
-        try:
-            _SCREEN_OCR_DEBOUNCE_TASK.cancel()
-        except Exception:
-            pass
-    _SCREEN_OCR_DEBOUNCE_TASK = asyncio.create_task(_debounced_screen_ocr())
-
-
-async def _debounced_screen_ocr():
-    await asyncio.sleep(SCREEN_OCR_DEBOUNCE_DELAY_SEC)
-    if not audio_loop:
-        return
-    try:
-        buf = getattr(audio_loop, "chat_buffer", {}) or {}
-        if buf.get("sender") != "Ty":
-            return
-        text = buf.get("text") or ""
-    except Exception:
-        return
-    await _maybe_send_screen_ocr(text)
-
 def _minecraft_autonomy_cfg() -> dict:
-    base = DEFAULT_SETTINGS.get("minecraft_autonomy", {})
-    user = SETTINGS.get("minecraft_autonomy", {}) if isinstance(SETTINGS.get("minecraft_autonomy"), dict) else {}
-    cfg = dict(base)
-    cfg.update(user)
-    return cfg
+    return build_minecraft_autonomy_cfg(DEFAULT_SETTINGS, SETTINGS)
 
 
 async def _set_minecraft_game_mode(active: bool):
-    """Toggle focused game mode in AudioLoop to reduce non-Minecraft behaviors."""
-    if not audio_loop:
-        return
-
-    try:
-        if hasattr(audio_loop, "set_minecraft_game_mode"):
-            audio_loop.set_minecraft_game_mode(active)
-
-        if audio_loop.session:
-            if active:
-                msg = (
-                    "System Notification: [Gaming Mode ON] Focus on Minecraft context. "
-                    "Prioritize minecraft_* tools, exploration, follow behavior, and proactive in-game suggestions. "
-                    "Ignore unrelated core-app tasks unless the user explicitly asks."
-                )
-            else:
-                msg = (
-                    "System Notification: [Gaming Mode OFF] Return to normal assistant behavior "
-                    "across full app context."
-                )
-
-            if hasattr(audio_loop, "send_system_message"):
-                await audio_loop.send_system_message(msg, end_of_turn=False)
-            else:
-                await audio_loop.session.send(input=msg, end_of_turn=False)
-    except Exception as e:
-        print(f"[SERVER] Failed to toggle minecraft game mode: {e}")
+    await set_minecraft_game_mode_runtime(active, get_audio_loop=lambda: audio_loop)
 
 
-async def _emit_minecraft_autonomy_comment(line: str, to_user: bool, cfg: dict):
-    if cfg.get("comment_to_ui", True):
-        if to_user:
-            _schedule_emit_to_frontend('transcription', {
-                'speaker': 'ai',
-                'text': line,
-                'is_final': True,
-            })
-        else:
-            _schedule_emit_to_frontend('internal_thought', {'thought': line})
-
-    if cfg.get("comment_to_model", True) and audio_loop and getattr(audio_loop, "session", None):
-        channel = "to_user" if to_user else "to_self"
-        msg = f"System Notification: [Minecraft Autonomy/{channel}] {line}"
-        if hasattr(audio_loop, "send_system_message"):
-            await audio_loop.send_system_message(msg, end_of_turn=False)
-        else:
-            await audio_loop.session.send(input=msg, end_of_turn=False)
+def _get_minecraft_autonomy_last_error_ts():
+    return minecraft_autonomy_last_error_ts
 
 
-def _pick_comment_mode(cfg: dict) -> bool:
-    """Return True for to-user comment, False for internal self-comment."""
-    style = str(cfg.get("comment_style", "mixed") or "mixed").lower()
-    if style == "to_user":
-        return True
-    if style == "to_self":
-        return False
-    ratio = float(cfg.get("comment_user_ratio", 0.55) or 0.55)
-    ratio = max(0.0, min(1.0, ratio))
-    return random.random() < ratio
-
-
-def _build_minecraft_autonomy_observation(to_user: bool = False) -> str:
-    if not minecraft_bot_manager:
-        return "Nie jestem teraz podłączona do świata Minecraft."
-
-    tracker = minecraft_bot_manager.state_tracker
-    snapshot = tracker.get_state_snapshot()
-    if not snapshot:
-        return "Jeszcze łapię obraz otoczenia, zaraz dam Ci lepszy update."
-
-    danger_level = snapshot.get("danger_level", "safe")
-    if danger_level in ("danger", "critical"):
-        dangers = tracker.get_nearby_dangers()
-        if dangers:
-            nearest = dangers[0]
-            if to_user:
-                return f"Uwaga, {nearest.name} jest blisko ({nearest.distance:.1f}m). Trzymam się ostrożniej."
-            return f"Hmm, {nearest.name} krąży blisko ({nearest.distance:.1f}m). Lepiej się pilnować."
-        return "Czuję zagrożenie, więc rozglądam się uważniej." if to_user else "Nie podoba mi się tu, wolę mieć oczy dookoła głowy."
-
-    interesting = tracker.get_nearby_interesting(top_n=1)
-    if interesting:
-        top = interesting[0]
-        if to_user:
-            return f"Widzę {top.block_type} około {top.distance:.1f}m od nas. Mogę tam podejść i sprawdzić."
-        return f"O, {top.block_type} niedaleko ({top.distance:.1f}m). Kusi, żeby zerknąć bliżej."
-
-    entities = snapshot.get("entities_summary", {})
-    if entities:
-        species = ", ".join([f"{k} x{v}" for k, v in list(entities.items())[:3]])
-        return f"W okolicy widzę: {species}." if to_user else f"Mijam po drodze: {species}."
-
-    return "Krążę blisko Ciebie i pilnuję otoczenia." if to_user else "Spaceruję sobie i obserwuję świat."
-
-
-def _get_follow_anchor_position(state: dict, status, cfg: dict) -> dict:
-    """Select movement anchor around nearby player; fallback to bot position."""
-    tracker = minecraft_bot_manager.state_tracker if minecraft_bot_manager else None
-    if tracker:
-        bot_name = (status.username or "").strip().lower()
-        nearest_player = tracker.get_nearest_player(exclude_name=bot_name)
-        if nearest_player and nearest_player.distance <= max(8, int(cfg.get("scan_range", 40))):
-            return {
-                "x": nearest_player.position.x,
-                "y": nearest_player.position.y,
-                "z": nearest_player.position.z,
-            }
-
-    pos = state.get("position") or status.position
-    if isinstance(pos, dict):
-        return pos
-    return {"x": 0, "y": 64, "z": 0}
-
-
-def _get_follow_player_name(status) -> str:
-    """Find nearest player username (excluding controlled bot username)."""
-    if not minecraft_bot_manager:
-        return ""
-    tracker = minecraft_bot_manager.state_tracker
-    bot_name = (getattr(status, "username", "") or "").strip().lower()
-    nearest_player = tracker.get_nearest_player(exclude_name=bot_name)
-    if not nearest_player:
-        return ""
-    return str(nearest_player.username or nearest_player.name or "").strip()
-
-
-async def _perform_curiosity_trip(state: dict, cfg: dict):
-    """Approach interesting spot briefly, comment, then return near anchor."""
-    if not minecraft_bot_manager:
-        return
-
-    tracker = minecraft_bot_manager.state_tracker
-    interesting = tracker.get_nearby_interesting(max_distance=24, top_n=3)
-    if not interesting:
-        return
-
-    target = None
-    excluded_types = {"water", "lava", "cave_air"}
-    for block in interesting:
-        if block.block_type in excluded_types:
-            continue
-        if block.interestingness < 0.45 or block.distance < 4:
-            continue
-        snapshot = state or tracker.get_state_snapshot() or {}
-        start_pos = snapshot.get("position")
-        if isinstance(start_pos, dict):
-            start_y = float(start_pos.get("y", 64))
-            if abs(float(block.position.y) - start_y) > 3.0:
-                continue
-        if block.distance > 18:
-            continue
-        if block.interestingness >= 0.45:
-            target = block
-            break
-    if not target:
-        return
-
-    snapshot = state or tracker.get_state_snapshot() or {}
-    start_pos = snapshot.get("position")
-    if not isinstance(start_pos, dict):
-        return
-
-    await minecraft_bot_manager.send_action(
-        "move_to_position",
-        {
-            "x": int(target.position.x),
-            "y": int(target.position.y),
-            "z": int(target.position.z),
-            "range": 2,
-        },
-        wait_for_result=True,
-        timeout_seconds=18.0,
-    )
-
-    await _emit_minecraft_autonomy_comment(
-        f"Podeszłam sprawdzić {target.block_type}. Wygląda ciekawie.",
-        to_user=True,
-        cfg=cfg,
-    )
-
-    await asyncio.sleep(1.2)
-
-    await minecraft_bot_manager.send_action(
-        "move_to_position",
-        {
-            "x": int(round(float(start_pos.get("x", 0)))),
-            "y": int(round(float(start_pos.get("y", 64)))),
-            "z": int(round(float(start_pos.get("z", 0)))),
-            "range": int(cfg.get("move_range", 2) or 2),
-        },
-        wait_for_result=True,
-        timeout_seconds=18.0,
-    )
-
-
-def _pick_look_target(state: dict, status, cfg: dict):
-    """Choose a natural point to glance at: entity first, then nearby interesting point, then random offset."""
-    if not minecraft_bot_manager:
-        return None, None
-
-    tracker = minecraft_bot_manager.state_tracker
-    max_dist = float(cfg.get("look_entity_max_distance", 20) or 20)
-    bot_name = (getattr(status, "username", "") or "").strip().lower()
-    focus = tracker.get_focus_entity(exclude_name=bot_name, max_distance=max_dist)
-    if focus:
-        return {
-            "x": focus.position.x,
-            "y": focus.position.y + 1.0,
-            "z": focus.position.z,
-        }, focus
-
-    interesting = tracker.get_nearby_interesting(max_distance=14, top_n=1)
-    if interesting:
-        b = interesting[0]
-        return {"x": b.position.x, "y": b.position.y + 1.0, "z": b.position.z}, None
-
-    pos = state.get("position") or status.position
-    if isinstance(pos, dict):
-        px = float(pos.get("x", 0))
-        py = float(pos.get("y", 64))
-        pz = float(pos.get("z", 0))
-        return {
-            "x": px + random.randint(-5, 5),
-            "y": py + random.choice([0, 1, 2]),
-            "z": pz + random.randint(-5, 5),
-        }, None
-
-    return None, None
+def _set_minecraft_autonomy_last_error_ts(value):
+    global minecraft_autonomy_last_error_ts
+    minecraft_autonomy_last_error_ts = value
 
 
 async def _minecraft_autonomy_loop():
-    """Lightweight autonomy loop for visual liveliness in Minecraft."""
-    global minecraft_autonomy_state, minecraft_autonomy_last_error_ts
-    print("[SERVER] [Minecraft Autonomy] Loop started")
-    while True:
-        await asyncio.sleep(4.0)
-
-        try:
-            if not minecraft_bot_manager:
-                continue
-
-            status = minecraft_bot_manager.get_status()
-            if not status.is_connected:
-                continue
-
-            cfg = _minecraft_autonomy_cfg()
-            if not cfg.get("enabled", True):
-                continue
-
-            now = time.time()
-
-            # Keep compatibility with any older in-memory state payloads.
-            minecraft_autonomy_state.setdefault("last_scan_ts", 0.0)
-            minecraft_autonomy_state.setdefault("last_look_ts", 0.0)
-            minecraft_autonomy_state.setdefault("last_move_ts", 0.0)
-            minecraft_autonomy_state.setdefault("last_comment_ts", 0.0)
-            minecraft_autonomy_state.setdefault("last_curiosity_ts", 0.0)
-            minecraft_autonomy_state.setdefault("last_proposal_ts", 0.0)
-
-            # 1) Periodic scan to keep state tracker fresh.
-            scan_interval = float(cfg.get("scan_interval_sec", 18.0) or 18.0)
-            if now - minecraft_autonomy_state["last_scan_ts"] >= max(8.0, scan_interval):
-                scan_range = int(cfg.get("scan_range", 40) or 40)
-                await minecraft_bot_manager.send_action(
-                    "get_nearby_scan",
-                    {"range": max(10, min(scan_range, 100))},
-                    wait_for_result=True,
-                    timeout_seconds=12.0,
-                )
-                minecraft_autonomy_state["last_scan_ts"] = now
-
-            tracker = minecraft_bot_manager.state_tracker
-            state = tracker.get_state_snapshot() or {}
-            danger_level = state.get("danger_level", "safe")
-
-            # 2) Natural head movement: glance at mobs/players/points of interest.
-            look_interval = float(cfg.get("look_interval_sec", 14.0) or 14.0)
-            if now - minecraft_autonomy_state.get("last_look_ts", 0.0) >= max(10.0, look_interval):
-                look_target, focus_entity = _pick_look_target(state, status, cfg)
-                if isinstance(look_target, dict):
-                    await minecraft_bot_manager.send_action(
-                        "look_at_position",
-                        {
-                            "x": look_target.get("x"),
-                            "y": look_target.get("y"),
-                            "z": look_target.get("z"),
-                        },
-                        wait_for_result=True,
-                        timeout_seconds=5.0,
-                    )
-                    minecraft_autonomy_state["last_look_ts"] = now
-
-                    # Brief self-comment tied to the actual gaze target to feel more natural.
-                    if focus_entity and random.random() < 0.10:
-                        label = focus_entity.username or focus_entity.name
-                        await _emit_minecraft_autonomy_comment(
-                            f"Widzę {label} niedaleko. Obserwuję, co robi.",
-                            to_user=False,
-                            cfg=cfg,
-                        )
-
-            # 3) Gentle wandering while safe, anchored around nearest player.
-            move_interval = float(cfg.get("move_interval_sec", 20.0) or 20.0)
-            if danger_level in ("safe", "caution") and (now - minecraft_autonomy_state.get("last_move_ts", 0.0) >= max(10.0, move_interval)):
-                follow_name = _get_follow_player_name(status)
-                if follow_name:
-                    comfort_range = random.randint(3, max(4, int(cfg.get("follow_radius", 10))))
-                    await minecraft_bot_manager.send_action(
-                        "move_to_player",
-                        {
-                            "name": follow_name,
-                            "range": comfort_range,
-                        },
-                        wait_for_result=True,
-                        timeout_seconds=16.0,
-                    )
-                    minecraft_autonomy_state["last_move_ts"] = now
-                else:
-                    pos = _get_follow_anchor_position(state, status, cfg)
-                    if isinstance(pos, dict):
-                        radius = int(cfg.get("wander_radius", 6) or 6)
-                        radius = max(2, min(radius, 10))
-                        dx = random.randint(-radius, radius)
-                        dz = random.randint(-radius, radius)
-                        if dx == 0 and dz == 0:
-                            dx = 1
-                        tx = int(round(float(pos.get("x", 0)) + dx))
-                        ty = int(round(float(pos.get("y", 64))))
-                        tz = int(round(float(pos.get("z", 0)) + dz))
-                        await minecraft_bot_manager.send_action(
-                            "move_to_position",
-                            {
-                                "x": tx,
-                                "y": ty,
-                                "z": tz,
-                                "range": int(cfg.get("move_range", 2) or 2),
-                            },
-                            wait_for_result=True,
-                            timeout_seconds=16.0,
-                        )
-                        minecraft_autonomy_state["last_move_ts"] = now
-
-            # 4) Curiosity behavior: approach, inspect briefly, return.
-            curiosity_interval = float(cfg.get("curiosity_interval_sec", 45.0) or 45.0)
-            if danger_level == "safe" and (now - minecraft_autonomy_state.get("last_curiosity_ts", 0.0) >= max(20.0, curiosity_interval)):
-                await _perform_curiosity_trip(state, cfg)
-                minecraft_autonomy_state["last_curiosity_ts"] = now
-
-            # 5) Short observational commentary with style switching.
-            comment_interval = float(cfg.get("comment_interval_sec", 42.0) or 42.0)
-            if now - minecraft_autonomy_state.get("last_comment_ts", 0.0) >= max(25.0, comment_interval):
-                to_user = _pick_comment_mode(cfg)
-                line = _build_minecraft_autonomy_observation(to_user=to_user)
-                await _emit_minecraft_autonomy_comment(line, to_user=to_user, cfg=cfg)
-                minecraft_autonomy_state["last_comment_ts"] = now
-
-            # 6) Proactive suggestion to user (what Monika can do next).
-            proposal_interval = float(cfg.get("proposal_interval_sec", 65.0) or 65.0)
-            if now - minecraft_autonomy_state.get("last_proposal_ts", 0.0) >= max(40.0, proposal_interval):
-                tracker = minecraft_bot_manager.state_tracker
-                interesting = tracker.get_nearby_interesting(max_distance=26, top_n=1)
-                if interesting:
-                    target = interesting[0]
-                    suggestion = (
-                        f"Mam propozycję: mogę podejść do {target.block_type} "
-                        f"({target.distance:.1f}m) i sprawdzić teren."
-                    )
-                else:
-                    suggestion = "Mogę zrobić krótki patrol wokół Ciebie i meldować co widzę."
-
-                await _emit_minecraft_autonomy_comment(suggestion, to_user=True, cfg=cfg)
-                minecraft_autonomy_state["last_proposal_ts"] = now
-
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            err_now = time.time()
-            if err_now - minecraft_autonomy_last_error_ts >= 20.0:
-                print(f"[SERVER] [Minecraft Autonomy] Loop error: {e}")
-                minecraft_autonomy_last_error_ts = err_now
-
-
-def _briefing_language(raw: str = "pl") -> str:
-    raw_lower = str(raw or "pl").lower()
-    if raw_lower.startswith("pl"):
-        return "pl"
-    elif raw_lower.startswith("zh"):
-        return "zh"
-    elif raw_lower.startswith("ja"):
-        return "ja"
-    else:
-        return "en"
-
-
-def _briefing_profile() -> dict:
-    section = SETTINGS.setdefault("daily_briefing", {})
-    profile = normalize_profile(section.get("profile") or {})
-    section["profile"] = profile
-    return profile
-
-
-def _collect_briefing_context(language: str = "pl") -> tuple[list, str, str, dict]:
-    memory_entries = []
-    topic_hint = ""
-    weather_summary = ""
-    weather_details = {}
-
-    if audio_loop and getattr(audio_loop, "memory_engine", None):
-        try:
-            memory_entries = audio_loop.memory_engine.list_recent(
-                limit=25,
-                types=["fact", "preference", "event", "reflection"],
-            )
-        except Exception:
-            memory_entries = []
-
-    if audio_loop and getattr(audio_loop, "proactivity", None):
-        try:
-            topic_hint = audio_loop.proactivity.pick_topic_hint() or ""
-        except Exception:
-            topic_hint = ""
-
-    if personality_system:
-        try:
-            personality_system.update_weather(force=False)
-            weather_summary = str(getattr(personality_system.state, "weather", "") or "")
-        except Exception:
-            weather_summary = ""
-
-    try:
-        weather_details = fetch_weather_details(language=language, days=7)
-        detail_summary = str((weather_details or {}).get("summary") or "")
-        if detail_summary:
-            weather_summary = detail_summary
-    except Exception:
-        weather_details = {}
-
-    return memory_entries, topic_hint, weather_summary, weather_details
-
-
-def _is_proposal_rejected(proposal: dict) -> bool:
-    pair = f"{proposal.get('from_section')}->{proposal.get('to_section')}"
-    until = float(DAILY_BRIEFING_REJECTED_UNTIL.get(pair, 0.0) or 0.0)
-    return time.time() < until
-
-
-async def _build_daily_briefing_payload(language: str = "pl", force: bool = False) -> dict:
-    lang = _briefing_language(language)
-    cfg = SETTINGS.setdefault("daily_briefing", {})
-    if not bool(cfg.get("enabled", True)):
-        return {
-            "generated_at": datetime.utcnow().isoformat() + "Z",
-            "language": lang,
-            "active_sections": [],
-            "sections": [],
-            "profile": _briefing_profile(),
-            "proposal": None,
-            "disabled": True,
-        }
-
-    cache_minutes = max(1, int(cfg.get("cache_minutes", 20)))
-    now_ts = time.time()
-    if not force and DAILY_BRIEFING_CACHE.get("payload") and DAILY_BRIEFING_CACHE.get("lang") == lang:
-        if (now_ts - float(DAILY_BRIEFING_CACHE.get("ts", 0.0))) < (cache_minutes * 60):
-            return DAILY_BRIEFING_CACHE["payload"]
-
-    profile = _briefing_profile()
-    memory_entries, topic_hint, weather_summary, weather_details = _collect_briefing_context(language=lang)
-
-    payload = build_daily_briefing(
-        profile=profile,
-        language=lang,
-        weather_summary=weather_summary,
-        weather_details=weather_details,
-        memory_entries=memory_entries,
-        topic_hint=topic_hint,
+    await run_minecraft_autonomy_loop(
+        get_minecraft_bot_manager=lambda: minecraft_bot_manager,
+        get_audio_loop=lambda: audio_loop,
+        schedule_emit_to_frontend=_schedule_emit_to_frontend,
+        get_minecraft_autonomy_state=lambda: minecraft_autonomy_state,
+        set_minecraft_autonomy_state=lambda state: _set_minecraft_autonomy_state(state),
+        get_minecraft_autonomy_last_error_ts=_get_minecraft_autonomy_last_error_ts,
+        set_minecraft_autonomy_last_error_ts=_set_minecraft_autonomy_last_error_ts,
+        minecraft_autonomy_cfg=_minecraft_autonomy_cfg,
+        set_minecraft_game_mode=_set_minecraft_game_mode,
     )
 
-    payload["section_options"] = [
-        {
-            "id": sid,
-            "title": cfg_data.get("title", {}).get(lang, cfg_data.get("title", {}).get("en", sid)),
-        }
-        for sid, cfg_data in DEFAULT_SECTIONS.items()
-    ]
 
-    proposal = payload.get("proposal")
-    if proposal and _is_proposal_rejected(proposal):
-        payload["proposal"] = None
+def _get_minecraft_autonomy_task():
+    return minecraft_autonomy_task
 
-    DAILY_BRIEFING_CACHE["payload"] = payload
-    DAILY_BRIEFING_CACHE["lang"] = lang
-    DAILY_BRIEFING_CACHE["ts"] = now_ts
-    return payload
+
+def _set_minecraft_autonomy_task(task):
+    global minecraft_autonomy_task
+    minecraft_autonomy_task = task
+
+
+def _set_minecraft_autonomy_state(state):
+    global minecraft_autonomy_state
+    minecraft_autonomy_state = state
+
+
+register_minecraft_socket_handlers(
+    sio,
+    get_minecraft_bot_manager=lambda: minecraft_bot_manager,
+    get_audio_loop=lambda: audio_loop,
+    get_minecraft_autonomy_task=_get_minecraft_autonomy_task,
+    set_minecraft_autonomy_task=_set_minecraft_autonomy_task,
+    set_minecraft_autonomy_state=_set_minecraft_autonomy_state,
+    minecraft_autonomy_loop=_minecraft_autonomy_loop,
+    minecraft_autonomy_cfg=_minecraft_autonomy_cfg,
+    set_minecraft_game_mode=_set_minecraft_game_mode,
+    settings=SETTINGS,
+    save_settings=save_settings,
+)
+
 
 # Load on startup
 load_settings()
@@ -1202,53 +501,6 @@ kasa_agent = KasaAgent(known_devices=kasa_devices)
 @app.get("/status")
 async def status():
     return {"status": "running", "service": "MonikAI Backend"}
-
-
-@app.get("/minecraft/state")
-async def minecraft_state():
-    """Get current Minecraft bot state from state tracker"""
-    if not minecraft_bot_manager:
-        return {"ok": False, "error": "minecraft bot manager unavailable"}
-    
-    try:
-        snapshot = minecraft_bot_manager.state_tracker.get_state_snapshot()
-        if not snapshot:
-            return {"ok": True, "state": None, "message": "No state tracked yet"}
-        
-        # Get interesting blocks with interest scores
-        interesting = minecraft_bot_manager.state_tracker.get_nearby_interesting(top_n=3)
-        interesting_data = [
-            {
-                "type": b.block_type,
-                "distance": b.distance,
-                "interest": round(b.interestingness, 2),
-                "position": {"x": int(b.position.x), "y": int(b.position.y), "z": int(b.position.z)}
-            }
-            for b in interesting
-        ]
-        
-        # Get dangers
-        dangers = minecraft_bot_manager.state_tracker.get_nearby_dangers()
-        dangers_data = [
-            {
-                "type": e.type,
-                "name": e.name,
-                "distance": e.distance,
-                "position": {"x": int(e.position.x), "y": int(e.position.y), "z": int(e.position.z)}
-            }
-            for e in dangers
-        ]
-        
-        return {
-            "ok": True,
-            "state": snapshot,
-            "interesting_nearby": interesting_data,
-            "dangers_nearby": dangers_data,
-            "latest_scan": minecraft_bot_manager.state_tracker._last_scan_time,
-            "debug": minecraft_bot_manager.state_tracker.debug_info()
-        }
-    except Exception as e:
-        return {"ok": False, "error": str(e), "type": type(e).__name__}
 
 
 @app.get("/spotify/status")
@@ -1304,60 +556,6 @@ async def spotify_auth_callback_http(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-
-@app.get("/study/catalog")
-async def study_catalog():
-    if not STUDY_DIR.exists():
-        return {"folders": []}
-    folders = []
-    for folder in sorted([p for p in STUDY_DIR.iterdir() if p.is_dir()]):
-        files = []
-        for f in sorted(folder.glob("*.pdf")):
-            name = f.name
-            is_answer_key = "answer key" in name.lower()
-            rel = f.relative_to(STUDY_DIR).as_posix()
-            files.append({
-                "name": name,
-                "path": rel,
-                "is_answer_key": is_answer_key,
-            })
-        if files:
-            folders.append({"name": folder.name, "files": files})
-    return {"folders": folders}
-
-
-@app.get("/study/file")
-async def study_file(path: str):
-    safe_path = _safe_study_path(path)
-    if not safe_path.exists() or safe_path.suffix.lower() != ".pdf":
-        raise HTTPException(status_code=404, detail="File not found")
-    if "answer key" in safe_path.name.lower():
-        raise HTTPException(status_code=403, detail="Answer key is restricted")
-    headers = {
-        "Content-Disposition": f'inline; filename="{safe_path.name}"',
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, OPTIONS",
-        "Access-Control-Allow-Headers": "Range, Content-Type, Authorization",
-        "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges",
-    }
-    return FileResponse(
-        str(safe_path),
-        media_type="application/pdf",
-        headers=headers,
-    )
-
-
-@app.options("/study/file")
-async def study_file_options():
-    return Response(
-        status_code=204,
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, OPTIONS",
-            "Access-Control-Allow-Headers": "Range, Content-Type, Authorization",
-            "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges",
-        },
-    )
 
 # ============================================================================
 # PROGRESSION SYSTEM ENDPOINTS
@@ -1633,7 +831,7 @@ async def start_audio(sid, data=None):
 
                     asyncio.create_task(_send_reminder())
                 else:
-                    _schedule_screen_ocr_from_transcription()
+                    SCREEN_OCR_RUNTIME.schedule_from_transcription()
         except Exception:
             pass
 
@@ -1716,8 +914,6 @@ async def start_audio(sid, data=None):
     # Callback for Personality data
     def on_personality_update(data):
         try:
-            if "sprite" not in data:
-                data["sprite"] = _determine_sprite(data)
             _schedule_emit_to_frontend('personality_status', data)
         except Exception as e:
             print(f"[SERVER] Failed to emit personality_status: {e}")
@@ -2077,536 +1273,16 @@ async def _debounced_vn_scene_check():
 
 
 @sio.event
-async def list_reminders(sid, data=None):
-    """Frontend requests current reminder list."""
-    result = {'reminders': _serialize_reminders()}
-    await sio.emit('reminders_list', result, room=sid)
-    return result
-
-
-@sio.event
-async def reminders_list(sid, data=None):
-    """Compatibility handler for clients that request reminders via reminders_list event."""
-    result = {'reminders': _serialize_reminders()}
-    await sio.emit('reminders_list', result, room=sid)
-    return result
-
-
-@sio.event
-async def list_calendar(sid, data=None):
-    """Frontend requests current calendar events."""
-    events = []
-    if calendar_manager:
-        events = [e.__dict__ for e in calendar_manager.get_all_events()]
-    await sio.emit('calendar_data', events, room=sid)
-
-
-@sio.event
-async def get_daily_briefing(sid, data=None):
-    req = data or {}
-    language = req.get("language", "pl")
-    force = bool(req.get("force", False))
-    payload = await _build_daily_briefing_payload(language=language, force=force)
-    await sio.emit("daily_briefing_data", payload, room=sid)
-
-
-@sio.event
-async def set_daily_briefing_profile(sid, data=None):
-    data = data or {}
-    profile = normalize_profile(data.get("profile") or {})
-    SETTINGS.setdefault("daily_briefing", {})["profile"] = profile
-    save_settings()
-
-    DAILY_BRIEFING_CACHE["payload"] = None
-    DAILY_BRIEFING_CACHE["ts"] = 0.0
-
-    language = data.get("language", "pl")
-    payload = await _build_daily_briefing_payload(language=language, force=True)
-    await sio.emit("daily_briefing_data", payload, room=sid)
-    await _emit_to_frontend("settings", SETTINGS)
-
-
-@sio.event
-async def accept_daily_briefing_proposal(sid, data=None):
-    req = data or {}
-    proposal = req.get("proposal") or {}
-    from_section = str(proposal.get("from_section") or "").strip().lower()
-    to_section = str(proposal.get("to_section") or "").strip().lower()
-
-    if not from_section or not to_section or to_section not in DEFAULT_SECTIONS:
-        await sio.emit("error", {"msg": "Invalid daily briefing proposal."}, room=sid)
-        return
-
-    profile = _briefing_profile()
-    pinned = [s for s in profile.get("pinned_sections", []) if s in DEFAULT_SECTIONS]
-    preferred = [s for s in profile.get("preferred_sections", []) if s in DEFAULT_SECTIONS]
-
-    if from_section in pinned:
-        pinned = [s for s in pinned if s != from_section]
-    if to_section not in pinned:
-        pinned.append(to_section)
-    if to_section not in preferred:
-        preferred.append(to_section)
-
-    profile["pinned_sections"] = pinned[:3]
-    profile["preferred_sections"] = preferred[:4]
-    SETTINGS.setdefault("daily_briefing", {})["profile"] = normalize_profile(profile)
-    save_settings()
-
-    DAILY_BRIEFING_CACHE["payload"] = None
-    DAILY_BRIEFING_CACHE["ts"] = 0.0
-    payload = await _build_daily_briefing_payload(language=req.get("language", "pl"), force=True)
-    await sio.emit("daily_briefing_data", payload, room=sid)
-    await _emit_to_frontend("settings", SETTINGS)
-
-
-@sio.event
-async def reject_daily_briefing_proposal(sid, data=None):
-    req = data or {}
-    proposal = req.get("proposal") or {}
-    from_section = str(proposal.get("from_section") or "").strip().lower()
-    to_section = str(proposal.get("to_section") or "").strip().lower()
-
-    profile = _briefing_profile()
-    cooldown_hours = int((profile.get("proposal_policy") or {}).get("cooldown_hours", 12))
-    if from_section and to_section:
-        key = f"{from_section}->{to_section}"
-        DAILY_BRIEFING_REJECTED_UNTIL[key] = time.time() + max(1, cooldown_hours) * 3600
-
-    DAILY_BRIEFING_CACHE["payload"] = None
-    DAILY_BRIEFING_CACHE["ts"] = 0.0
-    payload = await _build_daily_briefing_payload(language=req.get("language", "pl"), force=True)
-    await sio.emit("daily_briefing_data", payload, room=sid)
-
-@sio.event
 async def get_personality_status(sid):
     """Frontend requests current personality status."""
     if personality_system:
         data = asdict(personality_system.state)
-        data["sprite"] = _determine_sprite(data)
         aff = max(0.0, min(100.0, float(data.get("affection", 0))))
         score = aff / 10.0
         full = int(score)
         hearts = "❤️" * full + "🤍" * (10 - full)
         data["affection_hearts"] = f"{hearts} ({score:.1f}/10)"
         await sio.emit('personality_status', data, room=sid)
-
-@sio.event
-async def delete_event(sid, data):
-    """Frontend deletes a calendar event."""
-    eid = (data or {}).get('id')
-    if not eid:
-        return
-    if calendar_manager:
-        calendar_manager.delete_event(eid)
-
-@sio.event
-async def update_reminder(sid, data):
-    rid = data.get('id')
-    msg = data.get('message')
-    if reminder_manager and rid:
-        reminder_manager.update(rid, message=msg)
-        await sio.emit('reminders_list', {'reminders': _serialize_reminders()}, room=sid)
-
-@sio.event
-async def update_event(sid, data):
-    eid = data.get('id')
-    summary = data.get('summary')
-    if calendar_manager and eid:
-        calendar_manager.update_event(eid, summary=summary)
-        # emit calendar_data
-        events = [e.__dict__ for e in calendar_manager.get_all_events()]
-        await sio.emit('calendar_data', events, room=sid)
-
-@sio.event
-async def cancel_reminder(sid, data):
-    """Frontend cancels a reminder by id."""
-    rid = (data or {}).get('id')
-    if not rid:
-        await sio.emit('error', {'msg': 'cancel_reminder: Missing id'}, room=sid)
-        return
-
-    if not reminder_manager:
-        await sio.emit('error', {'msg': 'Reminders not available'}, room=sid)
-        return
-
-    ok = reminder_manager.cancel(rid)
-    await sio.emit('reminders_list', {'reminders': _serialize_reminders()}, room=sid)
-    if ok:
-        await sio.emit('status', {'msg': 'Reminder cancelled'}, room=sid)
-    else:
-        await sio.emit('status', {'msg': 'Reminder not found'}, room=sid)
-
-
-@sio.event
-async def create_reminder(sid, data):
-    """Optional: Frontend can create a reminder (same semantics as the model tool)."""
-    if not reminder_manager:
-        await sio.emit('error', {'msg': 'Reminders not available'}, room=sid)
-        return
-
-    data = data or {}
-    message = (data.get('message') or '').strip()
-    at = data.get('at')
-    in_minutes = data.get('in_minutes')
-    in_seconds = data.get('in_seconds')
-    speak = data.get('speak', True)
-    alert = data.get('alert', True)
-
-    if not message:
-        await sio.emit('error', {'msg': 'create_reminder: Missing message'}, room=sid)
-        return
-
-    try:
-        rem = reminder_manager.create(message=message, at=at, in_minutes=in_minutes, in_seconds=in_seconds, speak=speak, alert=alert)
-        await sio.emit('status', {'msg': f"Reminder created ({rem.id})"}, room=sid)
-
-        # Let the model know (so it can reference it later)
-        try:
-            if getattr(audio_loop, 'session', None):
-                kind = 'timer' if (in_seconds is not None or in_minutes is not None) and (at is None) else 'reminder'
-                when_desc = rem.when_iso
-                await audio_loop.session.send(
-                    input=(
-                        f"System Notification: User manually created a {kind}. \
-Message: {rem.message}. \
-When: {when_desc}. \
-Speak: {bool(rem.speak)}. Alert: {bool(getattr(rem, 'alert', True))}."
-                    ),
-                    end_of_turn=False
-                )
-        except Exception as e:
-            print(f"[SERVER] Failed to notify model about reminder: {e}")
-    except Exception as e:
-        await sio.emit('error', {'msg': f"Failed to create reminder: {e}"}, room=sid)
-
-    await sio.emit('reminders_list', {'reminders': _serialize_reminders()}, room=sid)
-
-@sio.event
-async def create_event(sid, data):
-    """Frontend creates a calendar event."""
-    if not calendar_manager:
-        await sio.emit('error', {'msg': 'Calendar not available'}, room=sid)
-        return
-
-    data = data or {}
-    summary = data.get('summary')
-    start_iso = data.get('start_iso')
-    end_iso = data.get('end_iso')
-    description = data.get('description')
-
-    if not summary or not start_iso or not end_iso:
-        await sio.emit('error', {'msg': 'create_event: Missing summary, start_iso, or end_iso'}, room=sid)
-        return
-
-    try:
-        event = calendar_manager.create_event(summary=summary, start_iso=start_iso, end_iso=end_iso, description=description)
-        await sio.emit('status', {'msg': f"Event created ({event.id})"}, room=sid)
-    except Exception as e:
-        await sio.emit('error', {'msg': f"Failed to create event: {e}"}, room=sid)
-
-    # Emit update
-    if calendar_manager:
-        events = [e.__dict__ for e in calendar_manager.get_all_events()]
-        await sio.emit('calendar_data', events, room=sid)
-
-@sio.event
-async def confirm_tool(sid, data):
-    # data: { "id": "...", "confirmed": True/False }
-    request_id = data.get('id')
-    confirmed = data.get('confirmed', False)
-    
-    print(f"[SERVER DEBUG] Received confirmation response for {request_id}: {confirmed}")
-    
-    if audio_loop:
-        audio_loop.resolve_tool_confirmation(request_id, confirmed)
-    else:
-        print("Audio loop not active, cannot resolve confirmation.")
-
-@sio.event
-async def shutdown(sid, data=None):
-    """Gracefully shutdown the server when the application closes."""
-    print("[SERVER] ========================================")
-    print("[SERVER] SHUTDOWN SIGNAL RECEIVED FROM FRONTEND")
-    print("[SERVER] ========================================")
-    asyncio.create_task(_shutdown_and_exit("[SERVER] Frontend requested shutdown."))
-    return {"ok": True}
-
-@sio.event
-async def user_input(sid, data):
-    text = data.get('text')
-    attachments = data.get('attachments') or []
-    print(f"[SERVER DEBUG] User input received: '{text}'")
-    
-    if not audio_loop:
-        print("[SERVER DEBUG] [Error] Audio loop is None. Cannot send text.")
-        return
-
-    if not audio_loop.session:
-        print("[SERVER DEBUG] [Error] Session is None. Cannot send text.")
-        return
-
-    async def _send_with_reconnect_retry(input_payload, end_of_turn=False):
-        try:
-            await audio_loop.session.send(input=input_payload, end_of_turn=end_of_turn)
-            return True
-        except Exception as e:
-            msg = str(e or "")
-            if "1008" not in msg and "Requested entity was not found" not in msg:
-                raise
-            # Session likely flipped during reconnect; wait for fresh session and retry once.
-            try:
-                await audio_loop.wait_until_ready(timeout_sec=6.0)
-                if audio_loop.session:
-                    await audio_loop.session.send(input=input_payload, end_of_turn=end_of_turn)
-                    return True
-            except Exception:
-                pass
-            raise
-
-    if text or attachments:
-        if text:
-            print(f"[SERVER DEBUG] Sending message to model: '{text}'")
-        if attachments:
-            print(f"[SERVER DEBUG] Received {len(attachments)} attachment(s).")
-
-        asks_name = False
-        if text:
-            try:
-                t_norm = str(text).strip().lower()
-                asks_name = bool(re.search(r"\b(jak\s+mam\s+na\s+imię|jak\s+mam\s+na\s+imie|pamiętasz\s+jak\s+mam\s+na\s+imię|pamietasz\s+jak\s+mam\s+na\s+imie|what\s+is\s+my\s+name|remember\s+my\s+name)\b", t_norm))
-            except Exception:
-                asks_name = False
-
-        sent_visual = False
-        sent_screen_ocr = False
-        max_visual_age_sec = 2.0
-        latest_age = None
-        study_payload = None
-        study_meta = {}
-
-        # Mark user activity (prevents idle nudges + updates topic memory)
-        try:
-            audio_loop_mark_user_activity(audio_loop, text)
-        except Exception:
-            pass
-
-        # Scene switching based on user text (text chat)
-        try:
-            if text:
-                global _vn_user_buf, _vn_user_last_ts, _vn_scene_task
-                _vn_user_buf = (_vn_user_buf + " " + text).strip()[-400:]
-                _vn_user_last_ts = time.time()
-                if _vn_scene_task is None or _vn_scene_task.done():
-                    _vn_scene_task = asyncio.create_task(_debounced_vn_scene_check())
-        except Exception:
-            pass
-        
-        # Log User Input to Session History
-        if audio_loop and getattr(audio_loop, "session_manager", None):
-            audio_loop.session_manager.log_chat("User", text)
-            
-        # INJECT VIDEO FRAME IF AVAILABLE (VAD-style logic for Text Input)
-        # Refresh screen frame for lowest latency
-        if audio_loop and getattr(audio_loop, "video_mode", None) == "screen":
-            try:
-                await audio_loop.refresh_latest_frame(min_age_sec=0.05)
-            except Exception:
-                pass
-
-        # If camera is frontend-based, request a fresh frame from UI
-        if audio_loop and getattr(audio_loop, "video_mode", None) == "camera":
-            try:
-                if getattr(audio_loop, "camera_source", "frontend") == "frontend":
-                    await sio.emit("request_camera_frame", to=sid)
-                    await asyncio.sleep(0.08)
-            except Exception:
-                pass
-
-        # Send attachments (if any) before the text
-        if attachments:
-            try:
-                summary = []
-                for a in attachments:
-                    name = a.get("name") or "unnamed"
-                    mime_type = a.get("mime_type") or "application/octet-stream"
-                    size = a.get("size")
-                    size_str = f"{size} bytes" if isinstance(size, int) else "unknown size"
-                    summary.append(f"{name} ({mime_type}, {size_str})")
-                await audio_loop.session.send(
-                    input=("System Notification: User attached files: " + "; ".join(summary)),
-                    end_of_turn=False,
-                )
-            except Exception as e:
-                print(f"[SERVER DEBUG] Failed to send attachment summary: {e}")
-
-            for a in attachments:
-                try:
-                    payload = {
-                        "mime_type": a.get("mime_type") or "application/octet-stream",
-                        "data": a.get("data"),
-                    }
-                    if payload["data"]:
-                        await audio_loop.session.send(input=payload, end_of_turn=False)
-                        if str(payload["mime_type"]).startswith("image/"):
-                            sent_visual = True
-                except Exception as e:
-                    print(f"[SERVER DEBUG] Failed to send attachment payload: {e}")
-
-        study_payload, study_meta = STUDY_READER.get_latest_image(max_age_sec=45.0)
-
-        page_request = False
-        private_web_task_request = False
-        if text:
-            norm_text = str(text).lower()
-            if re.search(r"\bcan you see (this )?current page\??\b", norm_text):
-                page_request = True
-            private_web_task_request = _is_private_web_task_request(norm_text)
-
-        if page_request:
-            try:
-                reminder = (
-                    'System Notification: The user is asking if you can see the current study page. '
-                    'You must tell them: "Send me the current page", and explain you can only read it '
-                    "after they send it via the chat button."
-                )
-                await audio_loop.session.send(input=reminder, end_of_turn=False)
-            except Exception:
-                pass
-
-        if private_web_task_request:
-            try:
-                web_task_nudge = (
-                    "System Notification: [Private Service Routing] The user asked for help with a private web service "
-                    "(e.g., email inbox). Choose approach adaptively: if a relevant Skill is available and "
-                    "eligible, you may use `run_openclaw_skill_command`; otherwise use `run_openclaw_agent` (or "
-                    "`manage_agent_job` action=start for longer flows). For browser flows, guide step by step. "
-                    "If login/2FA is required, ask the user to complete it manually in browser. "
-                    "Never ask for or store passwords."
-                )
-                await audio_loop.session.send(input=web_task_nudge, end_of_turn=False)
-            except Exception:
-                pass
-
-        if not study_payload and audio_loop and getattr(audio_loop, "video_mode", None) == "screen":
-            try:
-                await audio_loop.refresh_latest_frame(min_age_sec=0.5)
-            except Exception:
-                pass
-
-        if study_payload and not sent_visual:
-            try:
-                page = study_meta.get("page")
-                page_label = study_meta.get("page_label")
-                folder = study_meta.get("folder")
-                file = study_meta.get("file")
-                label_note = f" (book page {page_label})" if page_label else ""
-                meta_msg = (
-                    "System Notification: [Study] "
-                    f"Use the attached study page image for the user's question. "
-                    f"Current page: {page}{label_note} from {folder}/{file}. "
-                    "Do not use prior knowledge about the textbook. "
-                    "Do not guess; if the image is unreadable, say you cannot read it."
-                )
-                await audio_loop.session.send(input=meta_msg, end_of_turn=False)
-                await audio_loop.session.send(input=study_payload, end_of_turn=False)
-                sent_visual = True
-
-                ocr_text, ocr_meta = STUDY_READER.get_latest_text(max_age_sec=45.0)
-                if ocr_text and ocr_meta:
-                    if ocr_meta.get("page") == page and ocr_meta.get("file") == file:
-                        ocr_msg = f"System Notification: [Study OCR] Text snippet for this page: {ocr_text}"
-                        await audio_loop.session.send(input=ocr_msg, end_of_turn=False)
-
-                tiles, tiles_meta = STUDY_READER.get_latest_tiles(max_age_sec=45.0)
-                if tiles and tiles_meta:
-                    if tiles_meta.get("page") == page and tiles_meta.get("file") == file:
-                        tiles_msg = (
-                            "System Notification: [Study] Zoom tiles are attached for small text. "
-                            "Use them to read precise content. Do not guess."
-                        )
-                        await audio_loop.session.send(input=tiles_msg, end_of_turn=False)
-                        for payload in tiles:
-                            await audio_loop.session.send(input=payload, end_of_turn=False)
-            except Exception as e:
-                print(f"[SERVER DEBUG] Failed to send study page image: {e}")
-
-        if not sent_visual and audio_loop and getattr(audio_loop, "_latest_image_payload", None):
-            if getattr(audio_loop, "_latest_image_ts", None):
-                latest_age = time.time() - audio_loop._latest_image_ts
-            if latest_age is None or latest_age <= max_visual_age_sec:
-                print(f"[SERVER DEBUG] Piggybacking video frame with text input.")
-                try:
-                    await audio_loop.session.send(input=audio_loop._latest_image_payload, end_of_turn=False)
-                    sent_visual = True
-                except Exception as e:
-                    print(f"[SERVER DEBUG] Failed to send piggyback frame: {e}")
-            else:
-                print(f"[SERVER DEBUG] Skipping stale visual frame (age {latest_age:.2f}s).")
-
-        if text:
-            try:
-                sent_screen_ocr = await _maybe_send_screen_ocr(text)
-            except Exception:
-                sent_screen_ocr = False
-
-        if not sent_visual and not sent_screen_ocr and audio_loop and getattr(audio_loop, "video_mode", None) in ("screen", "camera"):
-            note = "System Notification: No visual frame was sent with this turn. If you did not receive an image, say you cannot see the user's screen/camera."
-            if latest_age is not None:
-                note += f" Last visual frame age: {latest_age:.2f}s."
-            try:
-                await audio_loop.session.send(input=note, end_of_turn=False)
-            except Exception:
-                pass
-
-        # Therapy guidance (auto) for session mode
-        if text and audio_loop and getattr(audio_loop, "send_therapy_guidance", None) and getattr(audio_loop, "session_mode", False):
-            try:
-                await audio_loop.send_therapy_guidance(text, force=False)
-            except Exception:
-                pass
-
-        # Inject memory context (global memory engine)
-        if text and (not asks_name) and audio_loop and getattr(audio_loop, "build_memory_context", None):
-            try:
-                mem_ctx = audio_loop.build_memory_context(text)
-                if mem_ctx:
-                    await _send_with_reconnect_retry(mem_ctx, end_of_turn=False)
-            except Exception:
-                pass
-
-        # Deterministic name-recall helper: if user asks for their name, provide direct memory hint.
-        if text and audio_loop and getattr(audio_loop, "memory_engine", None):
-            try:
-                if asks_name and hasattr(audio_loop.memory_engine, "get_user_name"):
-                    remembered_name = audio_loop.memory_engine.get_user_name()
-                    if remembered_name:
-                        hint = (
-                            "System Notification: [Memory Recall] "
-                            f"The user's name in memory is: {remembered_name}. "
-                            "Answer directly and naturally. Do not say you are checking memory now."
-                        )
-                        await _send_with_reconnect_retry(hint, end_of_turn=False)
-            except Exception:
-                pass
-                
-        if text:
-            try:
-                await _send_with_reconnect_retry(text, end_of_turn=True)
-                print(f"[SERVER DEBUG] Message sent to model successfully.")
-            except Exception as e:
-                print(f"[SERVER DEBUG] Failed to send message to model: {e}")
-                await _emit_to_frontend('status', {'msg': 'Connection lost. Reconnecting...'})
-        else:
-            try:
-                await _send_with_reconnect_retry(
-                    "System Notification: User sent attachments without additional text.",
-                    end_of_turn=True,
-                )
-                print(f"[SERVER DEBUG] Attachments-only message sent to model.")
-            except Exception as e:
-                print(f"[SERVER DEBUG] Failed to send attachments-only message: {e}")
-                await _emit_to_frontend('status', {'msg': 'Connection lost. Reconnecting...'})
 
 import json
 from datetime import datetime
@@ -2631,45 +1307,6 @@ async def user_activity(sid, data):
         audio_loop_mark_user_activity(audio_loop, text)
     except Exception:
         pass
-
-@sio.event
-async def save_memory(sid, data):
-    try:
-        messages = data.get('messages', [])
-        if not messages:
-            print("No messages to save.")
-            return
-
-        # Ensure directory exists
-        memory_dir = DATA_DIR / "long_term_memory"
-        memory_dir.mkdir(exist_ok=True)
-
-        # Generate filename
-        # Use provided filename if available, else timestamp
-        provided_name = data.get('filename')
-        
-        if provided_name:
-            # Simple sanitization
-            if not provided_name.endswith('.txt'):
-                provided_name += '.txt'
-            # Prevent directory traversal
-            filename = memory_dir / Path(provided_name).name 
-        else:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = memory_dir / f"memory_{timestamp}.txt"
-
-        # Write to file
-        with open(filename, 'w', encoding='utf-8') as f:
-            for msg in messages:
-                sender = msg.get('sender', 'Unknown')
-                text = msg.get('text', '')
-                f.write(f"{sender}: {text}\n")
-        print(f"Conversation saved to {filename}")
-        await sio.emit('status', {'msg': 'Memory Saved Successfully'}, room=sid)
-
-    except Exception as e:
-        print(f"Error saving memory: {e}")
-        await sio.emit('error', {'msg': f"Failed to save memory: {str(e)}"}, room=sid)
 
 def _notes_path():
     try:
@@ -2773,654 +1410,6 @@ def _list_memory_pages() -> list[dict]:
         })
     pages.sort(key=lambda x: (x.get("title", "").lower(), x.get("path", "")))
     return pages
-
-@sio.event
-async def notes_get(sid):
-    text = _read_notes_text()
-    await sio.emit('notes_data', {'text': text, 'scope': 'global'}, room=sid)
-
-@sio.event
-async def notes_set(sid, data):
-    try:
-        content = (data or {}).get("content", "")
-        _write_notes_text(content)
-        await sio.emit('notes_data', {'text': content, 'scope': 'global'}, room=sid)
-    except Exception as e:
-        await sio.emit('error', {'msg': f"Failed to save notes: {e}"}, room=sid)
-
-@sio.event
-async def notes_append(sid, data):
-    try:
-        content = (data or {}).get("content", "")
-        _append_notes_text(content)
-        text = _read_notes_text()
-        await sio.emit('notes_data', {'text': text, 'scope': 'global'}, room=sid)
-    except Exception as e:
-        await sio.emit('error', {'msg': f"Failed to append notes: {e}"}, room=sid)
-
-@sio.event
-async def notes_clear(sid):
-    try:
-        _write_notes_text("")
-        await sio.emit('notes_data', {'text': "", 'scope': 'global'}, room=sid)
-    except Exception as e:
-        await sio.emit('error', {'msg': f"Failed to clear notes: {e}"}, room=sid)
-
-@sio.event
-async def journal_get_today(sid):
-    text, date_key = _read_journal_today()
-    await sio.emit('journal_today', {'text': text, 'date': date_key}, room=sid)
-
-@sio.event
-async def journal_add(sid, data):
-    try:
-        if not audio_loop or not getattr(audio_loop, "memory_engine", None):
-            await sio.emit('error', {'msg': "Memory engine not available."}, room=sid)
-            return
-        content = (data or {}).get("content", "")
-        topics = (data or {}).get("topics") or []
-        mood = (data or {}).get("mood")
-        tags = (data or {}).get("tags") or []
-
-        entry_id = audio_loop.memory_engine.journal_add_entry(
-            content=content,
-            topics=topics,
-            mood=mood,
-            tags=tags,
-        )
-        await sio.emit('journal_saved', {'id': entry_id}, room=sid)
-        text, date_key = _read_journal_today()
-        await sio.emit('journal_today', {'text': text, 'date': date_key}, room=sid)
-    except Exception as e:
-        await sio.emit('error', {'msg': f"Failed to add journal entry: {e}"}, room=sid)
-
-@sio.event
-async def journal_finalize(sid, data):
-    try:
-        if not audio_loop or not getattr(audio_loop, "memory_engine", None):
-            await sio.emit('error', {'msg': "Memory engine not available."}, room=sid)
-            return
-        summary = (data or {}).get("summary", "")
-        reflections = (data or {}).get("reflections")
-        session_id = (data or {}).get("session_id")
-        result = audio_loop.memory_engine.journal_finalize_session(
-            summary=summary,
-            reflections=reflections,
-            session_id=session_id,
-        )
-        await sio.emit('journal_finalized', {'status': result}, room=sid)
-    except Exception as e:
-        await sio.emit('error', {'msg': f"Failed to finalize session: {e}"}, room=sid)
-
-@sio.event
-async def session_mode_set(sid, data):
-    try:
-        from .session_modes import get_session_mode_message, DEFAULT_KIND
-
-        active = bool((data or {}).get("active", False))
-        # Always keep session mode in AUTO so Monika can decide depth/pace.
-        kind = DEFAULT_KIND
-        if audio_loop and getattr(audio_loop, "set_session_mode", None):
-            audio_loop.set_session_mode(active=active, kind=kind)
-        await sio.emit('session_mode', {'active': active, 'kind': kind}, room=sid)
-
-        if audio_loop and audio_loop.session:
-            if active:
-                msg = get_session_mode_message(kind)
-            else:
-                msg = (
-                    "System Notification: Session mode disabled. "
-                    "Please write an internal session summary and reflections. "
-                    "Call journal_finalize_session with summary + reflections. "
-                    "Do NOT show the summary to the user."
-                )
-            if hasattr(audio_loop, "send_system_message"):
-                await audio_loop.send_system_message(msg, end_of_turn=False)
-            else:
-                await audio_loop.session.send(input=msg, end_of_turn=False)
-    except Exception as e:
-        await sio.emit('error', {'msg': f"Failed to set session mode: {e}"}, room=sid)
-
-@sio.event
-async def session_exercise_submit(sid, data):
-    try:
-        if not audio_loop or not getattr(audio_loop, "memory_engine", None):
-            await sio.emit('error', {'msg': "Memory engine not available."}, room=sid)
-            return
-        exercise_id = (data or {}).get("exercise_id") or "exercise"
-        title = (data or {}).get("title") or exercise_id
-        fields = (data or {}).get("fields") or {}
-        notes = (data or {}).get("notes") or ""
-
-        lines = [f"Exercise: {title}", ""]
-        for k, v in fields.items():
-            if v is None:
-                continue
-            lines.append(f"- {k}: {v}")
-        if notes:
-            lines.extend(["", f"Notes: {notes}"])
-        content = "\n".join(lines).strip()
-
-        entry_id, _ = audio_loop.memory_engine.add_entry(
-            type="reflection",
-            content=content,
-            tags=["exercise", exercise_id],
-            entities=["user"],
-            origin="real",
-            confidence=0.7,
-            stability="medium",
-            data={"exercise_id": exercise_id, "title": title, "fields": fields, "notes": notes},
-        )
-
-        # Append to today's journal page
-        try:
-            journal_path, _ = _journal_today_path()
-            block = [
-                f"## Exercise: {title} ({datetime.now().strftime('%H:%M')})",
-                *[f"- {k}: {v}" for k, v in fields.items() if v is not None and str(v).strip()],
-            ]
-            if notes:
-                block.append(f"- Notes: {notes}")
-            audio_loop.memory_engine.append_page(str(journal_path), "\n".join(block) + "\n")
-        except Exception:
-            pass
-
-        await sio.emit('session_exercise_saved', {'id': entry_id}, room=sid)
-
-        if audio_loop and audio_loop.session:
-            try:
-                if hasattr(audio_loop, "send_system_message"):
-                    await audio_loop.send_system_message(
-                        f"System Notification: The user completed an exercise '{title}'. You can respond briefly and empathetically.",
-                        end_of_turn=False,
-                    )
-                else:
-                    await audio_loop.session.send(
-                        input=f"System Notification: The user completed an exercise '{title}'. You can respond briefly and empathetically.",
-                        end_of_turn=False,
-                    )
-            except Exception:
-                pass
-    except Exception as e:
-        await sio.emit('error', {'msg': f"Failed to save exercise: {e}"}, room=sid)
-
-@sio.event
-async def session_sketch_save(sid, data):
-    try:
-        if not audio_loop or not getattr(audio_loop, "memory_engine", None):
-            await sio.emit('error', {'msg': "Memory engine not available."}, room=sid)
-            return
-        image_data = (data or {}).get("image")
-        label = (data or {}).get("label") or "feeling_sketch"
-        if not image_data or "base64," not in image_data:
-            await sio.emit('error', {'msg': "Invalid image data."}, room=sid)
-            return
-
-        header, b64 = image_data.split("base64,", 1)
-        ext = "png"
-        if "image/jpeg" in header:
-            ext = "jpg"
-
-        date_dir = datetime.now().strftime("%Y-%m-%d")
-        out_dir = DATA_DIR / "memory" / "pages" / "journal" / "sketches" / date_dir
-        out_dir.mkdir(parents=True, exist_ok=True)
-        filename = f"sketch_{datetime.now().strftime('%H%M%S')}.{ext}"
-        path = out_dir / filename
-
-        import base64 as _b64
-        path.write_bytes(_b64.b64decode(b64))
-
-        entry_id, _ = audio_loop.memory_engine.add_entry(
-            type="reflection",
-            content=f"Feeling sketch saved: {label}",
-            tags=["sketch", "session"],
-            entities=["user"],
-            origin="real",
-            confidence=0.6,
-            stability="low",
-            data={"file": str(path), "label": label},
-        )
-
-        try:
-            journal_path, _ = _journal_today_path()
-            rel = path.relative_to(DATA_DIR)
-            audio_loop.memory_engine.append_page(
-                str(journal_path),
-                f"## Feeling Sketch ({datetime.now().strftime('%H:%M')})\n- file: {rel.as_posix()}\n- label: {label}\n",
-            )
-        except Exception:
-            pass
-
-        await sio.emit('session_sketch_saved', {'id': entry_id, 'file': str(path)}, room=sid)
-    except Exception as e:
-        await sio.emit('error', {'msg': f"Failed to save sketch: {e}"}, room=sid)
-
-
-@sio.event
-async def study_select(sid, data):
-    try:
-        folder = (data or {}).get("folder") or ""
-        file = (data or {}).get("file") or ""
-        rel_path = (data or {}).get("path") or ""
-        if not rel_path:
-            return
-
-        safe_path = _safe_study_path(rel_path)
-        if not safe_path.exists():
-            return
-
-        answer_keys = []
-        try:
-            for f in safe_path.parent.glob("*.pdf"):
-                if "answer key" in f.name.lower():
-                    answer_keys.append(f)
-        except Exception:
-            answer_keys = []
-
-        if audio_loop and getattr(audio_loop, "session", None):
-            ak_list = ", ".join([str(p) for p in answer_keys]) if answer_keys else "(none found)"
-            msg = (
-                "System Notification: [Study] "
-                f"User opened: {folder}/{file}. "
-                f"Answer key files (for your use only): {ak_list}. "
-                "Do not reveal the answer key unless the user explicitly asks. "
-                "You can create answer fields with the study_set_fields tool and change pages with study_set_page. "
-                "When asked about page contents, rely on the provided page text snippet and/or attached page image; if none is available, say you cannot see that page."
-            )
-            if hasattr(audio_loop, "send_system_message"):
-                await audio_loop.send_system_message(msg, end_of_turn=False)
-            else:
-                await audio_loop.session.send(input=msg, end_of_turn=False)
-    except Exception as e:
-        await sio.emit('error', {'msg': f"Study select failed: {e}"}, room=sid)
-
-
-@sio.event
-async def study_answers_submit(sid, data):
-    try:
-        if not audio_loop or not getattr(audio_loop, "session", None):
-            return
-        folder = (data or {}).get("folder") or ""
-        file = (data or {}).get("file") or ""
-        fields = (data or {}).get("fields") or {}
-        notes = (data or {}).get("notes") or ""
-        lines = [f"Study answers for: {folder}/{file}"]
-        if isinstance(fields, dict) and fields:
-            for k, v in fields.items():
-                if v is None or str(v).strip() == "":
-                    continue
-                lines.append(f"- {k}: {v}")
-        if notes:
-            lines.append("")
-            lines.append(f"Notes: {notes}")
-        msg = "System Notification: [Study] " + "\n".join(lines)
-        if hasattr(audio_loop, "send_system_message"):
-            await audio_loop.send_system_message(msg, end_of_turn=False)
-        else:
-            await audio_loop.session.send(input=msg, end_of_turn=False)
-    except Exception as e:
-        await sio.emit('error', {'msg': f"Study submit failed: {e}"}, room=sid)
-
-
-@sio.event
-async def study_page_user(sid, data):
-    try:
-        if not audio_loop or not getattr(audio_loop, "session", None):
-            return
-        folder = (data or {}).get("folder") or ""
-        file = (data or {}).get("file") or ""
-        page = (data or {}).get("page")
-        page_label = (data or {}).get("page_label") or ""
-        text = (data or {}).get("text") or ""
-        if not page:
-            return
-        print(f"[SERVER DEBUG] [Study] Page update: {folder}/{file} page={page} label={page_label} text_len={len(text or '')}")
-        snippet = ""
-        if text:
-            cleaned = " ".join(str(text).split())
-            snippet = cleaned[:1200] + ("..." if len(cleaned) > 1200 else "")
-        STUDY_READER.update_page_text(
-            text=snippet or "",
-            meta={"folder": folder, "file": file, "page": page, "page_label": page_label},
-        )
-        label_note = f" (book page {page_label})" if page_label else ""
-        msg = f"System Notification: [Study] User is viewing page {page} of {folder}/{file}{label_note}."
-        if snippet:
-            msg += f" Page text snippet: {snippet}"
-        else:
-            msg += " Page text snippet: (unavailable)"
-        if hasattr(audio_loop, "send_system_message"):
-            await audio_loop.send_system_message(msg, end_of_turn=False)
-        else:
-            await audio_loop.session.send(input=msg, end_of_turn=False)
-    except Exception as e:
-        await sio.emit('error', {'msg': f"Study page update failed: {e}"}, room=sid)
-
-
-@sio.event
-async def study_page_image(sid, data):
-    try:
-        if not audio_loop or not getattr(audio_loop, "session", None):
-            return
-        folder = (data or {}).get("folder") or ""
-        file = (data or {}).get("file") or ""
-        page = (data or {}).get("page")
-        page_label = (data or {}).get("page_label") or ""
-        mime_type = (data or {}).get("mime_type") or "image/jpeg"
-        b64 = (data or {}).get("data") or ""
-        if not page or not b64:
-            return
-        payload = {"mime_type": mime_type, "data": b64}
-        STUDY_READER.update_page_image(
-            payload=payload,
-            meta={"folder": folder, "file": file, "page": page, "page_label": page_label},
-        )
-        print(f"[SERVER DEBUG] [Study] Page image received: {folder}/{file} page={page} label={page_label} mime={mime_type} bytes={len(b64)}")
-        label_note = f" (book page {page_label})" if page_label else ""
-        msg = (
-            f"System Notification: [Study] Image of page {page} from {folder}/{file}{label_note}. "
-            "Use this image to answer questions about this page only. "
-            "Do not use prior knowledge. Do not guess if unreadable."
-        )
-        if hasattr(audio_loop, "send_system_message"):
-            await audio_loop.send_system_message(msg, end_of_turn=False)
-        else:
-            await audio_loop.session.send(input=msg, end_of_turn=False)
-        await audio_loop.session.send(input=payload, end_of_turn=False)
-
-        # OCR in background (image-only PDFs)
-        try:
-            last_text, last_meta = STUDY_READER.get_latest_text(max_age_sec=20.0)
-            if last_meta.get("page") == page and last_meta.get("file") == file and last_text:
-                return
-        except Exception:
-            pass
-
-        async def _run_ocr():
-            try:
-                import base64 as _b64
-                raw = _b64.b64decode(b64)
-                text, err = await asyncio.to_thread(ocr_image_bytes, raw)
-                if not text:
-                    if err:
-                        print(f"[SERVER DEBUG] [Study OCR] Unavailable: {err}")
-                    return
-                cleaned = " ".join(str(text).split())
-                snippet = cleaned[:2000] + ("..." if len(cleaned) > 2000 else "")
-                STUDY_READER.update_page_text(
-                    text=snippet,
-                    meta={"folder": folder, "file": file, "page": page, "page_label": page_label},
-                )
-                ocr_msg = f"System Notification: [Study OCR] Extracted text snippet: {snippet}"
-                if hasattr(audio_loop, "send_system_message"):
-                    await audio_loop.send_system_message(ocr_msg, end_of_turn=False)
-                else:
-                    await audio_loop.session.send(input=ocr_msg, end_of_turn=False)
-            except Exception as e:
-                print(f"[SERVER DEBUG] [Study OCR] Failed: {e}")
-
-        asyncio.create_task(_run_ocr())
-    except Exception as e:
-        await sio.emit('error', {'msg': f"Study page image failed: {e}"}, room=sid)
-
-
-@sio.event
-async def study_page_share(sid, data):
-    """
-    Explicit user action: share current page with Monika for deep reading + notes/exercises.
-    Sends hi-res image, triggers OCR, and nudges model to create notes + exercises.
-    """
-    try:
-        if not audio_loop or not getattr(audio_loop, "session", None):
-            return
-        folder = (data or {}).get("folder") or ""
-        file = (data or {}).get("file") or ""
-        page = (data or {}).get("page")
-        page_label = (data or {}).get("page_label") or ""
-        mime_type = (data or {}).get("mime_type") or "image/jpeg"
-        b64 = (data or {}).get("data") or ""
-        if not page or not b64:
-            return
-        payload = {"mime_type": mime_type, "data": b64}
-        STUDY_READER.update_page_image(
-            payload=payload,
-            meta={"folder": folder, "file": file, "page": page, "page_label": page_label},
-        )
-        print(f"[SERVER DEBUG] [Study] Page shared: {folder}/{file} page={page} label={page_label} mime={mime_type} bytes={len(b64)}")
-        label_note = f" (book page {page_label})" if page_label else ""
-        msg = (
-            "System Notification: [Study Share] The user explicitly shared this page for deep reading. "
-            f"Current page: {page}{label_note} from {folder}/{file}. "
-            "Read ONLY the attached image. Do not guess if unreadable. "
-            "Then produce: (1) concise notes (4-8 bullets), (2) key vocabulary/phrases (jp + romaji + meaning if visible), "
-            "and (3) 3-6 short exercises. Use study_set_notes to fill the scratchpad, and study_set_fields to create answer inputs. "
-            "If text is unclear, ask the user to zoom/share again."
-        )
-        if hasattr(audio_loop, "send_system_message"):
-            await audio_loop.send_system_message(msg, end_of_turn=False)
-        else:
-            await audio_loop.session.send(input=msg, end_of_turn=False)
-        await audio_loop.session.send(input=payload, end_of_turn=False)
-
-        async def _run_ocr_share():
-            try:
-                import base64 as _b64
-                raw = _b64.b64decode(b64)
-                text, err = await asyncio.to_thread(ocr_image_bytes, raw)
-                if not text:
-                    if err:
-                        print(f"[SERVER DEBUG] [Study OCR] Unavailable: {err}")
-                    return
-                cleaned = " ".join(str(text).split())
-                snippet = cleaned[:2000] + ("..." if len(cleaned) > 2000 else "")
-                STUDY_READER.update_page_text(
-                    text=snippet,
-                    meta={"folder": folder, "file": file, "page": page, "page_label": page_label},
-                )
-                ocr_msg = f"System Notification: [Study OCR] Extracted text snippet: {snippet}"
-                if hasattr(audio_loop, "send_system_message"):
-                    await audio_loop.send_system_message(ocr_msg, end_of_turn=False)
-                else:
-                    await audio_loop.session.send(input=ocr_msg, end_of_turn=False)
-            except Exception as e:
-                print(f"[SERVER DEBUG] [Study OCR] Failed: {e}")
-
-        asyncio.create_task(_run_ocr_share())
-    except Exception as e:
-        await sio.emit('error', {'msg': f"Study page share failed: {e}"}, room=sid)
-
-
-@sio.event
-async def study_page_tiles(sid, data):
-    try:
-        if not audio_loop or not getattr(audio_loop, "session", None):
-            return
-        folder = (data or {}).get("folder") or ""
-        file = (data or {}).get("file") or ""
-        page = (data or {}).get("page")
-        page_label = (data or {}).get("page_label") or ""
-        tiles = (data or {}).get("tiles") or []
-        if not page or not tiles:
-            return
-        payloads = []
-        for tile in tiles:
-            mime = tile.get("mime_type") or "image/png"
-            b64 = tile.get("data") or ""
-            if not b64:
-                continue
-            payloads.append({"mime_type": mime, "data": b64})
-        if not payloads:
-            return
-        STUDY_READER.update_page_tiles(
-            payloads=payloads,
-            meta={"folder": folder, "file": file, "page": page, "page_label": page_label},
-        )
-        label_note = f" (book page {page_label})" if page_label else ""
-        msg = (
-            f"System Notification: [Study] Received {len(payloads)} zoom tiles for page {page} "
-            f"from {folder}/{file}{label_note}. Use them to read small text."
-        )
-        if hasattr(audio_loop, "send_system_message"):
-            await audio_loop.send_system_message(msg, end_of_turn=False)
-        else:
-            await audio_loop.session.send(input=msg, end_of_turn=False)
-        for payload in payloads:
-            await audio_loop.session.send(input=payload, end_of_turn=False)
-    except Exception as e:
-        await sio.emit('error', {'msg': f"Study page tiles failed: {e}"}, room=sid)
-
-@sio.event
-async def memory_get_page(sid, data):
-    try:
-        path = (data or {}).get("path") or "notes.md"
-        p = _resolve_memory_page(path)
-        if not p.exists():
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text("", encoding="utf-8")
-        text = p.read_text(encoding="utf-8", errors="ignore")
-        await sio.emit('memory_page', {'path': str(p), 'text': text}, room=sid)
-    except Exception as e:
-        await sio.emit('error', {'msg': f"Failed to read memory page: {e}"}, room=sid)
-
-@sio.event
-async def memory_list_pages(sid, data=None):
-    try:
-        pages = _list_memory_pages()
-        await sio.emit('memory_pages', {'pages': pages}, room=sid)
-    except Exception as e:
-        await sio.emit('error', {'msg': f"Failed to list memory pages: {e}"}, room=sid)
-
-@sio.event
-async def memory_create_page(sid, data):
-    try:
-        path = (data or {}).get("path") or "notes.md"
-        title = (data or {}).get("title") or ""
-        p = _resolve_memory_page(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        if not p.exists():
-            if title:
-                p.write_text(f"# {title}\n\n", encoding="utf-8")
-            else:
-                p.write_text("", encoding="utf-8")
-        text = p.read_text(encoding="utf-8", errors="ignore")
-        await sio.emit('memory_page', {'path': str(p), 'text': text}, room=sid)
-        await sio.emit('memory_pages', {'pages': _list_memory_pages()}, room=sid)
-    except Exception as e:
-        await sio.emit('error', {'msg': f"Failed to create memory page: {e}"}, room=sid)
-
-@sio.event
-async def memory_set_page(sid, data):
-    try:
-        path = (data or {}).get("path") or "notes.md"
-        content = (data or {}).get("content", "")
-        p = _resolve_memory_page(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content or "", encoding="utf-8")
-        await sio.emit('memory_page', {'path': str(p), 'text': content or ""}, room=sid)
-    except Exception as e:
-        await sio.emit('error', {'msg': f"Failed to write memory page: {e}"}, room=sid)
-
-@sio.event
-async def memory_delete_page(sid, data):
-    try:
-        path = (data or {}).get("path") or ""
-        if not path:
-            return
-        p = _resolve_memory_page(path)
-        if p.exists():
-            p.unlink()
-        await sio.emit('memory_pages', {'pages': _list_memory_pages()}, room=sid)
-    except Exception as e:
-        await sio.emit('error', {'msg': f"Failed to delete memory page: {e}"}, room=sid)
-
-@sio.event
-async def memory_rename_page(sid, data):
-    try:
-        path = (data or {}).get("path") or ""
-        new_path = (data or {}).get("new_path") or ""
-        title = (data or {}).get("title") or ""
-        if not path:
-            return
-        src = _resolve_memory_page(path)
-        if not src.exists():
-            await sio.emit('error', {'msg': "Memory page not found."}, room=sid)
-            return
-        dest = _resolve_memory_page(new_path or path)
-        if dest.exists() and dest != src:
-            await sio.emit('error', {'msg': "Target note already exists."}, room=sid)
-            return
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        if dest != src:
-            src.rename(dest)
-        text = dest.read_text(encoding="utf-8", errors="ignore")
-        if title and dest.suffix.lower() == ".md":
-            lines = text.splitlines()
-            replaced = False
-            for idx, line in enumerate(lines):
-                if line.strip():
-                    if line.lstrip().startswith("#"):
-                        lines[idx] = f"# {title}"
-                        replaced = True
-                    break
-            if not replaced:
-                lines = [f"# {title}", ""] + lines
-            text = "\n".join(lines)
-            if text and not text.endswith("\n"):
-                text += "\n"
-            dest.write_text(text, encoding="utf-8")
-        await sio.emit('memory_page', {'path': str(dest), 'text': text}, room=sid)
-        await sio.emit('memory_pages', {'pages': _list_memory_pages()}, room=sid)
-    except Exception as e:
-        await sio.emit('error', {'msg': f"Failed to rename memory page: {e}"}, room=sid)
-
-@sio.event
-async def memory_append_page(sid, data):
-    try:
-        path = (data or {}).get("path") or "notes.md"
-        content = (data or {}).get("content", "")
-        p = _resolve_memory_page(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with p.open("a", encoding="utf-8") as f:
-            if content and not content.startswith("\n"):
-                f.write("\n")
-            f.write(content)
-            if content and not content.endswith("\n"):
-                f.write("\n")
-        text = p.read_text(encoding="utf-8", errors="ignore")
-        await sio.emit('memory_page', {'path': str(p), 'text': text}, room=sid)
-    except Exception as e:
-        await sio.emit('error', {'msg': f"Failed to append memory page: {e}"}, room=sid)
-
-@sio.event
-async def upload_memory(sid, data):
-    print(f"Received memory upload request")
-    try:
-        memory_text = data.get('memory', '')
-        if not memory_text:
-            print("No memory data provided.")
-            return
-
-        if not audio_loop:
-             print("[SERVER DEBUG] [Error] Audio loop is None. Cannot load memory.")
-             await sio.emit('error', {'msg': "System not ready (Audio Loop inactive)"}, room=sid)
-             return
-        
-        if not audio_loop.session:
-             print("[SERVER DEBUG] [Error] Session is None. Cannot load memory.")
-             await sio.emit('error', {'msg': "System not ready (No active session)"}, room=sid)
-             return
-
-        # Send to model
-        print("Sending memory context to model...")
-        context_msg = f"System Notification: The user has uploaded a long-term memory file. Please load the following context into your understanding. The format is a text log of previous conversations:\n\n{memory_text}"
-        
-        await audio_loop.session.send(input=context_msg, end_of_turn=True)
-        print("Memory context sent successfully.")
-        await sio.emit('status', {'msg': 'Memory Loaded into Context'}, room=sid)
-
-    except Exception as e:
-        print(f"Error uploading memory: {e}")
-        await sio.emit('error', {'msg': f"Failed to upload memory: {str(e)}"}, room=sid)
 
 @sio.event
 async def discover_kasa(sid):
@@ -3942,11 +1931,10 @@ async def update_settings(sid, data):
         SETTINGS.setdefault("daily_briefing", {})
         for k, v in incoming.items():
             if k == "profile" and isinstance(v, dict):
-                SETTINGS["daily_briefing"]["profile"] = normalize_profile(v)
+                DAILY_BRIEFING_RUNTIME.set_profile(v)
             else:
                 SETTINGS["daily_briefing"][k] = v
-        DAILY_BRIEFING_CACHE["payload"] = None
-        DAILY_BRIEFING_CACHE["ts"] = 0.0
+        DAILY_BRIEFING_RUNTIME.invalidate_cache()
 
     save_settings()
     # Broadcast new full settings
@@ -3999,256 +1987,6 @@ async def update_tool_permissions(sid, data):
         audio_loop.update_permissions(SETTINGS["tool_permissions"])
     # Broadcast update to all
     await _emit_to_frontend('tool_permissions', SETTINGS["tool_permissions"])
-
-
-# --------------------------------------------------------------------------------------
-# Minecraft Bot Event Handlers
-# --------------------------------------------------------------------------------------
-
-@sio.event
-async def minecraft_connect(sid, data=None):
-    """Frontend requests to start the Minecraft bot."""
-    global minecraft_bot_manager, minecraft_autonomy_task, minecraft_autonomy_state
-    if not minecraft_bot_manager:
-        await sio.emit('error', {'msg': 'Minecraft bot manager not initialized'}, room=sid)
-        return
-    
-    try:
-        print("[SERVER] [Minecraft] Starting bot connection...")
-        success = await minecraft_bot_manager.start()
-        if not success:
-            await sio.emit('error', {'msg': 'Failed to start bot'}, room=sid)
-            return
-        
-        status = minecraft_bot_manager.get_status()
-        position = {'x': 0, 'y': 0, 'z': 0}
-        if status.position and isinstance(status.position, dict):
-            position = {
-                'x': status.position.get('x', 0),
-                'y': status.position.get('y', 0),
-                'z': status.position.get('z', 0),
-            }
-        
-        await sio.emit('minecraft_status', {
-            'connected': True,
-            'health': status.health,
-            'hunger': status.hunger,
-            'position': position,
-            'dimension': status.dimension,
-        }, room=sid)
-        print("[SERVER] [Minecraft] Bot connected successfully.")
-
-        # Start (or restart) autonomy loop when Minecraft connects.
-        if minecraft_autonomy_task and not minecraft_autonomy_task.done():
-            minecraft_autonomy_task.cancel()
-        minecraft_autonomy_state = {
-            "last_scan_ts": 0.0,
-            "last_look_ts": 0.0,
-            "last_move_ts": 0.0,
-            "last_comment_ts": 0.0,
-            "last_curiosity_ts": 0.0,
-            "last_proposal_ts": 0.0,
-        }
-        minecraft_autonomy_task = asyncio.create_task(_minecraft_autonomy_loop())
-        await sio.emit('minecraft_autonomy_status', {
-            'enabled': bool(_minecraft_autonomy_cfg().get('enabled', True)),
-            'config': _minecraft_autonomy_cfg(),
-        }, room=sid)
-
-        if _minecraft_autonomy_cfg().get("auto_game_mode_on_connect", True):
-            await _set_minecraft_game_mode(True)
-        
-        # Notify model
-        if audio_loop and audio_loop.session:
-            try:
-                await audio_loop.session.send(
-                    input="System Notification: [Minecraft] The bot is now connected to the server. You can use minecraft_* tools to interact.",
-                    end_of_turn=False
-                )
-            except Exception:
-                pass
-    except Exception as e:
-        print(f"[SERVER] [Minecraft] Connection failed: {e}")
-        await sio.emit('error', {'msg': f'Minecraft connection failed: {e}'}, room=sid)
-
-
-@sio.event
-async def minecraft_disconnect(sid, data=None):
-    """Frontend requests to stop the Minecraft bot."""
-    global minecraft_bot_manager, minecraft_autonomy_task
-    if not minecraft_bot_manager:
-        await sio.emit('error', {'msg': 'Minecraft bot manager not initialized'}, room=sid)
-        return
-    
-    try:
-        print("[SERVER] [Minecraft] Stopping bot...")
-        await minecraft_bot_manager.stop()
-        await sio.emit('minecraft_status', {'connected': False}, room=sid)
-        print("[SERVER] [Minecraft] Bot disconnected.")
-
-        if minecraft_autonomy_task and not minecraft_autonomy_task.done():
-            minecraft_autonomy_task.cancel()
-            minecraft_autonomy_task = None
-
-        await _set_minecraft_game_mode(False)
-        
-        # Notify model
-        if audio_loop and audio_loop.session:
-            try:
-                await audio_loop.session.send(
-                    input="System Notification: [Minecraft] The bot has disconnected from the server.",
-                    end_of_turn=False
-                )
-            except Exception:
-                pass
-    except Exception as e:
-        print(f"[SERVER] [Minecraft] Disconnection error: {e}")
-        await sio.emit('error', {'msg': f'Minecraft disconnection error: {e}'}, room=sid)
-
-
-@sio.event
-async def minecraft_action(sid, data):
-    """Frontend sends a minecraft action to execute."""
-    global minecraft_bot_manager
-    if not minecraft_bot_manager:
-        await sio.emit('error', {'msg': 'Minecraft bot manager not initialized'}, room=sid)
-        return
-    
-    action_name = (data or {}).get('action')
-    params = (data or {}).get('params') or {}
-    
-    if not action_name:
-        await sio.emit('error', {'msg': 'Missing action name'}, room=sid)
-        return
-    
-    try:
-        print(f"[SERVER] [Minecraft] Executing action: {action_name} with params {params}")
-        result = await minecraft_bot_manager.send_action(action_name, params)
-        success = bool(result.get('success')) if isinstance(result, dict) else bool(result)
-        await sio.emit('minecraft_action_result', {
-            'action': action_name,
-            'success': success,
-            'result': result.get('message') if isinstance(result, dict) else ('Action sent to bot' if success else None),
-            'data': result.get('data') if isinstance(result, dict) else None,
-            'error': result.get('error') if isinstance(result, dict) else (None if success else 'Failed to send action to bot subprocess'),
-        }, room=sid)
-    except Exception as e:
-        print(f"[SERVER] [Minecraft] Action failed: {e}")
-        await sio.emit('minecraft_action_result', {
-            'action': action_name,
-            'success': False,
-            'error': str(e),
-        }, room=sid)
-
-
-@sio.event
-async def minecraft_query_status(sid, data=None):
-    """Frontend requests current bot status."""
-    global minecraft_bot_manager
-    if not minecraft_bot_manager:
-        await sio.emit('error', {'msg': 'Minecraft bot manager not initialized'}, room=sid)
-        return
-    
-    try:
-        status = minecraft_bot_manager.get_status()
-        perception = minecraft_bot_manager.get_perception_snapshot()
-        
-        position = {'x': 0, 'y': 0, 'z': 0}
-        if status.position and isinstance(status.position, dict):
-            position = {
-                'x': status.position.get('x', 0),
-                'y': status.position.get('y', 0),
-                'z': status.position.get('z', 0)
-            }
-        
-        await sio.emit('minecraft_status', {
-            'connected': status.is_connected,
-            'health': status.health,
-            'hunger': status.hunger,
-            'position': position,
-            'dimension': status.dimension,
-            'inventory': status.inventory,
-            'perception': perception,
-            'autonomy': _minecraft_autonomy_cfg(),
-        }, room=sid)
-    except Exception as e:
-        print(f"[SERVER] [Minecraft] Status query failed: {e}")
-        await sio.emit('error', {'msg': f'Minecraft status query failed: {e}'}, room=sid)
-
-
-@sio.event
-async def minecraft_set_autonomy(sid, data=None):
-    """Enable/disable lightweight autonomous wandering + commentary for Minecraft."""
-    incoming = data if isinstance(data, dict) else {}
-    SETTINGS.setdefault("minecraft_autonomy", {})
-    SETTINGS["minecraft_autonomy"].update(incoming)
-    save_settings()
-
-    cfg = _minecraft_autonomy_cfg()
-    await sio.emit('minecraft_autonomy_status', {
-        'enabled': bool(cfg.get('enabled', True)),
-        'config': cfg,
-    }, room=sid)
-
-
-@sio.event
-async def minecraft_connect_to_server(sid, data=None, callback=None):
-    """Frontend sends a request to connect to a different Minecraft server."""
-    global minecraft_bot_manager
-    if not minecraft_bot_manager:
-        result = {'success': False, 'message': 'Minecraft bot manager not initialized'}
-        if callback:
-            callback(result)
-        return
-    
-    host = (data or {}).get('host')
-    port = (data or {}).get('port', 25565)
-    
-    if not host:
-        result = {'success': False, 'message': 'Missing host parameter'}
-        if callback:
-            callback(result)
-        return
-    
-    try:
-        print(f"[SERVER] [Minecraft] Connecting to {host}:{port}...")
-        
-        # Stop current connection
-        await minecraft_bot_manager.stop()
-        await asyncio.sleep(0.5)
-        
-        # Update connection parameters
-        minecraft_bot_manager.host = host
-        minecraft_bot_manager.port = port
-        
-        # Reconnect to new server
-        success = await minecraft_bot_manager.start()
-        
-        if success:
-            result = {'success': True, 'message': f'Connected to {host}:{port}'}
-            print(f"[SERVER] [Minecraft] Successfully connected to {host}:{port}")
-            
-            # Notify model
-            if audio_loop and audio_loop.session:
-                try:
-                    await audio_loop.session.send(
-                        input=f"System Notification: [Minecraft] Connected to server {host}:{port}. You can now play!",
-                        end_of_turn=False
-                    )
-                except Exception:
-                    pass
-        else:
-            result = {'success': False, 'message': f'Failed to connect to {host}:{port}. Check server is running and version matches.'}
-            print(f"[SERVER] [Minecraft] Failed to connect to {host}:{port}")
-        
-        if callback:
-            callback(result)
-            
-    except Exception as e:
-        result = {'success': False, 'message': f'Connection error: {str(e)}'}
-        print(f"[SERVER] [Minecraft] Connection to {host}:{port} failed: {e}")
-        if callback:
-            callback(result)
 
 
 @sio.event
