@@ -7,6 +7,8 @@
 import React from 'react';
 import Visualizer from '../components/Visualizer';
 import MonikaLayout from './MonikaLayout';
+import ScreenWindow from '../components/ScreenWindow';
+import CameraWindow from '../components/CameraWindow';
 
 const MonikaShell = ({
   // Visualizer props (from App)
@@ -56,6 +58,13 @@ const MonikaShell = ({
   onToggleMinecraft = () => {},
   showMinecraftWindow = false,
   onOpenStudy = () => {},
+  visionMode = 'none',
+  visionFrame = null,
+  toggleScreenCapture = () => {},
+  isVideoOn = false,
+  videoRef = null,
+  isCameraFlipped = false,
+  toggleVideo = () => {},
 }) => {
   return (
     <div className="monika-shell h-screen w-screen bg-black text-white/85 overflow-hidden relative">
@@ -116,6 +125,21 @@ const MonikaShell = ({
           showMinecraftWindow={showMinecraftWindow}
           onOpenStudy={onOpenStudy}
         />
+
+        {visionMode === 'screen' && (
+          <ScreenWindow
+            imageSrc={visionFrame}
+            onClose={toggleScreenCapture}
+          />
+        )}
+
+        {isVideoOn && (
+          <CameraWindow
+            videoRef={videoRef}
+            isCameraFlipped={isCameraFlipped}
+            onClose={toggleVideo}
+          />
+        )}
       </div>
     </div>
   );

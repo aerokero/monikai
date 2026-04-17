@@ -1,31 +1,74 @@
-import React, { useEffect, useLayoutEffect, useState, useRef, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import io from 'socket.io-client';
 
-import Visualizer from './components/Visualizer';
-import { X, Minus, Bell, AlertCircle } from 'lucide-react';
 import ConfirmationPopup from './components/ConfirmationPopup';
 import AuthLock from './components/AuthLock';
 import SessionPromptWindow from './components/SessionPromptWindow';
-import MinecraftWindow from './components/MinecraftWindow';
 import MinecraftConnectPopup from './components/MinecraftConnectPopup';
-import ScreenWindow from './components/ScreenWindow';
 import SettingsWindow from './components/SettingsWindow';
 import GoodbyePopup from './components/GoodbyePopup';
+import ToastStack from './components/toasts/ToastStack';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { LayoutProvider } from './contexts/LayoutContext';
 import { useLayout } from './contexts/LayoutContext';
 import { ModeProvider } from './contexts/ModeContext';
 import { RealtimeProvider } from './contexts/RealtimeContext';
 import { useSettings } from './contexts/SettingsContext';
-import { ProgressionProvider } from './contexts/ProgressionContext';
-import { isMonikaShellEnabled, setMonikaShellEnabled } from './config/uiFlags';
 import MonikaShell from './layout/MonikaShell';
 import { MonikaContextProvider } from './contexts/MonikaContext';
 import { SettingsProvider } from './contexts/SettingsContext';
 import { AudioVideoProvider } from './contexts/AudioVideoContext';
+import {
+  VN_BACKGROUNDS,
+} from './features/scene/backgroundConstants';
+import {
+  resolveVnBackground,
+  pickVnScene,
+  isValidScene,
+} from './features/scene/backgroundUtils';
+import {
+  EAT_MEAL_ASSETS,
+  MONIKA_MEAL_ASSETS,
+} from './features/meal/mealConstants';
+import {
+  detectMealKey,
+  detectFinishedMeal,
+  shouldStartEatTogether,
+  shouldStopEatTogether,
+  pickRandomMonikaMeal,
+} from './features/meal/mealUtils';
+import {
+  buildVisualState,
+} from './features/outfit/visualStateUtils';
+import {
+  buildMasLayers,
+} from './features/outfit/masLayerUtils';
+import { useRandomBlink } from './features/outfit/hooks/useRandomBlink';
+import { useRandomGlance } from './features/outfit/hooks/useRandomGlance';
+import { useRandomPose } from './features/outfit/hooks/useRandomPose';
+import { useHeadpat } from './features/outfit/hooks/useHeadpat';
+import { useToasts } from './features/toasts/useToasts';
 
-const socket = io('http://localhost:8000');
-const { ipcRenderer } = window.require('electron');
+const SOCKET_URL = 'http://localhost:8000';
+const socket = (() => {
+  const existing = globalThis.__monikaiSocket;
+  if (existing) return existing;
+  const created = io(SOCKET_URL);
+  globalThis.__monikaiSocket = created;
+  return created;
+})();
+
+const ipcRenderer = (() => {
+  try {
+    if (typeof window !== 'undefined' && typeof window.require === 'function') {
+      const electron = window.require('electron');
+      return electron?.ipcRenderer || null;
+    }
+  } catch {
+    // No Electron preload available in plain web mode.
+  }
+  return null;
+})();
 
 const TOOL_PERMISSION_ALIASES = {
   list_skills: ['list_skills', 'list_openclaw_skills'],
@@ -46,39 +89,15 @@ const normalizeToolPermissions = (raw) => {
   return next;
 };
 
-const getClampedCenterX = (preferredX, windowWidth, panelWidth, margin = 12) => {
-  const half = panelWidth / 2;
-  const min = half + margin;
-  const max = windowWidth - half - margin;
-  if (min > max) return Math.round(windowWidth / 2);
-  return Math.min(max, Math.max(min, preferredX));
-};
-
-  const getDefaultPositions = () => ({
-  video: { x: window.innerWidth - 230, y: window.innerHeight - 210 },
-  screen: { x: window.innerWidth - 230, y: window.innerHeight - 210 },
-  visualizer: { x: window.innerWidth / 2, y: window.innerHeight / 2 - 150 }, // no longer used for VN
-  chat: { x: window.innerWidth / 2, y: window.innerHeight / 2 + 100 },       // will be docked
-  browser: { x: 320, y: window.innerHeight - 315 },
-  kasa: { x: window.innerWidth - 620, y: 310 },
-  reminders: { x: window.innerWidth - 230, y: 340 },
-  notes: { x: getClampedCenterX(270, window.innerWidth, 620), y: 360 },
-  session_notes: { x: Math.round(window.innerWidth * 0.65), y: 360 },
-  tools: { x: window.innerWidth / 2, y: window.innerHeight - 115 },
-  companion: { x: Math.round(window.innerWidth * 0.36), y: window.innerHeight / 2 },
-  goals: { x: window.innerWidth / 2, y: window.innerHeight / 2 },
-  daily_briefing: { x: window.innerWidth - 320, y: window.innerHeight / 2 },
-  study: { x: Math.max(420, Math.round(window.innerWidth * 0.32)), y: window.innerHeight / 2 },
-  minecraft: { x: window.innerWidth - 320, y: 360 }
-  });
-
-function AppContent({
-  monikaShellEnabled,
-  onToggleMonikaShell,
-}) {
+function AppContent() {
   const { t, language } = useLanguage();
-  const { activePanelId, isPortrait, setActivePanelId, registerPanel, setPanelVisibility } = useLayout();
+  const { isPortrait } = useLayout();
   const { showSettings, setShowSettings } = useSettings();
+  const tRef = useRef(t);
+
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
 
   // ---------------------------------------------------------------------
   // Helpers
@@ -97,22 +116,13 @@ function AppContent({
   // Viewport (for fullscreen VN Visualizer)
   // ---------------------------------------------------------------------
   const [viewport, setViewport] = useState({ w: window.innerWidth, h: window.innerHeight });
-  const [isWindowResizing, setIsWindowResizing] = useState(false);
-  const resizeIdleTimerRef = useRef(null);
   useEffect(() => {
     const onResize = () => {
       setViewport({ w: window.innerWidth, h: window.innerHeight });
-      setIsWindowResizing(true);
-      if (resizeIdleTimerRef.current) clearTimeout(resizeIdleTimerRef.current);
-      resizeIdleTimerRef.current = setTimeout(() => {
-        setIsWindowResizing(false);
-        resizeIdleTimerRef.current = null;
-      }, 120);
     };
     window.addEventListener('resize', onResize);
     return () => {
       window.removeEventListener('resize', onResize);
-      if (resizeIdleTimerRef.current) clearTimeout(resizeIdleTimerRef.current);
     };
   }, []);
 
@@ -187,27 +197,12 @@ function AppContent({
   const [eatTogetherActive, setEatTogetherActive] = useState(false);
   const [eatTogetherMeal, setEatTogetherMeal] = useState(null);
   const [monikaMeal, setMonikaMeal] = useState("pasta");
-  const [isChatMinimized, setIsChatMinimized] = useState(false);
-  const [isChatMinimizeAnimating, setIsChatMinimizeAnimating] = useState(false);
-  const [chatLiveHeight, setChatLiveHeight] = useState(320);
 
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  // ---------------------------------------------------------------------
-  // VN Scene / Background (dynamic)
-  // ---------------------------------------------------------------------
-  const VN_BACKGROUNDS = {
-    room: "/vn/location/bg_room.png",
-    kitchen: "/vn/location/bg_kitchen.png",
-    outside: "/vn/location/bg_outside.png",
-    school: "/vn/location/bg_school.png",
-    restaurant: "/vn/location/bg_restaurant.png",
-  };
-  const ROOM_DAY_BG = "/vn/location/bg_room.png";
-  const ROOM_NIGHT_BG = "/vn/location/bg_room_night.png";
-  const OUTSIDE_DAY_VARIANTS = ["/vn/location/bg_outside.png", "/vn/location/bg_outside_2.png"];
-  const OUTSIDE_NIGHT_VARIANTS = ["/vn/location/bg_outside_night.png", "/vn/location/bg_outside_2_night.png"];
-
+  // VN Scene / Background is now imported from features/scene/backgroundConstants.ts and features/scene/backgroundUtils.ts
+  // See src/features/scene/ for scene management logic
+  
   const [vnScene, setVnScene] = useState("room");
   const [vnBackground, setVnBackground] = useState(VN_BACKGROUNDS.room);
   const lastSceneChangeRef = useRef(0);
@@ -218,157 +213,16 @@ function AppContent({
   const eatPrevSceneRef = useRef(null);
   const eatTogetherActiveRef = useRef(eatTogetherActive);
 
-  const isNightHour = (date) => {
-    const h = date.getHours();
-    return h >= 22 || h < 6;
-  };
+  // Meal system logic is now imported from features/meal/mealConstants.ts and features/meal/mealUtils.ts
+  // Outfit and ahoge constants are imported from features/outfit/outfitConstants.ts
 
-  const resolveVnBackground = (scene, date = new Date()) => {
-    if (scene === 'room') {
-      return isNightHour(date) ? ROOM_NIGHT_BG : ROOM_DAY_BG;
-    }
-    if (scene === 'outside') {
-      const idx = date.getDate() % OUTSIDE_DAY_VARIANTS.length;
-      return isNightHour(date) ? OUTSIDE_NIGHT_VARIANTS[idx] : OUTSIDE_DAY_VARIANTS[idx];
-    }
-    return VN_BACKGROUNDS[scene] || VN_BACKGROUNDS.room;
-  };
+  // Meal detection functions are now imported from features/meal/mealUtils.ts
 
-  const EAT_MEAL_ASSETS = {
-    pizza: "/vn/monika/t/food/food_pizza.png",
-    sushi: "/vn/monika/t/food/food_sushi.png",
-    pasta: "/vn/monika/t/food/food_pasta.png",
-    salad: "/vn/monika/t/food/food_salad.png",
-    burger: "/vn/monika/t/food/food_burger.png",
-    pierogi: "/vn/monika/t/food/food_pierogi.png",
-    cereal: "/vn/monika/t/food/food_cereal.png",
-    coffee: "/vn/monika/t/food/drink_coffee.png",
-    tea: "/vn/monika/t/food/drink_tea.png",
-    finished: "/vn/monika/t/food/food_finished.png",
-  };
-
-  const MONIKA_MEAL_ASSETS = {
-    pasta: "/vn/monika/t/food/food_pasta.png",
-    salad: "/vn/monika/t/food/food_salad.png",
-    sushi: "/vn/monika/t/food/food_sushi.png",
-    pierogi: "/vn/monika/t/food/food_pierogi.png",
-    cereal: "/vn/monika/t/food/food_cereal.png",
-  };
-  const OUTFITS_WITHOUT_ARM_OVERLAYS = new Set([
-    'new_years_dress',
-    'santa_lingerie',
-    'sundress_white',
-    'vday_lingerie',
-  ]);
-  const OUTFITS_WITHOUT_CROSSED_ARM_10 = new Set(['blazerless', 'marisa', 'spider_lingerie']);
-  const OUTFITS_WITHOUT_LEANING_RIGHT_ARM_10 = new Set(['marisa', 'spider_lingerie']);
-
-  const AHOGE_ACCESSORIES = [
-    "ahoge_bent",
-    "ahoge_curl",
-    "ahoge_double",
-    "ahoge_heart",
-    "ahoge_lightning",
-    "ahoge_sharp",
-    "ahoge_simple",
-    "ahoge_small",
-    "ahoge_swoop",
-    "ahoge_twisty",
-  ];
-
-  const MEAL_KEYWORDS = [
-    { key: "pizza", re: /\b(pizza(s)?|piz(z)?a)\b/ },
-    { key: "sushi", re: /\b(sushi)\b/ },
-    { key: "pasta", re: /\b(pasta|spaghetti|ramen|noodles?|makaron)\b/ },
-    { key: "salad", re: /\b(salad|salat|sałatka|salatka)\b/ },
-    { key: "burger", re: /\b(burger|cheeseburger|hamburger)\b/ },
-    { key: "pierogi", re: /\b(pierogi|pierog(i|ów|ow)?)\b/ },
-    { key: "cereal", re: /\b(cereal|płatki|platki)\b/ },
-    { key: "coffee", re: /\b(coffee|kawa)\b/ },
-    { key: "tea", re: /\b(tea|herbata)\b/ },
-  ];
-
-  const FINISHED_MEAL_KEYWORDS = [
-    /\b(finished eating|done eating|i'?m full|i am full)\b/,
-    /\b(sko[ńn]czy[łl](em|am)?(em)?(\s+je[śs]?[cć])?)\b/,
-    /\b(zjad(łem|lam))\b/,
-    /\b(najedzon(y|a))\b/,
-    /\b(syt(y|a))\b/,
-  ];
-
-  const detectMealKey = (raw) => {
-    const text = String(raw || "").toLowerCase();
-    if (!text) return null;
-    for (const entry of MEAL_KEYWORDS) {
-      if (entry.re.test(text)) return entry.key;
-    }
-    return null;
-  };
-
-  const detectFinishedMeal = (raw) => {
-    const text = String(raw || "").toLowerCase();
-    if (!text) return false;
-    return FINISHED_MEAL_KEYWORDS.some((re) => re.test(text));
-  };
-
-  const shouldStartEatTogether = (raw) => {
-    const text = String(raw || "").toLowerCase();
-    if (!text) return false;
-    return (
-      text.includes("eat together") ||
-      text.includes("let's eat") ||
-      text.includes("lets eat") ||
-      text.includes("dinner together") ||
-      text.includes("have dinner") ||
-      text.includes("have lunch") ||
-      text.includes("have breakfast") ||
-      text.includes("meal together") ||
-      text.includes("jedzmy razem") ||
-      text.includes("zjedzmy razem") ||
-      text.includes("kolacja razem") ||
-      text.includes("obiad razem") ||
-      text.includes("sniadanie razem") ||
-      text.includes("śniadanie razem") ||
-      text.includes("chodzmy na obiad") ||
-      text.includes("chodźmy na obiad") ||
-      text.includes("chodzmy na kolacje") ||
-      text.includes("chodźmy na kolację")
-    );
-  };
-
-  const shouldStopEatTogether = (raw) => {
-    const text = String(raw || "").toLowerCase();
-    if (!text) return false;
-    return (
-      text.includes("end meal") ||
-      text.includes("end eating") ||
-      text.includes("end dinner") ||
-      text.includes("end lunch") ||
-      text.includes("stop eat together") ||
-      text.includes("stop eating together") ||
-      text.includes("finish eating") ||
-      text.includes("that's all") ||
-      text.includes("thats all") ||
-      text.includes("wrap up dinner") ||
-      text.includes("koniec trybu jedzenia") ||
-      text.includes("koniec trybu") ||
-      text.includes("koniec posilku") ||
-      text.includes("koniec posiłku") ||
-      text.includes("zakończ posiłek") ||
-      text.includes("zakoncz posilek")
-    );
-  };
-
-  const pickMonikaMeal = () => {
-    const keys = Object.keys(MONIKA_MEAL_ASSETS || {});
-    if (!keys.length) return null;
-    return keys[Math.floor(Math.random() * keys.length)];
-  };
-
+  // Meal mode management (uses imported pickRandomMonikaMeal)
   const startEatTogether = () => {
     setEatTogetherActive(true);
     setEatTogetherMeal(null);
-    const pick = pickMonikaMeal();
+    const pick = pickRandomMonikaMeal();
     if (pick) setMonikaMeal(pick);
   };
 
@@ -468,38 +322,6 @@ function AppContent({
   const [studySelection, setStudySelection] = useState({ folder: '', file: '', path: '' });
 
   // ---------------------------------------------------------------------
-  // Modular/Windowed State (kept for your movable windows)
-  // ---------------------------------------------------------------------
-  const [isModularMode, setIsModularMode] = useState(false);
-
-  const [elementPositions, setElementPositions] = useState(getDefaultPositions);
-
-  const [elementSizes, setElementSizes] = useState({
-    visualizer: { w: 550, h: 350 }, // no longer used for VN
-    chat: { w: 980, h: 320 },
-    tools: { w: 500, h: 80 },
-    browser: { w: 600, h: 450 },
-    video: { w: 360, h: 240 },
-    screen: { w: 360, h: 240 },
-    kasa: { w: 320, h: 500 },
-    reminders: { w: 420, h: 560 },
-    notes: { w: 500, h: 600 },
-    session_notes: { w: 620, h: 640 },
-    companion: { w: 760, h: 720 },
-    goals: { w: 1220, h: 760 },
-    daily_briefing: { w: 520, h: 620 },
-    study: { w: 1120, h: 760 },
-    minecraft: { w: 384, h: 520 },
-  });
-
-  const [activeDragElement, setActiveDragElement] = useState(null);
-
-  // Z-Index Stacking Order (last element = highest z-index)
-  const [zIndexOrder, setZIndexOrder] = useState([
-    'visualizer', 'chat', 'tools', 'video', 'screen', 'browser', 'kasa', 'reminders', 'notes', 'session_notes', 'companion', 'goals', 'daily_briefing', 'study', 'minecraft'
-  ]);
-
-  // ---------------------------------------------------------------------
   // Camera / Vision State
   // ---------------------------------------------------------------------
   const [isCameraFlipped, setIsCameraFlipped] = useState(false);
@@ -517,47 +339,17 @@ function AppContent({
   const transmissionCanvasRef = useRef(null);
   const lastFrameTimeRef = useRef(0);
   const frameCountRef = useRef(0);
-  const lastTransmitTimeRef = useRef(0);
-  const lastCameraProcessTimeRef = useRef(0);
-  const CAMERA_PROCESS_INTERVAL_MS = 66;
 
   // Ref to track video state for the loop (avoids closure staleness)
   const isVideoOnRef = useRef(false);
-  const isModularModeRef = useRef(false);
-  const elementPositionsRef = useRef(elementPositions);
-  const activeDragElementRef = useRef(null);
-  const lastActiveDragElementRef = useRef(null);
 
-  // Mouse Drag Refs
-  const dragOffsetRef = useRef({ x: 0, y: 0 });
-  const isDraggingRef = useRef(false);
-
-  // ---------------------------------------------------------------------
-  // Toasts (System notifications)
-  // ---------------------------------------------------------------------
-  const [toasts, setToasts] = useState([]);
+  const { toasts, pushToast, dismissToast } = useToasts();
 
 
   const makeId = () =>
     (typeof crypto !== "undefined" && crypto.randomUUID)
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random()}`;
-
-  const pushToast = (text, variant = "system", ttl = 3500) => {
-    const id = makeId();
-
-    const toast = { id, text: String(text ?? ""), variant };
-
-    setToasts(prev => [...prev, toast]);
-
-    window.setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
-    }, ttl);
-  };
-
-  const dismissToast = (id) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
-  };
 
   const enqueueSessionPrompt = (payload) => {
     if (!payload) return;
@@ -603,7 +395,6 @@ function AppContent({
     if (!selection) return;
     setStudySelection(selection);
     setShowStudyWindow(true);
-    bringToFront('study');
     if (socket) socket.emit('study_select', selection);
   };
 
@@ -650,297 +441,6 @@ function AppContent({
     setSessionPromptQueue([]);
   };
 
-  const handleResetPosition = (windowId) => {
-    const defaultPositions = getDefaultPositions();
-    if (defaultPositions[windowId]) {
-      setElementPositions(prev => ({
-        ...prev,
-        [windowId]: defaultPositions[windowId]
-      }));
-      pushToast(t('system.window_reset', { windowId }));
-    }
-  };
-
-  // ---------------------------------------------------------------------
-  // VN Dock Layout: chat is bottom textbox, leaving space for bottom tools
-  // ---------------------------------------------------------------------
-  useLayoutEffect(() => {
-    const layout = () => {
-      const width = viewport.w;
-      const height = viewport.h;
-
-      const topBarHeight = 60;
-      const sidePad = 16;
-      const bottomToolsArea = 140; // space reserved for bottom icons bar
-      const bottomPad = 16;
-      const viewportAspect = width / Math.max(height, 1);
-      const stackedViewportFactor = Math.max(0, Math.min(1, (1.02 - viewportAspect) / 0.22));
-      const isStackedViewport = stackedViewportFactor > 0 || (width < 980 && height > 820);
-
-      if (showStudyWindow) {
-        const availableW = width - sidePad * 2;
-        const availableH = height - topBarHeight - bottomPad * 2;
-
-        const baseStudyW = 1160;
-        const baseStudyH = 760;
-        const baseChatW = 520;
-        const baseChatH = 260;
-        const baseGap = 24;
-
-        const rawScale = Math.min(
-          availableW / (baseStudyW + baseGap + baseChatW),
-          availableH / baseStudyH
-        );
-        const scale = Math.min(rawScale, 1.45);
-
-        const gap = Math.max(12, Math.round(baseGap * scale));
-        const studyW = Math.round(baseStudyW * scale);
-        const studyH = Math.round(baseStudyH * scale);
-        const chatW = Math.round(baseChatW * scale);
-        const chatH = Math.round(baseChatH * scale);
-
-        const groupW = studyW + gap + chatW;
-        const centerX = Math.round(width / 2);
-        const topInset = Math.round(18 * scale);
-        let studyTop = topBarHeight + topInset;
-        const maxStudyTop = height - bottomPad - studyH;
-        if (studyTop > maxStudyTop) {
-          studyTop = Math.max(topBarHeight + 8, maxStudyTop);
-        }
-
-        const studyX = Math.round(centerX - groupW / 2 + studyW / 2);
-        const studyY = Math.round(studyTop + studyH / 2);
-
-        const chatTop = Math.round(studyTop + studyH - chatH - 1);
-        const chatX = Math.round(studyX + studyW / 2 + gap + chatW / 2);
-
-        setElementSizes(prev => ({
-          ...prev,
-          chat: { w: chatW, h: chatH },
-          study: { w: studyW, h: studyH },
-        }));
-
-        setElementPositions(prev => ({
-          ...prev,
-          chat: { x: chatX, y: chatTop },
-          study: { x: studyX, y: studyY },
-          tools: { x: width / 2, y: height - 100 },
-          video: { x: width - 230, y: height - 210 },
-          screen: { x: width - 230, y: height - 210 },
-        }));
-
-        return;
-      }
-
-      if (sessionMode.active) {
-        const edgePad = sidePad + 20;
-        const bottomPadSession = bottomPad + 20;
-        const availableW = width - edgePad * 2;
-        const availableH = height - topBarHeight - bottomPadSession * 2;
-
-        const gap = Math.max(24, Math.round(Math.min(availableW, availableH) * 0.03));
-        const minChatW = 420;
-        const minNotesW = 680;
-
-        const desiredNotesW = Math.round(availableW * 0.62);
-        const maxNotesW = Math.max(320, availableW - gap - minChatW);
-        let notesW = Math.max(minNotesW, Math.min(desiredNotesW, maxNotesW));
-        let chatW = Math.round(availableW - notesW - gap);
-        if (chatW < minChatW) {
-          chatW = minChatW;
-          notesW = Math.max(320, availableW - gap - chatW);
-        }
-
-        const notesH = Math.min(availableH, Math.max(520, Math.round(availableH * 0.86)));
-        const chatH = Math.min(notesH, Math.max(260, Math.round(availableH * 0.40)));
-
-        const groupW = notesW + gap + chatW;
-        const centerX = Math.round(width / 2);
-        const topInset = Math.max(18, Math.round(availableH * 0.03));
-        let top = topBarHeight + topInset;
-        const maxTop = height - bottomPadSession - notesH;
-        if (top > maxTop) {
-          top = Math.max(topBarHeight + 8, maxTop);
-        }
-
-        const notesX = Math.round(centerX - groupW / 2 + notesW / 2);
-        const notesY = Math.round(top + notesH / 2);
-        const chatX = Math.round(notesX + notesW / 2 + gap + chatW / 2);
-        const chatTop = Math.round(top + notesH - chatH);
-
-        setElementSizes(prev => ({
-          ...prev,
-          chat: { w: chatW, h: chatH },
-          session_notes: { w: notesW, h: notesH },
-        }));
-
-        setElementPositions(prev => ({
-          ...prev,
-          chat: { x: chatX, y: chatTop },
-          session_notes: { x: notesX, y: notesY },
-          tools: { x: width / 2, y: height - 110 },
-          video: { x: width - 230, y: height - 210 },
-          screen: { x: width - 230, y: height - 210 },
-        }));
-
-        return;
-      }
-
-      if (false) {
-        // Legacy AdaptiveShell layout - disabled
-        const contentHeight = Math.max(420, height - topBarHeight);
-        const railPad = isPortrait ? 84 : 74;
-        const chatW = Math.min(isPortrait ? width - 34 : width - 48, isPortrait ? 680 : 860);
-        const chatH = Math.min(isPortrait ? 280 : 300, Math.max(230, Math.round(contentHeight * 0.35)));
-        const chatTop = Math.max(
-          topBarHeight + 12,
-          contentHeight - chatH - railPad,
-        );
-
-        const portraitPanelTop = topBarHeight + 18;
-
-        const briefingW = Math.min(isPortrait ? 470 : 540, width - 24);
-        const briefingX = Math.round(width - briefingW / 2 - 12);
-        const briefingY = isPortrait
-          ? Math.round(topBarHeight + 180)
-          : Math.round((height - topBarHeight) * 0.46);
-
-        const companionW = Math.min(width - (isPortrait ? 10 : 40), isPortrait ? 860 : 760);
-        const companionH = Math.min(isPortrait ? 280 : 700, height - topBarHeight - railPad - 12);
-        const companionX = Math.round(width / 2);
-        const companionY = isPortrait
-          ? Math.round(portraitPanelTop + companionH / 2)
-          : Math.round(height / 2);
-
-        const goalsW = Math.min(width - (isPortrait ? 10 : 40), isPortrait ? 920 : 1220);
-        const goalsH = Math.min(isPortrait ? 310 : 760, height - topBarHeight - railPad - 12);
-        const goalsX = Math.round(width / 2);
-        const goalsY = isPortrait
-          ? Math.round(portraitPanelTop + goalsH / 2)
-          : Math.round(height / 2);
-
-        const studyW = Math.min(width - (isPortrait ? 10 : 34), isPortrait ? 980 : 1160);
-        const studyH = Math.min(isPortrait ? 320 : 760, height - topBarHeight - railPad - 10);
-        const studyX = Math.round(width / 2);
-        const studyY = isPortrait
-          ? Math.round(portraitPanelTop + studyH / 2)
-          : Math.round(height * 0.48);
-
-        const notesW = Math.min(width - (isPortrait ? 10 : 36), isPortrait ? 900 : 620);
-        const notesH = Math.min(isPortrait ? 270 : 600, height - topBarHeight - railPad - 18);
-        const notesX = Math.round(width / 2);
-        const notesY = isPortrait
-          ? Math.round(portraitPanelTop + notesH / 2)
-          : Math.round(height * 0.52);
-
-        setElementSizes((prev) => ({
-          ...prev,
-          chat: { w: chatW, h: chatH },
-          companion: { w: companionW, h: companionH },
-          goals: { w: goalsW, h: goalsH },
-          study: { w: studyW, h: studyH },
-          notes: { w: notesW, h: notesH },
-        }));
-
-        setElementPositions((prev) => ({
-          ...prev,
-          chat: { x: Math.round(width / 2), y: chatTop },
-          daily_briefing: { x: briefingX, y: briefingY },
-          companion: { x: companionX, y: companionY },
-          goals: { x: goalsX, y: goalsY },
-          study: { x: studyX, y: studyY },
-          notes: { x: notesX, y: notesY },
-          tools: { x: Math.round(width / 2), y: height - 100 },
-          video: { x: width - 230, y: height - 210 },
-          screen: { x: width - 230, y: height - 210 },
-        }));
-
-        return;
-      }
-
-      const baseChatMax = width - sidePad * 2;
-      const focusMode = sessionMode.active || showStudyWindow;
-      const focusInset = focusMode ? Math.min(360, Math.round(width * 0.26)) : 0;
-      const minChatW = Math.min(520, baseChatMax);
-      const chatWNormal = Math.min(860, baseChatMax - focusInset);
-      const chatWFocus = Math.min(640, baseChatMax - Math.min(220, focusInset));
-      const chatWFinal = focusMode
-        ? Math.max(480, chatWFocus)
-        : Math.max(minChatW, chatWNormal);
-
-      // keep chat readable on small screens:
-      const maxChatH = Math.min(360, Math.round(height * 0.30));
-      const minChatH = 240;
-      const baseChatH = Math.max(minChatH, maxChatH);
-      const phoneExtraChatH = Math.round(baseChatH * 0.33 * stackedViewportFactor);
-      const chatH = Math.min(Math.round(height * 0.58), baseChatH + phoneExtraChatH);
-      const phoneChatLift = Math.round(44 * stackedViewportFactor);
-
-      // IMPORTANT: your ChatModule likely treats y as TOP (not center)
-      const chatTop = Math.max(
-        topBarHeight + 14,
-        height - bottomToolsArea - bottomPad - chatH - phoneChatLift
-      );
-
-      const desiredChatX = focusMode
-        ? width - chatWFinal / 2 - sidePad - 8
-        : width / 2 - Math.round(focusInset * 0.5);
-      const minChatX = chatWFinal / 2 + sidePad;
-      const maxChatX = width - chatWFinal / 2 - sidePad;
-      const chatX = Math.max(minChatX, Math.min(maxChatX, desiredChatX));
-
-      const studyW = showStudyWindow
-        ? Math.min(Math.round(width * 0.64), width - sidePad * 2)
-        : null;
-      const studyH = showStudyWindow
-        ? Math.min(Math.round(height * 0.82), height - topBarHeight - bottomPad * 2)
-        : null;
-
-      setElementSizes(prev => {
-        const nextSizes = {
-          ...prev,
-          chat: { w: chatWFinal, h: chatH }
-        };
-        if (showStudyWindow && studyW && studyH) {
-          nextSizes.study = { w: studyW, h: studyH };
-        }
-        return nextSizes;
-      });
-
-      setElementPositions(prev => {
-        const nextPositions = {
-          ...prev,
-          chat: { x: chatX, y: chatTop },
-          tools: { x: width / 2, y: height - 100 },
-          video: { x: width - 230, y: height - 210 },
-          screen: { x: width - 230, y: height - 210 }
-        };
-
-        if (showStudyWindow && studyW && studyH) {
-          const minStudyX = studyW / 2 + sidePad + 6;
-          const maxStudyX = width - studyW / 2 - sidePad;
-          const minStudyY = topBarHeight + studyH / 2 + 6;
-          const maxStudyY = height - studyH / 2 - bottomPad;
-          const studyX = Math.max(minStudyX, Math.min(maxStudyX, Math.round(studyW / 2 + sidePad + 6)));
-          const studyY = Math.max(minStudyY, Math.min(maxStudyY, Math.round(height * 0.47)));
-          nextPositions.study = { x: studyX, y: studyY };
-        }
-
-        return nextPositions;
-      });
-    };
-
-    layout();
-  }, [viewport.w, viewport.h, sessionMode.active, showStudyWindow, isPortrait]);
-
-  // ---------------------------------------------------------------------
-  // Update refs when state changes
-  // ---------------------------------------------------------------------
-  useEffect(() => {
-    isModularModeRef.current = isModularMode;
-    elementPositionsRef.current = elementPositions;
-  }, [isModularMode, elementPositions]);
-  
   // Live Clock Update
   useEffect(() => {
     const timer = setInterval(() => {
@@ -958,17 +458,11 @@ function AppContent({
     eatTogetherActiveRef.current = eatTogetherActive;
   }, [eatTogetherActive]);
 
-  const pickVnScene = (date, quietForMs = 0) => {
-    const h = date.getHours();
-    // Default schedule keeps Monika indoors; outside only when explicitly triggered by content.
-    if (h >= 6 && h < 10) return "kitchen";
-    if (h >= 10 && h < 16) return "school";
-    if (h >= 16 && h < 22) return "room";
-    return "room";
-  };
+  // Scene selection function is now imported from features/scene/backgroundUtils.ts
+  // It determines Monika's location based on time of day
 
   useEffect(() => {
-    const initialScene = pickVnScene(new Date(), 0);
+    const initialScene = pickVnScene(new Date());
     setVnScene(initialScene);
     setVnBackground(resolveVnBackground(initialScene, new Date()));
   }, []);
@@ -980,111 +474,11 @@ function AppContent({
     setVnBackground(resolveVnBackground(vnScene, currentTime));
   }, [currentTime, vnScene, showStudyWindow, sceneOverrideUntil]);
 
-  // ---------------------------------------------------------------------
-  // Headpat Visual Override
-  // ---------------------------------------------------------------------
-  const HEADPAT_DURATION_MS = 2200;
-  const [headpatActive, setHeadpatActive] = useState(false);
-  const headpatTimerRef = useRef(null);
+  const { headpatActive, triggerHeadpat } = useHeadpat();
 
-  const triggerHeadpat = useCallback(() => {
-    setHeadpatActive(true);
-    if (headpatTimerRef.current) {
-      clearTimeout(headpatTimerRef.current);
-    }
-    headpatTimerRef.current = setTimeout(() => {
-      setHeadpatActive(false);
-    }, HEADPAT_DURATION_MS);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (headpatTimerRef.current) {
-        clearTimeout(headpatTimerRef.current);
-      }
-    };
-  }, []);
-
-  // ---------------------------------------------------------------------
-  // Blinking Logic
-  // ---------------------------------------------------------------------
-  const [isBlinking, setIsBlinking] = useState(false);
-  useEffect(() => {
-    let timeout;
-    const triggerBlink = () => {
-      setIsBlinking(true);
-      setTimeout(() => setIsBlinking(false), 150); // Blink duration
-      timeout = setTimeout(triggerBlink, Math.random() * 3000 + 3000); // Random interval 3-6s
-    };
-    timeout = setTimeout(triggerBlink, 3000);
-    return () => clearTimeout(timeout);
-  }, []);
-
-  // ---------------------------------------------------------------------
-  // Random Glance Logic
-  // ---------------------------------------------------------------------
-  const [randomGlance, setRandomGlance] = useState(null);
-  useEffect(() => {
-    let timeout;
-    const triggerGlance = () => {
-      const roll = Math.random();
-      if (roll < 0.3) {
-        setRandomGlance('left');
-        setTimeout(() => setRandomGlance(null), Math.random() * 1000 + 800);
-      } else if (roll < 0.6) {
-        setRandomGlance('right');
-        setTimeout(() => setRandomGlance(null), Math.random() * 1000 + 800);
-      }
-      timeout = setTimeout(triggerGlance, Math.random() * 5000 + 4000);
-    };
-    timeout = setTimeout(triggerGlance, 5000);
-    return () => clearTimeout(timeout);
-  }, []);
-
-  // ---------------------------------------------------------------------
-  // Random Pose Logic (Fidgeting)
-  // ---------------------------------------------------------------------
-  const [randomPose, setRandomPose] = useState(null); // null, 'crossed', 'point', 'steepling'
-  
-  // Refs to access latest state in timeout without resetting it
-  const aiSpeakingRef = useRef(aiSpeaking);
-  useEffect(() => { aiSpeakingRef.current = aiSpeaking; }, [aiSpeaking]);
-
-  useEffect(() => {
-    let timeout;
-    const triggerPose = () => {
-      const isSpeaking = aiSpeakingRef.current;
-      const roll = Math.random();
-
-      if (isSpeaking) {
-        // Active talking gestures (prioritize restpoint)
-        if (roll < 0.50) {
-          setRandomPose('restpoint');
-          setTimeout(() => setRandomPose(null), Math.random() * 3000 + 3000);
-        } else if (roll < 0.70) {
-          setRandomPose('point');
-          setTimeout(() => setRandomPose(null), Math.random() * 2000 + 2000);
-        } else {
-          setRandomPose(null);
-        }
-        timeout = setTimeout(triggerPose, Math.random() * 3000 + 2000);
-      } else {
-        // Idle fidgeting
-        if (roll < 0.20) {
-          setRandomPose('crossed');
-          setTimeout(() => setRandomPose(null), Math.random() * 5000 + 5000);
-        } else if (roll < 0.90) {
-          setRandomPose('steepling');
-          setTimeout(() => setRandomPose(null), Math.random() * 5000 + 5000);
-        } else {
-          setRandomPose(null);
-        }
-        timeout = setTimeout(triggerPose, Math.random() * 5000 + 5000);
-      }
-    };
-    timeout = setTimeout(triggerPose, 2000);
-    return () => clearTimeout(timeout);
-  }, []);
+  const isBlinking = useRandomBlink();
+  const randomGlance = useRandomGlance();
+  const randomPose = useRandomPose(aiSpeaking);
 
   // ---------------------------------------------------------------------
   // MAS Layer Logic (Monika After Story Assets)
@@ -1095,146 +489,21 @@ function AppContent({
   const currentDay = currentTime.getDate();
   const currentYear = currentTime.getFullYear();
 
-  // Calculate Outfit State (Folder, Hair, Name)
-  const visualState = useMemo(() => {
-    const mood = (personalityState.mood || 'neutral').toLowerCase();
-    const affection = personalityState.affection || 0;
-    const weather = (personalityState.weather || '').toLowerCase();
-    const isHalloween = currentMonth === 9 && currentDay === 31;
-    const isChristmas = currentMonth === 11 && currentDay >= 24 && currentDay <= 26;
-    const isValentines = currentMonth === 1 && currentDay === 14;
-    const tempMatch = weather.match(/(-?\d+(?:\.\d+)?)\s*°c/i);
-    const tempC = tempMatch ? parseFloat(tempMatch[1]) : null;
-    const isCold = tempC !== null ? tempC <= 6 : weather.includes('snowy');
-    const isRainy = weather.includes('rainy') || weather.includes('thunderstorm');
-    
-    // Hair Style Logic
-    // Day (7-20): def (Ponytail)
-    // Night (20-7): down (Loose)
-    let hairStyle = 'def';
-    const isNight = currentHour >= 20 || currentHour < 7;
-    const isLateNight = currentHour >= 22 || currentHour < 6;
-    // Shower times: 6:00-6:30 and 19:00-19:30
-    const isShowerTime =
-      (currentHour === 6 && currentMinute < 30) ||
-      (currentHour === 19 && currentMinute < 30);
-
-    if (isNight) {
-      hairStyle = 'down';
-    }
-    
-    // Clothes Logic
-    let clothesFolder = 'def';
-    let outfitName = "School Uniform";
-    let headAccessories = ['ribbon_def'];
-    let ahogeAccessory = null;
-    let deskAccessories = [];
-
-    const addHeadAccessory = (acc) => {
-      if (!acc) return;
-      if (!headAccessories.includes(acc)) headAccessories.push(acc);
-    };
-    const addDeskAccessory = (acc) => {
-      if (!acc) return;
-      if (!deskAccessories.includes(acc)) deskAccessories.push(acc);
-    };
-
-    if (AHOGE_ACCESSORIES.length) {
-      const daySeed = currentYear * 10000 + (currentMonth + 1) * 100 + currentDay;
-      ahogeAccessory = AHOGE_ACCESSORIES[daySeed % AHOGE_ACCESSORIES.length];
-    }
-
-    // New Year (Dec 31 - Jan 1)
-    if ((currentMonth === 11 && currentDay === 31) || (currentMonth === 0 && currentDay === 1)) {
-      clothesFolder = 'new_years_dress';
-      outfitName = "New Year's Dress";
-    } else if (currentMonth === 1 && currentDay === 14) {
-      // Valentine's Day (Feb 14)
-      clothesFolder = isNight ? 'vday_lingerie' : 'blackpinkdress';
-      outfitName = isNight ? "Valentine's Lingerie" : "Blackpink Dress";
-    } else if (isHalloween) {
-      // Halloween (Oct 31)
-      clothesFolder = isNight ? 'spider_lingerie' : 'marisa';
-      outfitName = isNight ? "Spider Lingerie" : "Witch Cosplay (Marisa)";
-    } else if (isChristmas) {
-      // Christmas (Dec 24-26)
-      clothesFolder = isNight ? 'santa_lingerie' : 'santa';
-      outfitName = isNight ? "Santa Lingerie" : "Santa Costume";
-    } else {
-      // Intimacy Logic (High Affection + Flirty/Love + Night)
-      if (isNight && affection > 50 && (mood.includes('flirty') || mood.includes('love') || mood.includes('romantic'))) {
-         clothesFolder = 'vday_lingerie';
-         outfitName = "Valentine's Lingerie";
-      } else if (isLateNight) {
-        // Late night towel (dry hair)
-        clothesFolder = 'bath_towel_white';
-        outfitName = "White Bath Towel";
-        headAccessories = [];
-      } else if (isShowerTime) {
-        // Shower / Towel Mode
-        clothesFolder = 'bath_towel_white';
-        hairStyle = 'wet';
-        outfitName = "White Bath Towel";
-        headAccessories = [];
-      } else if (!isNight && (weather.includes('sunny') || weather.includes('clear'))) {
-         clothesFolder = 'sundress_white';
-         outfitName = "White Sundress";
-      } else if (!isNight && (showStudyWindow || sessionMode.active || mood.includes('focus') || mood.includes('thinking') || mood.includes('learning') || mood.includes('studying'))) {
-         clothesFolder = 'blazerless';
-         outfitName = "School Uniform (Blazerless)";
-      } else if (isNight) {
-         outfitName = "School Uniform";
-      }
-    }
-
-    if (eatTogetherActive) {
-      clothesFolder = 'blackdress';
-      outfitName = "Black Dress";
-      headAccessories = ['ribbon_black'];
-    }
-
-    // Canon override: when Monika is outside, she wears the school uniform.
-    if (vnScene === 'outside') {
-      clothesFolder = 'def';
-      outfitName = "School Uniform";
-    }
-
-    // Study mode override: always school uniform (default) in class.
-    if (showStudyWindow) {
-      clothesFolder = 'def';
-      outfitName = "School Uniform";
-      hairStyle = 'def';
-    }
-
-    if (isChristmas) addHeadAccessory('holly_hairclip');
-    if (isRainy) addHeadAccessory('water_drops');
-    if (clothesFolder === 'marisa') {
-      headAccessories = ['marisa_witchhat', 'marisa_strandbow'];
-    }
-    if (clothesFolder === 'bath_towel_white') {
-      headAccessories = [];
-    }
-
-    if (isChristmas) {
-      addDeskAccessory('candycane');
-      addDeskAccessory('christmas_cookies');
-    }
-    if (isValentines) {
-      addDeskAccessory('roses');
-      addDeskAccessory('heartchoc');
-    }
-    if (isHalloween) {
-      addDeskAccessory('desk_candy_jack_half');
-      addDeskAccessory(isNight ? 'desk_lantern_lit' : 'desk_lantern_unlit');
-    }
-    if (isCold) addDeskAccessory('thermos_mug');
-    if (!isCold && !isHalloween && !isChristmas && !isValentines && !eatTogetherActive) {
-      const drinkSeed = currentYear * 1000000 + (currentMonth + 1) * 10000 + currentDay * 100 + currentHour;
-      if (drinkSeed % 3 === 0) addDeskAccessory('mug');
-    }
-
-    return { clothesFolder, hairStyle, outfitName, headAccessories, ahogeAccessory, deskAccessories };
-  }, [personalityState.mood, personalityState.affection, personalityState.weather, currentHour, currentMinute, currentMonth, currentDay, currentYear, vnScene, eatTogetherActive, sessionMode.active, showStudyWindow]);
+  // Calculate outfit/accessory state in a dedicated feature helper.
+  const visualState = useMemo(() => buildVisualState({
+    mood: personalityState.mood,
+    affection: personalityState.affection || 0,
+    weather: personalityState.weather,
+    currentHour,
+    currentMinute,
+    currentMonth,
+    currentDay,
+    currentYear,
+    vnScene,
+    eatTogetherActive,
+    sessionModeActive: sessionMode.active,
+    showStudyWindow,
+  }), [personalityState.mood, personalityState.affection, personalityState.weather, currentHour, currentMinute, currentMonth, currentDay, currentYear, vnScene, eatTogetherActive, sessionMode.active, showStudyWindow]);
 
   // Report Visual State to Backend
   useEffect(() => {
@@ -1246,307 +515,24 @@ function AppContent({
     }
   }, [vnScene, visualState.outfitName, socketConnected]);
 
-  const masLayers = useMemo(() => {
-    const baseMood = (personalityState.mood || 'neutral').toLowerCase();
-    const mood = headpatActive ? `${baseMood} happy` : baseMood;
-    const { clothesFolder, hairStyle, headAccessories, ahogeAccessory, deskAccessories } = visualState;
-    const isTowelOutfit = clothesFolder === 'bath_towel_white';
-    const hasOutfitArmOverlays = !OUTFITS_WITHOUT_ARM_OVERLAYS.has(clothesFolder);
-    const hasCrossedArm10 = !OUTFITS_WITHOUT_CROSSED_ARM_10.has(clothesFolder);
-    const hasLeaningRightArm10 = !OUTFITS_WITHOUT_LEANING_RIGHT_ARM_10.has(clothesFolder);
-    const isStudyMode = showStudyWindow;
-    const forceClosedEyes = headpatActive;
-    const forceHappy = headpatActive;
-    
-    // Determine Pose based on mood
-    const energy = Number(personalityState.energy ?? 0.8);
-    const leanChance =
-      energy < 0.10 ? 1.0 :
-      energy < 0.25 ? 0.7 :
-      energy < 0.35 ? 0.45 :
-      energy < 0.5 ? 0.2 : 0.0;
-    const leanBucket = Math.floor((currentHour * 60 + currentMinute) / 10);
-    const leanRoll = Math.abs(Math.sin(leanBucket * 9301 + 49297) * 10000) % 1;
-    const energyLean = leanRoll < leanChance;
-
-    const isLeaning = !isStudyMode && (
-      energyLean ||
-      mood.includes('leaning') ||
-      mood.includes('mysterious') ||
-      mood.includes('foggy') ||
-      mood.includes('dream') ||
-      mood.includes('love') ||
-      mood.includes('enchanted')
-    );
-
-    // Arm Style Logic (moved up for shared use)
-    let armStyle = 'def'; // def, crossed, point, steepling, restpoint
-    if (!isLeaning) {
-      if (mood.includes('angry') || mood.includes('annoyed') || mood.includes('bored')) {
-        armStyle = 'crossed';
-      } else if (mood.includes('thinking') || mood.includes('focus')) {
-        armStyle = 'steepling';
-      } else if (mood.includes('explaining') || mood.includes('teaching')) {
-        armStyle = 'point';
-      } else if (randomPose) {
-        armStyle = randomPose;
-      }
-    }
-    if (isStudyMode) {
-      armStyle = 'def';
-    }
-    if (isTowelOutfit) {
-      armStyle = 'def';
-    }
-    if (!isLeaning && !hasOutfitArmOverlays && armStyle === 'def') {
-      armStyle = 'restpoint';
-    }
-
-    // --- OUTSIDE SCENE OVERRIDE (Single Layer Standing Poses) ---
-    if (vnScene === 'outside') {
-      let sprite = 'ai_normal.png';
-      
-      if (headpatActive) {
-        sprite = 'ai_closed_eyes.png';
-      } else if (isLeaning) {
-        sprite = 'ai_leaning.png';
-      } else if (isBlinking) {
-        sprite = 'ai_closed_eyes.png';
-      } else if (armStyle === 'point') {
-        sprite = (mood.includes('happy') || mood.includes('excited')) 
-          ? 'ai_arm_point_happy.png' 
-          : 'ai_arm_point_open.png';
-      } else if (mood.includes('angry') || mood.includes('annoyed')) {
-        sprite = 'ai_annoyed.png';
-      } else if (mood.includes('worried') || mood.includes('sad') || mood.includes('anxious') || mood.includes('depressed')) {
-        sprite = 'ai_worried.png';
-      } else if (mood.includes('embarrassed')) {
-        sprite = 'ai_embarrassed.png';
-      } else if (mood.includes('shy') || mood.includes('love')) {
-        sprite = 'ai_shy.png';
-      } else if (mood.includes('happy') || mood.includes('excited')) {
-        sprite = 'ai_happy.png'; 
-      } else if (mood.includes('neutral')) {
-        sprite = 'ai_neutral.png';
-      }
-      return [`/vn/monika/s/${sprite}`];
-    }
-
-    // Base path prefix for face parts
-    // Normal: /vn/monika/f/face-[part].png
-    // Leaning: /vn/monika/f/face-leaning-def-[part].png
-    const facePrefix = isLeaning ? '/vn/monika/f/face-leaning-def-' : '/vn/monika/f/face-';
-
-    // Default Face Parts
-    let eyes = 'eyes-normal.png';
-    let eyebrows = 'eyebrows-mid.png';
-    let mouth = 'mouth-smile.png'; // Default closed mouth (listening)
-    let nose = 'nose-def.png';
-    let blush = null;
-
-    // Mood Logic
-    if (mood.includes('happy') || mood.includes('excited') || mood.includes('joy')) {
-      mouth = 'mouth-smile.png';
-      // eyes = 'eyes-closedhappy.png'; // Optional: happy closed eyes
-    } else if (mood.includes('sad') || mood.includes('lonely') || mood.includes('depressed')) {
-      eyebrows = 'eyebrows-knit.png';
-    } else if (mood.includes('angry') || mood.includes('annoyed')) {
-      eyebrows = 'eyebrows-furrowed.png';
-      mouth = 'mouth-angry.png';
-    } else if (mood.includes('love') || mood.includes('shy')) {
-      eyes = 'eyes-soft.png';
-      mouth = 'mouth-smile.png';
-      blush = 'blush-shade.png'; 
-    } else if (mood.includes('surprised') || mood.includes('shocked')) {
-      eyes = 'eyes-wide.png';
-      mouth = 'mouth-gasp.png';
-      eyebrows = 'eyebrows-up.png';
-    } else if (mood.includes('thinking')) {
-      eyebrows = 'eyebrows-think.png';
-      eyes = 'eyes-left.png';
-    }
-
-    // Random Glance Override
-    if (randomGlance && !isBlinking && !forceClosedEyes) {
-      // Don't override if eyes are closed (e.g. blinking or specific mood)
-      if (!eyes.includes('closed')) {
-        if (randomGlance === 'left') eyes = 'eyes-left.png';
-        else if (randomGlance === 'right') eyes = 'eyes-right.png';
-      }
-    }
-
-    // Blinking Override
-    if (forceClosedEyes) {
-      eyes = 'eyes-closedhappy.png';
-    } else if (isBlinking) {
-      if (mood.includes('angry') || mood.includes('annoyed')) {
-        eyes = 'eyes-closedangry.png';
-      } else {
-        eyes = 'eyes-closedhappy.png';
-      }
-    }
-    if (forceHappy) {
-      mouth = 'mouth-smile.png';
-    }
-
-    // Hair logic:
-    // Normal: 0 (back), 10 (front)
-    // Leaning: def-0 (back), def-10 (front)
-    const hairBack = isLeaning ? `/vn/monika/h/${hairStyle}/def-0.png` : `/vn/monika/h/${hairStyle}/0.png`;
-    const hairFront = isLeaning ? `/vn/monika/h/${hairStyle}/def-10.png` : `/vn/monika/h/${hairStyle}/10.png`;
-    const accFrame = isLeaning ? '5' : '0';
-    const headAccessoryBackLayers = [];
-    const headAccessoryFrontLayers = [];
-    if (Array.isArray(headAccessories) && headAccessories.length) {
-      headAccessories.forEach((acc) => {
-        const layer = `/vn/monika/a/${acc}/${accFrame}.png`;
-        if (isLeaning && String(acc).startsWith('ribbon_')) {
-          headAccessoryBackLayers.push(layer);
-        } else {
-          headAccessoryFrontLayers.push(layer);
-        }
-      });
-    }
-
-    const layers = [
-      '/vn/monika/t/chair-def.png',      // Chair (Background)
-      hairBack,                          // Hair Back
-      ...headAccessoryBackLayers,        // Back accessories (e.g., leaning ribbon)
-    ];
-
-    const armLayers = [];
-    let headBase = null;
-
-    let leaningTopOverlay = null;
-    if (isLeaning) {
-      // Leaning Pose (Body + Arms + Head)
-      layers.push(
-        '/vn/monika/b/body-leaning-def-0.png',       // Body Skin
-        `/vn/monika/c/${clothesFolder}/body-leaning-def-0.png`,   // Body Clothes 0
-        '/vn/monika/b/body-leaning-def-1.png',       // Body Skin 1
-        ...(isTowelOutfit ? [] : [`/vn/monika/c/${clothesFolder}/body-leaning-def-1.png`])    // Body Clothes 1
-      );
-      if (isTowelOutfit) {
-        // Towel top layer should sit above arms
-        leaningTopOverlay = `/vn/monika/c/${clothesFolder}/body-leaning-def-1.png`;
-      }
-      headBase = '/vn/monika/b/body-leaning-def-head.png';
-      
-      armLayers.push(
-        '/vn/monika/b/arms-leaning-def-left-def-10.png', // Left Arm Skin
-        '/vn/monika/b/arms-leaning-def-right-def-5.png', // Right Arm Skin (under)
-        '/vn/monika/b/arms-leaning-def-right-def-10.png' // Right Arm Skin (over)
-      );
-      if (!isTowelOutfit && hasOutfitArmOverlays) {
-        armLayers.push(
-          `/vn/monika/c/${clothesFolder}/arms-leaning-def-left-def-10.png`, // Left Arm Clothes
-          `/vn/monika/c/${clothesFolder}/arms-leaning-def-right-def-5.png` // Right Arm Clothes (under)
-        );
-        if (hasLeaningRightArm10) {
-          armLayers.push(`/vn/monika/c/${clothesFolder}/arms-leaning-def-right-def-10.png`); // Right Arm Clothes (over)
-        }
-      }
-    } else {
-      // Normal Pose (Body + Arms + Head)
-      layers.push(
-        '/vn/monika/b/body-def-0.png',       // Body Skin
-        `/vn/monika/c/${clothesFolder}/body-def-0.png`,   // Body Clothes 0
-        '/vn/monika/b/body-def-1.png',       // Body Skin 1
-        `/vn/monika/c/${clothesFolder}/body-def-1.png`    // Body Clothes 1
-      );
-      headBase = '/vn/monika/b/body-def-head.png';
-
-      // Arms based on style
-      if (armStyle === 'crossed') {
-        armLayers.push('/vn/monika/b/arms-crossed-5.png', '/vn/monika/b/arms-crossed-10.png');
-        if (!isTowelOutfit && hasOutfitArmOverlays) {
-          armLayers.push(`/vn/monika/c/${clothesFolder}/arms-crossed-5.png`);
-          if (hasCrossedArm10) {
-            armLayers.push(`/vn/monika/c/${clothesFolder}/arms-crossed-10.png`);
-          }
-        }
-      } else if (armStyle === 'steepling') {
-        armLayers.push('/vn/monika/b/arms-steepling-10.png');
-        if (!isTowelOutfit && hasOutfitArmOverlays) armLayers.push(`/vn/monika/c/${clothesFolder}/arms-steepling-10.png`);
-      } else if (armStyle === 'point') {
-        armLayers.push('/vn/monika/b/arms-left-down-0.png', '/vn/monika/b/arms-right-point-0.png');
-        if (!isTowelOutfit && hasOutfitArmOverlays) {
-          armLayers.push(
-            `/vn/monika/c/${clothesFolder}/arms-left-down-0.png`,
-            `/vn/monika/c/${clothesFolder}/arms-right-point-0.png`
-          );
-        }
-      } else if (armStyle === 'restpoint') {
-        armLayers.push('/vn/monika/b/arms-left-rest-10.png', '/vn/monika/b/arms-right-restpoint-10.png');
-        if (!isTowelOutfit && hasOutfitArmOverlays) {
-          armLayers.push(
-            `/vn/monika/c/${clothesFolder}/arms-left-rest-10.png`,
-            `/vn/monika/c/${clothesFolder}/arms-right-restpoint-10.png`
-          );
-        }
-      } else {
-        // Default Down
-        armLayers.push('/vn/monika/b/arms-left-down-0.png', '/vn/monika/b/arms-right-down-0.png');
-        if (!isTowelOutfit && hasOutfitArmOverlays) {
-          armLayers.push(
-            `/vn/monika/c/${clothesFolder}/arms-left-down-0.png`,
-            `/vn/monika/c/${clothesFolder}/arms-right-down-0.png`
-          );
-        }
-      }
-    }
-
-    const eatLayers = [];
-    if (eatTogetherActive) {
-      const monikaLayer = MONIKA_MEAL_ASSETS[monikaMeal] || MONIKA_MEAL_ASSETS.pasta;
-      if (monikaLayer) eatLayers.push(monikaLayer);
-      const userLayer = eatTogetherMeal ? EAT_MEAL_ASSETS[eatTogetherMeal] : null;
-      if (userLayer) eatLayers.push(userLayer);
-    }
-
-    // Table & Shadow (Before Arms)
-    layers.push('/vn/monika/t/table-def.png');
-    if (Array.isArray(deskAccessories) && deskAccessories.length) {
-      deskAccessories.forEach((acc) => {
-        layers.push(`/vn/monika/a/${acc}/0.png`);
-      });
-    }
-    layers.push('/vn/monika/t/table-def-s.png');
-
-    // Arms
-    layers.push(...armLayers);
-    if (leaningTopOverlay) layers.push(leaningTopOverlay);
-
-    // Head Base (Face Skin)
-    if (headBase) layers.push(headBase);
-
-    // Face Parts (Nose -> Mouth -> Eyes -> Eyebrows)
-    const faceParts = [facePrefix + nose];
-    if (clothesFolder === 'bath_towel_white') {
-      // Slight boost for subtle nose in towel lighting
-      faceParts.push(facePrefix + nose);
-    }
-    faceParts.push(facePrefix + mouth, facePrefix + eyes, facePrefix + eyebrows);
-    layers.push(...faceParts);
-
-    if (blush) layers.push(facePrefix + blush);
-
-    // Front Hair
-    layers.push(hairFront);
-
-    // Ahoge (daily)
-    if (ahogeAccessory) {
-      layers.push(`/vn/monika/a/${ahogeAccessory}/${accFrame}.png`);
-    }
-
-    // Front accessories (clips/hats; ribbons in leaning are moved behind body/hair)
-    if (headAccessoryFrontLayers.length) layers.push(...headAccessoryFrontLayers);
-
-    // Eat-together food on top of Monika
-    if (eatLayers.length) layers.push(...eatLayers);
-
-    return layers;
-  }, [personalityState.mood, personalityState.energy, visualState, isBlinking, randomGlance, randomPose, vnScene, showStudyWindow, headpatActive, eatTogetherActive, eatTogetherMeal, monikaMeal, currentHour, currentMinute]);
+  const masLayers = useMemo(() => buildMasLayers({
+    personalityMood: personalityState.mood,
+    personalityEnergy: personalityState.energy,
+    visualState,
+    headpatActive,
+    showStudyWindow,
+    currentHour,
+    currentMinute,
+    randomPose,
+    vnScene,
+    isBlinking,
+    randomGlance,
+    eatTogetherActive,
+    eatTogetherMeal,
+    monikaMeal,
+    monikaMealAssets: MONIKA_MEAL_ASSETS,
+    eatMealAssets: EAT_MEAL_ASSETS,
+  }), [personalityState.mood, personalityState.energy, visualState, isBlinking, randomGlance, randomPose, vnScene, showStudyWindow, headpatActive, eatTogetherActive, eatTogetherMeal, monikaMeal, currentHour, currentMinute]);
 
   useEffect(() => {
     if (aiSpeaking || userSpeaking) {
@@ -1572,34 +558,6 @@ function AppContent({
     }
   }, [currentTime, aiSpeaking, userSpeaking]);
 
-  // Utility: Clamp position to viewport so component stays fully visible
-  const clampToViewport = (pos, size) => {
-    const margin = 10;
-    const topBarHeight = 60;
-    const width = window.innerWidth;
-    const height = window.innerHeight;
-
-    return {
-      x: Math.max(size.w / 2 + margin, Math.min(width - size.w / 2 - margin, pos.x)),
-      y: Math.max(size.h / 2 + margin + topBarHeight, Math.min(height - size.h / 2 - margin, pos.y))
-    };
-  };
-
-  // Utility: Get z-index for an element based on stacking order
-  const getZIndex = (id) => {
-    const baseZ = 30;
-    const index = zIndexOrder.indexOf(id);
-    return baseZ + (index >= 0 ? index : 0);
-  };
-
-  // Utility: Bring element to front (highest z-index)
-  const bringToFront = (id) => {
-    setZIndexOrder(prev => {
-      const filtered = prev.filter(el => el !== id);
-      return [...filtered, id];
-    });
-  };
-
   // Ref to track if model has been auto-connected (prevents duplicate connections)
   const hasAutoConnectedRef = useRef(false);
 
@@ -1608,8 +566,6 @@ function AppContent({
     if (isConnected && isAuthenticated && socketConnected && settingsLoaded && micDevices.length > 0 && !hasAutoConnectedRef.current) {
       hasAutoConnectedRef.current = true;
 
-      socket.emit('list_kasa');
-
       setTimeout(() => {
         const index = micDevices.findIndex(d => d.deviceId === selectedMicId);
         const queryDevice = micDevices.find(d => d.deviceId === selectedMicId);
@@ -1617,7 +573,7 @@ function AppContent({
 
         console.log("Auto-connecting to model with device:", deviceName, "Index:", index);
 
-        setStatus(t('system.connecting'));
+        setStatus(tRef.current('system.connecting'));
         socket.emit('start_audio', {
           device_index: index >= 0 ? index : null,
           device_name: deviceName,
@@ -1630,7 +586,7 @@ function AppContent({
 
   useEffect(() => {
     socket.on('connect', () => {
-      setStatus(t('system.connected'));
+      setStatus(tRef.current('system.connected'));
       setSocketConnected(true);
       socket.emit('get_settings');
     });
@@ -1641,7 +597,7 @@ function AppContent({
     });
 
     socket.on('disconnect', () => {
-      setStatus(t('system.disconnected'));
+      setStatus(tRef.current('system.disconnected'));
       setSocketConnected(false);
       setConfirmationQueue([]);
     });
@@ -1650,14 +606,14 @@ function AppContent({
       let displayMsg = data.msg;
 
       // Persona translation for status messages
-      if (data.msg === 'MonikAI Started') displayMsg = t('system.monikai_started');
-      else if (data.msg === 'MonikAI Stopped') displayMsg = t('system.monikai_stopped');
+      if (data.msg === 'MonikAI Started') displayMsg = tRef.current('system.monikai_started');
+      else if (data.msg === 'MonikAI Stopped') displayMsg = tRef.current('system.monikai_stopped');
 
       addMessage('System', displayMsg);
       if (data.msg === 'MonikAI Started') {
-        setStatus(t('system.model_connected'));
+        setStatus(tRef.current('system.model_connected'));
       } else if (data.msg === 'MonikAI Stopped') {
-        setStatus(t('system.connected'));
+        setStatus(tRef.current('system.connected'));
       }
     });
 
@@ -1752,14 +708,7 @@ function AppContent({
         logs: [...prev.logs, data?.log].filter(l => l).slice(-300)
       }));
       if (data?.image) {
-      // TODO: Restore browser window in adaptive UI
-      // setShowBrowserWindow(true);
-    }
-
-      if (!elementPositions.browser) {
-        const size = { w: 600, h: 450 };
-        const clamped = clampToViewport({ x: 320, y: window.innerHeight - 315 }, size);
-        setElementPositions(prev => ({ ...prev, browser: clamped }));
+        // Browser frame is consumed by shell panels via browserData.
       }
     });
 
@@ -1829,28 +778,9 @@ function AppContent({
       });
     });
 
-    // TODO: Restore Kasa integration in adaptive UI
-    // socket.on('kasa_devices', (devices) => {
-    //   console.log("Kasa Devices:", devices);
-    //   setKasaDevices(Array.isArray(devices) ? devices : []);
-    // });
-
-    // socket.on('kasa_update', (data) => {
-    //   setKasaDevices(prev => prev.map(d => {
-    //     if (d.ip === data.ip) {
-    //       return {
-    //         ...d,
-    //         is_on: data.is_on !== null ? data.is_on : d.is_on,
-    //         brightness: data.brightness !== null ? data.brightness : d.brightness
-    //       };
-    //     }
-    //     return d;
-    //   }));
-    // });
-
     socket.on('vn_scene', (payload) => {
       const scene = payload?.scene;
-      if (!scene || !VN_BACKGROUNDS[scene]) return;
+      if (!scene || !isValidScene(scene)) return;
       if (eatTogetherActiveRef.current) return;
       const ttl = typeof payload?.ttl_ms === 'number' ? payload.ttl_ms : 180000;
       setVnScene(scene);
@@ -1914,8 +844,6 @@ function AppContent({
       socket.off('browser_frame');
       socket.off('transcription');
       socket.off('tool_confirmation_request');
-      // socket.off('kasa_devices'); // TODO: Restore Kasa
-      // socket.off('kasa_update'); // TODO: Restore Kasa
       socket.off('vn_scene');
       socket.off('session_mode');
       socket.off('session_prompt');
@@ -2093,6 +1021,7 @@ function AppContent({
       }
     }
 
+    const nowMs = performance.now();
     frameCountRef.current++;
     if (nowMs - lastFrameTimeRef.current >= 1000) {
       setFps(frameCountRef.current);
@@ -2365,14 +1294,6 @@ function AppContent({
     socket.emit('uninstall_skill', { name });
   };
 
-
-  const handleMinimize = () => ipcRenderer.send('window-minimize');
-  const handleMaximize = () => ipcRenderer.send('window-maximize');
-
-  const handleCloseRequest = () => {
-    setShowGoodbyePopup(true);
-  };
-
   const handleConfirmClose = () => {
     // Intentionally fake: visual-only flow, no AI message and no real close.
   };
@@ -2415,188 +1336,28 @@ function AppContent({
     }
   };
 
-  const updateElementPosition = (id, dx, dy) => {
-    setElementPositions(prev => {
-      const currentPos = prev[id];
-      if (!currentPos) {
-        console.error(`[Drag] Hand tracking cannot update position for unknown element ID: ${id}`);
-        return prev; // Do not update if the element position is not found
-      }
-      const size = elementSizes[id] || { w: 100, h: 100 };
-      const rawNewX = currentPos.x + dx;
-      const rawNewY = currentPos.y + dy;
-
-      const width = window.innerWidth;
-      const height = window.innerHeight;
-      const margin = 0;
-      const topBarHeight = 60;
-
-      // This logic should be identical to handleMouseDrag
-      const newX = Math.max(size.w / 2 + margin, Math.min(width - size.w / 2 - margin, rawNewX));
-      const newY = Math.max(size.h / 2 + margin + topBarHeight, Math.min(height - size.h / 2 - margin, rawNewY));
-
-      return { ...prev, [id]: { x: newX, y: newY } };
-    });
-  };
-
-  // --- MOUSE DRAG HANDLERS ---
-  const handleMouseDown = (e, id) => {
-    console.log(`[MouseDrag] MouseDown on ${id}`, { target: e.target.tagName });
-
-    // In VN layout: visualizer + chat stay fixed
-    const fixedElements = ['visualizer', 'chat', 'video', 'screen'];
-    if (showStudyWindow) fixedElements.push('study');
-    if (sessionMode.active) fixedElements.push('session_notes');
-    if (fixedElements.includes(id)) {
-      console.log(`[MouseDrag] ${id} is a fixed element, not draggable`);
-      return;
-    }
-
-    bringToFront(id);
-
-    const tagName = e.target.tagName.toLowerCase();
-    if (tagName === 'input' || tagName === 'button' || tagName === 'textarea' || tagName === 'canvas' || e.target.closest('button')) {
-      console.log("[MouseDrag] Interaction blocked by interactive element");
-      return;
-    }
-
-    const isDragHandle = e.target.closest('[data-drag-handle]');
-    if (!isDragHandle && !isModularModeRef.current) {
-      console.log("[MouseDrag] Not a drag handle and modular mode off");
-      return;
-    }
-
-    const elPos = elementPositions[id];
-    if (!elPos) return;
-
-    dragOffsetRef.current = {
-      x: e.clientX - elPos.x,
-      y: e.clientY - elPos.y
-    };
-
-    setActiveDragElement(id);
-    activeDragElementRef.current = id;
-    isDraggingRef.current = true;
-
-    window.addEventListener('mousemove', handleMouseDrag);
-    window.addEventListener('mouseup', handleMouseUp);
-  };
-
-  const handleMouseDrag = (e) => {
-    if (!isDraggingRef.current || !activeDragElementRef.current) return;
-
-    const id = activeDragElementRef.current;
-
-    const rawNewX = e.clientX - dragOffsetRef.current.x;
-    const rawNewY = e.clientY - dragOffsetRef.current.y;
-
-    setElementPositions(prev => {
-      const size = elementSizes[id] || { w: 100, h: 100 };
-
-      const width = window.innerWidth;
-      const height = window.innerHeight;
-      const margin = 0;
-      const topBarHeight = 60; // Approximate height of the top bar
-
-      // All draggable windows use center-based positioning with translate(-50%, -50%)
-      // We clamp the center position to keep the window within the viewport.
-      const newX = Math.max(size.w / 2 + margin, Math.min(width - size.w / 2 - margin, rawNewX));
-      const newY = Math.max(size.h / 2 + margin + topBarHeight, Math.min(height - size.h / 2 - margin, rawNewY));
-
-      return { ...prev, [id]: { x: newX, y: newY } };
-    });
-  };
-
-  const handleMouseUp = () => {
-    isDraggingRef.current = false;
-    setActiveDragElement(null);
-    activeDragElementRef.current = null;
-    window.removeEventListener('mousemove', handleMouseDrag);
-    window.removeEventListener('mouseup', handleMouseUp);
-  };
-
-  const handleToggleWindow = (windowId, isVisible, setVisibility) => {
-    if (!isVisible) {
-      // Reset position when opening the window
-      bringToFront(windowId);
-      const defaultPositions = getDefaultPositions();
-      if (defaultPositions[windowId]) {
-        setElementPositions(prev => ({
-          ...prev,
-          [windowId]: defaultPositions[windowId]
-        }));
-      }
-    }
-    setVisibility(!isVisible);
-  };
-
-  const toggleWindowSmart = (windowId, isVisible, setVisibility) => {
-    handleToggleWindow(windowId, isVisible, setVisibility);
-  };
-
-
   const activeSessionPrompt = sessionPromptQueue.length ? sessionPromptQueue[0] : null;
 
   const sessionPromptPosition = useMemo(() => {
-    const chatX = elementPositions.chat?.x ?? window.innerWidth / 2;
-    const chatTop = elementPositions.chat?.y ?? 220;
-    const chatW = elementSizes.chat?.w ?? 720;
+    const chatX = viewport.w / 2;
+    const chatTop = Math.max(140, viewport.h - 380);
     const placeInside = chatTop < 220;
     return {
       x: chatX,
       y: chatTop,
-      width: Math.min(760, chatW),
+      width: Math.min(760, Math.max(520, Math.round(viewport.w * 0.42))),
       placement: placeInside ? 'inside' : 'above',
       viewportH: viewport.h,
     };
-  }, [elementPositions.chat, elementSizes.chat, viewport.h]);
+  }, [viewport.w, viewport.h]);
+
   const PHONE_MONIKA_SCALE_MAX = 1.20;
-  const PHONE_DESK_BOTTOM_INSET_MIN = 214;
-  const PHONE_DESK_CHAT_GAP_MAX = 2;
-  const focusMode = sessionMode.active || showStudyWindow;
-  const chatCenterX = elementPositions.chat?.x ?? viewport.w / 2;
-  const chatTop = elementPositions.chat?.y ?? (viewport.h - 460);
-  const chatBaseHeight = elementSizes.chat?.h ?? 320;
-  const currentChatHeight = chatLiveHeight || chatBaseHeight;
-  const visibleChatTop = chatTop + (chatBaseHeight - currentChatHeight);
-  const baseCharacterShift = monikaShellEnabled
-    ? 0
-    : Math.round(chatCenterX - viewport.w / 2) - 12;
-  const adaptiveAttentionShift = 0; // Legacy AdaptiveShell disabled
-  const characterShift = baseCharacterShift + adaptiveAttentionShift;
+  const characterShift = 0;
   const viewportAspect = viewport.w / Math.max(viewport.h, 1);
   const isCompactViewport = viewport.h < 1100;
   const stackedViewportFactor = Math.max(0, Math.min(1, (1.02 - viewportAspect) / 0.22));
-  const isStackedViewport = stackedViewportFactor > 0 || (viewport.w < 980 && viewport.h > 820);
-  const eatTogetherLift = eatTogetherActive ? (isCompactViewport ? -160 : -120) : 0;
-  const isTableScene = vnScene !== 'outside';
-  const useGroundedCharacterLayout = true;
-  const chatMinimizedOffset = useMemo(() => {
-    if (!isTableScene) return 0;
-    const baseH = elementSizes.chat?.h ?? 320;
-    const currentH = chatLiveHeight || baseH;
-    const offset = Math.max(0, baseH - currentH);
-    return isChatMinimized ? offset : 0;
-  }, [isTableScene, isChatMinimized, elementSizes.chat?.h, chatLiveHeight]);
-
-  useEffect(() => {
-    if (!isTableScene) return;
-    setIsChatMinimizeAnimating(true);
-    const t = setTimeout(() => setIsChatMinimizeAnimating(false), 220);
-    return () => clearTimeout(t);
-  }, [isChatMinimized, isTableScene]);
-
-  const tableOffset = isTableScene ? (isCompactViewport ? -60 : -125) : 0;
-  const fullscreenLowering = isCompactViewport ? 0 : 40;
-  const defaultCharacterY = (focusMode ? -80 : -40)
-    + tableOffset
-    + eatTogetherLift
-    + (isCompactViewport ? -70 : 0)
-    + fullscreenLowering
-    + chatMinimizedOffset;
   const groundedCharacterYBase = Math.max(145, Math.min(310, Math.round(viewport.h * 0.235)));
-  const groundedCharacterY = isPortrait ? groundedCharacterYBase - 50 : groundedCharacterYBase;
-  const characterY = useGroundedCharacterLayout ? groundedCharacterY : defaultCharacterY;
+  const characterY = isPortrait ? groundedCharacterYBase - 50 : groundedCharacterYBase;
 
   const characterScale = useMemo(() => {
     const refW = 1920;
@@ -2604,19 +1365,11 @@ function AppContent({
     const sizeFactor = Math.min(viewport.w / refW, viewport.h / refH);
     const t = Math.max(0, Math.min(1, (sizeFactor - 0.85) / 0.25));
     const baseScale = 1.05 + 0.15 * t;
-    const tableScale = isTableScene ? (isCompactViewport ? 0.96 : 1.01) : 1.0;
-    const groundedScale = useGroundedCharacterLayout
-      ? 1 + (PHONE_MONIKA_SCALE_MAX - 1) * stackedViewportFactor
-      : 1.0;
-    return baseScale * (isCompactViewport ? 0.9 : 1.0) * tableScale * groundedScale * 1.5;
-  }, [viewport.w, viewport.h, isCompactViewport, isTableScene, useGroundedCharacterLayout, stackedViewportFactor]);
-  const characterBottomOffset = useMemo(() => {
-    if (!useGroundedCharacterLayout) return 0;
-    return 0;
-  }, [useGroundedCharacterLayout]);
+    const groundedScale = 1 + (PHONE_MONIKA_SCALE_MAX - 1) * stackedViewportFactor;
+    return baseScale * (isCompactViewport ? 0.9 : 1.0) * groundedScale * 1.5;
+  }, [viewport.w, viewport.h, isCompactViewport, stackedViewportFactor]);
+  const characterBottomOffset = 0;
 
-  // If MonikaShell (Monika-First Adaptive UI) is enabled, render it instead of legacy VN layout
-  // ALWAYS use adaptive/Monika shell - legacy UI removed completely
   {
     return (
       <AudioVideoProvider
@@ -2640,39 +1393,7 @@ function AppContent({
           />
         )}
 
-        <div className="fixed top-16 right-4 z-[100] flex flex-col gap-3 pointer-events-none">
-          {toasts.map(t => (
-            <div
-              key={t.id}
-              className="pointer-events-auto w-80 bg-black/60 backdrop-blur-2xl border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-right-5 fade-in duration-300"
-            >
-              <div className="p-4 flex gap-3">
-                <div className="shrink-0 mt-0.5">
-                  {t.variant === 'error' ? (
-                    <div className="w-8 h-8 rounded-full bg-red-500/10 flex items-center justify-center text-red-400 border border-red-500/20">
-                      <AlertCircle size={16} />
-                    </div>
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white border border-white/20">
-                      <Bell size={16} />
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-white/90 leading-relaxed break-words">
-                    {t.text}
-                  </p>
-                </div>
-                <button
-                  onClick={() => dismissToast(t.id)}
-                  className="shrink-0 -mt-1 -mr-1 p-1.5 text-white/30 hover:text-white hover:bg-white/10 rounded-lg transition-colors h-fit"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
+        <ToastStack toasts={toasts} onDismiss={dismissToast} />
 
         <MonikaShell
           // Visualizer props
@@ -2692,9 +1413,9 @@ function AppContent({
           characterScale={characterScale}
           characterY={characterY}
           characterX={characterShift}
-          characterAnchorBottom={useGroundedCharacterLayout}
+          characterAnchorBottom={true}
           characterBottomOffset={characterBottomOffset}
-          characterTransitionMs={isChatMinimizeAnimating ? 0 : 0.35}
+          characterTransitionMs={0.35}
           headpatActive={headpatActive}
           petpetSrc="/petpet.gif"
           // Context + personality
@@ -2715,45 +1436,27 @@ function AppContent({
           shareRef={studyShareRef}
           onShareStudyPage={() => studyShareRef.current && studyShareRef.current()}
           agenticLogs={browserData.logs}
-          onChatMinimizedChange={setIsChatMinimized}
-          onChatSizeChange={setChatLiveHeight}
           sessionActive={sessionMode.active}
           onToggleSession={toggleSessionMode}
           eatTogetherActive={eatTogetherActive}
           onStartEatTogether={startEatTogether}
           onStopEatTogether={stopEatTogether}
           onHeadpat={triggerHeadpat}
-          onToggleMinecraft={() => toggleWindowSmart('minecraft', showMinecraftWindow, setShowMinecraftWindow)}
+          onToggleMinecraft={() => setShowMinecraftWindow((v) => !v)}
           showMinecraftWindow={showMinecraftWindow}
           onOpenStudy={() => {
             if (!showStudyWindow) {
-              toggleWindowSmart('study', showStudyWindow, setShowStudyWindow);
+              setShowStudyWindow(true);
             }
           }}
+          visionMode={visionMode}
+          visionFrame={visionFrame}
+          toggleScreenCapture={toggleScreenCapture}
+          isVideoOn={isVideoOn}
+          videoRef={videoRef}
+          isCameraFlipped={isCameraFlipped}
+          toggleVideo={toggleVideo}
         />
-
-        {visionMode === 'screen' && (
-          <ScreenWindow
-            imageSrc={visionFrame}
-            onClose={toggleScreenCapture}
-            position={elementPositions.screen}
-            onMouseDown={(e) => handleMouseDown(e, 'screen')}
-            activeDragElement={activeDragElement}
-            zIndex={getZIndex('screen')}
-          />
-        )}
-
-        {isVideoOn && (
-          <CameraWindow
-            videoRef={videoRef}
-            isCameraFlipped={isCameraFlipped}
-            onClose={toggleVideo}
-            position={elementPositions.video}
-            onMouseDown={(e) => handleMouseDown(e, 'video')}
-            activeDragElement={activeDragElement}
-            zIndex={getZIndex('video')}
-          />
-        )}
 
         {activeSessionPrompt && (
           <SessionPromptWindow
@@ -2836,14 +1539,6 @@ function AppContent({
 }
 
 function App() {
-  const [monikaShellEnabled, setMonikaShellEnabledState] = useState(() => isMonikaShellEnabled());
-
-  const handleToggleMonikaShell = useCallback((enabled) => {
-    const next = Boolean(enabled);
-    setMonikaShellEnabled(next);
-    setMonikaShellEnabledState(next);
-  }, []);
-
   return (
     <LanguageProvider>
       <MonikaContextProvider>
@@ -2876,10 +1571,7 @@ function App() {
               }
             `}</style>
 
-            <AppContent
-              monikaShellEnabled={monikaShellEnabled}
-              onToggleMonikaShell={handleToggleMonikaShell}
-            />
+            <AppContent />
           </RealtimeProvider>
         </ModeProvider>
       </LayoutProvider>

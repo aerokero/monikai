@@ -6,31 +6,27 @@ const CameraWindow = ({
     videoRef, 
     isCameraFlipped, 
     onClose, 
-    position, 
-    onMouseDown, 
-    activeDragElement, 
-    zIndex 
+    position
 }) => {
     const { t } = useLanguage();
     const [isMinimized, setIsMinimized] = useState(false);
+    const usesCustomPosition = Boolean(position && typeof position.x === 'number' && typeof position.y === 'number');
 
     return (
         <div
             id="video"
-            className={`absolute flex flex-col transition-[box-shadow,border-color] duration-200
-                backdrop-blur-2xl bg-black/50 border border-white/[0.14] shadow-2xl overflow-hidden rounded-xl
-                ${activeDragElement === 'video' ? 'ring-1 ring-white/50 border-white/30' : ''}
-            `}
+            className="absolute flex flex-col transition-[box-shadow,border-color] duration-200 backdrop-blur-2xl bg-black/50 border border-white/[0.14] shadow-2xl overflow-hidden rounded-xl"
             style={{
-                left: position?.x,
-                top: position?.y,
-                transform: 'translate(-50%, -50%)',
+                left: usesCustomPosition ? position.x : 'auto',
+                top: usesCustomPosition ? position.y : 'auto',
+                right: usesCustomPosition ? 'auto' : '16px',
+                bottom: usesCustomPosition ? 'auto' : '16px',
+                transform: usesCustomPosition ? 'translate(-50%, -50%)' : 'none',
                 width: '360px',
                 height: isMinimized ? 'auto' : '240px',
                 pointerEvents: 'auto',
-                zIndex: zIndex
+                zIndex: 41
             }}
-            onMouseDown={onMouseDown}
         >
             {/* Header */}
             <div 

@@ -216,7 +216,7 @@ const Visualizer = ({
         )}
 
         {/* Vignette */}
-        <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_50%_45%,transparent_35%,rgba(0,0,0,0.55)_100%)]" />
+        <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_50%_45%,transparent_35%,rgba(0,0,0,0)_100%)]" />
       </motion.div>
 
       {/* Character centered or grounded depending on viewport layout */}
@@ -295,7 +295,7 @@ const Visualizer = ({
               className="max-h-[92%] max-w-[98%] w-auto select-none pointer-events-none"
               draggable={false}
               onError={() => setCharBroken(true)}
-              style={{ filter: "drop-shadow(0 28px 60px rgba(0,0,0,0.55))" }}
+              style={{ filter: "brightness(1.25) drop-shadow(0 28px 60px rgba(0,0,0,0.55))" }}
             />
           ) : (
             <CharacterSilhouette />

@@ -1,5 +1,14 @@
-import sys
 import asyncio
+from contextlib import asynccontextmanager
+import sys
+import os
+import base64
+import json
+import time
+import re
+import random
+from datetime import datetime
+from pathlib import Path
 
 # Fix for asyncio subprocess support on Windows
 # MUST BE SET BEFORE OTHER IMPORTS
@@ -18,24 +27,22 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-import asyncio
-from contextlib import asynccontextmanager
-import threading
-import sys
-import os
-import base64
-import json
-import time
-import re
-import random
-from datetime import datetime
-from pathlib import Path
 
 from ..integrations.media.study_reader import StudyReader
 from ..integrations.media.study_ocr import ocr_image_bytes
 from dataclasses import asdict
 
 from . import monikai
+from .config import DATA_DIR as CONFIG_DATA_DIR
+from .frontend_router import (
+    clear_active_frontend_sid,
+    emit_to_frontend as _emit_to_frontend,
+    register_socketio,
+    schedule_emit_to_frontend as _schedule_emit_to_frontend,
+    set_active_frontend_sid,
+)
+from .minecraft_runtime import load_minecraft_bot_config
+from .settings_store import DEFAULT_SETTINGS, SETTINGS, load_settings, save_settings
 from ..ai.daily_briefing import DEFAULT_SECTIONS, build_daily_briefing, fetch_weather_details, normalize_profile
 from ..ai.personality_notifications import to_frontend_personality_event
 from ..integrations.media.authenticator import FaceAuthenticator
@@ -45,8 +52,6 @@ from ..agents.home_assistant_agent import HomeAssistantAgent
 from ..agents.spotify_manager import SpotifyManager
 from ..agents.telegram_bot import TelegramBotService
 from ..integrations.games.minecraft_agent import MinecraftBotManager
-from dotenv import dotenv_values
-
 def _determine_sprite(state_dict: dict) -> str:
     """
     Determines the visual sprite based on personality state.
@@ -92,7 +97,6 @@ def _determine_sprite(state_dict: dict) -> str:
 
 
 MAIN_LOOP = None
-ACTIVE_FRONTEND_SID = None
 minecraft_bot_manager = None
 minecraft_autonomy_task = None
 minecraft_autonomy_last_error_ts = 0.0
@@ -111,21 +115,52 @@ hue_agent = None
 home_assistant_agent = None
 
 
-async def _emit_to_frontend(event: str, payload, room: str = None):
-    target_room = room if room is not None else ACTIVE_FRONTEND_SID
-    if target_room:
-        await sio.emit(event, payload, room=target_room)
-    else:
-        await sio.emit(event, payload)
+def _stop_runtime_components():
+    global audio_loop, loop_task, authenticator
+
+    if audio_loop:
+        try:
+            print("[SERVER] Stopping Audio Loop...")
+            audio_loop.stop()
+        except Exception as exc:
+            print(f"[SERVER] Failed to stop audio loop: {exc}")
+        finally:
+            audio_loop = None
+
+    if loop_task and not loop_task.done():
+        try:
+            print("[SERVER] Cancelling loop task...")
+            loop_task.cancel()
+        except Exception as exc:
+            print(f"[SERVER] Failed to cancel loop task: {exc}")
+        finally:
+            loop_task = None
+
+    if authenticator:
+        try:
+            print("[SERVER] Stopping Authenticator...")
+            authenticator.stop()
+        except Exception as exc:
+            print(f"[SERVER] Failed to stop authenticator: {exc}")
 
 
-def _schedule_emit_to_frontend(event: str, payload, room: str = None):
-    asyncio.create_task(_emit_to_frontend(event, payload, room=room))
-
-
-async def _force_exit_after_delay(delay_seconds: float = 0.15):
+async def _shutdown_and_exit(reason: str, delay_seconds: float = 0.15):
+    print(reason)
+    _stop_runtime_components()
+    print("[SERVER] Graceful shutdown complete. Terminating process...")
     await asyncio.sleep(delay_seconds)
     os._exit(0)
+
+
+def _request_shutdown_from_signal(sig):
+    reason = f"[SERVER] Caught signal {sig}. Exiting gracefully..."
+    print(f"\n{reason}")
+    if MAIN_LOOP and MAIN_LOOP.is_running():
+        asyncio.run_coroutine_threadsafe(_shutdown_and_exit(reason), MAIN_LOOP)
+    else:
+        _stop_runtime_components()
+        print("[SERVER] Graceful shutdown complete. Terminating process...")
+        os._exit(0)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -167,8 +202,7 @@ async def lifespan(app: FastAPI):
 
     # Initialize Global Managers (Persistent across AI sessions)
     global calendar_manager, reminder_manager, personality_system, spotify_manager
-    base_dir = Path(os.path.dirname(os.path.abspath(__file__)))
-    data_dir = base_dir.parent / "data"
+    data_dir = DATA_DIR
     user_memory_dir = data_dir / "user_memory"
     user_memory_dir.mkdir(parents=True, exist_ok=True)
 
@@ -245,9 +279,7 @@ async def lifespan(app: FastAPI):
     # 5. Minecraft Bot Manager
     global minecraft_bot_manager
     try:
-        # Load Minecraft bot configuration from .env file
-        minecraft_bot_env_path = os.path.join(os.path.dirname(__file__), "minecraft-bot", ".env")
-        mc_config = dotenv_values(minecraft_bot_env_path)
+        mc_config = load_minecraft_bot_config(Path(__file__).resolve())
         
         mc_host = mc_config.get("MC_HOST", "localhost")
         mc_port = int(mc_config.get("MC_PORT", "25565"))
@@ -423,6 +455,7 @@ async def lifespan(app: FastAPI):
 
 # Create a Socket.IO server
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*', max_http_buffer_size=25 * 1024 * 1024)
+register_socketio(sio)
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
@@ -447,17 +480,7 @@ import signal
 
 # --- SHUTDOWN HANDLER ---
 def signal_handler(sig, frame):
-    print(f"\n[SERVER] Caught signal {sig}. Exiting gracefully...")
-    # Clean up audio loop
-    if audio_loop:
-        try:
-            print("[SERVER] Stopping Audio Loop...")
-            audio_loop.stop() 
-        except:
-            pass
-    # Force kill
-    print("[SERVER] Force exiting...")
-    os._exit(0)
+    _request_shutdown_from_signal(sig)
 
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
@@ -471,10 +494,7 @@ spotify_manager = None
 loop_task = None
 authenticator = None
 kasa_agent = KasaAgent()
-BASE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = BASE_DIR.parent.parent / "data"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-SETTINGS_FILE = DATA_DIR / "settings.json"
+DATA_DIR = CONFIG_DATA_DIR
 STUDY_DIR = DATA_DIR / "study"
 last_start_params = {}
 telegram_service = None
@@ -491,136 +511,6 @@ def _safe_study_path(rel_path: str) -> Path:
         raise HTTPException(status_code=400, detail="Invalid study path.")
     return candidate
 
-DEFAULT_SETTINGS = {
-    "face_auth_enabled": False, # Default OFF as requested
-    "show_internal_thoughts": False, # UI Toggle state
-    "tool_permissions": {
-        "cancel_reminder": True,
-        "control_light": True,
-        "clear_work_memory": True,
-        "notes_set": True,
-        "run_web_agent": True,
-        "run_openclaw_agent": True,
-        "manage_agent_job": True,
-        "list_openclaw_skills": False,
-        "list_skills": False,
-        "get_openclaw_skill": False,
-        "get_skill": False,
-        "refresh_openclaw_skills": False,
-        "refresh_skills": False,
-        "run_openclaw_skill_command": True,
-        "run_skill_command": True,
-        "spotify_get_auth_url": False,
-        "spotify_get_status": False,
-        "spotify_get_now_playing": False,
-        "spotify_list_playlists": False,
-        "spotify_recently_played": False,
-        "write_file": True
-    },# List of {host, port, name, type}
-    "kasa_devices": [], # DEPRECATED: Use smart_home.kasa.devices instead (kept for migration)
-    "smart_home": {
-        "kasa": {
-            "devices": []  # List of {ip, alias, model}
-        },
-        "hue": {
-            "bridge_ip": None,
-            "api_key": None,
-            "devices": []
-        },
-        "home_assistant": {
-            "url": None,
-            "token": None,
-            "entities_filter": ["light.*", "switch.*"],
-            "entities": []
-        }
-    },
-    "camera_flipped": False, # Invert cursor horizontal direction
-    "camera_source": "frontend", # "frontend" uses UI stream; "backend" uses OpenCV
-    "video_mode": "none", # none | screen | camera
-    "camera_capture": { # backend camera capture (if enabled)
-        "fps": 2.0,
-        "max_size": 1024,
-        "jpeg_quality": 80
-    },
-    "screen_capture": { # backend screen capture (if enabled)
-        "fps": 6.0,
-        "max_size": 1280,
-        "jpeg_quality": 70,
-        "monitor": 1,
-        "format": "jpeg",
-        "region": None,
-        "mode": "continuous"
-    },
-    "proactivity": {
-        "idle_nudges": {
-            "enabled": True,
-            "threshold_sec": 900,
-            "cooldown_sec": 1800,
-            "min_ai_quiet_sec": 60,
-            "max_per_session": 3,
-            "max_per_hour": 4,
-            "topic_memory_size": 6,
-            "score_threshold": 0.98,
-            "quiet_hours_enabled": True,
-            "quiet_hours_start": "22:00",
-            "quiet_hours_end": "06:00",
-            "adaptive_enabled": True,
-            "adaptive_backoff_step": 0.7,
-            "adaptive_max_multiplier": 4.0,
-            "recent_user_memory_size": 3,
-            "recent_user_max_chars": 160,
-            "question_min_interval_sec": 1800.0,
-            "question_backoff_1_sec": 2700.0,
-            "question_backoff_2_sec": 3600.0,
-            "startup_grace_sec": 600.0,
-            "min_user_messages_before_nudge": 2
-        },
-        "reasoning": {
-            "enabled": True,
-            "interval_sec": 120.0
-        }
-    },
-    "daily_briefing": {
-        "enabled": True,
-        "cache_minutes": 20,
-        "profile": {
-            "pinned_sections": ["weather"],
-            "preferred_sections": [],
-            "auto_slots": 3,
-            "candidate_pool": list(DEFAULT_SECTIONS.keys()),
-            "proposal_policy": {
-                "enabled": True,
-                "min_confidence": 0.65,
-                "cooldown_hours": 12
-            },
-            "language_mode": "auto",
-            "max_items_per_section": 5
-        }
-    },
-    "minecraft_autonomy": {
-        "enabled": True,
-        "auto_game_mode_on_connect": True,
-        "scan_interval_sec": 18.0,
-        "look_interval_sec": 14.0,
-        "move_interval_sec": 20.0,
-        "min_bot_action_gap_sec": 6.0,
-        "max_actions_per_tick": 1,
-        "comment_interval_sec": 42.0,
-        "curiosity_interval_sec": 45.0,
-        "proposal_interval_sec": 65.0,
-        "scan_range": 40,
-        "look_entity_max_distance": 20,
-        "wander_radius": 8,
-        "follow_radius": 10,
-        "move_range": 2,
-        "comment_to_model": True,
-        "comment_to_ui": True,
-        "comment_style": "mixed",
-        "comment_user_ratio": 0.55,
-    }
-}
-
-SETTINGS = DEFAULT_SETTINGS.copy()
 STUDY_READER = StudyReader()
 
 SCREEN_OCR_MIN_INTERVAL_SEC = 0.8
@@ -792,68 +682,6 @@ async def _debounced_screen_ocr():
     except Exception:
         return
     await _maybe_send_screen_ocr(text)
-
-def _deep_merge_dict(base: dict, override: dict) -> dict:
-    merged = dict(base or {})
-    for key, value in (override or {}).items():
-        if isinstance(value, dict) and isinstance(merged.get(key), dict):
-            merged[key] = _deep_merge_dict(merged.get(key) or {}, value)
-        else:
-            merged[key] = value
-    return merged
-
-
-def _migrate_settings_v1_to_v2(settings: dict) -> dict:
-    """
-    Migrate old settings format (kasa_devices at root) to new format (smart_home.kasa.devices).
-    This is called during load_settings to automatically upgrade old configs.
-    """
-    migrated = dict(settings)
-    
-    # Migrate old kasa_devices to new smart_home.kasa.devices
-    old_kasa = migrated.pop("kasa_devices", [])
-    if old_kasa and isinstance(old_kasa, list):
-        if "smart_home" not in migrated:
-            migrated["smart_home"] = {}
-        if "kasa" not in migrated["smart_home"]:
-            migrated["smart_home"]["kasa"] = {}
-        migrated["smart_home"]["kasa"]["devices"] = old_kasa
-        print("[SETTINGS] Migrated old kasa_devices to smart_home.kasa.devices")
-    
-    return migrated
-
-def load_settings():
-    global SETTINGS
-    if os.path.exists(SETTINGS_FILE):
-        try:
-            with open(SETTINGS_FILE, 'r') as f:
-                loaded = json.load(f)
-                # Apply migrations for backward compatibility
-                loaded = _migrate_settings_v1_to_v2(loaded)
-                defaults_copy = json.loads(json.dumps(DEFAULT_SETTINGS))
-                if isinstance(loaded, dict):
-                    SETTINGS = _deep_merge_dict(defaults_copy, loaded)
-                else:
-                    SETTINGS = defaults_copy
-
-                # Keep profile normalization explicit to preserve existing behavior.
-                briefing = SETTINGS.get("daily_briefing") or {}
-                profile = briefing.get("profile") if isinstance(briefing, dict) else None
-                if isinstance(profile, dict):
-                    SETTINGS["daily_briefing"]["profile"] = normalize_profile(profile)
-
-            print(f"Loaded settings: {SETTINGS}")
-        except Exception as e:
-            print(f"Error loading settings: {e}")
-
-def save_settings():
-    try:
-        with open(SETTINGS_FILE, 'w') as f:
-            json.dump(SETTINGS, f, indent=4)
-        print("Settings saved.")
-    except Exception as e:
-        print(f"Error saving settings: {e}")
-
 
 def _minecraft_autonomy_cfg() -> dict:
     base = DEFAULT_SETTINGS.get("minecraft_autonomy", {})
@@ -1628,8 +1456,7 @@ async def get_progression_notifications():
 
 @sio.event
 async def connect(sid, environ):
-    global ACTIVE_FRONTEND_SID
-    ACTIVE_FRONTEND_SID = sid
+    set_active_frontend_sid(sid)
     print(f"[SYSTEM NOTIFICATION] Client connected: {sid}")
     await sio.emit('status', {'msg': 'Connected to MonikAI Backend'}, room=sid)
 
@@ -1677,9 +1504,8 @@ async def disconnect(sid):
     3. Generate daily recap (PHASE C)
     4. Create memory summary
     """
-    global ACTIVE_FRONTEND_SID, audio_loop
-    if ACTIVE_FRONTEND_SID == sid:
-        ACTIVE_FRONTEND_SID = None
+    global audio_loop
+    clear_active_frontend_sid(sid)
     print(f"Client disconnected: {sid}")
     
     # PHASE B + C: Generate recaps at session end
@@ -1717,8 +1543,8 @@ async def disconnect(sid):
 
 @sio.event
 async def start_audio(sid, data=None):
-    global audio_loop, loop_task, last_start_params, ACTIVE_FRONTEND_SID
-    ACTIVE_FRONTEND_SID = sid
+    global audio_loop, loop_task, last_start_params
+    set_active_frontend_sid(sid)
     
     # Save params for auto-restart
     last_start_params = {'sid': sid, 'data': data}
@@ -1942,6 +1768,7 @@ async def start_audio(sid, data=None):
             print(f"[SERVER] Failed to emit personality_event: {e}")
 
     # Initialize MonikAI
+    data_dir = DATA_DIR
     try:
         video_mode = "none"
         if data and isinstance(data, dict) and data.get("video_mode"):
@@ -2499,31 +2326,10 @@ async def confirm_tool(sid, data):
 @sio.event
 async def shutdown(sid, data=None):
     """Gracefully shutdown the server when the application closes."""
-    global audio_loop, loop_task, authenticator
-    
     print("[SERVER] ========================================")
     print("[SERVER] SHUTDOWN SIGNAL RECEIVED FROM FRONTEND")
     print("[SERVER] ========================================")
-    
-    # Stop audio loop
-    if audio_loop:
-        print("[SERVER] Stopping Audio Loop...")
-        audio_loop.stop()
-        audio_loop = None
-    
-    # Cancel the loop task if running
-    if loop_task and not loop_task.done():
-        print("[SERVER] Cancelling loop task...")
-        loop_task.cancel()
-        loop_task = None
-    
-    # Stop authenticator if running
-    if authenticator:
-        print("[SERVER] Stopping Authenticator...")
-        authenticator.stop()
-    
-    print("[SERVER] Graceful shutdown complete. Terminating process...")
-    asyncio.create_task(_force_exit_after_delay())
+    asyncio.create_task(_shutdown_and_exit("[SERVER] Frontend requested shutdown."))
     return {"ok": True}
 
 @sio.event
@@ -4449,11 +4255,8 @@ async def minecraft_connect_to_server(sid, data=None, callback=None):
 async def kill_server(sid, data=None):
     """Kill the server when quit button is clicked."""
     print("[SERVER] Kill server requested from frontend")
-    # Give a brief moment for the response to send
+    asyncio.create_task(_shutdown_and_exit("[SERVER] Kill server requested from frontend."))
     await asyncio.sleep(0.1)
-    # Exit the entire application
-    import os
-    os._exit(0)
 
 
 @sio.event
