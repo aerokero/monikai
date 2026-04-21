@@ -1,8 +1,7 @@
 """Onboarding Flow - Multi-turn conversation for profile collection"""
-import json
 import uuid
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any
 
 
 class OnboardingFlow:
@@ -158,7 +157,7 @@ class OnboardingManager:
     def __init__(self):
         self.active_flows: Dict[str, OnboardingFlow] = {}
 
-    def start_onboarding(self, user_id: str = None) -> str:
+    def start_onboarding(self, user_id: Optional[str] = None) -> str:
         """Start a new onboarding flow. Returns flow ID."""
         if not user_id:
             user_id = str(uuid.uuid4())
@@ -180,10 +179,6 @@ class OnboardingManager:
             return {"error": "No active onboarding flow"}
 
         result = flow.process_response(user_input)
-
-        # If completed, remove from active flows
-        if flow.is_complete():
-            del self.active_flows[user_id]
 
         return result
 
