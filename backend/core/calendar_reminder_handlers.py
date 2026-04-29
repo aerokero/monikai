@@ -143,6 +143,7 @@ Speak: {bool(rem.speak)}. Alert: {bool(getattr(rem, 'alert', True))}."
         start_iso = data.get("start_iso")
         end_iso = data.get("end_iso")
         description = data.get("description")
+        all_day = bool(data.get("all_day"))
 
         if not summary or not start_iso or not end_iso:
             await sio.emit("error", {"msg": "create_event: Missing summary, start_iso, or end_iso"}, room=sid)
@@ -154,6 +155,7 @@ Speak: {bool(rem.speak)}. Alert: {bool(getattr(rem, 'alert', True))}."
                 start_iso=start_iso,
                 end_iso=end_iso,
                 description=description,
+                all_day=all_day,
             )
             await sio.emit("status", {"msg": f"Event created ({event.id})"}, room=sid)
         except Exception as e:

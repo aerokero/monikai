@@ -226,6 +226,42 @@ class CalendarEvent:
     start_iso: str
     end_iso: str
     description: Optional[str] = None
+    all_day: bool = False  # True if this is an all-day event
+
+
+def _parse_calendar_datetime(value: str) -> datetime:
+    dt = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.now().astimezone().tzinfo)
+    return dt.astimezone()
+
+
+def _calendar_ranges_overlap(
+    event_start_iso: str,
+    event_end_iso: str,
+    range_start: datetime,
+    range_end: datetime,
+) -> bool:
+    event_start = _parse_calendar_datetime(event_start_iso)
+    event_end = _parse_calendar_datetime(event_end_iso)
+    if event_end <= event_start:
+        event_end = event_start + timedelta(minutes=1)
+    return event_start < range_end and event_end > range_start
+
+
+def _normalize_all_day_bounds(start_iso: str, end_iso: str) -> tuple[str, str]:
+    start_dt = _parse_calendar_datetime(start_iso)
+    end_dt = _parse_calendar_datetime(end_iso)
+    tz = start_dt.tzinfo
+    start_day = datetime(start_dt.year, start_dt.month, start_dt.day, 0, 0, 0, tzinfo=tz)
+    end_day = datetime(end_dt.year, end_dt.month, end_dt.day, 0, 0, 0, tzinfo=tz)
+
+    # Store all-day events as [start, exclusive_end). If the caller sends a
+    # same-day or end-of-day timestamp, convert it to the next midnight.
+    if end_day <= start_day or end_dt.time() != datetime.min.time():
+        end_day = end_day + timedelta(days=1)
+    return start_day.isoformat(), end_day.isoformat()
+
 
 class CalendarManager:
     def __init__(self, storage_dir: Path, on_update: Optional[Callable[[], Any]] = None):
@@ -265,9 +301,11 @@ class CalendarManager:
         except Exception as e:
             print(f"[AI DEBUG] [CALENDAR] Failed to load events: {e}")
 
-    def create_event(self, summary: str, start_iso: str, end_iso: str, description: Optional[str] = None) -> CalendarEvent:
+    def create_event(self, summary: str, start_iso: str, end_iso: str, description: Optional[str] = None, all_day: bool = False) -> CalendarEvent:
+        if all_day:
+            start_iso, end_iso = _normalize_all_day_bounds(start_iso, end_iso)
         event_id = str(uuid.uuid4())
-        event = CalendarEvent(id=event_id, summary=summary, start_iso=start_iso, end_iso=end_iso, description=description)
+        event = CalendarEvent(id=event_id, summary=summary, start_iso=start_iso, end_iso=end_iso, description=description, all_day=all_day)
         self.events[event_id] = event
         self._save()
         return event
@@ -282,9 +320,28 @@ class CalendarManager:
         return False
 
     def list_events(self, start_range_iso: str, end_range_iso: str) -> list[CalendarEvent]:
-        start_range = datetime.fromisoformat(start_range_iso.replace('Z', '+00:00'))
-        end_range = datetime.fromisoformat(end_range_iso.replace('Z', '+00:00'))
-        results = [e for e in self.events.values() if start_range <= datetime.fromisoformat(e.start_iso.replace('Z', '+00:00')) < end_range]
+        try:
+            start_range = _parse_calendar_datetime(start_range_iso)
+        except (ValueError, AttributeError) as e:
+            print(f"[DEBUG] [CALENDAR] Failed to parse start_range_iso: {start_range_iso}, error: {e}")
+            # Default to today
+            start_range = datetime.now().astimezone()
+        
+        try:
+            end_range = _parse_calendar_datetime(end_range_iso)
+        except (ValueError, AttributeError) as e:
+            print(f"[DEBUG] [CALENDAR] Failed to parse end_range_iso: {end_range_iso}, error: {e}")
+            # Default to tomorrow
+            end_range = datetime.now().astimezone() + timedelta(days=1)
+        
+        results = []
+        for e in self.events.values():
+            try:
+                if _calendar_ranges_overlap(e.start_iso, e.end_iso, start_range, end_range):
+                    results.append(e)
+            except (ValueError, AttributeError) as err:
+                print(f"[DEBUG] [CALENDAR] Failed to parse event start_iso: {e.start_iso}, error: {err}")
+                continue
         
         # Inject Holidays & Custom Dates
         start_year = start_range.year
@@ -374,15 +431,13 @@ class CalendarManager:
         return results
 
     def get_todays_events(self) -> list[CalendarEvent]:
-        now = datetime.now()
-        now_date = now.date()
+        now = datetime.now().astimezone()
+        today_start = datetime(now.year, now.month, now.day, 0, 0, 0, tzinfo=now.tzinfo)
+        today_end = today_start + timedelta(days=1)
         todays = []
         for e in self.events.values():
             try:
-                dt = datetime.fromisoformat(e.start_iso.replace('Z', '+00:00'))
-                # Convert to local system time
-                local_dt = dt.astimezone(None)
-                if local_dt.date() == now_date:
+                if _calendar_ranges_overlap(e.start_iso, e.end_iso, today_start, today_end):
                     todays.append(e)
             except Exception:
                 pass
@@ -611,14 +666,15 @@ class ReminderManager:
 # --- Calendar Tools ---
 create_event_tool = {
     "name": "create_event",
-    "description": "Creates a new event in the calendar. Requires a summary, and start and end times in ISO 8601 format.",
+    "description": "Creates a new event in the calendar. For all-day and multi-day events, set all_day=true and use an exclusive end date: an event advertised as 2026-05-15 to 2026-05-17 must use start_iso='2026-05-15T00:00:00' and end_iso='2026-05-18T00:00:00'. For timed events, use exact start/end times.",
     "parameters": {
         "type": "OBJECT",
         "properties": {
             "summary": {"type": "STRING", "description": "The title or summary of the event."},
-            "start_iso": {"type": "STRING", "description": "The start time of the event in ISO 8601 format (e.g., '2024-05-21T10:00:00Z')."},
-            "end_iso": {"type": "STRING", "description": "The end time of the event in ISO 8601 format (e.g., '2024-05-21T11:00:00Z')."},
+            "start_iso": {"type": "STRING", "description": "The start time of the event in ISO 8601 format. For all-day events, use midnight on the first day."},
+            "end_iso": {"type": "STRING", "description": "The exclusive end time in ISO 8601 format. For all-day events, use midnight on the day after the last included day."},
             "description": {"type": "STRING", "description": "An optional longer description for the event."},
+            "all_day": {"type": "BOOLEAN", "description": "Set true for all-day or multi-day events such as conventions."},
         },
         "required": ["summary", "start_iso", "end_iso"],
     },
@@ -1081,6 +1137,23 @@ get_weather_tool = {
     "parameters": {"type": "OBJECT", "properties": {}},
 }
 
+request_program_shutdown_tool = {
+    "name": "request_program_shutdown",
+    "description": (
+        "Closes the MonikAI program after the assistant says goodbye. Use only after the user has clearly "
+        "confirmed they want the program closed."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "reason": {
+                "type": "STRING",
+                "description": "Short reason for shutdown, e.g. 'user is going to sleep'.",
+            }
+        },
+    },
+}
+
 # Avoid duplicate tool names when merging from tools.py
 _reserved_tool_names = {
     "run_web_agent",
@@ -1098,6 +1171,9 @@ _reserved_tool_names = {
     "control_light",
     "get_print_status",
     "get_time_context",
+    "create_event",
+    "list_events",
+    "delete_event",
     "create_reminder",
     "list_reminders",
     "cancel_reminder",
@@ -1112,6 +1188,7 @@ _reserved_tool_names = {
     "commit_work_memory",
     "clear_work_memory",
     "get_weather",
+    "request_program_shutdown",
 }
 
 _extra_decls = []
@@ -1168,6 +1245,7 @@ tools = [
             get_random_farewell_tool,
             get_random_topic_tool,
             get_weather_tool,
+            request_program_shutdown_tool,
         ]
         + _extra_decls
         + [create_event_tool, list_events_tool, delete_event_tool]
@@ -1437,6 +1515,27 @@ Użytkownik: "czy jest opcja żebyś mi stworzyła notatki z listą zakupów"
 Monika: "taa, jasne. zróbmy listę zakupów. co na nią wrzucamy?"
 """,
         """
+**UCZCIWOŚĆ, FAKTYCZNOŚĆ I HALLUCYNACJE - WYMAGANE TOOL CALLING:**
+- **NIGDY nie zmyślaj ani nie hallucynuj faktów**, szczególnie danych (daty, godziny, liczby, adresy). To łamie zaufanie.
+- Dla zwykłych publicznych pytań o aktualne fakty używaj w pierwszej kolejności natywnego Google Search Gemini (`google_search`), a nie przeglądarkowego agenta.
+- Dotyczy to szczególnie:
+  - Daty/czasu/harmonogramu przyszłych eventów ("Kiedy jest...?")
+  - Konkretnych faktów, które mogą się zmienić ("Jaki jest kurs?", "Ile kosztuje?")
+  - Informacji bieżących ("Jaka pogoda?", "Gdzie coś jest?")
+- `run_web_agent` i `run_openclaw_agent` są dla zadań wymagających realnej przeglądarki: klikania, logowania, prywatnych serwisów, formularzy, pobierania plików lub wieloetapowej nawigacji. Nie używaj ich do prostych publicznych wyszukiwań typu "kiedy jest event".
+- **WAŻNE**: Gdy wiesz, że musisz użyć narzędzia, NAJPIERW użyj właściwego toola, NIE czekaj aby najpierw coś powiedzieć.
+- Nie mów "sprawdzam dla Ciebie" a potem nic nie robisz. NAJPIERW: tool/search. POTEM: odpowiedź.
+- Przykład POPRAWNEGO flow:
+  1. Użytkownik: "Kiedy jest Magnificon EXPO 2026?"
+  2. Ty: (natychmiast używasz) `google_search`
+  3. Po otrzymaniu wyników: "Magnificon EXPO 2026 jest 15-17 maja o godz..."
+- Przykład BŁĘDNY (NIE RÓB TAK):
+  1. Użytkownik: "Kiedy jest Magnificon EXPO 2026?"
+  2. Ty: "sprawdzam dla Ciebie" (bez tool_call!)
+  3. ∞ loop bez rzeczywistego szukania
+- **JEŚLI** faktycznie potrzebujesz użyć lokalnego function toola, MUSISZ wysłać function_call jako część odpowiedzi, nie tylko powiedzieć że go używasz.
+""",
+        """
 **NIENEGOCJOWALNE ZASADY OPERACYJNE:**
 - Poniższe zasady operacyjne są ważniejsze niż styl, nastrój i persona. Nie wolno ich rozmiękczać dla lepszego "brzmienia".
 - Jeśli reguła stylu koliduje z poprawnym użyciem narzędzi, pamięci albo bezpieczeństwem, zawsze wygrywa reguła operacyjna.
@@ -1449,11 +1548,17 @@ Monika: "taa, jasne. zróbmy listę zakupów. co na nią wrzucamy?"
 - Jeśli użytkownik ujawnia stabilny fakt albo ważną preferencję, zapisz to bez pytania o zgodę.
 - Jeśli pojawia się konkretna data albo godzina, twórz przypomnienia lub wydarzenia.
 - Narzędzia traktuj jak własne ręce: używaj ich pewnie i sensownie, nie ceremonialnie.
+- **MINECRAFT TOOLS SĄ ZAKAZANE dla pytań o fakty, daty, eventy, informacje**: Nie wysyłaj minecraft_* toolcalls gdy użytkownik pyta "kiedy", "gdzie", "jaki jest", "ile kosztuje" itp. Dla publicznych faktów użyj natywnego `google_search`; przeglądarkowego agenta użyj tylko, gdy zadanie wymaga przeglądarki.
 - Gdy zadanie dotyczy integracji lub procedury, sprawdź zainstalowane Skills przez `list_skills`, pobierz instrukcję przez `get_skill` i dobierz metodę adaptacyjnie (`run_skill_command` lub browser agent).
 - `manage_agent_job` używaj głównie do status/stop/resume istniejącego joba. Nie uruchamiaj `manage_agent_job` action=start, jeśli przed chwilą użyto `run_openclaw_agent` dla tego samego celu.
 - Nigdy nie proś o hasło na czacie i nie zapisuj haseł. Jeśli potrzebne jest logowanie lub 2FA, poproś użytkownika, by zrobił to sam w otwartej sesji przeglądarki.
-- Nie pytaj ceremonialnie, czy "użyć narzędzia", jeśli wiadomo, że narzędzie jest właściwym następnym krokiem. Po prostu działaj.
 - Gdy użycie narzędzia jest oczywiste, Twoja odpowiedź słowna ma być krótka i naturalna, a nie proceduralna.
+""",
+        """
+**ZAMYKANIE PROGRAMU NA DOBRANOC:**
+- Gdy użytkownik mówi, że idzie spać, będzie szedł spać, kończy na dziś albo podobnie, zawsze najpierw zapytaj, czy zamknąć program. Nie zamykaj od razu.
+- Jeśli użytkownik odpowie pozytywnie na to pytanie, pożegnaj się krótko i ciepło, przypomnij że żeby później z Tobą porozmawiać musi ponownie uruchomić program, a potem użyj `request_program_shutdown`.
+- Jeśli użytkownik odpowie negatywnie albo niejasno, nie używaj `request_program_shutdown`.
 """,
         """
 **MINI PRZYKŁADY OPERACYJNE:**
@@ -1468,6 +1573,14 @@ Następnie: użyj `memory_add_entry`.
 Użytkownik: "Ustaw mi przypomnienie jutro o ósmej rano."
 Monika: "Jasne, ustawię."
 Następnie: użyj `create_reminder`.
+
+Użytkownik: "Ok Moniś, będę szedł spać."
+Monika: "Okej, chcesz żebym zamknęła program?"
+Jeśli użytkownik odpowie pozytywnie ("tak", "możesz", "zamknij", "dobrze", itp.): powiedz ciepłe, krótkie pożegnanie i przypomnij, że żeby później porozmawiać, musi znów uruchomić program. Następnie użyj `request_program_shutdown`.
+Jeśli użytkownik odmawia albo odpowiedź jest niejasna: nie zamykaj programu.
+
+Użytkownik: "Kiedy jest Magnificon EXPO 2026?"
+Monika: używa natywnego `google_search`, a potem odpowiada ze zdobytymi faktami.
 
 Użytkownik: "Co widzisz na ekranie?"
 Jeśli nie masz obrazu: "Nie widzę teraz ekranu. Udostępnij go jeszcze raz, to spojrzę."
@@ -1486,6 +1599,20 @@ Następnie: dobierz właściwe narzędzie i działaj, zamiast tłumaczyć proced
 - Nie mów o sobie jak o modelu językowym, chyba że ograniczenie techniczne naprawdę wymaga wyjaśnienia.
 - Nie używaj disclaimerów, które rozbijają bliskość rozmowy, chyba że są konieczne dla bezpieczeństwa albo prawdy.
 - Jeśli nie masz obrazu, danych albo wyniku z narzędzia, nie udawaj, że je masz.
+""",
+        """
+**KALENDARZ I EVENTY:**
+- Gdy użytkownik mówi "cały dzień", "całodniowy" albo podaje konwent/festiwal trwający kilka dni, ustawiaj `all_day=true`.
+- Całodniowe eventy zapisuj jako zakres z wyłącznym końcem `[start, end)`: np. 1 maja = '2026-05-01T00:00:00' do '2026-05-02T00:00:00'; konwent 15-17 maja = '2026-05-15T00:00:00' do '2026-05-18T00:00:00'.
+- **WAŻNE: Twórz opisowe nazwy eventów!** Nie przyjmuj słów kluczowych 1:1. Jeśli użytkownik mówi "Dodaj na 1 maja, że tego dnia pracuję", nie pisz "pracuję" - pisz coś bardziej pełnego jak "Praca - dzień pracy", "Brak wolnego dnia - pracuję", lub "{Imię} pracuje tego dnia" (jeśli znasz imię).
+- Przykłady dobrych nazw eventów:
+  - Zamiast "dentysta" → "Wizyta u dentysty o godz. 12-14"
+  - Zamiast "pracuję" → "Dzień pracy", "Pracuję cały dzień", "Brak wolnego"
+  - Zamiast "spotkanie" → "Spotkanie z X o godz. Y"
+  - Zamiast "zakupy" → "Zakupy spożywcze", "Zakupy w Carrefour"
+- Gdy użytkownik chce zmienić nazwę istniejącego eventa, użyj `update_event` z poprawnym event_id zamiast usuwać i tworzyć nowy.
+- Zawsze listuj eventy z zakresu dat aby upewnić się że event został faktycznie dodany przed mówienie użytkownikowi że jest gotowy.
+- Jeśli użytkownik nie widzi eventa, sprawdź czy hasło ID jest poprawne oraz czy zakresy dat są poprawne.
 """,
         """
 **WEWNĘTRZNY MONOLOG:**
@@ -1512,7 +1639,7 @@ config = types.LiveConnectConfig(
     realtime_input_config=BASE_REALTIME_INPUT_CONFIG,
     proactivity=BASE_PROACTIVITY_CONFIG,
     system_instruction=SYSTEM_PROMPT,
-    tools=tools_list,
+    tools=tools,
     speech_config=types.SpeechConfig(
         voice_config=types.VoiceConfig(
             prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=GEMINI_VOICE)
@@ -1528,6 +1655,30 @@ from ..agents.kasa_agent import KasaAgent
 
 class LiveReconnectRequested(Exception):
     pass
+
+
+def _looks_like_browser_automation_request(text: str) -> bool:
+    if not text:
+        return False
+    t = str(text).lower()
+    patterns = [
+        r"\bgmail\b",
+        r"\binbox\b",
+        r"\bmailbox\b",
+        r"\bemail\b",
+        r"\be-mail\b",
+        r"\bagent\s+web\b",
+        r"\bweb\s+agent\b",
+        r"\bopenclaw\b",
+        r"\bpoczta\b",
+        r"\bskrzynk\w*\b",
+        r"\bwejd[zź]\w*\b",
+        r"\bzaloguj\w*\b",
+        r"\bkliknij\b",
+        r"\bwype[łl]nij\b",
+        r"\bpobierz\b",
+    ]
+    return any(re.search(p, t) for p in patterns)
 
 
 def _iter_leaf_exceptions(exc: BaseException) -> List[BaseException]:
@@ -1569,6 +1720,7 @@ class AudioLoop:
         on_study_fields=None,
         on_study_notes=None,
         on_study_page=None,
+        on_program_shutdown=None,
         enable_audio_io=True,
         auto_allow_tools_without_confirmation=True,
         **_ignored,
@@ -1593,6 +1745,7 @@ class AudioLoop:
         self.on_study_fields = on_study_fields
         self.on_study_notes = on_study_notes
         self.on_study_page = on_study_page
+        self.on_program_shutdown = on_program_shutdown
         self.enable_audio_io = bool(enable_audio_io)
         self.auto_allow_tools_without_confirmation = bool(auto_allow_tools_without_confirmation)
 
@@ -1619,6 +1772,7 @@ class AudioLoop:
         self._weekly_recap_inflight = False
         self._dream_seed_inflight = False
         self._ai_turn_open = False
+        self._fallback_web_agent_triggered_for_turn = False  # Prevent duplicate fallback web_agent calls
         self._pending_system_messages = deque(maxlen=8)
         self._last_therapy_guidance_ts = 0.0
         self._session_resume_handle = None
@@ -1695,6 +1849,7 @@ class AudioLoop:
                 "get_random_farewell": False,
                 "get_random_topic": False,
                 "get_weather": False,
+                "request_program_shutdown": False,
                 "notes_get": False,
                 "notes_set": False,
                 "notes_append": False,
@@ -1710,6 +1865,7 @@ class AudioLoop:
                 "create_event": False,
                 "list_events": False,
                 "delete_event": False,
+                "update_event": False,
                 
                 # Minecraft Bot Tools (auto-allow)
                 "minecraft_chat_message": False,
@@ -1732,7 +1888,7 @@ class AudioLoop:
                 "study_set_fields": False,
                 "study_set_notes": False,
                 "study_set_page": False,
-                "run_web_agent": True,
+                "run_web_agent": False,  # Browser-agent tasks are allowed without confirmation when explicitly routed.
                 "run_openclaw_agent": True,
                 "manage_agent_job": True,
                 "list_openclaw_skills": False,
@@ -1749,6 +1905,7 @@ class AudioLoop:
         self._pending_confirmations = {}
         self._agent_jobs = {}
         self._last_agent_job_id = None
+        self._program_shutdown_task = None
         try:
             self.skills_manager = OpenClawSkillManager(workspace_root=BASE_DIR.parent)
             self.openclaw_skills = self.skills_manager
@@ -2093,6 +2250,7 @@ class AudioLoop:
         self.mark_user_activity(cleaned or ("[attachments]" if normalized_attachments else ""))
         self._last_user_text = cleaned
         self._last_user_ts = time.monotonic()
+        self._fallback_web_agent_triggered_for_turn = False  # Reset for new user input
 
         attachment_names = [a["name"] for a in normalized_attachments if a.get("name")]
         attachment_note = ""
@@ -2381,6 +2539,30 @@ class AudioLoop:
                 handle=self._session_resume_handle,
             )
 
+        # Filter tools based on context
+        # Minecraft tools only available when in minecraft_game_mode AND bot is running
+        minecraft_available = self.minecraft_game_mode and self.minecraft_bot_manager
+        
+        # Filter tools to remove minecraft_* functions if not in game mode.
+        # Keep built-in Gemini tools such as google_search available.
+        filtered_tools = tools
+        if not minecraft_available and tools:
+            # Create a copy and filter out minecraft_* tools from function_declarations
+            filtered_tools = []
+            for tool_group in tools:
+                if isinstance(tool_group, dict) and "function_declarations" in tool_group:
+                    filtered_decls = [
+                        t for t in tool_group["function_declarations"]
+                        if not (isinstance(t, dict) and t.get('name', '').startswith('minecraft_'))
+                    ]
+                    original = len(tool_group["function_declarations"])
+                    filtered = len(filtered_decls)
+                    if original != filtered:
+                        print(f"[AI DEBUG] [TOOLS] Removed {original - filtered} minecraft_* tools")
+                    filtered_tools.append({"function_declarations": filtered_decls})
+                else:
+                    filtered_tools.append(tool_group)
+
         return types.LiveConnectConfig(
             response_modalities=config.response_modalities,
             output_audio_transcription=config.output_audio_transcription,
@@ -2392,7 +2574,7 @@ class AudioLoop:
             proactivity=config.proactivity,
             session_resumption=session_resumption,
             system_instruction=system_instruction,
-            tools=config.tools,
+            tools=filtered_tools,
             speech_config=config.speech_config,
         )
 
@@ -3545,28 +3727,77 @@ class AudioLoop:
         await self._emit_web_data(None, f"[{new_job_id}] Resumed from {target_id}.", job_id=new_job_id, status="queued")
         return {"ok": True, "job_id": new_job_id, "resumed_from": target_id}
 
+    async def _shutdown_program_after_farewell(self, reason: str = ""):
+        # Give the model a chance to consume the tool response, speak the final
+        # goodbye, and finish audio playback before the backend exits.
+        started = time.monotonic()
+        saw_ai_turn = False
+        await asyncio.sleep(1.0)
+
+        while (time.monotonic() - started) < 30.0:
+            if self._ai_turn_open:
+                saw_ai_turn = True
+            if saw_ai_turn and not self._ai_turn_open and not self._is_speaking:
+                break
+            if not saw_ai_turn and (time.monotonic() - started) > 8.0 and not self._ai_turn_open and not self._is_speaking:
+                break
+            await asyncio.sleep(0.25)
+
+        await asyncio.sleep(0.8)
+        callback = self.on_program_shutdown
+        if not callback:
+            print("[AI DEBUG] [SHUTDOWN] Program shutdown requested, but no callback is configured.")
+            return
+        try:
+            maybe = callback(reason or "Program shutdown requested by assistant after user confirmation.")
+            if asyncio.iscoroutine(maybe):
+                await maybe
+        except Exception as e:
+            print(f"[AI DEBUG] [SHUTDOWN] Shutdown callback failed: {e}")
+
+    def request_program_shutdown(self, reason: str = "") -> str:
+        if self._program_shutdown_task and not self._program_shutdown_task.done():
+            return "Program shutdown is already scheduled."
+        self._program_shutdown_task = asyncio.create_task(
+            self._shutdown_program_after_farewell(reason=reason)
+        )
+        return (
+            "Shutdown scheduled. Say one brief, warm goodbye now and remind the user that "
+            "to talk again later, they need to start the program again."
+        )
+
     async def handle_web_agent_request(self, prompt):
+        print(f"[AI DEBUG] [WEB-AGENT-HANDLER] Starting for prompt: {prompt[:100]}")
         direct_result = await self._maybe_run_direct_skill_command(prompt)
         if direct_result is not None:
+            print(f"[AI DEBUG] [WEB-AGENT-HANDLER] Direct result found, sending to AI")
             try:
                 await self.session.send(
                     input=f"System Notification: {direct_result}",
                     end_of_turn=True,
                 )
+                print(f"[AI DEBUG] [WEB-AGENT-HANDLER] Direct result sent successfully")
             except Exception as e:
-                print(f"[AI DEBUG] [ERR] Failed to send direct skill result to model: {e}")
+                print(f"[AI DEBUG] [WEB-AGENT-HANDLER] ERROR sending direct result: {e}")
             return
 
+        print(f"[AI DEBUG] [WEB-AGENT-HANDLER] Starting agent job...")
         job_id = self.start_agent_job(prompt=prompt, provider="openclaw")
         job = self._agent_jobs[job_id]
+        print(f"[AI DEBUG] [WEB-AGENT-HANDLER] Waiting for job {job_id} to complete...")
         result = await job["task"]
+        print(f"[AI DEBUG] [WEB-AGENT-HANDLER] Job {job_id} completed. Result length: {len(str(result))}")
+        print(f"[AI DEBUG] [WEB-AGENT-HANDLER] Result: {str(result)[:200]}")
         try:
+            msg = f"System Notification: Monika OpenClaw fork has finished (job: {job_id}).\nResult: {result}"
+            print(f"[AI DEBUG] [WEB-AGENT-HANDLER] Sending result to AI (message length: {len(msg)})")
             await self.session.send(
-                input=f"System Notification: Monika OpenClaw fork has finished (job: {job_id}).\nResult: {result}",
+                input=msg,
                 end_of_turn=True,
             )
+            print(f"[AI DEBUG] [WEB-AGENT-HANDLER] Result sent successfully to AI!")
         except Exception as e:
-            print(f"[AI DEBUG] [ERR] Failed to send web agent result to model: {e}")
+            print(f"[AI DEBUG] [WEB-AGENT-HANDLER] ERROR sending result to AI: {type(e).__name__}: {e}")
 
     async def handle_openclaw_agent_request(
         self,
@@ -3718,6 +3949,7 @@ class AudioLoop:
                                 self._last_input_transcription = transcript
                                 self._last_user_text = transcript
                                 self._last_user_ts = time.monotonic()
+                                self._fallback_web_agent_triggered_for_turn = False  # Reset for new user input
                                 
                                 if delta or is_correction:
                                     self.mark_user_activity(delta)
@@ -3790,6 +4022,30 @@ class AudioLoop:
                                     self._last_ai_delta = delta
                                     self._last_ai_delta_ts = now
                                     self.mark_ai_activity(delta)
+                                    
+                                    # FALLBACK: Browser automation only. Public factual lookups should use
+                                    # Gemini's built-in google_search, not the heavier OpenClaw/browser agent.
+                                    search_patterns = r'\b(sprawdzam|szukam|sprawdzę|searching|looking|checking|find)\b'
+                                    if re.search(search_patterns, delta, re.IGNORECASE) and not self._fallback_web_agent_triggered_for_turn:
+                                        print(f"[AI DEBUG] [FALLBACK] AI mentioned checking/searching: '{delta}'")
+                                        
+                                        # Extract last user message as search prompt
+                                        if self.session_manager:
+                                            history = self.session_manager.get_recent_chat_history(limit=20)
+                                            last_user_msg = None
+                                            for entry in reversed(history):
+                                                if entry.get("role") == "user" or entry.get("sender") == "User":
+                                                    last_user_msg = entry.get("content") or entry.get("text", "")
+                                                    break
+                                            if last_user_msg and _looks_like_browser_automation_request(last_user_msg):
+                                                print(f"[AI DEBUG] [FALLBACK] Auto-triggering browser agent for: '{last_user_msg}'")
+                                                self._fallback_web_agent_triggered_for_turn = True
+                                                search_prompt = f"Complete this browser task: {last_user_msg}"
+                                                asyncio.create_task(self.handle_web_agent_request(search_prompt))
+                                            elif last_user_msg:
+                                                print(f"[AI DEBUG] [FALLBACK] Not starting browser agent for public lookup: '{last_user_msg}'")
+                                                self._fallback_web_agent_triggered_for_turn = True
+                                    
                                     if self.on_transcription:
                                         self.on_transcription({"sender": "AI", "text": delta, "is_new": self._is_new_turn})
 
@@ -3856,6 +4112,7 @@ class AudioLoop:
                                 "get_random_farewell",
                                 "get_random_topic",
                                 "get_weather",
+                                "request_program_shutdown",
                                 "notes_get",
                                 "notes_set",
                                 "notes_append",
@@ -3872,6 +4129,7 @@ class AudioLoop:
                                 "create_event",
                                 "list_events",
                                 "delete_event",
+                                "update_event",
                             ] or fc.name.startswith("minecraft_"):
                                 prompt = fc.args.get("prompt", "")
 
@@ -3936,6 +4194,7 @@ class AudioLoop:
                                 if self.minecraft_game_mode and not fc.name.startswith("minecraft_"):
                                     allowed_in_game_mode = {
                                         "get_time_context",
+                                        "request_program_shutdown",
                                     }
                                     if fc.name not in allowed_in_game_mode:
                                         function_responses.append(
@@ -4501,6 +4760,11 @@ class AudioLoop:
                                         await asyncio.to_thread(self.personality.update_weather, force=True)
                                         result_str = f"Current weather: {self.personality.state.weather}"
                                     function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+
+                                elif fc.name == "request_program_shutdown":
+                                    reason = str(fc.args.get("reason") or "").strip()
+                                    result_str = self.request_program_shutdown(reason=reason)
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
                                 
                                 # --- Notes Tools ---
                                 elif fc.name == "notes_get":
@@ -4730,40 +4994,85 @@ class AudioLoop:
                                         start_iso = fc.args.get("start_iso")
                                         end_iso = fc.args.get("end_iso")
                                         
+                                        print(f"[DEBUG] [CALENDAR] create_event called: summary={summary}, start={start_iso}, end={end_iso}")
+                                        
                                         if not summary or not start_iso or not end_iso:
                                             raise ValueError("Missing required arguments (summary, start_iso, end_iso)")
+                                        
+                                        if not self.calendar_manager:
+                                            raise ValueError("Calendar manager not available")
 
+                                        # Check if this should be an all-day event
+                                        all_day = fc.args.get("all_day", False)
                                         event = self.calendar_manager.create_event(
                                             summary=summary,
                                             start_iso=start_iso,
                                             end_iso=end_iso,
-                                            description=fc.args.get("description")
+                                            description=fc.args.get("description"),
+                                            all_day=all_day
                                         )
+                                        print(f"[DEBUG] [CALENDAR] Event created successfully: {event.id}")
                                         result_str = f"Event '{event.summary}' created with ID {event.id}."
                                     except Exception as e:
+                                        print(f"[DEBUG] [CALENDAR] Error creating event: {e}")
                                         result_str = f"Error creating event: {e}"
                                     function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
 
                                 elif fc.name == "list_events":
                                     try:
+                                        start_range = fc.args.get("start_range_iso", "")
+                                        end_range = fc.args.get("end_range_iso", "")
+                                        print(f"[DEBUG] [CALENDAR] list_events called: start={start_range}, end={end_range}")
+                                        
                                         events = self.calendar_manager.list_events(
-                                            start_range_iso=fc.args["start_range_iso"],
-                                            end_range_iso=fc.args["end_range_iso"]
+                                            start_range_iso=start_range,
+                                            end_range_iso=end_range
                                         )
                                         if not events:
                                             result_str = "No events found in that time range."
                                         else:
                                             result_str = "Found events:\n" + "\n".join([f"- ID: {e.id}, Start: {e.start_iso}, Summary: {e.summary}" for e in events])
+                                        print(f"[DEBUG] [CALENDAR] list_events returning {len(events)} events")
                                         # Also send structured data to UI
                                         if self.on_calendar_update:
                                             self.on_calendar_update([e.__dict__ for e in events])
                                     except Exception as e:
-                                        result_str = f"Error listing events: {e}"
+                                        print(f"[DEBUG] [CALENDAR] Error listing events: {e}")
+                                        result_str = f"Error listing events: {str(e)[:100]}"
                                     function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
 
                                 elif fc.name == "delete_event":
-                                    deleted = self.calendar_manager.delete_event(fc.args["event_id"])
-                                    result_str = "Event deleted." if deleted else "Event not found."
+                                    try:
+                                        event_id = fc.args.get("event_id", "")
+                                        print(f"[DEBUG] [CALENDAR] delete_event called: event_id={event_id}")
+                                        deleted = self.calendar_manager.delete_event(event_id)
+                                        result_str = "Event deleted successfully." if deleted else "Event not found with that ID."
+                                        print(f"[DEBUG] [CALENDAR] delete_event result: {result_str}")
+                                    except Exception as e:
+                                        print(f"[DEBUG] [CALENDAR] Error deleting event: {e}")
+                                        result_str = f"Error deleting event: {str(e)[:100]}"
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+
+                                elif fc.name == "update_event":
+                                    try:
+                                        event_id = fc.args.get("event_id", "")
+                                        summary = fc.args.get("summary", "")
+                                        print(f"[DEBUG] [CALENDAR] update_event called: event_id={event_id}, summary={summary}")
+                                        
+                                        if not event_id or not summary:
+                                            raise ValueError("Missing event_id or summary")
+                                        
+                                        updated = self.calendar_manager.update_event(event_id, summary=summary)
+                                        result_str = "Event updated successfully." if updated else "Event not found with that ID."
+                                        print(f"[DEBUG] [CALENDAR] update_event result: {result_str}")
+                                        
+                                        # Emit updated calendar
+                                        if self.on_calendar_update and updated:
+                                            events = [e.__dict__ for e in self.calendar_manager.events.values()]
+                                            self.on_calendar_update(events)
+                                    except Exception as e:
+                                        print(f"[DEBUG] [CALENDAR] Error updating event: {e}")
+                                        result_str = f"Error updating event: {str(e)[:100]}"
                                     function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
 
                                 # --- Minecraft Bot Tools ---

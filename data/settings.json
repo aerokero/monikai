@@ -1,12 +1,12 @@
 {
     "face_auth_enabled": false,
-    "show_internal_thoughts": false,
+    "show_internal_thoughts": true,
     "tool_permissions": {
         "cancel_reminder": true,
         "control_light": true,
         "clear_work_memory": true,
         "notes_set": true,
-        "run_web_agent": true,
+        "run_web_agent": false,
         "run_openclaw_agent": true,
         "manage_agent_job": true,
         "list_openclaw_skills": false,

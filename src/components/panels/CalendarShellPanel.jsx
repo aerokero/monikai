@@ -36,12 +36,38 @@ const CalendarShellPanel = ({ socket = null }) => {
   const [formData, setFormData] = useState({
     message: '',
     date: new Date().toISOString().split('T')[0],
+    endDate: new Date().toISOString().split('T')[0],
     time: new Date().toTimeString().slice(0, 5),
     duration: 60,
     speak: true,
     alert: true,
     allDay: false,
   });
+
+  const getLocalDayStart = (date) => {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+
+  const addDays = (date, days) => {
+    const d = new Date(date);
+    d.setDate(d.getDate() + days);
+    return d;
+  };
+
+  const getDateInputAsLocalDay = (value) => new Date(`${value}T00:00:00`);
+
+  const itemOverlapsDate = (item, date) => {
+    const dayStart = getLocalDayStart(date);
+    const dayEnd = addDays(dayStart, 1);
+    const itemStart = item.time;
+    const itemEnd = item.endTime && !Number.isNaN(item.endTime.getTime()) ? item.endTime : itemStart;
+    if (item.type === 'event') {
+      return itemStart < dayEnd && itemEnd > dayStart;
+    }
+    return itemStart.toDateString() === dayStart.toDateString();
+  };
 
   const emitWithAckTimeout = React.useCallback((eventName, payload = {}, fallbackData = {}, timeoutMs = 4000) => {
     if (!socket) return Promise.resolve(fallbackData);
@@ -119,14 +145,23 @@ const CalendarShellPanel = ({ socket = null }) => {
       title: r.message,
       time: new Date(r.when_iso),
     }));
-    const mappedEvents = events.map((e) => ({
-      type: 'event',
-      id: e.id,
-      title: e.summary,
-      description: e.description || '',
-      time: new Date(e.start_iso),
-      endTime: new Date(e.end_iso),
-    }));
+    const mappedEvents = events.map((e) => {
+      const start = new Date(e.start_iso);
+      const end = new Date(e.end_iso);
+      const durationMs = end.getTime() - start.getTime();
+      const looksLikeFullDayRange = durationMs >= 24 * 60 * 60 * 1000
+        && durationMs % (24 * 60 * 60 * 1000) === 0
+        && /T00:00:00/.test(String(e.start_iso || ''));
+      return {
+        type: 'event',
+        id: e.id,
+        title: e.summary,
+        description: e.description || '',
+        time: start,
+        endTime: end,
+        allDay: !!e.all_day || looksLikeFullDayRange,
+      };
+    });
     const mappedBirthdays = birthdays.map((b, idx) => {
       const date = new Date(b.date);
       return {
@@ -137,7 +172,7 @@ const CalendarShellPanel = ({ socket = null }) => {
       };
     });
     return [...mappedReminders, ...mappedEvents, ...mappedBirthdays]
-      .filter(item => item.time >= today)
+      .filter(item => (item.endTime && !Number.isNaN(item.endTime.getTime()) ? item.endTime > today : item.time >= today))
       .sort((a, b) => a.time - b.time);
   }, [birthdays, events, reminders]);
 
@@ -156,6 +191,18 @@ const CalendarShellPanel = ({ socket = null }) => {
     if (description === 'Holiday') return forceTextEmojiPresentation('Holiday');
     if (description === 'Happy Birthday!' || itemType === 'birthday') return forceTextEmojiPresentation('Happy Birthday!');
     return forceTextEmojiPresentation(description);
+  };
+
+  const getDisplayTime = (item) => {
+    if (item.type === 'event' && item.allDay) {
+      const startText = item.time.toLocaleDateString(locale);
+      const lastDay = addDays(getLocalDayStart(item.endTime), -1);
+      const endText = lastDay.toLocaleDateString(locale);
+      return startText === endText
+        ? `${startText} · ${t('schedule.all_day')}`
+        : `${startText} - ${endText} · ${t('schedule.all_day')}`;
+    }
+    return item.time.toLocaleString(locale);
   };
 
   const handleDelete = (item) => {
@@ -191,8 +238,9 @@ const CalendarShellPanel = ({ socket = null }) => {
       let start;
       let end;
       if (formData.allDay) {
-        start = new Date(`${formData.date}T00:00:00`);
-        end = new Date(`${formData.date}T23:59:59`);
+        start = getDateInputAsLocalDay(formData.date);
+        const inclusiveEndDate = formData.endDate && formData.endDate >= formData.date ? formData.endDate : formData.date;
+        end = addDays(getDateInputAsLocalDay(inclusiveEndDate), 1);
       } else {
         start = new Date(`${formData.date} ${formData.time}`);
         end = new Date(start.getTime() + formData.duration * 60000);
@@ -202,6 +250,7 @@ const CalendarShellPanel = ({ socket = null }) => {
         start_iso: start.toISOString(),
         end_iso: end.toISOString(),
         description: '',
+        all_day: formData.allDay,
       });
     }
 
@@ -308,15 +357,31 @@ const CalendarShellPanel = ({ socket = null }) => {
                     <input
                       type="date"
                       value={formData.date}
-                      onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                      onChange={(e) => {
+                        const nextDate = e.target.value;
+                        setFormData((prev) => ({
+                          ...prev,
+                          date: nextDate,
+                          endDate: prev.endDate < nextDate ? nextDate : prev.endDate,
+                        }));
+                      }}
                       className="flex-1 bg-black/50 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white"
                     />
-                    {!formData.allDay && (
+                    {!(createType === 'event' && formData.allDay) && (
                       <input
                         type="time"
                         value={formData.time}
                         onChange={(e) => setFormData({ ...formData, time: e.target.value })}
                         className="w-24 bg-black/50 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white"
+                      />
+                    )}
+                    {createType === 'event' && formData.allDay && (
+                      <input
+                        type="date"
+                        value={formData.endDate}
+                        min={formData.date}
+                        onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                        className="flex-1 bg-black/50 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white"
                       />
                     )}
                   </div>
@@ -366,7 +431,7 @@ const CalendarShellPanel = ({ socket = null }) => {
                       <div key={`${item.type}-${item.id}`} className="rounded-lg border border-white/5 bg-black/20 p-3 group">
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
-                            <div className="text-xs text-white/50">{item.time.toLocaleString(locale)}</div>
+                            <div className="text-xs text-white/50">{getDisplayTime(item)}</div>
                             {editingItem?.id === item.id ? (
                               <input
                                 autoFocus
@@ -421,7 +486,7 @@ const CalendarShellPanel = ({ socket = null }) => {
                       const cellDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
                       const isToday = new Date().toDateString() === cellDate.toDateString();
                       const isSelected = selectedDate.toDateString() === cellDate.toDateString();
-                      const hasItems = mergedItems.some((it) => it.time.toDateString() === cellDate.toDateString());
+                      const hasItems = mergedItems.some((it) => itemOverlapsDate(it, cellDate));
                       return (
                         <button
                           key={i}
@@ -437,10 +502,10 @@ const CalendarShellPanel = ({ socket = null }) => {
 
                   <div className="pt-3 border-t border-white/10 space-y-2">
                     <div className="text-sm text-white/55 uppercase tracking-wider">{selectedDate.toLocaleDateString(locale, { month: 'long', day: 'numeric' })}</div>
-                    {mergedItems.filter((it) => it.time.toDateString() === selectedDate.toDateString()).slice(0, 6).map((it) => (
+                    {mergedItems.filter((it) => itemOverlapsDate(it, selectedDate)).slice(0, 6).map((it) => (
                       <div key={`${it.type}-${it.id}-selected`} className="text-sm text-white/85 truncate emoji-text">• {getDisplayTitle(it.title)}</div>
                     ))}
-                    {mergedItems.filter((it) => it.time.toDateString() === selectedDate.toDateString()).length === 0 && (
+                    {mergedItems.filter((it) => itemOverlapsDate(it, selectedDate)).length === 0 && (
                       <div className="text-sm text-white/35 italic">{t('schedule.no_items_day')}</div>
                     )}
                   </div>

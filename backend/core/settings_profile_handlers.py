@@ -178,6 +178,7 @@ def register_settings_profile_handlers(
                     "start_iso": e.start_iso,
                     "end_iso": e.end_iso,
                     "description": e.description or "",
+                    "all_day": bool(getattr(e, "all_day", False)),
                     "is_birthday": getattr(e, "is_birthday", False),
                 }
                 for e in events

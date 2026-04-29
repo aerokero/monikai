@@ -17,9 +17,10 @@ DEFAULT_SETTINGS = {
         "control_light": True,
         "clear_work_memory": True,
         "notes_set": True,
-        "run_web_agent": True,
+        "run_web_agent": False,  # Allow explicit browser-agent tasks without confirmation
         "run_openclaw_agent": True,
         "manage_agent_job": True,
+        "request_program_shutdown": False,
         "list_openclaw_skills": False,
         "list_skills": False,
         "get_openclaw_skill": False,

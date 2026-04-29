@@ -697,3 +697,56 @@ minecraft_use_action_tool = {
     }
 }
 tools_list[0]["function_declarations"].append(minecraft_use_action_tool)
+
+# --- Calendar Tools ---
+create_event_tool = {
+    "name": "create_event",
+    "description": "Creates a new event in the calendar. For all-day and multi-day events, set all_day=true and use an exclusive end date: an event advertised as 2026-05-15 to 2026-05-17 must use start_iso='2026-05-15T00:00:00' and end_iso='2026-05-18T00:00:00'. For timed events, use specific times.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "summary": {"type": "STRING", "description": "The title or summary of the event."},
+            "start_iso": {"type": "STRING", "description": "The start time in ISO 8601 format (e.g., '2026-05-01T00:00:00' for all-day on May 1st)."},
+            "end_iso": {"type": "STRING", "description": "The exclusive end time in ISO 8601 format. For all-day events, use midnight on the day after the last included day."},
+            "description": {"type": "STRING", "description": "An optional longer description for the event."},
+            "all_day": {"type": "BOOLEAN", "description": "Set to true for all-day events (default: false)."},
+        },
+        "required": ["summary", "start_iso", "end_iso"],
+    },
+}
+tools_list[0]["function_declarations"].append(create_event_tool)
+
+list_events_tool = {
+    "name": "list_events",
+    "description": "Lists events from the calendar within a specified time range.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "start_range_iso": {"type": "STRING", "description": "The start of the time range in ISO 8601 format."},
+            "end_range_iso": {"type": "STRING", "description": "The end of the time range in ISO 8601 format."},
+        },
+        "required": ["start_range_iso", "end_range_iso"],
+    },
+}
+tools_list[0]["function_declarations"].append(list_events_tool)
+
+delete_event_tool = {
+    "name": "delete_event",
+    "description": "Deletes an event from the calendar by its ID.",
+    "parameters": {"type": "OBJECT", "properties": {"event_id": {"type": "STRING", "description": "The unique ID of the event to delete."}}, "required": ["event_id"]},
+}
+tools_list[0]["function_declarations"].append(delete_event_tool)
+
+update_event_tool = {
+    "name": "update_event",
+    "description": "Updates an existing event in the calendar (e.g., change summary/name). Provide the event ID and the new summary.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "event_id": {"type": "STRING", "description": "The unique ID of the event to update."},
+            "summary": {"type": "STRING", "description": "The new summary/title for the event."},
+        },
+        "required": ["event_id", "summary"],
+    },
+}
+tools_list[0]["function_declarations"].append(update_event_tool)

@@ -265,6 +265,7 @@ def register_audio_lifecycle_handlers(
                 on_study_fields=on_study_fields,
                 on_study_notes=on_study_notes,
                 on_study_page=on_study_page,
+                on_program_shutdown=lambda reason: shutdown_and_exit(f"[SERVER] {reason}"),
                 input_device_index=device_index,
                 input_device_name=device_name,
                 kasa_agent=kasa_agent,
