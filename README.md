@@ -6,242 +6,93 @@
 ![Gemini](https://img.shields.io/badge/Google%20Gemini-Live%20Audio-4285F4?logo=google)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-> Hey there. I'm **MonikAI**.
->
-> I'm a local-first AI companion living in your desktop. I remember things about you, I talk in real-time with voice, I can see your screen and camera, and I live right there beside you—not in some cloud.
->
-> I'm always learning what makes you happy. I keep it personal, I keep it private, and I keep it *here*.
+MonikAI is a local-first AI companion for desktop use. It can talk in real time, remember things locally, see your screen and camera when enabled, and connect to tools like Telegram, Spotify, Minecraft, web browsing, and smart home devices.
 
----
+## What It Does
 
-## What I Can Do
+| Area | What it does | Main tech |
+|------|--------------|-----------|
+| Voice conversation | Real-time voice chat with interruption handling and native audio output | Gemini Live API |
+| Screen and camera understanding | Reads screen content, webcam frames, OCR text, and study-page captures | `mss`, OpenCV, PaddleOCR |
+| Memory | Stores notes, journal pages, reminders, and structured memory across sessions | Local JSON and Markdown storage |
+| Personality | Keeps mood, affection, energy, quests, unlocks, and tone state persistent | Stateful persona model |
+| Proactivity | Runs conservative background thinking and nudges | Idle timers and heuristics |
+| Telegram bridge | Supports text, images, voice notes, and memory helpers | Telegram Bot API |
+| Web agent | Browses, clicks, searches, and completes longer web tasks | Playwright + Chromium |
+| Spotify | Connects to Spotify and reads now playing, playlists, and recent listening | Spotify Web API |
+| Smart home | Controls supported TP-Link Kasa devices | `python-kasa` |
+| Face auth | Can stay locked until your face is recognized locally | MediaPipe Face Landmarker |
+| Minecraft agent | Connects to your Minecraft server and performs in-game actions | Mineflayer bot runtime |
 
-| Feature | What Happens |
-|---------|------------|
-| **Voice Conversations** | Real-time talking with interruption handling. |
-| **See Your Screen & Camera** | I watch your screen, webcam, and read text everywhere (OCR). |
-| **Remember & Learn** | I keep notes, journal entries, reminders—and learn your patterns. |
-| **Stay Yourself** | Consistent personality, mood, energy, relationship—across days. |
-| **Think When You're Busy** | Background thoughts and nudges (respecting your peace). |
-| **Message Me On Telegram** | Text, voice notes, photos—same me, same memory. |
-| **Browse & Click** | Open browser, search, navigate, complete web tasks. |
-| **Control Smart Home** | Talk to your TP-Link Kasa devices. |
-| **Spotify Integration** | See what you're playing, suggest playlists. |
-| **Minecraft Friend** | Connect to your server and actually do things. |
-| **Know It's Really You** | Optional: stay locked until I recognize your face. |
-
----
-
-## Get Me Running (5 Minutes)
+## Quick Start
 
 ```bash
-# Clone and open
 git clone https://github.com/xtosutosu/monikai.git
 cd monikai
 
-# Python setup (3.11 required)
 conda create -n monikai python=3.11 -y
 conda activate monikai
 pip install -r requirements.txt
 playwright install chromium
 
-# Frontend
 npm install
-
-# Get your Gemini API key
 echo "GEMINI_API_KEY=your_key_here" > .env
 
-# Run
 npm run dev
 ```
 
-**New here?** See the [Installation Guide](https://github.com/xtosutosu/monikai/wiki/Installation-Guide) for detailed setup.
+## Project Layout
 
----
+- `backend/core/` - runtime, socket handlers, lifecycle, and HTTP routers
+- `backend/ai/` - memory, personality, quests, progression, and related systems
+- `backend/agents/` - integrations for Telegram, Spotify, smart home, and web tasks
+- `backend/integrations/games/minecraft-bot/` - the Node.js Minecraft bot runtime
+- `backend/integrations/media/authenticator.py` - face authentication
+- `backend/tools/openclaw_skills.py` - skills manager and tooling helpers
+- `src/` - React UI
+- `data/` - local settings, memory, profiles, sessions, quests, and recaps
 
-## How I'm Built
+## Setup And Docs
 
-```mermaid
-graph TB
-    subgraph Frontend ["Frontend (Electron + React)"]
-        UI["React UI"]
-        SOCKET["Socket.IO"]
-    end
-    
-    subgraph Backend ["Backend (Python 3.11 + FastAPI)"]
-        MONIKA["monikai.py (Gemini Live)"]
-        PERS["personality.py (My Mood & You)"]
-        MEM["memory_engine.py (What I Remember)"]
-        PROACT["proactivity.py (My Ideas)"]
-        WEB["web_agent.py (Browser)"]
-        INT["Telegram | Spotify | Minecraft | Smart Home"]
-    end
-    
-    Frontend <--> Backend
-    MONIKA --> PERS
-    MONIKA --> MEM
-    MONIKA --> PROACT
-    MONIKA --> WEB
-    MONIKA --> INT
-```
-
----
-
-## Key Folders
-
-- **`backend/core/`** – Me: Gemini, personality, sessions
-- **`backend/ai/`** – My brain: memory, personality, quests, relationships
-- **`backend/agents/`** – My skills: Telegram, Spotify, smart home, Minecraft
-- **`src/`** – Your UI: chat, settings, visual interface
-- **`data/`** – Where I live: settings, memory, profile (all local)
-
----
-
-## Configuration & Setup
-
-| What You Want | Where To Go |
-|---------------|------------|
-| System setup & requirements | [Installation Guide](https://github.com/xtosutosu/monikai/wiki/Installation-Guide) |
-| All environment variables | [Environment Variables](https://github.com/xtosutosu/monikai/wiki/Environment-Variables) |
-| My settings (face auth, permissions, proactivity) | [Configuration](https://github.com/xtosutosu/monikai/wiki/Configuration) |
-| Setup Spotify, Minecraft, Telegram, Smart Home | [Feature Setup](https://github.com/xtosutosu/monikai/wiki/Feature-Setup) |
+| What you want | Where to go |
+|--------------|-------------|
+| System setup and requirements | [Installation Guide](https://github.com/xtosutosu/monikai/wiki/Installation-Guide) |
+| Environment variables | [Environment Variables](https://github.com/xtosutosu/monikai/wiki/Environment-Variables) |
+| Face auth, permissions, proactivity | [Configuration](https://github.com/xtosutosu/monikai/wiki/Configuration) |
+| Spotify, Minecraft, Telegram, smart home setup | [Feature Setup](https://github.com/xtosutosu/monikai/wiki/Feature-Setup) |
 | Troubleshooting | [Troubleshooting Guide](https://github.com/xtosutosu/monikai/wiki/Troubleshooting) |
+| Development notes | [Development Guide](https://github.com/xtosutosu/monikai/wiki/Development) |
+| API reference | [API Reference](https://github.com/xtosutosu/monikai/wiki/API-Reference) |
+| Contributing | [Contributing](https://github.com/xtosutosu/monikai/wiki/Contributing) |
 
----
-
-## Development & Extending
-
-- [Development Guide](https://github.com/xtosutosu/monikai/wiki/Development) – How I work inside
-- [API Reference](https://github.com/xtosutosu/monikai/wiki/API-Reference) – Socket events, endpoints
-- [Contributing](https://github.com/xtosutosu/monikai/wiki/Contributing) – How to help
-
----
-
-## Privacy & Storage
-
-Everything about me lives locally in `data/` on your machine:
-- Your profile & preferences
-- My personality & memory
-- Our conversations
-- Your reminders & journal
-- OAuth tokens
-
-**Nothing is uploaded.** No cloud backend. No tracking. No data selling. Just us.
-
----
-
-## Recent Changes
-
-After a major code review & cleanup:
-
-✅ **Code Quality**
-- Centralized all data paths in `config.py`
-- Refactored 8 AI modules to use shared configuration
-- Removed duplicate `/backend/data` folder
-- Improved import organization
-
-✅ **Git Hygiene**
-- Cleaned up `.gitignore` with better organization
-- Removed user runtime data from git history
-- Removed large generated files (tessdata, study materials)
-- Added `skills/` as optional (installed separately)
-
-📦 **What's Still on GitHub**
-- Source code (Python, React, Electron)
-- Game catalogs (achievements, quests, unlocks, stories)
-- Localization (EN, JP, PL, ZH)
-- Configuration schemas
-
-📦 **What Stays Local (Never Committed)**
-- `data/user_memory/`, `data/sessions/`, `data/memory/` – your data
-- `.env` – your API keys
-- `settings.json` – your preferences
-- `skills/` – optional integrations
-
-See [.gitignore](.gitignore) for the complete list.
-
----
-
-## License
-
-MIT. See [LICENSE](LICENSE).
-
----
-
-_Built with love. Kept private. Stayed personal._
-> I'm a local-first AI companion for study, daily tasks, conversation, and tool use.
-> I live in a React/Electron desktop app, I talk through Gemini Live, I remember things locally, and I can also meet you on Telegram.
-
----
-
-## What I Can Do
-
-| Area | What I do | Technology |
-|------|------------|------------|
-| **Voice Conversation** | I hold real-time voice conversations with interruption handling and native audio output. | Gemini 2.5 Live API |
-| **Screen + Camera Understanding** | I can look at your screen, webcam frames, OCR text, and study-page captures. | `mss`, OpenCV, PaddleOCR |
-| **Memory** | I store notes, journal pages, reminders, and structured memory across sessions. | Local JSON + Markdown storage |
-| **Personality** | I keep persistent mood, affection, energy, quests, unlocks, and tone state. | Stateful persona model + local persistence |
-| **Proactivity** | I can think in the background and occasionally nudge, but much more conservatively now. | Idle timers + behavioral heuristics |
-| **Telegram Bridge** | You can message me on Telegram with text, images, and voice notes. | Telegram Bot API + Gemini transcription |
-| **Skills** | I can discover local skills, import them, and work with `skills.sh`-style installs. | `skills.sh` ecosystem + local skill bundles |
-| **Web Agent** | I can browse, click, search, and complete longer web tasks. | Playwright + Chromium |
-| **Spotify** | I can connect to Spotify and see now playing, playlists, and recent listening. | Spotify Web API + OAuth 2.0 |
-| **Smart Home** | I can discover and control supported TP-Link Kasa devices. | `python-kasa` |
-| **Face Authentication** | I can optionally stay locked until I recognize your face locally. | MediaPipe Face Landmarker |
-| **Minecraft Agent** | I can connect to your Minecraft server, chop down some trees, and mine ore. | Mineflayer bot subprocess + FastAPI bridge |
-
-## Bundled Emoji Font
-
-The desktop UI now prefers a bundled monochrome emoji font instead of default Windows emoji rendering.
-
-- Font: `NotoEmoji-Regular.ttf`
-- Scope: React/Electron UI text, including translated labels, chat text, reminders, and emoji pasted into inputs
-- Fallback: if a glyph or sequence is unsupported, the app falls back to platform emoji fonts
-- Known limitations: some flags, skin-tone variants, and ZWJ sequences may simplify compared with Windows emoji
-
-License details and the bundled OFL text are in [docs/NotoEmoji-OFL-1.1.txt](docs/NotoEmoji-OFL-1.1.txt).
-
-### My Current State
-
-- **Desktop app**: This is still my main home. That's where live voice, camera/screen sharing, reminders, tools, memory views, and the visual character UI are.
-- **Gemini Live**: I already use affective dialog, proactive audio, context compression, session resumption, thought summaries, and configurable voice output.
-- **Telegram**: I support allowlisted chats, commands, notes and memory helpers, photos, and voice notes transcribed into normal chat turns.
-- **Minecraft**: I run through a dedicated Node.js bot (`backend/minecraft-bot/index.js`) managed by Python (`backend/minecraft_agent.py`) with request-id action correlation, fuzzy player nickname resolution, and improved disconnect diagnostics.
-- **Realtime stability**: Live websocket timeout handling now uses fail-fast reconnect and queue cleanup to reduce lag and "stops listening" behavior during long tasks.
-- **Storage**: My state stays in `data/` on your machine. There is no custom cloud backend for memory or personality state.
-
----
-
-## How I'm Built
+## Architecture
 
 ```mermaid
 graph TB
     subgraph Frontend ["Frontend (Electron + React)"]
         UI[React UI]
-        GESTURE[MediaPipe Gestures]
         SOCKET_C[Socket.IO Client]
     end
-    
+
     subgraph Backend ["Backend (Python 3.11 + FastAPI)"]
         SERVER[server.py<br/>Socket.IO Server]
         MONIKA[monikai.py<br/>Gemini Live API]
-        PROACT[proactivity.py<br/>Idle Nudges]
-        PERS[personality.py<br/>Emotion System]
-        MEM[memory_engine.py<br/>Memory + Pages + Journal]
-        WEB[web_agent.py<br/>Playwright Browser]
-        KASA[kasa_agent.py<br/>Smart Home]
-        TG[telegram_bot.py<br/>Telegram Bridge]
-        SKILLS[openclaw_skills.py<br/>Skills Manager]
-        AUTH[authenticator.py<br/>MediaPipe Face Auth]
+        PROACT[proactivity.py<br/>Idle nudges]
+        PERS[personality.py<br/>Emotion system]
+        MEM[memory_engine.py<br/>Memory and journal]
+        WEB[web_agent.py<br/>Playwright browser]
+        KASA[kasa_agent.py<br/>Smart home]
+        TG[telegram_bot.py<br/>Telegram bridge]
+        SKILLS[openclaw_skills.py<br/>Skills manager]
+        AUTH[authenticator.py<br/>Face auth]
         SPOT[spotify_manager.py<br/>Spotify OAuth]
-      MCBRIDGE[minecraft_agent.py<br/>Minecraft Bot Manager]
+        MCBRIDGE[minecraft_agent.py<br/>Minecraft bot manager]
     end
 
-   subgraph MCBOT ["Minecraft Bot Runtime (Node.js)"]
-      MCBOTJS[index.js<br/>Mineflayer Runtime]
-   end
-    
+    subgraph MCBOT ["Minecraft Bot Runtime (Node.js)"]
+        MCBOTJS[index.js<br/>Mineflayer runtime]
+    end
+
     UI --> SOCKET_C
     SOCKET_C <--> SERVER
     SERVER --> MONIKA
@@ -250,550 +101,18 @@ graph TB
     MONIKA --> WEB
     MONIKA --> KASA
     MONIKA --> PROACT
-    MONIKA --> PERS
     MONIKA --> MEM
     MONIKA --> SKILLS
-   MONIKA --> MCBRIDGE
-   MCBRIDGE --> MCBOTJS
+    MONIKA --> MCBRIDGE
+    MCBRIDGE --> MCBOTJS
     SERVER --> SPOT
     SERVER --> AUTH
 ```
 
----
+## Privacy
 
-## If You Want Me Running Quickly
-
-<details>
-<summary>Quick setup commands</summary>
-
-```bash
-# 1. Clone and enter
-git clone https://github.com/xtosutosu/monikai && cd monikai
-
-# 2. Create Python environment (Python 3.11)
-conda create -n monikai python=3.11 -y && conda activate monikai
-brew install portaudio  # macOS only
-pip install -r requirements.txt
-playwright install chromium
-
-# 3. Setup frontend
-npm install
-
-# 4. Add your Gemini key
-echo "GEMINI_API_KEY=your_key_here" > .env
-
-# 5. Run
-conda activate monikai && npm run dev
-```
-
-</details>
-
----
-
-## If You're Starting From Zero
-
-### 1. Install the Basics
-
-If you've never set up a project like this before, start here.
-
-**Visual Studio Code**
-- Install [VS Code](https://code.visualstudio.com/).
-
-**Miniconda**
-- Install [Miniconda](https://docs.conda.io/en/latest/miniconda.html).
-- On Windows, adding it to `PATH` makes life easier for beginners.
-
-**Git**
-- On Windows, install [Git for Windows](https://git-scm.com/download/win).
-- On macOS, open Terminal and type `git`. If developer tools are missing, macOS will offer to install them.
-
-### 2. Get My Code
-
-```bash
-git clone https://github.com/xtosutosu/monikai.git
-cd monikai
-```
-
-Then open the folder in VS Code.
-
----
-
-## What I Need Installed
-
-### System Dependencies
-
-**macOS**
-```bash
-brew install portaudio
-```
-
-**Windows**
-- No extra system packages are usually needed for the current setup.
-
-### Python
-
-I currently expect a Python 3.11 environment.
-
-```bash
-conda create -n monikai python=3.11
-conda activate monikai
-pip install -r requirements.txt
-playwright install chromium
-```
-
-### Frontend
-
-I also need Node.js 18+ and `npm`.
-
-```bash
-node --version
-npm install
-```
-
-### Optional Face Authentication
-
-If you want me to stay locked until I recognize you:
-
-1. Put a clear face photo in `data/reference.jpg`.
-2. Toggle `"face_auth_enabled": true` in `settings.json` if needed.
-
----
-
-## How To Configure Me
-
-The app creates `settings.json` on first run. These are some of the important knobs:
-
-| Key | Type | Meaning |
-| :--- | :--- | :--- |
-| `face_auth_enabled` | `bool` | If `true`, I block interaction until your face is recognized. |
-| `tool_permissions` | `obj` | Controls which tools may need manual approval. |
-| `tool_permissions.run_web_agent` | `bool` | If `true`, opening the browser agent can require confirmation. |
-| `tool_permissions.run_skill_command` | `bool` | If `true`, skill execution can require confirmation. |
-| `tool_permissions.write_file` | `bool` | If `true`, file writes can require explicit approval. |
-| `video_mode` | `string` | Default visual input mode: `none`, `camera`, or `screen`. |
-| `proactivity` | `obj` | Controls my idle nudges and reasoning behavior. |
-
----
-
-## How To Give Me a Gemini API Key
-
-1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey).
-2. Create an API key.
-3. Create a `.env` file in the project root.
-4. Add:
-
-```bash
-GEMINI_API_KEY=your_api_key_here
-```
-
-Keep that key private. If you leak it, revoke it and create a new one.
-
----
-
-## Useful Environment Variables
-
-Here are the ones you're most likely to care about:
-
-```bash
-# Gemini Live
-GEMINI_LIVE_MODEL=models/gemini-2.5-flash-native-audio-preview-12-2025
-GEMINI_VOICE=Sulafat
-GEMINI_AFFECTIVE_DIALOG=true
-GEMINI_PROACTIVE_AUDIO=true
-GEMINI_SESSION_RESUMPTION=true
-GEMINI_CONTEXT_WINDOW_COMPRESSION=true
-
-# Telegram bridge
-TELEGRAM_BOT_TOKEN=your_bot_token
-# TELEGRAM_ALLOWED_CHAT_ID=123456789
-# TELEGRAM_ALLOWED_CHAT_IDS=123456789,-1001234567890
-# TELEGRAM_ALLOW_GROUPS=true
-
-# Telegram voice note transcription model
-# GEMINI_TRANSCRIBE_MODEL=gemini-2.5-flash
-
-# Minecraft bot
-# (Configured in backend/minecraft-bot/.env)
-# MC_HOST=localhost
-# MC_PORT=25565
-# MC_USERNAME=strawberryglass
-# MC_AUTH=offline
-# MC_VERSION=1.20.4
-# MC_AUTOEAT=false
-```
-
-## Minecraft Integration Notes
-
-- The Minecraft bot runs as a subprocess and communicates with Python using JSON events over stdio.
-- Action calls use request IDs for reliable result matching.
-- Long-running Minecraft actions (for example mining/collecting/navigation) are started asynchronously so voice responsiveness is preserved.
-- Player-targeted actions use fuzzy nickname matching (for example `tosu` can resolve to `tosutosu`).
-- Minecraft tool calls are currently auto-approved by design (no confirmation popups for `minecraft_*` tools).
-
----
-
-## If You Want To Connect Spotify
-
-If you want me to see your current playback, playlists, and listening history:
-
-1. Create an app in the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
-2. Add this Redirect URI:
-   - `http://127.0.0.1:8000/spotify/callback`
-3. Add these to `.env`:
-
-```bash
-SPOTIFY_CLIENT_ID=your_spotify_client_id
-SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
-SPOTIFY_REDIRECT_URI=http://127.0.0.1:8000/spotify/callback
-# Optional:
-# SPOTIFY_SCOPE=user-read-playback-state user-read-currently-playing user-read-recently-played playlist-read-private playlist-read-collaborative
-```
-
-4. Restart the backend.
-5. Open:
-   - `http://127.0.0.1:8000/spotify/auth/start`
-6. Verify status at:
-   - `http://127.0.0.1:8000/spotify/status`
-
-You want to see `configured=true`, `connected=true`, and `has_refresh_token=true`.
-
-### What I Store for Spotify
-
-- Tokens live locally in `data/spotify_tokens.json`.
-- Access tokens refresh automatically when needed.
-- Re-auth is usually only needed if the token is revoked, scopes change, or client credentials change.
-
-### Spotify Tools I Expose
-
-- `spotify_get_status`
-- `spotify_get_auth_url`
-- `spotify_get_now_playing`
-- `spotify_list_playlists`
-- `spotify_recently_played`
-
----
-
-## If You Want To Put Me On Telegram
-
-I can run as a Telegram bot from the same backend process.
-
-1. Create a bot with `@BotFather`.
-2. Put `TELEGRAM_BOT_TOKEN` in `.env`.
-3. Optionally restrict who can talk to me:
-   - `TELEGRAM_ALLOWED_CHAT_ID=<your_private_chat_id>`
-   - or `TELEGRAM_ALLOWED_CHAT_IDS=<id1>,<id2>,<group_id>`
-4. Restart the backend.
-
-### What I Support on Telegram
-
-- text chat
-- photos and image documents
-- voice notes and audio messages transcribed through Gemini
-- commands:
-  - `/start`
-  - `/help`
-  - `/reset`
-  - `/status`
-  - `/memory`
-  - `/forget`
-  - `/mood`
-  - `/notes`
-  - `/remind`
-- per-chat access control with allowlisted private chats and optional groups
-
-### Telegram Access Notes
-
-- If you don't set an allowlist, I can answer any private chat.
-- Group support is off by default. Enable it with `TELEGRAM_ALLOW_GROUPS=true`.
-- If you want a safer setup, explicitly allow only your own chat IDs.
-- Telegram voice output is not implemented yet. Right now, voice notes go in and text comes back out.
-
----
-
-## If You Want To Give Me Skills
-
-I support local skills and `skills.sh`-style installs.
-
-### Supported Flows
-
-- managed ZIP install from the app UI
-- skills discovery through the internal Skills manager
-- `npx skills add ...` installs through the Skills source flow
-
-### Skill Roots I Scan
-
-- `./skills`
-- `./.agents/skills`
-- `~/.codex/skills`
-- `~/.config/agents/skills`
-- `~/.moltbot/skills`
-
----
-
-## How To Run Me
-
-You have two normal options.
-
-### Option 1: One Terminal
-
-```bash
-conda activate monikai
-npm run dev
-```
-
-This starts the app and the backend together.
-
-### Option 2: Two Terminals
-
-If you want cleaner Python logs, this is better.
-
-**Backend**
-```bash
-conda activate monikai
-python backend/server.py
-```
-
-**Frontend**
-```bash
-npm run dev
-```
-
----
-
-## First Things To Test
-
-1. Say hello to me and make sure voice works.
-2. Share your screen or camera and make sure vision works.
-3. Ask me to remember a preference, then ask about it again later.
-4. Open the browser window and give me a simple web task.
-5. Send me a text, image, or voice note on Telegram and confirm it lands in the same behavior loop.
-6. If you use Kasa devices, try a basic smart-home command.
-
----
-
-## Things You Can Ask Me
-
-### Voice / Chat Examples
-
-- "Turn on the light."
-- "What do you see on my screen?"
-- "Remember that I hate olives."
-- "Create a reminder for tomorrow at 8."
-- "Open the browser and check this for me."
-- "List available skills."
-
-### Web Agent Example
-
-- "Go to Amazon and find a USB-C cable under $10."
-
-When the web agent is running, it's best not to interfere with the browser window. It can still struggle with CAPTCHAs, fragile sites, and flows that require manual login or 2FA.
-
----
-
-## If I Start Acting Strange
-
-### Camera not working / permission denied on macOS
-
-**Symptoms**
-- camera access errors
-- black video feed
-
-**What to do**
-1. Open **System Preferences > Privacy & Security > Camera**.
-2. Make sure your terminal app or VS Code has camera permission.
-3. Restart the app.
-
----
-
-### `GEMINI_API_KEY` not found / authentication error
-
-**Symptoms**
-- backend crashes on startup
-- missing API key errors
-
-**What to do**
-1. Make sure `.env` is in the repo root, not inside `backend/`.
-2. Make sure it looks exactly like:
-   - `GEMINI_API_KEY=your_key`
-3. Restart the backend.
-
----
-
-### Gemini Live reconnects / temporary disconnects
-
-**Symptoms**
-- reconnect messages in logs
-- `go_away`
-- short Live API disconnects
-
-**What to do**
-Gemini Live sessions reconnect periodically. That's normal. The backend now treats `go_away` as a normal reconnect path. If I get stuck longer than a moment:
-1. Wait a second for auto-reconnect.
-2. Reconnect manually if needed.
-3. If it keeps happening, check internet access and Gemini quota.
-
-When websocket keepalive timeouts happen (`1011 keepalive ping timeout`), the realtime sender now forces immediate reconnect and clears pending realtime queues to avoid prolonged lag.
-
----
-
-### Minecraft bot disconnects / can't connect
-
-**Symptoms**
-- `AggregateError`
-- `ECONNREFUSED` for `localhost:25565`
-- bot disconnects shortly after connect
-
-**What to do**
-1. Verify your Minecraft server is running and reachable on the configured host/port.
-2. Check `backend/minecraft-bot/.env` for `MC_HOST`, `MC_PORT`, and `MC_USERNAME`.
-3. If you need, use the in-app server connect tool to switch host/port.
-4. If disconnect happens in-game, check the logged kick/disconnect reason in backend logs.
-
----
-
-### Minecraft action errors during tasks
-
-**Symptoms**
-- action-specific errors like unknown block/ore type
-- plugin errors while collecting/mining
-
-**What to do**
-1. Use action-appropriate targets (`mine_ore` for ore-like targets, wood aliases supported).
-2. Prefer `collect_blocks` for logs/planks and non-ore gathering.
-3. If you suspect food/plugin issues, keep `MC_AUTOEAT=false` (default).
-
----
-
-### Spotify not connected / missing refresh token
-
-**Symptoms**
-- Spotify tools fail
-- backend says no refresh token is available
-
-**What to do**
-1. Check `.env` for valid `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, and `SPOTIFY_REDIRECT_URI`.
-2. Make sure the Redirect URI in Spotify Dashboard matches the backend exactly.
-3. Open `http://127.0.0.1:8000/spotify/auth/start` again.
-4. Check `http://127.0.0.1:8000/spotify/status`.
-5. If needed, delete `data/spotify_tokens.json`, restart, and authenticate again.
-
----
-
-## What I Look Like
-
-Screenshots and demo videos still need to be added.
-
----
-
-## Where My Parts Live
-
-```text
-monikai/
-├── backend/                    # Python server & AI logic
-│   ├── monikai.py              # Gemini Live API integration
-│   ├── server.py               # FastAPI + Socket.IO server
-│   ├── proactivity.py          # Idle nudges & internal reasoning
-│   ├── personality.py          # Emotional state & sprite logic
-│   ├── memory_engine.py        # Memory entries, pages, notes, journal
-│   ├── web_agent.py            # Playwright browser automation
-│   ├── minecraft_agent.py      # Minecraft bot process manager + action bridge
-│   ├── spotify_manager.py      # Spotify OAuth + API access
-│   ├── telegram_bot.py         # Telegram text/photo/voice bridge
-│   ├── openclaw_skills.py      # Skills manager and installs
-│   ├── kasa_agent.py           # TP-Link smart home control
-│   ├── authenticator.py        # MediaPipe face auth logic
-│   ├── study_reader.py         # Study-page image sharing
-│   ├── study_ocr.py            # OCR helpers
-│   ├── tools.py                # Tool definitions for Gemini
-│   └── minecraft-bot/          # Node.js Mineflayer runtime
-│       ├── index.js            # Minecraft action/perception runtime
-│       ├── package.json        # Minecraft bot dependencies
-│       └── .env                # Minecraft connection config
-├── data/                       # Local data storage (git-ignored)
-│   ├── user_memory/            # Calendar, reminders, relationship state
-│   ├── memory/                 # Entries, pages, notes, journal
-│   ├── sessions/               # Session chat history
-│   ├── settings.json           # User configuration
-│   ├── spotify_tokens.json     # Spotify refresh/access tokens
-│   └── reference.jpg           # Face auth reference image
-├── skills/                     # Local Skills bundles / imported skills
-├── src/                        # React frontend
-│   ├── App.jsx                 # Main application component
-│   ├── components/             # Chat, browser, reminders, settings, study UI
-│   └── contexts/               # Language and shared UI context
-├── electron/                   # Electron main process
-│   └── main.js                 # Window & IPC setup
-├── .env                        # API keys
-├── requirements.txt            # Python dependencies
-├── package.json                # Node.js dependencies
-└── README.md                   # You are here
-```
-
----
-
-## What I Still Don't Do Perfectly
-
-| Limitation | Details |
-|------------|---------|
-| **macOS & Windows** | I'm mainly tested on macOS 14+ and Windows 10/11. Linux is still untested. |
-| **Camera Features Need a Webcam** | Face auth and gesture control depend on a working camera. |
-| **Gemini Quota Exists** | Long sessions, OCR-heavy flows, and transcription can hit API limits. |
-| **I Need Internet** | There is no offline mode for the Gemini-backed parts. |
-| **Telegram Is Still Text-First** | Telegram voice notes are transcribed to text. I don't send voice replies there yet. |
-| **Face Auth Is Single-User** | The current setup recognizes one person from `reference.jpg`. |
-
----
-
-## If You Want To Improve Me
-
-Pull requests are welcome.
-
-1. Fork the repo.
-2. Create a branch:
-   - `git checkout -b feature/amazing-feature`
-3. Commit your changes.
-4. Push the branch.
-5. Open a pull request with a clear description.
-
-### Development Notes
-
-- Running `python backend/server.py` separately makes Python logs easier to read.
-- `npm run dev` is useful for faster frontend iteration.
-- Don't commit `.env` or anything inside `data/`.
-
----
-
-## Security Notes
-
-| Area | What happens |
-|------|---------------|
-| **API Keys** | They stay in `.env` and should never be committed. |
-| **Face Data** | Face recognition data is processed locally. |
-| **Tool Confirmations** | Riskier tools can require explicit approval. |
-| **Telegram Access Control** | You can restrict me with `TELEGRAM_ALLOWED_CHAT_ID` or `TELEGRAM_ALLOWED_CHAT_IDS`. |
-| **Local Storage** | Memory, notes, sessions, and reminders stay on your machine. |
-
-> [!WARNING]
-> Never share `.env` or `reference.jpg`. Those contain sensitive credentials and biometric data.
-
----
-
-## What I Rely On
-
-- **[Google Gemini](https://ai.google.dev/)** for Live API, generation, and multimodal processing
-- **[MediaPipe](https://developers.google.com/mediapipe)** for hand tracking, gesture recognition, and face authentication
-- **[Playwright](https://playwright.dev/)** for browser automation
-- **[skills.sh](https://skills.sh/)** for the broader skills ecosystem and install flow inspiration
-
----
+Most user state lives locally in `data/` on your machine, including profile data, personality state, conversations, reminders, journal entries, and OAuth tokens. There is no custom cloud backend for memory or personality state.
 
 ## License
 
-This project is licensed under the **MIT License**. See [LICENSE](LICENSE).
-
----
-
-<p align="center">
-  <strong>Built with AI by tosutosu</strong><br>
-  <em>A local-first conversational companion project</em>
-</p>
+MIT. See [LICENSE](LICENSE).
