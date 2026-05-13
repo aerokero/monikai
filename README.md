@@ -27,7 +27,7 @@ MonikAI is a local-first AI companion for desktop use. It can talk in real time,
 ## Quick Start
 
 ```bash
-git clone https://github.com/xtosutosu/monikai.git
+git clone https://github.com/aerokero/monikai.git
 cd monikai
 
 conda create -n monikai python=3.11 -y
@@ -56,14 +56,14 @@ npm run dev
 
 | What you want | Where to go |
 |--------------|-------------|
-| System setup and requirements | [Installation Guide](https://github.com/xtosutosu/monikai/wiki/Installation-Guide) |
-| Environment variables | [Environment Variables](https://github.com/xtosutosu/monikai/wiki/Environment-Variables) |
-| Face auth, permissions, proactivity | [Configuration](https://github.com/xtosutosu/monikai/wiki/Configuration) |
-| Spotify, Minecraft, Telegram, smart home setup | [Feature Setup](https://github.com/xtosutosu/monikai/wiki/Feature-Setup) |
-| Troubleshooting | [Troubleshooting Guide](https://github.com/xtosutosu/monikai/wiki/Troubleshooting) |
-| Development notes | [Development Guide](https://github.com/xtosutosu/monikai/wiki/Development) |
-| API reference | [API Reference](https://github.com/xtosutosu/monikai/wiki/API-Reference) |
-| Contributing | [Contributing](https://github.com/xtosutosu/monikai/wiki/Contributing) |
+| System setup and requirements | [Installation Guide](https://github.com/aerokero/monikai/wiki/Installation-Guide) |
+| Environment variables | [Environment Variables](https://github.com/aerokero/monikai/wiki/Environment-Variables) |
+| Face auth, permissions, proactivity | [Configuration](https://github.com/aerokero/monikai/wiki/Configuration) |
+| Spotify, Minecraft, Telegram, smart home setup | [Feature Setup](https://github.com/aerokero/monikai/wiki/Feature-Setup) |
+| Troubleshooting | [Troubleshooting Guide](https://github.com/aerokero/monikai/wiki/Troubleshooting) |
+| Development notes | [Development Guide](https://github.com/aerokero/monikai/wiki/Development) |
+| API reference | [API Reference](https://github.com/aerokero/monikai/wiki/API-Reference) |
+| Contributing | [Contributing](https://github.com/aerokero/monikai/wiki/Contributing) |
 
 ## Architecture
 
