@@ -1,18 +1,20 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ClipboardList,
   BookOpen,
   Brain,
+  ClipboardList,
   Gamepad2,
   Gift,
   Heart,
   Maximize2,
-  Minimize2,
+  MessageSquare,
   Paperclip,
   Send,
+  Settings,
   Terminal,
   Utensils,
   X,
+  Zap,
 } from 'lucide-react';
 import AudioBar from '../AudioBar';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -121,8 +123,8 @@ const ActivityTile = ({ icon: Icon, title, description, onClick, accentClass, ac
     onClick={onClick}
     className={`group rounded-xl border p-3 text-left transition-all duration-200 hover:-translate-y-0.5 ${
       active
-        ? 'border-white/35 bg-[linear-gradient(180deg,rgba(40,26,34,0.5),rgba(29,18,25,0.5))] shadow-[0_8px_24px_rgba(20,8,14,0.35)]'
-        : 'border-white/20 bg-[linear-gradient(180deg,rgba(34,22,30,0.5),rgba(24,15,21,0.5))] hover:border-white/35 hover:bg-[linear-gradient(180deg,rgba(46,30,40,0.5),rgba(31,20,27,0.5))]'
+        ? 'border-[rgba(255,100,140,0.3)] bg-[rgba(255,100,140,0.08)]'
+        : 'border-white/10 bg-white/4 hover:border-white/20 hover:bg-white/6'
     }`}
   >
     <div className="flex items-start gap-3">
@@ -411,49 +413,54 @@ const ChatPanel = ({
 
   const speakerLabel = (() => {
     const sender = String(latestVisibleMessage?.sender || '').trim();
-    if (!sender) return 'Monika';
+    const lower = sender.toLowerCase();
+    if (!sender || lower === 'ai' || lower === 'monika' || lower === 'assistant') return 'Monika';
     if (sender.includes('(Thought)')) return 'Monika';
-    if (sender.toLowerCase() === 'you' || sender.toLowerCase() === 'ty') return t('chat.you') || 'You';
+    if (lower === 'you' || lower === 'ty') return t('chat.you') || 'You';
     return sender;
   })();
 
   return (
     <div ref={rootRef} className="flex h-full w-full min-h-0 flex-col overflow-visible gap-0 px-3 pt-0 pb-3 box-border">
       {/* Speaker Label - Outside the box (DDLC style) */}
-      <div className="flex items-center justify-between px-7 shrink-0 mb-[-10px] z-20">
-        <div className="rounded-[14px] bg-white px-5 py-2 shadow-[0_8px_18px_rgba(194,104,148,0.25)]">
-          <span className="relative inline-block text-[28px] font-black leading-none tracking-tight">
+      <div className="flex items-center justify-between px-3 shrink-0 mb-[-1px] z-20">
+        <div className="rounded-t-[10px] rounded-b-none bg-white px-5 py-1.5 shadow-[0_-4px_16px_rgba(0,0,0,0.3)]">
+          <span className="relative inline-block text-[22px] font-black leading-none tracking-tight">
             <span
               aria-hidden="true"
               className="pointer-events-none absolute inset-0 text-transparent"
-              style={{
-                WebkitTextStroke: '4px #b65798',
-                textShadow: '0 3px 0 rgba(0,0,0,0.08)',
-              }}
+              style={{ WebkitTextStroke: '4px #b65798' }}
             >
-              Monika
+              {speakerLabel}
             </span>
-            <span className="relative text-white">Monika</span>
+            <span className="relative text-white">{speakerLabel}</span>
           </span>
         </div>
         <button
           onClick={onToggleExpand}
-          className="relative -top-1 text-white/60 transition hover:text-white/90"
-          title={isExpanded ? 'Collapse Chat' : 'Expand Chat'}
+          className="text-white/40 transition hover:text-white/70 mb-1"
+          title={isExpanded ? 'Collapse' : 'Expand'}
         >
-          <Maximize2 size={18} />
+          <Maximize2 size={15} />
         </button>
       </div>
 
       {/* Main Box - Chat content */}
-      <div className="relative flex-1 min-h-0 overflow-hidden rounded-[26px] border-[3px] border-white/80 bg-[linear-gradient(180deg,rgba(255,206,229,0.9),rgba(255,183,214,0.88))] shadow-[inset_0_0_0_1px_rgba(240,145,189,0.45),0_16px_30px_rgba(177,88,126,0.18)] flex flex-col">
+      <div
+        className="relative flex-1 min-h-0 overflow-hidden rounded-[16px] rounded-tl-none border border-white/5 flex flex-col"
+        style={{
+          background: 'linear-gradient(135deg, rgba(0,0,0,0.55), rgba(32,8,48,0.35))',
+          backdropFilter: 'blur(12px)',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+        }}
+      >
         {/* Content Area - Main scrollable messages and views */}
         <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar relative flex flex-col p-4 z-10">
         {/* Chat View */}
         {viewMode === 'chat' && (
           <div className="space-y-3">
             {showAgenticLog && hasAgenticActivity ? (
-              <div className="mb-4 overflow-hidden rounded-[20px] border border-white/40 bg-white/30 shadow-[0_8px_24px_rgba(207,121,167,0.12)]">
+              <div className="mb-4 overflow-hidden rounded-[14px] border border-white/10 bg-white/4 shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
                 <div className="flex items-center gap-2 border-b border-white/30 px-3 py-2 font-mono text-[12px] uppercase tracking-wider text-white/70">
                   <Terminal size={12} />
                   Agent Log
@@ -474,9 +481,9 @@ const ChatPanel = ({
             ) : null}
 
             {visibleMessages.length === 0 ? (
-              <div className="py-12 text-center text-[#6f4560]">
+              <div className="py-12 text-center text-white/30">
                 <p>No messages yet.</p>
-                <p className="mt-2 text-sm text-[#8d6a7f]">Start a conversation with Monika!</p>
+                <p className="mt-2 text-sm text-white/20">Start a conversation with Monika!</p>
               </div>
             ) : (
               visibleMessages.map((message, index) => {
@@ -484,28 +491,38 @@ const ChatPanel = ({
                 const lower = sender.toLowerCase();
                 const isUser = lower === 'ty' || lower === 'you';
                 const isThought = sender.includes('(Thought)');
+                const displaySender = isThought
+                  ? 'Thought'
+                  : (isUser ? (t('chat.you') || 'You') : 'Monika');
 
                 return (
                   <div key={index} className={`relative flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
                     {isThought && !showThoughts ? null : (
                       <>
-                        <div className="mb-1 flex items-center gap-2 text-[12px] font-bold uppercase tracking-wider text-[#8d6179]">
-                          <span>
-                            {isThought ? 'Thought' : (sender || 'Monika')}
-                          </span>
-                          {message?.time ? <span className="font-mono text-[11px] text-[#aa889b]">{message.time}</span> : null}
-                        </div>
-                        <div className={`max-w-[85%] whitespace-pre-wrap break-words rounded-[14px] px-4 py-2.5 text-base leading-relaxed ${
-                          isUser
-                            ? 'rounded-br-[4px] border border-[#f2c4db] bg-[rgba(255,255,255,0.5)] text-[#61384d]'
-                            : isThought
-                              ? 'rounded-bl-[4px] italic border-l-2 border-[#e7a9c9] bg-[rgba(255,255,255,0.34)] text-[#7a5970]'
-                              : 'rounded-bl-[4px] border border-[#efbdd6] bg-[rgba(255,255,255,0.58)] text-[#4d2f3f]'
-                        }`}>
-                          <span className="select-none text-[#8d6179]">"</span>
-                          {renderMarkdown(message?.text)}
-                          <span className="select-none text-[#8d6179]">"</span>
-                        </div>
+                        {/* Sender label — only for Monika, tiny and subtle */}
+                        {!isUser && (
+                          <div className="mb-0.5 flex items-baseline gap-1.5">
+                            <span className="text-[10px] font-medium tracking-widest text-[rgba(255,100,140,0.5)]">
+                              {displaySender}
+                            </span>
+                            {message?.time ? (
+                              <span className="font-mono text-[9px] text-white/15">{message.time}</span>
+                            ) : null}
+                          </div>
+                        )}
+                        {isUser ? (
+                          <p className="w-full text-[14px] leading-relaxed text-white/45 text-right">
+                            {renderMarkdown(message?.text)}
+                          </p>
+                        ) : isThought ? (
+                          <p className="text-[14px] leading-relaxed italic pl-3 border-l border-white/12 text-white/35">
+                            {renderMarkdown(message?.text)}
+                          </p>
+                        ) : (
+                          <p className="text-[15px] leading-relaxed text-white/90">
+                            {renderMarkdown(message?.text)}
+                          </p>
+                        )}
                       </>
                     )}
                   </div>
@@ -518,7 +535,7 @@ const ChatPanel = ({
 
         {/* Activities View */}
         {viewMode === 'activities' && (
-          <div className="rounded-[18px] border border-[#efbdd6] bg-[rgba(255,255,255,0.46)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.22)]">
+          <div className="rounded-[14px] border border-white/8 bg-white/3 p-3">
             <div className="grid grid-cols-2 gap-3">
               <ActivityTile
                 icon={Utensils}
@@ -646,7 +663,7 @@ const ChatPanel = ({
         </div>
 
         {/* Unified Bottom Bar - All controls in one place */}
-        <div className="flex flex-col gap-2 border-t border-[#efb7d2] bg-[rgba(255,240,248,0.58)] px-3 py-2 shrink-0 text-sm">
+        <div className="flex flex-col gap-2 border-t border-white/8 bg-transparent px-3 py-2 shrink-0 text-sm">
         {/* Input Row - Only shows in chat or activities */}
         {(viewMode === 'chat' || viewMode === 'activities') && (
           <div className="flex flex-col gap-2">
@@ -658,7 +675,7 @@ const ChatPanel = ({
                 onKeyDown={handleKeyDown}
                 placeholder="Type your message... (Shift+Enter for new line)"
                 rows={1}
-                className="flex-1 resize-none rounded-[12px] border border-[#f0bdd7] bg-[rgba(255,255,255,0.5)] px-3 py-2 text-sm text-[#62394f] placeholder:text-[#be95aa] outline-none focus:border-[#d67cab]"
+                className="flex-1 resize-none rounded-[12px] border border-white/12 bg-white/6 px-3 py-2 text-sm text-white/90 placeholder:text-white/30 outline-none focus:border-[rgba(255,100,140,0.45)] transition-colors"
               />
               <input
                 ref={fileInputRef}
@@ -674,8 +691,8 @@ const ChatPanel = ({
                 disabled={!canSend}
                 className={`font-semibold whitespace-nowrap transition-all ${
                   canSend
-                    ? 'text-[#8b3d6f] hover:text-[#6f2d57]'
-                    : 'text-[#c2a3b4] cursor-not-allowed'
+                    ? 'text-[rgba(255,100,140,0.85)] hover:text-[rgba(255,100,140,1)]'
+                    : 'text-white/25 cursor-not-allowed'
                 }`}
                 title="Send message"
               >
@@ -717,71 +734,64 @@ const ChatPanel = ({
           </div>
         )}
 
-        {/* Menu Bar - All tabs in one line */}
-        <div className="flex items-center justify-center gap-1 text-[13px]">
-          <button
-            onClick={() => setViewMode('chat')}
-            className={`transition-colors px-1 ${
-              viewMode === 'chat' ? 'text-[#8b3d6f] font-semibold' : 'text-[#a67a92] hover:text-[#7d4766]'
-            }`}
-          >
-            {t('chat.chat_tab')}
-          </button>
-          <span className="text-[#c7a2b8]">|</span>
+        {/* Menu Bar - Icon tabs */}
+        <div className="flex items-center justify-center gap-1">
+          {[
+            { mode: 'chat', icon: MessageSquare, title: t('chat.chat_tab') || 'Chat' },
+            { mode: 'activities', icon: Zap, title: t('chat.activities_tab') || 'Activities' },
+            { mode: 'thoughts', icon: Brain, title: t('chat.thoughts_tab') || 'Thoughts' },
+          ].map(({ mode, icon: Icon, title }) => (
+            <button
+              key={mode}
+              onClick={() => setViewMode(mode)}
+              title={title}
+              className={`flex items-center justify-center w-7 h-7 rounded-lg transition-all ${
+                viewMode === mode
+                  ? 'text-[rgba(255,100,140,0.9)] bg-[rgba(255,100,140,0.1)]'
+                  : 'text-white/35 hover:text-white/65 hover:bg-white/5'
+              }`}
+            >
+              <Icon size={14} />
+            </button>
+          ))}
 
-          <button
-            onClick={() => setViewMode('activities')}
-            className={`transition-colors px-1 ${
-              viewMode === 'activities' ? 'text-[#8b3d6f] font-semibold' : 'text-[#a67a92] hover:text-[#7d4766]'
-            }`}
-          >
-            {t('chat.activities_tab')}
-          </button>
-          <span className="text-[#c7a2b8]">|</span>
+          <div className="w-px h-4 bg-white/10 mx-1" />
 
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="transition-colors px-1 text-[#a67a92] hover:text-[#7d4766]"
-            title={t('chat.attach_file_tab')}
+            title={t('chat.attach_file_tab') || 'Attach file'}
+            className="relative flex items-center justify-center w-7 h-7 rounded-lg text-white/35 hover:text-white/65 hover:bg-white/5 transition-all"
           >
-            {t('chat.attach_file_tab')}
+            <Paperclip size={14} />
             {attachments.length > 0 && (
-              <span className="ml-0.5 text-red-500 font-bold">({attachments.length})</span>
+              <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[rgba(255,100,140,0.9)] text-[9px] font-bold text-white">
+                {attachments.length}
+              </span>
             )}
           </button>
-          <span className="text-[#c7a2b8]">|</span>
-
-          <button
-            onClick={toggleThoughts}
-            className={`transition-colors px-1 ${
-              showThoughts ? 'text-[#8b3d6f] font-semibold' : 'text-[#a67a92] hover:text-[#7d4766]'
-            }`}
-          >
-            {t('chat.thoughts_tab')}
-          </button>
-          <span className="text-[#c7a2b8]">|</span>
 
           <button
             type="button"
             onClick={onOpenSettings}
-            className="transition-colors px-1 text-[#a67a92] hover:text-[#7d4766]"
+            title={t('chat.settings_tab') || 'Settings'}
+            className="flex items-center justify-center w-7 h-7 rounded-lg text-white/35 hover:text-white/65 hover:bg-white/5 transition-all"
           >
-            {t('chat.settings_tab')}
+            <Settings size={14} />
           </button>
 
           {hasAgenticActivity && (
-            <>
-              <span className="text-[#c7a2b8]">|</span>
-              <button
-                onClick={() => setShowAgenticLog(!showAgenticLog)}
-                className={`transition-colors px-1 ${
-                  showAgenticLog ? 'text-[#8b3d6f] font-semibold' : 'text-[#a67a92] hover:text-[#7d4766]'
-                }`}
-              >
-                Logs
-              </button>
-            </>
+            <button
+              onClick={() => setShowAgenticLog(!showAgenticLog)}
+              title="Agent logs"
+              className={`flex items-center justify-center w-7 h-7 rounded-lg transition-all ${
+                showAgenticLog
+                  ? 'text-[rgba(255,100,140,0.9)] bg-[rgba(255,100,140,0.1)]'
+                  : 'text-white/35 hover:text-white/65 hover:bg-white/5'
+              }`}
+            >
+              <Terminal size={14} />
+            </button>
           )}
         </div>
       </div>

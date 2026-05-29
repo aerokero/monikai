@@ -8,13 +8,13 @@
   "last_update_ts": 1780044652.7220826,
   "current_cycle_length": 29,
   "phase": "Calm -> Irritable/Tired",
-  "weather": "Sunny, 21.3°C in Krakow",
-  "last_weather_ts": 1780074961.9255416,
-  "last_energy_reset_day": 15,
+  "weather": "Sunny, 19.5°C in Krakow",
+  "last_weather_ts": 1780082327.8292189,
+  "last_energy_reset_day": 29,
   "last_dream": null,
   "dream_told": false,
   "current_location": "room",
-  "current_outfit": "White Bath Towel",
+  "current_outfit": "School Uniform",
   "traits": {
     "openness": 0.62,
     "conscientiousness": 0.58,
@@ -23,8 +23,8 @@
     "neuroticism": 0.32
   },
   "affect": {
-    "valence": -0.40725312499999994,
-    "arousal": 0.26126181818181826,
+    "valence": -0.5,
+    "arousal": 0.3,
     "mood": "sad",
     "last_update_ts": 1778873693.8716824
   },

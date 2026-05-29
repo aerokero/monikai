@@ -13,6 +13,7 @@
   --safe-area-inset-bottom: 0;
   --safe-area-inset-left: 0;
   --safe-area-inset-right: 0;
+  --monika-window-topbar-height: 0px;
 
   /* Monika Layout Colors (intimate aesthetic) */
   --monika-bg-primary: rgb(0, 0, 0);           /* Deep black */
@@ -50,7 +51,7 @@
 }
 
 .monika-layout--with-window-topbar {
-  padding-top: 36px;
+  --monika-window-topbar-height: 36px;
 }
 
 .window-topbar {
@@ -58,7 +59,7 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 36px;
+  height: var(--monika-window-topbar-height);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -153,13 +154,19 @@
 }
 
 .monika-layout--desktop-wide .monika-panel-container {
-  position: absolute;
-  right: 32px;
-  top: 24px;
-  width: min(520px, calc(100vw - 156px));
-  height: min(620px, calc(100vh - var(--monika-chat-reserved-space) - 48px));
-  max-height: calc(100vh - var(--monika-chat-reserved-space) - 148px);
-  z-index: 30;
+  position: fixed;
+  right: 0;
+  top: var(--monika-window-topbar-height);
+  bottom: 0;
+  width: min(420px, calc(100vw - 140px));
+  height: calc(100vh - var(--monika-window-topbar-height));
+  max-height: calc(100vh - var(--monika-window-topbar-height));
+  z-index: 50;
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.5), rgba(32, 8, 48, 0.35));
+  backdrop-filter: blur(14px);
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.4);
+  animation: vn-panel-slide-in var(--monika-transition-normal) cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ============================================
@@ -191,13 +198,19 @@
 }
 
 .monika-layout--desktop .monika-panel-container {
-  position: absolute;
-  right: 24px;
-  top: 20px;
-  width: min(460px, calc(100vw - 126px));
-  height: min(590px, calc(100vh - var(--monika-chat-reserved-space) - 40px));
-  max-height: calc(100vh - var(--monika-chat-reserved-space) - 148px);
-  z-index: 30;
+  position: fixed;
+  right: 0;
+  top: var(--monika-window-topbar-height);
+  bottom: 0;
+  width: min(400px, calc(100vw - 120px));
+  height: calc(100vh - var(--monika-window-topbar-height));
+  max-height: calc(100vh - var(--monika-window-topbar-height));
+  z-index: 50;
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.5), rgba(32, 8, 48, 0.35));
+  backdrop-filter: blur(14px);
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.4);
+  animation: vn-panel-slide-in var(--monika-transition-normal) cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ============================================
@@ -796,4 +809,34 @@
   .monika-layout {
     display: none;
   }
+}
+
+/* ============================================
+   VN PANEL ANIMATIONS
+   ============================================ */
+
+@keyframes vn-panel-slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes vn-panel-slide-out {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+.monika-panel-container--exiting {
+  animation: vn-panel-slide-out var(--monika-transition-fast) cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
 }
