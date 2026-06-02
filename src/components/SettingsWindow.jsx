@@ -1,6 +1,16 @@
 import React, { useRef, useState } from 'react';
-import { X, Upload, Mic, Speaker, Video, Shield, Cpu, Globe, Lock, Package, RefreshCw, Trash2 } from 'lucide-react';
+import { X, Upload, Mic, Speaker, Video, Shield, Cpu, Globe, Lock, Package, RefreshCw, Trash2, Sparkles } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
+
+const GEMINI_VOICES = [
+  { value: 'Leda',    label: 'Leda'    },
+  { value: 'Aoede',   label: 'Aoede'   },
+  { value: 'Kore',    label: 'Kore'    },
+  { value: 'Sulafat', label: 'Sulafat' },
+  { value: 'Puck',    label: 'Puck'    },
+  { value: 'Charon',  label: 'Charon'  },
+  { value: 'Fenrir',  label: 'Fenrir'  },
+];
 
 const CONFIGURABLE_TOOLS = [
   'cancel_reminder',
@@ -39,6 +49,10 @@ const SettingsWindow = ({
   onUploadSkillZip,
   onInstallSkillSource,
   onUninstallSkill,
+  geminiModelPreset = '2.5',
+  onModelPresetChange,
+  geminiVoice = 'Leda',
+  onVoiceChange,
   onClose
 }) => {
   const { t, language, setLanguage } = useLanguage();
@@ -150,6 +164,55 @@ const SettingsWindow = ({
               >
                 日本語
               </button>
+            </div>
+          </section>
+
+          {/* AI Model */}
+          <section className="space-y-4">
+            <h3 className="text-sm font-medium text-white uppercase tracking-widest flex items-center gap-2">
+              <Sparkles size={16} />
+              AI Model
+            </h3>
+
+            {/* Model preset */}
+            <div className="space-y-2">
+              <p className="text-xs text-white/40 uppercase tracking-wider">Model</p>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { value: '2.5', label: 'Gemini 2.5', desc: 'Native Audio · lepsza jakość głosu' },
+                  { value: '3.1', label: 'Gemini 3.1', desc: 'Flash Live · niższa latencja' },
+                ].map(({ value, label, desc }) => (
+                  <button
+                    key={value}
+                    onClick={() => onModelPresetChange?.(value)}
+                    className={`p-3 rounded-lg border text-left transition-all ${
+                      geminiModelPreset === value
+                        ? 'bg-white/20 border-white/50 text-white'
+                        : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'
+                    }`}
+                  >
+                    <div className="font-medium text-sm">{label}</div>
+                    <div className="text-xs mt-0.5 opacity-60">{desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Voice */}
+            <div className="space-y-2">
+              <p className="text-xs text-white/40 uppercase tracking-wider">Głos</p>
+              <select
+                value={geminiVoice}
+                onChange={(e) => onVoiceChange?.(e.target.value)}
+                className="w-full bg-black border border-white/20 rounded-lg p-3 text-white focus:border-white focus:outline-none"
+              >
+                {GEMINI_VOICES.map(({ value, label }) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+              <p className="text-xs text-white/30">
+                Zmiana modelu lub głosu — Monika zreconnectuje się przy najbliższej pauzie.
+              </p>
             </div>
           </section>
 

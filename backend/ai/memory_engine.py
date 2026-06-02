@@ -806,6 +806,12 @@ class MemoryEngine:
         session_path.mkdir(parents=True, exist_ok=True)
         summary_path = session_path / "summary.md"
 
+        # Idempotent: if a summary already exists, don't overwrite it. This is
+        # the single convergence point for both finalization paths (the model's
+        # tool call and the auto-finalize fallback), so it also dedupes them.
+        if summary_path.exists():
+            return "already-finalized"
+
         content = [
             f"# Session Summary ({session_id})",
             "",

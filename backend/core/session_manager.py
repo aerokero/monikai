@@ -54,6 +54,60 @@ class SessionManager:
         }
         meta_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
+    def update_meta(self, **kwargs) -> None:
+        """Merge keys into the current session's meta.json (e.g. mode,
+        ended_at, finalized). Creates the file if missing."""
+        if not self.current_session_path:
+            return
+        meta_path = self.current_session_path / "meta.json"
+        try:
+            payload = (
+                json.loads(meta_path.read_text(encoding="utf-8"))
+                if meta_path.exists()
+                else {}
+            )
+            if not isinstance(payload, dict):
+                payload = {}
+        except Exception:
+            payload = {}
+        payload.update(kwargs)
+        try:
+            meta_path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+
+    def get_current_session_turns(self, limit: int = 10) -> List[Dict]:
+        """Return up to ``limit`` most recent turns from the CURRENT session
+        only (in-memory pending + this session's turns.jsonl), oldest first.
+        Used for auto-finalizing a session summary."""
+        if limit <= 0 or not self.current_session_path:
+            return []
+
+        turns: List[Dict] = []
+        log_file = self.current_session_path / "turns.jsonl"
+        if log_file.exists():
+            try:
+                for line in log_file.read_text(encoding="utf-8", errors="ignore").splitlines():
+                    if not line.strip():
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        if isinstance(entry, dict):
+                            turns.append(entry)
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+
+        for entry in self._pending_turns:
+            if isinstance(entry, dict):
+                turns.append(entry)
+
+        return turns[-limit:]
+
     def get_current_session_id(self) -> Optional[str]:
         return self.current_session_id
 

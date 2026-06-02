@@ -1,6 +1,8 @@
 import json
 from datetime import datetime
 
+from . import model_config as _mc
+
 
 def register_settings_profile_handlers(
     sio,
@@ -109,8 +111,27 @@ def register_settings_profile_handlers(
                     settings["daily_briefing"][k] = v
             daily_briefing_runtime.invalidate_cache()
 
+        _model_changed = False
+        if "gemini_model_preset" in data or "gemini_voice" in data:
+            new_preset = data.get("gemini_model_preset") or settings.get("gemini_model_preset")
+            new_voice  = data.get("gemini_voice")  or settings.get("gemini_voice")
+            if "gemini_model_preset" in data:
+                settings["gemini_model_preset"] = new_preset
+            if "gemini_voice" in data:
+                settings["gemini_voice"] = new_voice
+            _model_changed = _mc.apply_runtime_settings(
+                preset=new_preset if "gemini_model_preset" in data else None,
+                voice=new_voice  if "gemini_voice"         in data else None,
+            )
+
         save_settings()
         await emit_to_frontend("settings", settings)
+
+        if _model_changed and audio_loop:
+            try:
+                audio_loop.request_reconnect("model_settings_changed")
+            except Exception:
+                pass
 
     @sio.event
     async def get_tool_permissions(sid):

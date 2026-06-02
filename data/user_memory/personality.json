@@ -1,20 +1,20 @@
 {
   "schema_version": 2,
-  "affection": 1.9347462406015046,
-  "mood": "sad",
-  "energy": 0.68,
-  "base_energy": 0.85,
-  "cycle_day": 17,
-  "last_update_ts": 1780044652.7220826,
+  "affection": 24.74444551380852,
+  "mood": "thoughtful",
+  "energy": 0.148,
+  "base_energy": 0.37,
+  "cycle_day": 21,
+  "last_update_ts": 1780390252.7220826,
   "current_cycle_length": 29,
   "phase": "Calm -> Irritable/Tired",
-  "weather": "Sunny, 19.5°C in Krakow",
-  "last_weather_ts": 1780082327.8292189,
-  "last_energy_reset_day": 29,
+  "weather": "Cloudy, 18.0°C in Krakow",
+  "last_weather_ts": 1780439366.0212576,
+  "last_energy_reset_day": 2,
   "last_dream": null,
   "dream_told": false,
   "current_location": "room",
-  "current_outfit": "School Uniform",
+  "current_outfit": "White Bath Towel",
   "traits": {
     "openness": 0.62,
     "conscientiousness": 0.58,
@@ -23,26 +23,26 @@
     "neuroticism": 0.32
   },
   "affect": {
-    "valence": -0.5,
-    "arousal": 0.3,
-    "mood": "sad",
-    "last_update_ts": 1778873693.8716824
+    "valence": 0.08514040657202866,
+    "arousal": 0.3922073124513342,
+    "mood": "thoughtful",
+    "last_update_ts": 1780438438.3962033
   },
   "relationship": {
-    "closeness": 1.9347462406015046,
-    "trust": 12.899999999999993,
+    "closeness": 24.74444551380852,
+    "trust": 28.600000000000115,
     "playfulness": 20.0,
-    "bond_xp": 66.58531328320802,
-    "bond_level": 1,
-    "streak_days": 1,
-    "last_interaction_day": "2026-05-15",
-    "last_level_up_ts": 0.0
+    "bond_xp": 470.3703760736455,
+    "bond_level": 4,
+    "streak_days": 3,
+    "last_interaction_day": "2026-06-03",
+    "last_level_up_ts": 1780346675.941084
   },
   "growth": {
-    "reflection": 10.0,
-    "communication": 23.409999999999993,
-    "curiosity": 24.400000000000006,
-    "consistency": 21.999999999999993
+    "reflection": 27.599999999999994,
+    "communication": 100.0,
+    "curiosity": 100.0,
+    "consistency": 58.00000000000005
   },
   "notifications": []
 }

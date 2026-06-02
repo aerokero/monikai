@@ -240,12 +240,6 @@ def register_chat_input_handlers(
                 except Exception:
                     pass
 
-            if text and audio_loop and getattr(audio_loop, "send_therapy_guidance", None) and getattr(audio_loop, "session_mode", False):
-                try:
-                    await audio_loop.send_therapy_guidance(text, force=False)
-                except Exception:
-                    pass
-
             if text and (not asks_name) and audio_loop and getattr(audio_loop, "build_memory_context", None):
                 try:
                     mem_ctx = audio_loop.build_memory_context(text)

@@ -605,6 +605,13 @@ register_minecraft_socket_handlers(
 # Load on startup
 load_settings()
 
+# Apply any saved model preset / voice from settings
+from .model_config import apply_runtime_settings as _apply_model_settings
+_apply_model_settings(
+    preset=SETTINGS.get("gemini_model_preset"),
+    voice=SETTINGS.get("gemini_voice"),
+)
+
 authenticator = None
 # Initialize Kasa agent with devices from new smart_home structure
 kasa_devices = SETTINGS.get("smart_home", {}).get("kasa", {}).get("devices", [])

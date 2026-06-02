@@ -327,6 +327,8 @@ function AppContent() {
   const [isCameraFlipped, setIsCameraFlipped] = useState(false);
   const [visionMode, setVisionMode] = useState(() => localStorage.getItem('video_mode') || 'none');
   const [visionFrame, setVisionFrame] = useState(null);
+  const [geminiModelPreset, setGeminiModelPreset] = useState('2.5');
+  const [geminiVoice, setGeminiVoice] = useState('Leda');
 
   // Web Audio Context for Mic Visualization
   const audioContextRef = useRef(null);
@@ -656,6 +658,8 @@ function AppContent() {
       if (settings.tool_permissions) {
         setToolPermissions(normalizeToolPermissions(settings.tool_permissions));
       }
+      if (settings.gemini_model_preset) setGeminiModelPreset(settings.gemini_model_preset);
+      if (settings.gemini_voice) setGeminiVoice(settings.gemini_voice);
       setSettingsLoaded(true);
     });
 
@@ -801,6 +805,13 @@ function AppContent() {
 
     socket.on('session_prompt', (payload) => {
       enqueueSessionPrompt(payload);
+    });
+
+    socket.on('session_finalized', (data) => {
+      const summary = (data && data.summary) ? String(data.summary) : '';
+      if (!summary) return;
+      const trimmed = summary.length > 280 ? summary.slice(0, 280).trimEnd() + '…' : summary;
+      pushToast(`Podsumowanie sesji: ${trimmed}`, 'system', 12000);
     });
 
     navigator.mediaDevices.enumerateDevices().then(devs => {
@@ -1115,11 +1126,13 @@ function AppContent() {
     }
   };
 
-  const toggleSessionMode = () => {
+  const toggleSessionMode = (kind) => {
     if (!isConnected) return;
     const nextActive = !sessionMode.active;
-    const kind = sessionMode.kind || 'auto';
-    socket.emit('session_mode_set', { active: nextActive, kind });
+    // On start, the chosen entry tone (reflective | therapy) is passed through;
+    // on stop, kind doesn't matter.
+    const resolvedKind = nextActive ? (kind || sessionMode.kind || 'auto') : sessionMode.kind;
+    socket.emit('session_mode_set', { active: nextActive, kind: resolvedKind });
   };
 
   const handleSessionPromptSubmit = (payload) => {
@@ -1509,6 +1522,16 @@ function AppContent() {
             onUploadSkillZip={handleSkillZipUpload}
             onInstallSkillSource={handleInstallSkillSource}
             onUninstallSkill={handleUninstallSkill}
+            geminiModelPreset={geminiModelPreset}
+            onModelPresetChange={(preset) => {
+              setGeminiModelPreset(preset);
+              socket.emit('update_settings', { gemini_model_preset: preset });
+            }}
+            geminiVoice={geminiVoice}
+            onVoiceChange={(voice) => {
+              setGeminiVoice(voice);
+              socket.emit('update_settings', { gemini_voice: voice });
+            }}
             onClose={() => setShowSettings(false)}
           />
         )}

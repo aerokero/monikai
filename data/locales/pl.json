@@ -227,7 +227,11 @@
       "start": "Rozpocznij sesję",
       "end": "Zakończ sesję",
       "start_desc": "Przejdź do spokojniejszego, bardziej intencjonalnego trybu rozmowy.",
-      "end_desc": "Wróć do normalnej rozmowy i zamknij skupiony tryb."
+      "end_desc": "Wróć do normalnej rozmowy i zamknij skupiony tryb.",
+      "talk": "Potrzebuję porozmawiać",
+      "talk_desc": "Spokojna, ciepła rozmowa, gdy chcesz się czymś podzielić.",
+      "work": "Chcę nad czymś popracować",
+      "work_desc": "Głębsza, terapeutyczna praca nad tym, co cię uwiera."
     }
   },
   "minecraft": {

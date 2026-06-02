@@ -53,6 +53,8 @@ DEFAULT_SETTINGS = {
             "entities": [],
         },
     },
+    "gemini_model_preset": "2.5",
+    "gemini_voice": "Leda",
     "camera_flipped": False,
     "camera_source": "frontend",
     "video_mode": "none",

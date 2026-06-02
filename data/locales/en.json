@@ -228,7 +228,11 @@
       "start": "Start Session",
       "end": "End Session",
       "start_desc": "Switch into a slower, more intentional session flow.",
-      "end_desc": "Return to normal conversation and close the focused mode."
+      "end_desc": "Return to normal conversation and close the focused mode.",
+      "talk": "I need to talk",
+      "talk_desc": "A calm, warm conversation when you want to share something.",
+      "work": "I want to work on something",
+      "work_desc": "Deeper, therapeutic work on what's weighing on you."
     }
   },
   "minecraft": {

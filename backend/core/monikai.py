@@ -46,15 +46,15 @@ if sys.version_info < (3, 11, 0):
 # --------------------------------------------------------------------------------------
 # Sub-module imports (extracted from this file)
 # --------------------------------------------------------------------------------------
+from . import model_config as _mc  # module ref — use _mc.VAR for hot-updatable values
 from .model_config import (
     FORMAT, CHANNELS, SEND_SAMPLE_RATE, RECEIVE_SAMPLE_RATE, CHUNK_SIZE, SEND_AUDIO_MIME,
-    MODEL, GEMINI_VOICE, GEMINI_THINKING_BUDGET, GEMINI_INCLUDE_THOUGHTS,
-    GEMINI_EMIT_NATIVE_THOUGHT_EVENTS, GEMINI_AFFECTIVE_DIALOG, GEMINI_PROACTIVE_AUDIO,
+    GEMINI_EMIT_NATIVE_THOUGHT_EVENTS,
     GEMINI_CONTEXT_WINDOW_COMPRESSION, GEMINI_SESSION_RESUMPTION,
-    GEMINI_VAD_PREFIX_PADDING_MS, GEMINI_VAD_SILENCE_DURATION_MS, GEMINI_API_VERSION,
+    GEMINI_VAD_PREFIX_PADDING_MS, GEMINI_VAD_SILENCE_DURATION_MS,
     DREAM_SLEEP_GAP_HOURS, DREAM_MORNING_START_HOUR, DREAM_MORNING_END_HOUR,
-    DREAM_CONTEXT_HISTORY_LIMIT, DEFAULT_MODE, client,
-    BASE_CONTEXT_WINDOW_COMPRESSION, BASE_REALTIME_INPUT_CONFIG, BASE_PROACTIVITY_CONFIG,
+    DREAM_CONTEXT_HISTORY_LIMIT, DEFAULT_MODE,
+    BASE_CONTEXT_WINDOW_COMPRESSION, BASE_REALTIME_INPUT_CONFIG,
     MAX_INTERNAL_THOUGHT_CHARS, _sanitize_internal_thought,
 )
 from .session_context import load_settings_safe, get_time_context, HOLIDAYS, get_holiday_context
@@ -65,7 +65,7 @@ from ..ai.reminder_manager import Reminder, ReminderManager
 
 from ..ai.memory_engine import MemoryEngine
 from .session_manager import SessionManager
-from ..ai.therapy_engine import TherapyEngine
+from .therapy_persona import build_therapy_system_instruction, build_opening_trigger
 from .config import BASE_DIR, DATA_DIR, SETTINGS_PATH
 from ..ai.proactivity import ProactivityManager, IdleNudgeConfig, ReasoningConfig
 from ..ai.personality import PersonalitySystem
@@ -174,26 +174,38 @@ def parse_model_response(text):
 # LiveConnect Config
 # --------------------------------------------------------------------------------------
 
-config = types.LiveConnectConfig(
-    response_modalities=["AUDIO"],
-    output_audio_transcription={},
-    input_audio_transcription={},
-    thinking_config=types.ThinkingConfig(
-        thinking_budget=GEMINI_THINKING_BUDGET,
-        include_thoughts=GEMINI_INCLUDE_THOUGHTS,
-    ),
-    enable_affective_dialog=GEMINI_AFFECTIVE_DIALOG,
-    context_window_compression=BASE_CONTEXT_WINDOW_COMPRESSION,
-    realtime_input_config=BASE_REALTIME_INPUT_CONFIG,
-    proactivity=BASE_PROACTIVITY_CONFIG,
-    system_instruction=SYSTEM_PROMPT,
-    tools=tools,
-    speech_config=types.SpeechConfig(
-        voice_config=types.VoiceConfig(
-            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=GEMINI_VOICE)
-        )
-    ),
-)
+def _build_thinking_config(level: str, budget: int) -> types.ThinkingConfig:
+    """Build ThinkingConfig using current _mc state (hot-swap safe)."""
+    if _mc._is_31:
+        return types.ThinkingConfig(thinking_level=level, include_thoughts=_mc.GEMINI_INCLUDE_THOUGHTS)
+    return types.ThinkingConfig(thinking_budget=budget, include_thoughts=_mc.GEMINI_INCLUDE_THOUGHTS)
+
+
+def _build_base_live_config() -> types.LiveConnectConfig:
+    """Build the module-level LiveConnectConfig template from current _mc state."""
+    kwargs: dict = dict(
+        response_modalities=["AUDIO"],
+        output_audio_transcription={},
+        input_audio_transcription={},
+        thinking_config=_build_thinking_config(_mc.GEMINI_THINKING_LEVEL, _mc.GEMINI_THINKING_BUDGET),
+        context_window_compression=BASE_CONTEXT_WINDOW_COMPRESSION,
+        realtime_input_config=BASE_REALTIME_INPUT_CONFIG,
+        system_instruction=SYSTEM_PROMPT,
+        tools=tools,
+        speech_config=types.SpeechConfig(
+            voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=_mc.GEMINI_VOICE)
+            )
+        ),
+    )
+    if _mc.GEMINI_AFFECTIVE_DIALOG:
+        kwargs["enable_affective_dialog"] = True
+    if _mc.BASE_PROACTIVITY_CONFIG is not None:
+        kwargs["proactivity"] = _mc.BASE_PROACTIVITY_CONFIG
+    return types.LiveConnectConfig(**kwargs)
+
+
+config = _build_base_live_config()
 
 pya = pyaudio.PyAudio()
 
@@ -322,7 +334,6 @@ class AudioLoop:
         self._ai_turn_open = False
         self._fallback_web_agent_triggered_for_turn = False  # Prevent duplicate fallback web_agent calls
         self._pending_system_messages = deque(maxlen=8)
-        self._last_therapy_guidance_ts = 0.0
         self._session_resume_handle = None
         self._go_away_requested = False
         self._pause_started_ts = None
@@ -338,7 +349,18 @@ class AudioLoop:
         self.session_mode = False
         self.session_mode_kind = "auto"
         self.minecraft_game_mode = False
-        self.therapy_engine = TherapyEngine()
+        # Session mode is delivered as a genuine identity swap via reconnect.
+        # _session_relationship_context: what Monika "remembers" about this
+        #   person, injected into the therapeutic system instruction.
+        # _session_mode_reconnect_requested: set on toggle; the idle loop
+        #   raises LiveReconnectRequested when idle so she reconnects as the
+        #   therapist (or back to her normal self).
+        # _pending_session_opening: "enter" | "exit" | None, consumed once after
+        #   the reconnect to decide how she opens.
+        self._session_relationship_context = None
+        self._session_mode_reconnect_requested = False
+        self._model_settings_reconnect_requested = False
+        self._pending_session_opening = None
 
         # SessionManager (global, no projects)
         self.session_manager = SessionManager(
@@ -873,33 +895,6 @@ class AudioLoop:
     async def submit_text_turn(self, text: str, timeout_sec: float = 90.0) -> str:
         return await self.submit_user_turn(text=text, attachments=None, timeout_sec=timeout_sec)
 
-    def _should_send_therapy_guidance(self, text: str) -> bool:
-        if not self.session_mode or not self.therapy_engine:
-            return False
-        cleaned = (text or "").strip()
-        if len(cleaned) < 20:
-            return False
-        now = time.monotonic()
-        if (now - self._last_therapy_guidance_ts) < 4.0:
-            return False
-        if re.search(r"[.!?]\s*$", cleaned):
-            return True
-        return len(cleaned) >= 120
-
-    async def send_therapy_guidance(self, text: str, force: bool = False):
-        if not self.session_mode or not self.therapy_engine:
-            return
-        if not force and not self._should_send_therapy_guidance(text):
-            try:
-                self.therapy_engine.update_from_user_text(text)
-            except Exception:
-                pass
-            return
-        msg = self.therapy_engine.build_turn_guidance(text)
-        if msg:
-            await self.send_system_message(msg, end_of_turn=False)
-            self._last_therapy_guidance_ts = time.monotonic()
-
     def build_memory_context(self, user_text: str) -> Optional[str]:
         if not user_text or not getattr(self, "memory_engine", None):
             return None
@@ -1077,9 +1072,23 @@ class AudioLoop:
         self.paused = paused
 
     def _build_live_connect_config(self, personality_context: Optional[str] = None):
-        system_instruction = config.system_instruction
-        if personality_context:
-            system_instruction = f"{system_instruction}\n\n{personality_context}"
+        if self.session_mode:
+            # Genuine identity swap: she reconnects as an expert clinician,
+            # still herself, knowing this person, with the safety floor on top.
+            system_instruction = build_therapy_system_instruction(
+                relationship_context=self._session_relationship_context,
+                base_persona=config.system_instruction,
+            )
+            thinking_config = _build_thinking_config(
+                _mc.GEMINI_THERAPY_THINKING_LEVEL, _mc.GEMINI_THERAPY_THINKING_BUDGET
+            )
+        else:
+            system_instruction = config.system_instruction
+            if personality_context:
+                system_instruction = f"{system_instruction}\n\n{personality_context}"
+            thinking_config = _build_thinking_config(
+                _mc.GEMINI_THINKING_LEVEL, _mc.GEMINI_THINKING_BUDGET
+            )
 
         session_resumption = None
         if GEMINI_SESSION_RESUMPTION:
@@ -1087,44 +1096,47 @@ class AudioLoop:
                 handle=self._session_resume_handle,
             )
 
-        # Filter tools based on context
-        # Minecraft tools only available when in minecraft_game_mode AND bot is running
+        # Filter tools: remove minecraft_* when not in game mode; remove
+        # google_search on 3.1 (Search Grounding requires separate billing).
         minecraft_available = self.minecraft_game_mode and self.minecraft_bot_manager
-        
-        # Filter tools to remove minecraft_* functions if not in game mode.
-        # Keep built-in Gemini tools such as google_search available.
-        filtered_tools = tools
-        if not minecraft_available and tools:
-            # Create a copy and filter out minecraft_* tools from function_declarations
-            filtered_tools = []
-            for tool_group in tools:
-                if isinstance(tool_group, dict) and "function_declarations" in tool_group:
-                    filtered_decls = [
-                        t for t in tool_group["function_declarations"]
-                        if not (isinstance(t, dict) and t.get('name', '').startswith('minecraft_'))
-                    ]
-                    original = len(tool_group["function_declarations"])
-                    filtered = len(filtered_decls)
-                    if original != filtered:
-                        print(f"[AI DEBUG] [TOOLS] Removed {original - filtered} minecraft_* tools")
-                    filtered_tools.append({"function_declarations": filtered_decls})
-                else:
-                    filtered_tools.append(tool_group)
+        filtered_tools = []
+        for tool_group in tools:
+            if _mc._is_31 and isinstance(tool_group, dict) and "google_search" in tool_group:
+                continue
+            if isinstance(tool_group, dict) and "function_declarations" in tool_group:
+                filtered_decls = [
+                    t for t in tool_group["function_declarations"]
+                    if not (isinstance(t, dict) and t.get('name', '').startswith('minecraft_') and not minecraft_available)
+                ]
+                original = len(tool_group["function_declarations"])
+                filtered = len(filtered_decls)
+                if original != filtered:
+                    print(f"[AI DEBUG] [TOOLS] Removed {original - filtered} minecraft_* tools")
+                filtered_tools.append({"function_declarations": filtered_decls})
+            else:
+                filtered_tools.append(tool_group)
 
-        return types.LiveConnectConfig(
+        dynamic_cfg: dict = dict(
             response_modalities=config.response_modalities,
             output_audio_transcription=config.output_audio_transcription,
             input_audio_transcription=config.input_audio_transcription,
-            thinking_config=config.thinking_config,
-            enable_affective_dialog=config.enable_affective_dialog,
+            thinking_config=thinking_config,
             context_window_compression=config.context_window_compression,
             realtime_input_config=config.realtime_input_config,
-            proactivity=config.proactivity,
             session_resumption=session_resumption,
             system_instruction=system_instruction,
             tools=filtered_tools,
-            speech_config=config.speech_config,
+            speech_config=types.SpeechConfig(
+                voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=_mc.GEMINI_VOICE)
+                )
+            ),
         )
+        if _mc.GEMINI_AFFECTIVE_DIALOG:
+            dynamic_cfg["enable_affective_dialog"] = True
+        if _mc.BASE_PROACTIVITY_CONFIG is not None:
+            dynamic_cfg["proactivity"] = _mc.BASE_PROACTIVITY_CONFIG
+        return types.LiveConnectConfig(**dynamic_cfg)
 
     async def _send_audio_stream_end(self):
         if not self.session or self._audio_stream_end_sent:
@@ -1136,14 +1148,20 @@ class AudioLoop:
             print(f"[AI DEBUG] [AUDIO] Failed to send audioStreamEnd: {e}")
 
     def set_session_mode(self, active: bool, kind: str = "auto"):
+        """Toggle session mode and request a reconnect so the swap takes effect.
+
+        The actual identity change happens at reconnect time, when
+        ``_build_live_connect_config`` picks the therapeutic system instruction.
+        We just flip the flags and ask the idle loop to reconnect when idle.
+        """
+        was_active = self.session_mode
         self.session_mode = bool(active)
         if kind:
             self.session_mode_kind = str(kind)
-        if self.session_mode and self.therapy_engine:
-            try:
-                self.therapy_engine.start_session()
-            except Exception:
-                pass
+        if self.session_mode == was_active:
+            return  # no real change, no reconnect needed
+        self._pending_session_opening = "enter" if self.session_mode else "exit"
+        self._session_mode_reconnect_requested = True
 
     def set_minecraft_game_mode(self, active: bool):
         """Enable or disable focused Minecraft game mode."""
@@ -1151,6 +1169,11 @@ class AudioLoop:
         if self.minecraft_game_mode:
             # Game mode and therapy/session mode should not run together.
             self.session_mode = False
+
+    def request_reconnect(self, reason: str = "settings_changed") -> None:
+        """Request a graceful reconnect (fires when Monika is idle)."""
+        self._model_settings_reconnect_requested = True
+        print(f"[AI DEBUG] [RECONNECT] Reconnect requested: {reason}")
 
     def stop(self):
         try:
@@ -1228,6 +1251,24 @@ class AudioLoop:
 
             if not self.session:
                 continue
+
+            # Session mode toggled: reconnect when idle.
+            if (
+                self._session_mode_reconnect_requested
+                and not self._is_speaking
+                and not self._ai_turn_open
+            ):
+                self._session_mode_reconnect_requested = False
+                raise LiveReconnectRequested("session_mode_toggle")
+
+            # Model preset / voice changed: reconnect when idle.
+            if (
+                self._model_settings_reconnect_requested
+                and not self._is_speaking
+                and not self._ai_turn_open
+            ):
+                self._model_settings_reconnect_requested = False
+                raise LiveReconnectRequested("model_settings_changed")
 
             # In focused Minecraft mode, disable generic idle nudges.
             if self.minecraft_game_mode:
@@ -1457,7 +1498,7 @@ class AudioLoop:
                         continue
                     if raw and (mime_type.startswith("image/") or mime_type.startswith("video/")):
                         await self.session.send_realtime_input(
-                            media=types.Blob(data=raw, mime_type=mime_type)
+                            video=types.Blob(data=raw, mime_type=mime_type)
                         )
                         continue
 
@@ -2520,12 +2561,6 @@ class AudioLoop:
                                         else:
                                             self.chat_buffer["text"] += delta
 
-                                    if not is_correction:
-                                        try:
-                                            await self.send_therapy_guidance(transcript)
-                                        except Exception:
-                                            pass
-
                         if response.server_content.output_transcription:
                             transcript = response.server_content.output_transcription.text
                             if transcript and transcript != self._last_output_transcription:
@@ -3471,6 +3506,11 @@ class AudioLoop:
                                                 reflections=reflections,
                                                 session_id=session_id,
                                             )
+                                            if result_str == "ok" and self.session_manager:
+                                                try:
+                                                    self.session_manager.update_meta(finalized=True)
+                                                except Exception:
+                                                    pass
                                         except Exception as e:
                                             result_str = f"Error finalizing session: {e}"
                                     function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
@@ -4136,7 +4176,7 @@ class AudioLoop:
                 current_config = self._build_live_connect_config(personality_context=pers_ctx)
 
                 async with (
-                    client.aio.live.connect(model=MODEL, config=current_config) as session,
+                    _mc.client.aio.live.connect(model=_mc.MODEL, config=current_config) as session,
                     asyncio.TaskGroup() as tg,
                 ):
                     self.session = session
@@ -4233,7 +4273,22 @@ class AudioLoop:
                         self._is_new_turn = True
                         self._ai_turn_open = False
                         self.chat_buffer = {"sender": None, "text": ""}
-                        if not self._session_resume_handle:
+
+                        # A session-mode toggle drives its own reconnect. Open
+                        # the way a session should open instead of the generic
+                        # "I spaced out" recovery message.
+                        pending_opening = self._pending_session_opening
+                        self._pending_session_opening = None
+                        if pending_opening == "enter":
+                            print("[AI DEBUG] [SESSION] Entering session mode (therapist identity).")
+                            await self.session.send(
+                                input=build_opening_trigger(self.session_mode_kind),
+                                end_of_turn=True,
+                            )
+                        elif pending_opening == "exit":
+                            print("[AI DEBUG] [SESSION] Exiting session mode (back to normal Monika).")
+                            # Reconnect silently as her normal self; no announcement.
+                        elif not self._session_resume_handle:
                             history = self.session_manager.get_recent_chat_history(limit=10)
 
                             context_msg = (

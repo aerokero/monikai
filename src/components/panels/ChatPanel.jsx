@@ -266,7 +266,7 @@ const ChatPanel = ({
     socket.emit('update_settings', { show_internal_thoughts: next });
   };
 
-  const handleAction = (action) => {
+  const handleAction = (action, arg) => {
     let text = '';
 
     switch (action) {
@@ -306,7 +306,7 @@ const ChatPanel = ({
         break;
       case 'session':
         if (typeof onToggleSession === 'function') {
-          onToggleSession();
+          onToggleSession(arg);
           return;
         }
         break;
@@ -411,29 +411,34 @@ const ChatPanel = ({
     }
   };
 
-  const speakerLabel = (() => {
-    const sender = String(latestVisibleMessage?.sender || '').trim();
-    const lower = sender.toLowerCase();
-    if (!sender || lower === 'ai' || lower === 'monika' || lower === 'assistant') return 'Monika';
-    if (sender.includes('(Thought)')) return 'Monika';
-    if (lower === 'you' || lower === 'ty') return t('chat.you') || 'You';
-    return sender;
-  })();
+  const speakerLabel = 'Monika';
 
   return (
-    <div ref={rootRef} className="flex h-full w-full min-h-0 flex-col overflow-visible gap-0 px-3 pt-0 pb-3 box-border">
-      {/* Speaker Label - Outside the box (DDLC style) */}
+    <div
+      ref={rootRef}
+      className={`flex h-full w-full min-h-0 flex-col overflow-visible gap-0 px-3 pt-0 pb-3 box-border transition-[box-shadow,background-color] duration-700 ${
+        sessionActive ? 'rounded-2xl ring-1 ring-amber-400/25 bg-amber-500/[0.04] shadow-[0_0_60px_-15px_rgba(245,158,11,0.25)]' : ''
+      }`}
+    >
+      {/* Subtle "you've stepped into a different space" cue during a session */}
+      {sessionActive && (
+        <div className="flex items-center justify-center shrink-0 -mb-1 z-20">
+          <span className="rounded-full bg-amber-500/15 border border-amber-400/20 px-3 py-0.5 text-[11px] font-medium tracking-wide text-amber-200/90">
+            {t('companion.session.title') || 'Sesja'}
+          </span>
+        </div>
+      )}
+      {/* Speaker Label - Outside the box */}
       <div className="flex items-center justify-between px-3 shrink-0 mb-[-1px] z-20">
-        <div className="rounded-t-[10px] rounded-b-none bg-white px-5 py-1.5 shadow-[0_-4px_16px_rgba(0,0,0,0.3)]">
-          <span className="relative inline-block text-[22px] font-black leading-none tracking-tight">
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 text-transparent"
-              style={{ WebkitTextStroke: '4px #b65798' }}
-            >
-              {speakerLabel}
-            </span>
-            <span className="relative text-white">{speakerLabel}</span>
+        <div
+          className="rounded-t-[10px] rounded-b-none px-4 py-1.5 border border-b-0 border-white/10"
+          style={{
+            background: 'linear-gradient(135deg, rgba(0,0,0,0.55), rgba(32,8,48,0.45))',
+            backdropFilter: 'blur(12px)',
+          }}
+        >
+          <span className="text-[15px] font-semibold tracking-wide" style={{ color: 'rgba(255,255,255,0.88)' }}>
+            {speakerLabel}
           </span>
         </div>
         <button
@@ -575,14 +580,35 @@ const ChatPanel = ({
                 accentClass={studyModeActive ? 'bg-cyan-500/32 text-cyan-100' : 'bg-cyan-500/22 text-cyan-200'}
                 active={Boolean(studyModeActive)}
               />
-              <ActivityTile
-                icon={ClipboardList}
-                title={sessionActive ? t('companion.session.end') : t('companion.session.start')}
-                description={sessionActive ? t('companion.session.end_desc') : t('companion.session.start_desc')}
-                onClick={() => handleAction('session')}
-                accentClass={sessionActive ? 'bg-amber-500/32 text-amber-100' : 'bg-amber-500/22 text-amber-200'}
-                active={Boolean(sessionActive)}
-              />
+              {sessionActive ? (
+                <ActivityTile
+                  icon={ClipboardList}
+                  title={t('companion.session.end')}
+                  description={t('companion.session.end_desc')}
+                  onClick={() => handleAction('session')}
+                  accentClass="bg-amber-500/32 text-amber-100"
+                  active={true}
+                />
+              ) : (
+                <>
+                  <ActivityTile
+                    icon={Heart}
+                    title={t('companion.session.talk') || 'I need to talk'}
+                    description={t('companion.session.talk_desc') || 'A calm, warm conversation.'}
+                    onClick={() => handleAction('session', 'reflective')}
+                    accentClass="bg-amber-500/22 text-amber-200"
+                    active={false}
+                  />
+                  <ActivityTile
+                    icon={ClipboardList}
+                    title={t('companion.session.work') || 'I want to work on something'}
+                    description={t('companion.session.work_desc') || 'Deeper, therapeutic work.'}
+                    onClick={() => handleAction('session', 'therapy')}
+                    accentClass="bg-amber-500/22 text-amber-200"
+                    active={false}
+                  />
+                </>
+              )}
             </div>
           </div>
         )}

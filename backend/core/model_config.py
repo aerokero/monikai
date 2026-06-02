@@ -30,21 +30,43 @@ SEND_AUDIO_MIME = f"audio/pcm;rate={SEND_SAMPLE_RATE}"
 # ---------------------------------------------------------------------------
 # Gemini model settings
 # ---------------------------------------------------------------------------
-MODEL = os.getenv("GEMINI_LIVE_MODEL", "models/gemini-2.5-flash-native-audio-preview-12-2025")
-GEMINI_VOICE = os.getenv("GEMINI_VOICE", "Sulafat")
+# GEMINI_MODEL_PRESET: "2.5" (default, Native Audio — richer voice, affective
+# dialog, proactive audio, 1M context) or "3.1" (Flash Live — lower latency,
+# thinking levels, no affective/proactive, 65K context).
+GEMINI_MODEL_PRESET = os.getenv("GEMINI_MODEL_PRESET", "2.5")
+_is_31 = GEMINI_MODEL_PRESET == "3.1"
+
+MODEL = os.getenv(
+    "GEMINI_LIVE_MODEL",
+    "models/gemini-3.1-flash-live-preview" if _is_31
+    else "models/gemini-2.5-flash-native-audio-preview-12-2025",
+)
+GEMINI_VOICE = os.getenv("GEMINI_VOICE", "Leda")
+
+# Thinking: 3.1 uses thinking_level (string); 2.5 uses thinking_budget (int).
+GEMINI_THINKING_LEVEL = os.getenv("GEMINI_THINKING_LEVEL", "minimal")
+GEMINI_THERAPY_THINKING_LEVEL = os.getenv("GEMINI_THERAPY_THINKING_LEVEL", "low")
 
 try:
     GEMINI_THINKING_BUDGET = int(os.getenv("GEMINI_THINKING_BUDGET", "-1"))
 except Exception:
     GEMINI_THINKING_BUDGET = -1
+try:
+    GEMINI_THERAPY_THINKING_BUDGET = int(
+        os.getenv("GEMINI_THERAPY_THINKING_BUDGET", str(GEMINI_THINKING_BUDGET))
+    )
+except Exception:
+    GEMINI_THERAPY_THINKING_BUDGET = GEMINI_THINKING_BUDGET
 
 GEMINI_INCLUDE_THOUGHTS = _env_flag("GEMINI_INCLUDE_THOUGHTS", False)
 GEMINI_EMIT_NATIVE_THOUGHT_EVENTS = _env_flag("GEMINI_EMIT_NATIVE_THOUGHT_EVENTS", False)
 if not GEMINI_EMIT_NATIVE_THOUGHT_EVENTS:
     GEMINI_INCLUDE_THOUGHTS = False
 
-GEMINI_AFFECTIVE_DIALOG = _env_flag("GEMINI_AFFECTIVE_DIALOG", True)
-GEMINI_PROACTIVE_AUDIO = _env_flag("GEMINI_PROACTIVE_AUDIO", True)
+# Affective dialog and proactive audio: supported on 2.5, not on 3.1.
+GEMINI_AFFECTIVE_DIALOG = _env_flag("GEMINI_AFFECTIVE_DIALOG", not _is_31)
+GEMINI_PROACTIVE_AUDIO = _env_flag("GEMINI_PROACTIVE_AUDIO", not _is_31)
+
 GEMINI_CONTEXT_WINDOW_COMPRESSION = _env_flag("GEMINI_CONTEXT_WINDOW_COMPRESSION", True)
 
 try:
@@ -69,7 +91,10 @@ try:
 except Exception:
     GEMINI_VAD_SILENCE_DURATION_MS = 3000
 
-_default_api_version = "v1alpha" if (GEMINI_AFFECTIVE_DIALOG or GEMINI_PROACTIVE_AUDIO) else "v1beta"
+_default_api_version = (
+    "v1beta" if _is_31
+    else ("v1alpha" if (GEMINI_AFFECTIVE_DIALOG or GEMINI_PROACTIVE_AUDIO) else "v1beta")
+)
 GEMINI_API_VERSION = os.getenv("GEMINI_API_VERSION", _default_api_version)
 
 # ---------------------------------------------------------------------------
@@ -137,9 +162,61 @@ BASE_REALTIME_INPUT_CONFIG = types.RealtimeInputConfig(
     turn_coverage=types.TurnCoverage.TURN_INCLUDES_ONLY_ACTIVITY,
 )
 
-BASE_PROACTIVITY_CONFIG = types.ProactivityConfig(
-    proactive_audio=GEMINI_PROACTIVE_AUDIO,
+BASE_PROACTIVITY_CONFIG = (
+    types.ProactivityConfig(proactive_audio=True) if GEMINI_PROACTIVE_AUDIO else None
 )
+
+# ---------------------------------------------------------------------------
+# Runtime settings update (called when user changes preset/voice in UI)
+# ---------------------------------------------------------------------------
+
+def apply_runtime_settings(preset: str | None = None, voice: str | None = None) -> None:
+    """Hot-update model preset and/or voice without restarting.
+
+    Updates all relevant module-level variables so that the next
+    LiveConnect call (after reconnect) picks up the new configuration.
+    """
+    global GEMINI_MODEL_PRESET, _is_31, MODEL, GEMINI_VOICE
+    global GEMINI_AFFECTIVE_DIALOG, GEMINI_PROACTIVE_AUDIO
+    global BASE_PROACTIVITY_CONFIG, GEMINI_API_VERSION, client
+
+    changed = False
+
+    if preset is not None and preset != GEMINI_MODEL_PRESET:
+        GEMINI_MODEL_PRESET = preset
+        _is_31 = preset == "3.1"
+        if "GEMINI_LIVE_MODEL" not in os.environ:
+            MODEL = (
+                "models/gemini-3.1-flash-live-preview" if _is_31
+                else "models/gemini-2.5-flash-native-audio-preview-12-2025"
+            )
+        if "GEMINI_AFFECTIVE_DIALOG" not in os.environ:
+            GEMINI_AFFECTIVE_DIALOG = not _is_31
+        if "GEMINI_PROACTIVE_AUDIO" not in os.environ:
+            GEMINI_PROACTIVE_AUDIO = not _is_31
+        BASE_PROACTIVITY_CONFIG = (
+            types.ProactivityConfig(proactive_audio=True) if GEMINI_PROACTIVE_AUDIO else None
+        )
+        new_api_version = (
+            "v1beta" if _is_31
+            else ("v1alpha" if (GEMINI_AFFECTIVE_DIALOG or GEMINI_PROACTIVE_AUDIO) else "v1beta")
+        )
+        if "GEMINI_API_VERSION" not in os.environ:
+            GEMINI_API_VERSION = new_api_version
+        client = genai.Client(
+            http_options={"api_version": GEMINI_API_VERSION},
+            api_key=os.getenv("GEMINI_API_KEY"),
+        )
+        changed = True
+        print(f"[MODEL CONFIG] Preset changed to {preset!r}: model={MODEL}, api={GEMINI_API_VERSION}, affective={GEMINI_AFFECTIVE_DIALOG}")
+
+    if voice is not None and voice != GEMINI_VOICE:
+        GEMINI_VOICE = voice
+        changed = True
+        print(f"[MODEL CONFIG] Voice changed to {voice!r}")
+
+    return changed
+
 
 # ---------------------------------------------------------------------------
 # Internal thought helpers

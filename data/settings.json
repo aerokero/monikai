@@ -47,7 +47,7 @@
     },
     "camera_flipped": false,
     "camera_source": "frontend",
-    "video_mode": "none",
+    "video_mode": "screen",
     "camera_capture": {
         "fps": 2.0,
         "max_size": 1024,
@@ -61,7 +61,7 @@
         "format": "jpeg",
         "region": null,
         "mode": "continuous",
-        "stream_to_ai": false
+        "stream_to_ai": true
     },
     "proactivity": {
         "idle_nudges": {
