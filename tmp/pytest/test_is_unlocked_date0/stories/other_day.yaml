@@ -1,0 +1,5 @@
+id: other_day
+title: Other
+unlock: 'date[01-15]'
+opening:
+  context: y

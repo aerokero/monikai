@@ -1,0 +1,5 @@
+id: past
+title: Past
+unlock: 'date_range[05-31 to 06-02]'
+opening:
+  context: y

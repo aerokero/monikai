@@ -45,6 +45,8 @@
             "entities": []
         }
     },
+    "gemini_model_preset": "2.5",
+    "gemini_voice": "Leda",
     "camera_flipped": false,
     "camera_source": "frontend",
     "video_mode": "screen",
@@ -95,6 +97,7 @@
     "daily_briefing": {
         "enabled": true,
         "cache_minutes": 20,
+        "use_v2_briefing": false,
         "profile": {
             "pinned_sections": [
                 "weather"
@@ -119,6 +122,9 @@
             "language_mode": "auto",
             "max_items_per_section": 5
         }
+    },
+    "vn": {
+        "branch_selection_mode": "heuristic"
     },
     "minecraft_autonomy": {
         "enabled": true,

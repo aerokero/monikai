@@ -1,20 +1,20 @@
 {
   "schema_version": 2,
-  "affection": 24.74444551380852,
-  "mood": "thoughtful",
-  "energy": 0.148,
-  "base_energy": 0.37,
-  "cycle_day": 21,
-  "last_update_ts": 1780390252.7220826,
+  "affection": 31.101794635275294,
+  "mood": "calm",
+  "energy": 0.95,
+  "base_energy": 0.95,
+  "cycle_day": 24,
+  "last_update_ts": 1780649452.7220826,
   "current_cycle_length": 29,
   "phase": "Calm -> Irritable/Tired",
-  "weather": "Cloudy, 18.0°C in Krakow",
-  "last_weather_ts": 1780439366.0212576,
-  "last_energy_reset_day": 2,
+  "weather": "Cloudy, 23.3°C in Krakow",
+  "last_weather_ts": 1780653879.1866608,
+  "last_energy_reset_day": 5,
   "last_dream": null,
   "dream_told": false,
-  "current_location": "room",
-  "current_outfit": "White Bath Towel",
+  "current_location": "school",
+  "current_outfit": "School Uniform",
   "traits": {
     "openness": 0.62,
     "conscientiousness": 0.58,
@@ -23,26 +23,26 @@
     "neuroticism": 0.32
   },
   "affect": {
-    "valence": 0.08514040657202866,
-    "arousal": 0.3922073124513342,
-    "mood": "thoughtful",
-    "last_update_ts": 1780438438.3962033
+    "valence": 0.18218994084947362,
+    "arousal": 0.3480109719506814,
+    "mood": "calm",
+    "last_update_ts": 1780654842.718491
   },
   "relationship": {
-    "closeness": 24.74444551380852,
-    "trust": 28.600000000000115,
+    "closeness": 31.101794635275294,
+    "trust": 34.500000000000156,
     "playfulness": 20.0,
-    "bond_xp": 470.3703760736455,
-    "bond_level": 4,
-    "streak_days": 3,
-    "last_interaction_day": "2026-06-03",
-    "last_level_up_ts": 1780346675.941084
+    "bond_xp": 592.1429047214683,
+    "bond_level": 5,
+    "streak_days": 1,
+    "last_interaction_day": "2026-06-05",
+    "last_level_up_ts": 1780653945.2352755
   },
   "growth": {
-    "reflection": 27.599999999999994,
+    "reflection": 36.4,
     "communication": 100.0,
     "curiosity": 100.0,
-    "consistency": 58.00000000000005
+    "consistency": 71.20000000000007
   },
   "notifications": []
 }
