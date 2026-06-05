@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 from google.genai import types
 
 from backend.core.monikai import AudioLoop
-from backend.core import v2_runtime as v2
+from backend.core.runtimes import v2_runtime as v2
 from backend.soul.memory.srs import SRSManager
 
 
@@ -42,7 +42,7 @@ async def test_study_create_flashcard_handler(tmp_db):
         
         # Execute handler
         assert fc.name == "study_create_flashcard"
-        from backend.core.v2_runtime import get as _v2_get
+        from backend.core.runtimes.v2_runtime import get as _v2_get
         v2_rt = _v2_get()
         db_path = v2_rt._db_path if v2_rt else None
         srs = SRSManager(db_path=db_path)
@@ -98,7 +98,7 @@ async def test_study_review_flashcards_handler(tmp_db):
         function_responses = []
         
         # Execute handler
-        from backend.core.v2_runtime import get as _v2_get
+        from backend.core.runtimes.v2_runtime import get as _v2_get
         v2_rt = _v2_get()
         db_path = v2_rt._db_path if v2_rt else None
         srs = SRSManager(db_path=db_path)
@@ -153,7 +153,7 @@ async def test_study_record_review_handler(tmp_db):
         function_responses = []
         
         # Execute handler
-        from backend.core.v2_runtime import get as _v2_get
+        from backend.core.runtimes.v2_runtime import get as _v2_get
         v2_rt = _v2_get()
         db_path = v2_rt._db_path if v2_rt else None
         srs = SRSManager(db_path=db_path)

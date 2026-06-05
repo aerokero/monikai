@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, Dict, Optional, Any
 
-from ..core.session_context import HOLIDAYS, get_holiday_context, load_settings_safe
+from backend.core.session_context import HOLIDAYS, get_holiday_context, load_settings_safe
 
 
 @dataclass

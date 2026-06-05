@@ -6,7 +6,7 @@ import json
 import os
 from copy import deepcopy
 
-from ..ai.daily_briefing import DEFAULT_SECTIONS, normalize_profile
+from backend.services.daily_briefing import DEFAULT_SECTIONS, normalize_profile
 from .config import SETTINGS_PATH
 
 DEFAULT_SETTINGS = {

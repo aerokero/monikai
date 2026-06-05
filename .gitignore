@@ -19,6 +19,8 @@ data/long_term_memory/             # Long-term memory snapshots
 data/user_memory/                  # User profile, personality, calendar, reminders, activity log
 data/memory/                       # Full-text search index and pages
 data/sessions/                     # Session history and conversation logs
+data/recaps/                       # Auto-generated daily recap files
+tmp/                               # Temporary files (pytest fixtures etc.)
 data/kg/                          # Knowledge graph database
 data/study/                        # Study materials and PDFs
 data/study/Genki 1 - Study Book.pdf

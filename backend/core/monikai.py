@@ -60,16 +60,14 @@ from .model_config import (
 from .session_context import load_settings_safe, get_time_context, HOLIDAYS, get_holiday_context
 from .tool_definitions import tools
 from .system_prompt import SYSTEM_PROMPT
-from ..ai.calendar_manager import CalendarEvent, CalendarManager
-from ..ai.reminder_manager import Reminder, ReminderManager
-
-from ..ai.memory_engine import MemoryEngine
+from backend.services.calendar_manager import CalendarEvent, CalendarManager
+from backend.services.reminder_manager import Reminder, ReminderManager
+from backend.services.memory_adapter import MemoryEngine
 from .session_manager import SessionManager
 from .therapy_persona import build_therapy_system_instruction, build_opening_trigger
 from .config import BASE_DIR, DATA_DIR, SETTINGS_PATH
-from ..ai.proactivity import ProactivityManager, IdleNudgeConfig, ReasoningConfig
-from ..ai.personality import PersonalitySystem
-from ..ai.personality_notifications import build_relationship_notification_lines
+from backend.progression.proactivity import evaluate as evaluate_proactivity
+from backend.services.personality_notifications import build_relationship_notification_lines
 from ..tools.openclaw_skills import OpenClawSkillManager
 from ..integrations.games.minecraft_agent import MinecraftBotManager
 
@@ -248,6 +246,113 @@ def _iter_leaf_exceptions(exc: BaseException) -> List[BaseException]:
             out.extend(_iter_leaf_exceptions(sub))
         return out
     return [exc]
+
+
+class ProactivityWrapper:
+    def __init__(self, loop):
+        self.loop = loop
+
+    def mark_user_activity(self, text: Optional[str] = None):
+        self.loop._last_user_activity_ts = time.monotonic()
+        self.loop._user_message_count += 1
+        self.loop._awaiting_user_response = False
+
+    def mark_ai_activity(self, text: Optional[str] = None):
+        self.loop._last_ai_activity_ts = time.monotonic()
+
+    def should_nudge(self, is_user_speaking: bool, is_paused: bool, threshold_override: Optional[float] = None) -> bool:
+        if not self.loop._proactivity_enabled:
+            return False
+        if is_paused or is_user_speaking:
+            return False
+
+        now = time.monotonic()
+        # Startup grace period check
+        if (now - self.loop._session_start_ts) < self.loop._startup_grace_sec:
+            return False
+        # Message count check
+        if self.loop._user_message_count < self.loop._min_user_messages_before_nudge:
+            return False
+        # Max nudges per session check
+        if self.loop._nudges_this_session >= self.loop._max_nudges_per_session:
+            return False
+        # Quiet hours check
+        if self.loop._in_quiet_hours():
+            return False
+        # Awaiting response check
+        if self.loop._awaiting_user_response:
+            return False
+
+        # Thresholds
+        threshold = self.loop._nudge_threshold_sec if threshold_override is None else float(threshold_override)
+        user_quiet = now - self.loop._last_user_activity_ts
+        nudge_gap = now - self.loop._last_nudge_ts
+        ai_quiet = now - self.loop._last_ai_activity_ts if self.loop._last_ai_activity_ts > 0 else self.loop._min_ai_quiet_sec
+
+        if user_quiet < threshold:
+            return False
+        if nudge_gap < self.loop._nudge_cooldown_sec:
+            return False
+        if ai_quiet < self.loop._min_ai_quiet_sec:
+            return False
+
+        return True
+
+    def can_ask_question(self, now: Optional[float] = None) -> bool:
+        now = time.monotonic() if now is None else float(now)
+        return (now - self.loop._last_question_ts) >= 1800.0
+
+    def pick_topic_hint(self) -> str:
+        return self.loop._last_user_text or ""
+
+    def record_nudge(self, asked_question: bool = False) -> None:
+        now = time.monotonic()
+        self.loop._last_nudge_ts = now
+        self.loop._nudges_this_session += 1
+        if asked_question:
+            self.loop._awaiting_user_response = True
+            self.loop._last_question_ts = now
+
+    def get_nudge_message(self, mood: Optional[str] = None, video_mode: str = "none", allow_question: bool = True) -> tuple[str, bool]:
+        from backend.core.runtimes.v2_runtime import get as _v2_get
+        _v2 = _v2_get()
+        action = None
+        if _v2 and _v2.soul_state:
+            action = evaluate_proactivity(_v2.soul_state.needs, _v2.soul_state)
+
+        if action:
+            msg = (
+                "System Notification: [Proactivity] Monika odczuwa potrzebę inicjatywy. "
+                f"Impuls: {action.context} (Potrzeba: {action.need}, pilność: {action.urgency:.1f}). "
+                "Nawiąż do tego w naturalny, ciepły i krótki sposób w rozmowie z użytkownikiem."
+            )
+            asked_question = (action.kind in ("reach_out", "offer_help"))
+        else:
+            msg = (
+                "System Notification: [Proactivity] Użytkownik milczy od dłuższego czasu. "
+                "Jeśli użytkownik poprosił o ciszę, skupia się lub pracuje, milcz. "
+                "W przeciwnym razie powiedz jedno krótkie, spokojne zdanie, np. pytając łagodnie co u niego."
+            )
+            asked_question = allow_question
+
+        return msg, asked_question
+
+    async def run_reasoning_check(self) -> Optional[str]:
+        if not self.loop._reasoning_enabled:
+            return None
+
+        now = time.monotonic()
+        if (now - self.loop._last_reasoning_ts) < self.loop._reasoning_interval_sec:
+            return None
+
+        # Local heuristic: If user is silent for > 120s, trigger an internal thought loop
+        if (now - self.loop._last_user_activity_ts) > 120.0:
+            if (now - self.loop._last_reasoning_ts) > 60.0:
+                self.loop._last_reasoning_ts = now
+                time_str = time.strftime("%H:%M", time.localtime(time.time()))
+                return f"It is {time_str}. The user has been silent for over 2 minutes. Generate an internal monologue about the current situation. If the user requested silence, respect it and do not speak."
+        return None
+
 
 class AudioLoop:
     def __init__(
@@ -503,11 +608,55 @@ class AudioLoop:
         # ---------------------------
         # Proactivity / Idle nudges
         # ---------------------------
-        self.proactivity = ProactivityManager(
-            IdleNudgeConfig.from_settings({"proactivity": proactivity_settings}),
-            ReasoningConfig.from_settings({"proactivity": proactivity_settings}),
-            client=client
-        )
+        self._proactivity_enabled = True
+        self._nudge_threshold_sec = 900.0
+        self._nudge_cooldown_sec = 1800.0
+        self._min_ai_quiet_sec = 60.0
+        self._max_nudges_per_session = 3
+        self._startup_grace_sec = 600.0
+        self._min_user_messages_before_nudge = 2
+        self._quiet_hours_enabled = True
+        self._quiet_hours_start = 22 * 60
+        self._quiet_hours_end = 6 * 60
+        self._reasoning_enabled = True
+        self._reasoning_interval_sec = 10.0
+
+        if proactivity_settings:
+            idle_cfg = proactivity_settings.get("idle_nudges") or {}
+            self._proactivity_enabled = bool(idle_cfg.get("enabled", True))
+            self._nudge_threshold_sec = float(idle_cfg.get("threshold_sec", 900.0))
+            self._nudge_cooldown_sec = float(idle_cfg.get("cooldown_sec", 1800.0))
+            self._min_ai_quiet_sec = float(idle_cfg.get("min_ai_quiet_sec", 60.0))
+            self._max_nudges_per_session = int(idle_cfg.get("max_per_session", 3))
+            self._startup_grace_sec = float(idle_cfg.get("startup_grace_sec", 600.0))
+            self._min_user_messages_before_nudge = int(idle_cfg.get("min_user_messages_before_nudge", 2))
+            
+            self._quiet_hours_enabled = bool(idle_cfg.get("quiet_hours_enabled", True))
+            qh_start = idle_cfg.get("quiet_hours_start", "22:00")
+            qh_end = idle_cfg.get("quiet_hours_end", "06:00")
+            try:
+                parts_start = qh_start.split(":")
+                self._quiet_hours_start = int(parts_start[0]) * 60 + int(parts_start[1])
+                parts_end = qh_end.split(":")
+                self._quiet_hours_end = int(parts_end[0]) * 60 + int(parts_end[1])
+            except Exception:
+                pass
+
+            reasoning_cfg = proactivity_settings.get("reasoning") or {}
+            self._reasoning_enabled = bool(reasoning_cfg.get("enabled", True))
+            self._reasoning_interval_sec = float(reasoning_cfg.get("interval_sec", 10.0))
+
+        self._session_start_ts = time.monotonic()
+        self._last_user_activity_ts = time.monotonic()
+        self._last_ai_activity_ts = 0.0
+        self._last_nudge_ts = 0.0
+        self._nudges_this_session = 0
+        self._last_reasoning_ts = 0.0
+        self._awaiting_user_response = False
+        self._user_message_count = 0
+        self._last_question_ts = time.monotonic() - 1800.0
+
+        self.proactivity = ProactivityWrapper(self)
 
         if reminder_manager:
             self.reminder_manager = reminder_manager
@@ -538,41 +687,25 @@ class AudioLoop:
             print(f"[AI DEBUG] [MEMORY] Failed to initialize MemoryEngine: {e}")
 
         # Sync birthday to calendar if available (from profile.md master source)
-        if self.memory_engine and self.calendar_manager:
-            # PHASE B: Load birthday from profile.md (single source of truth)
+        # Sync birthday to calendar if available (from profile.json master source in v2)
+        if self.calendar_manager:
             try:
-                from backend.ai.calendar_unification import UnifiedCalendarEngine
-                self.calendar_engine = UnifiedCalendarEngine(
-                    base_dir=base_dir,
-                    memory_engine=self.memory_engine,
-                    calendar_manager=self.calendar_manager
-                )
-                bd = self.calendar_engine.get_birthday_from_profile()
-                if bd:
-                    self.calendar_manager.set_user_birthday(*bd)
-                    print(f"[AI DEBUG] [CALENDAR] Birthday loaded from profile: {bd[0]}-{bd[1]:02d}")
+                from backend.services.user_profile import UserProfileManager
+                upm = UserProfileManager()
+                prof = upm.get_profile()
+                if prof and prof.birthday:
+                    # Parse YYYY-MM-DD
+                    parts = prof.birthday.split("-")
+                    if len(parts) == 3:
+                        month = int(parts[1])
+                        day = int(parts[2])
+                        self.calendar_manager.set_user_birthday(month, day)
+                        print(f"[AI DEBUG] [CALENDAR] Birthday loaded from profile: {month}-{day:02d}")
             except Exception as e:
-                print(f"[AI DEBUG] [CALENDAR] Failed to initialize UnifiedCalendarEngine: {e}")
-                self.calendar_engine = None
-                # Fallback to memory-based birthday
-                bd = self.memory_engine.get_birthday()
-                if bd:
-                    self.calendar_manager.set_user_birthday(*bd)
+                print(f"[AI DEBUG] [CALENDAR] Failed to load birthday from profile: {e}")
 
-        # Initialize PersonalitySystem
-        if personality:
-            self.personality = personality
-        else:
-            try:
-                base_dir = DATA_DIR
-                
-                def _on_pers_update(state):
-                    if self.on_personality_update:
-                        self.on_personality_update(asdict(state))
-                self.personality = PersonalitySystem(storage_dir=base_dir / "user_memory", on_update=_on_pers_update)
-            except Exception as e:
-                self.personality = None
-                print(f"[AI DEBUG] [PERSONALITY] Failed to initialize: {e}")
+        # Initialize PersonalitySystem (Disabled in V2)
+        self.personality = None
 
         # Capture settings (screen/camera vision)
         self._video_queue_max = 6  # legacy: kept for compatibility
@@ -874,25 +1007,15 @@ class AudioLoop:
                 except Exception:
                     pass
 
-        # v2: inject cognition monologue (replaces / augments memory context).
-        _v2_handled = False
+        # v2: inject cognition monologue
         if cleaned:
-            try:
-                from backend.core.v2_runtime import get as _v2_get
-                _v2 = _v2_get()
-                if _v2:
-                    cog_msg = await _v2.process_turn(cleaned)
-                    if cog_msg:
-                        await self.session.send(input=cog_msg, end_of_turn=False)
-                    _v2_handled = True
-            except Exception:
-                pass
-
-        # Fall back to v1 memory context if v2 is not active.
-        if not _v2_handled:
-            mem_ctx = self.build_memory_context(cleaned) if cleaned else None
-            if mem_ctx:
-                await self.session.send(input=mem_ctx, end_of_turn=False)
+            from backend.core.runtimes.v2_runtime import get as _v2_get
+            _v2 = _v2_get()
+            if not _v2:
+                raise RuntimeError("MonikAI v2 runtime is not active")
+            cog_msg = await _v2.process_turn(cleaned)
+            if cog_msg:
+                await self.session.send(input=cog_msg, end_of_turn=False)
 
         future = asyncio.get_running_loop().create_future()
         self._pending_ai_turn_futures.append(future)
@@ -1103,17 +1226,11 @@ class AudioLoop:
             )
         else:
             # v2: use assembled prompt (CHARACTER + PSYCHOLOGICAL + MEMORY + OPERATIONAL)
-            # Falls back to SYSTEM_PROMPT if v2 runtime is not active.
-            try:
-                from backend.core.v2_runtime import get as _v2_get
-                _v2 = _v2_get()
-                system_instruction = _v2.cached_prompt if _v2 else config.system_instruction
-                if not _v2 and personality_context:
-                    system_instruction = f"{system_instruction}\n\n{personality_context}"
-            except Exception:
-                system_instruction = config.system_instruction
-                if personality_context:
-                    system_instruction = f"{system_instruction}\n\n{personality_context}"
+            from backend.core.runtimes.v2_runtime import get as _v2_get
+            _v2 = _v2_get()
+            if not _v2:
+                raise RuntimeError("MonikAI v2 runtime is not active")
+            system_instruction = _v2.cached_prompt
             thinking_config = _build_thinking_config(
                 _mc.GEMINI_THINKING_LEVEL, _mc.GEMINI_THINKING_BUDGET
             )
@@ -1272,6 +1389,19 @@ class AudioLoop:
 
     def mark_ai_activity(self, text: Optional[str] = None):
         self.proactivity.mark_ai_activity(text)
+
+    def _in_quiet_hours(self) -> bool:
+        if not getattr(self, "_quiet_hours_enabled", True):
+            return False
+        now = datetime.now()
+        now_min = now.hour * 60 + now.minute
+        start = getattr(self, "_quiet_hours_start", 22 * 60)
+        end = getattr(self, "_quiet_hours_end", 6 * 60)
+        if start == end:
+            return True
+        if start < end:
+            return start <= now_min < end
+        return now_min >= start or now_min < end
 
     async def idle_nudge_loop(self):
         while not self.stop_event.is_set():
@@ -3609,7 +3739,7 @@ class AudioLoop:
                                 elif fc.name == "study_create_flashcard":
                                     try:
                                         from backend.soul.memory.srs import SRSManager
-                                        from backend.core.v2_runtime import get as _v2_get
+                                        from backend.core.runtimes.v2_runtime import get as _v2_get
                                         v2_rt = _v2_get()
                                         db_path = v2_rt._db_path if v2_rt else None
                                         srs = SRSManager(db_path=db_path)
@@ -3630,7 +3760,7 @@ class AudioLoop:
                                 elif fc.name == "study_review_flashcards":
                                     try:
                                         from backend.soul.memory.srs import SRSManager
-                                        from backend.core.v2_runtime import get as _v2_get
+                                        from backend.core.runtimes.v2_runtime import get as _v2_get
                                         v2_rt = _v2_get()
                                         db_path = v2_rt._db_path if v2_rt else None
                                         srs = SRSManager(db_path=db_path)
@@ -3654,7 +3784,7 @@ class AudioLoop:
                                 elif fc.name == "study_record_review":
                                     try:
                                         from backend.soul.memory.srs import SRSManager
-                                        from backend.core.v2_runtime import get as _v2_get
+                                        from backend.core.runtimes.v2_runtime import get as _v2_get
                                         v2_rt = _v2_get()
                                         db_path = v2_rt._db_path if v2_rt else None
                                         srs = SRSManager(db_path=db_path)
@@ -4272,22 +4402,13 @@ class AudioLoop:
                 print("[AI DEBUG] [CONNECT] Connecting to Gemini Live API...")
 
                 # v2: refresh assembled prompt at each reconnect (async context).
-                try:
-                    from backend.core.v2_runtime import get as _v2_get
-                    _v2 = _v2_get()
-                    if _v2:
-                        await _v2.refresh_prompt()
-                except Exception:
-                    pass
+                from backend.core.runtimes.v2_runtime import get as _v2_get
+                _v2 = _v2_get()
+                if not _v2:
+                    raise RuntimeError("MonikAI v2 runtime is not active")
+                await _v2.refresh_prompt()
 
-                # Skip old personality context when v2 is active (it's in the assembled prompt).
-                _use_v2 = False
-                try:
-                    from backend.core.v2_runtime import get as _v2_get2
-                    _use_v2 = _v2_get2() is not None
-                except Exception:
-                    pass
-                pers_ctx = None if _use_v2 else (self.personality.get_context_prompt() if self.personality else None)
+                pers_ctx = None
                 current_config = self._build_live_connect_config(personality_context=pers_ctx)
 
                 async with (

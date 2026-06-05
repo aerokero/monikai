@@ -25,7 +25,7 @@ _CHARACTER_FALLBACK = (
 )
 
 try:
-    from ..ai.character_loader import load_character_prompt as _load
+    from backend.soul.identity.character_loader import load_character_prompt as _load
     CHARACTER_PROMPT: str = _load("monika") or _CHARACTER_FALLBACK
 except Exception as _exc:
     logger.warning("Character loader error: %s", _exc)

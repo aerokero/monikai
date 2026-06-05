@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.core import v2_runtime as v2
+from backend.core.runtimes import v2_runtime as v2
 
 
 async def test_initialize_and_get(tmp_path):

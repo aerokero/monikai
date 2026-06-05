@@ -141,6 +141,38 @@ async def is_unlocked(
         from backend.progression.catalog import check_condition
         return check_condition(f"count{rest}", {"count": count})
 
+    # Date-based conditions: e.g. "date[10-31]" or "date_range[12-24 to 12-26]"
+    if unlock.startswith("date_range[") and unlock.endswith("]"):
+        content = unlock[len("date_range["):-1].strip()
+        parts = content.split(" to ")
+        if len(parts) == 2:
+            try:
+                now = datetime.now()
+                # Parse start/end month-day
+                sm, sd = map(int, parts[0].split("-"))
+                em, ed = map(int, parts[1].split("-"))
+                # Convert to dates in current year
+                start_date = datetime(now.year, sm, sd)
+                end_date = datetime(now.year, em, ed)
+                # Handle year wrapping
+                if start_date > end_date:
+                    if now.month >= sm:
+                        end_date = datetime(now.year + 1, em, ed)
+                    else:
+                        start_date = datetime(now.year - 1, sm, sd)
+                return start_date <= now <= end_date
+            except Exception:
+                return False
+
+    if unlock.startswith("date[") and unlock.endswith("]"):
+        content = unlock[len("date["):-1].strip()
+        try:
+            now = datetime.now()
+            m, d = map(int, content.split("-"))
+            return now.month == m and now.day == d
+        except Exception:
+            return False
+
     return False  # unknown condition → locked (Phase 6+ extends)
 
 

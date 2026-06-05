@@ -1,7 +1,7 @@
 import time
 from datetime import datetime, timezone
 
-from ..ai.daily_briefing import (
+from backend.services.daily_briefing import (
     DEFAULT_SECTIONS,
     build_daily_briefing,
     fetch_weather_details,
@@ -176,7 +176,7 @@ class DailyBriefingRuntime:
 
 def _default_v2_runtime():
     try:
-        from backend.core.v2_runtime import get
+        from backend.core.runtimes.v2_runtime import get
         return get()
     except Exception:
         return None

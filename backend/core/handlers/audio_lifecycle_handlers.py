@@ -5,8 +5,8 @@ import json
 import re
 from datetime import datetime
 
-from ..integrations.media.authenticator import FaceAuthenticator
-from ..ai.personality_notifications import to_frontend_personality_event
+from backend.integrations.media.authenticator import FaceAuthenticator
+from backend.services.personality_notifications import to_frontend_personality_event
 
 
 def register_audio_lifecycle_handlers(
@@ -283,51 +283,6 @@ def register_audio_lifecycle_handlers(
             audio_loop.minecraft_bot_manager = get_minecraft_bot_manager()
 
             try:
-                from backend.ai.calendar_unification import UnifiedCalendarEngine
-
-                audio_loop.calendar_engine = UnifiedCalendarEngine(
-                    base_dir=data_dir,
-                    memory_engine=getattr(audio_loop, "memory_engine", None),
-                    calendar_manager=get_calendar_manager(),
-                )
-            except Exception as e:
-                print(f"[CALENDAR] Warning: Could not initialize UnifiedCalendarEngine in audio_loop: {e}")
-
-            try:
-                from backend.ai.daily_recap_generator import DailyRecapGenerator
-
-                audio_loop.recap_generator = DailyRecapGenerator(
-                    base_dir=data_dir,
-                    memory_engine=getattr(audio_loop, "memory_engine", None),
-                )
-            except Exception as e:
-                print(f"[RECAP] Warning: Could not initialize DailyRecapGenerator in audio_loop: {e}")
-
-            try:
-                from backend.ai.user_knowledge_graph import UserKnowledgeGraph
-
-                audio_loop.kg_engine = UserKnowledgeGraph(
-                    base_dir=data_dir,
-                    memory_engine=getattr(audio_loop, "memory_engine", None),
-                )
-                if getattr(audio_loop, "memory_engine", None):
-                    audio_loop.memory_engine.kg_engine = audio_loop.kg_engine
-            except Exception as e:
-                print(f"[KG] Warning: Could not initialize UserKnowledgeGraph in audio_loop: {e}")
-
-            try:
-                from backend.ai.adaptive_retriever import AdaptiveRetriever
-
-                audio_loop.adaptive_retriever = AdaptiveRetriever(
-                    base_dir=data_dir,
-                    memory_engine=getattr(audio_loop, "memory_engine", None),
-                    kg_engine=getattr(audio_loop, "kg_engine", None),
-                    calendar_manager=get_calendar_manager(),
-                )
-            except Exception as e:
-                print(f"[RETRIEVER] Warning: Could not initialize AdaptiveRetriever in audio_loop: {e}")
-
-            try:
                 audio_loop.note_user_activity("start_audio")
             except Exception:
                 pass
@@ -408,34 +363,7 @@ def register_audio_lifecycle_handlers(
         clear_active_frontend_sid(sid)
         print(f"Client disconnected: {sid}")
 
-        try:
-            audio_loop = get_audio_loop()
-            if audio_loop and hasattr(audio_loop, "session_manager"):
-                session_id = audio_loop.session_manager.get_current_session_id()
-                session_path = audio_loop.session_manager.get_current_session_path()
-
-                if session_id and session_path:
-                    meta_file = session_path / "meta.json"
-                    if meta_file.exists():
-                        meta = json.loads(meta_file.read_text())
-                        session_start = meta.get("started_at", datetime.now().isoformat())
-                        session_end = datetime.now().isoformat()
-
-                        if hasattr(audio_loop, "calendar_engine"):
-                            audio_loop.calendar_engine.generate_session_recap(
-                                session_start=session_start,
-                                session_end=session_end,
-                                session_summary=None,
-                            )
-                            print(f"[CALENDAR] Session recap generated: {session_id}")
-
-                        if hasattr(audio_loop, "recap_generator"):
-                            today = datetime.now().strftime("%Y-%m-%d")
-                            daily_recap = audio_loop.recap_generator.generate_daily_recap(date=today)
-                            if daily_recap:
-                                print(f"[RECAP] Daily recap generated for {today}")
-        except Exception as e:
-            print(f"[RECAP] Error generating recaps on disconnect: {e}")
+        pass
 
     @sio.event
     async def start_audio(sid, data=None):

@@ -28,20 +28,20 @@ from ..integrations.media.study_ocr import ocr_image_bytes
 
 from . import monikai
 from .config import DATA_DIR as CONFIG_DATA_DIR
-from .daily_briefing_runtime import DailyBriefingRuntime
-from .calendar_reminder_handlers import register_calendar_reminder_handlers
-from .chat_input_handlers import register_chat_input_handlers
-from .control_handlers import register_control_handlers
-from .daily_briefing_handlers import register_daily_briefing_handlers
-from .audio_lifecycle_handlers import register_audio_lifecycle_handlers
-from .memory_page_handlers import register_memory_page_handlers
-from .notes_journal_handlers import register_notes_journal_handlers
-from .openclaw_skill_handlers import register_openclaw_skill_handlers
-from .progression_http_router import register_progression_http_routes
-from .settings_profile_handlers import register_settings_profile_handlers
-from .session_mode_handlers import register_session_mode_handlers
-from .shared_activity_handlers import register_shared_activity_handlers
-from .frontend_router import (
+from .runtimes.daily_briefing_runtime import DailyBriefingRuntime
+from .handlers.calendar_reminder_handlers import register_calendar_reminder_handlers
+from .handlers.chat_input_handlers import register_chat_input_handlers
+from .handlers.control_handlers import register_control_handlers
+from .handlers.daily_briefing_handlers import register_daily_briefing_handlers
+from .handlers.audio_lifecycle_handlers import register_audio_lifecycle_handlers
+from .handlers.memory_page_handlers import register_memory_page_handlers
+from .handlers.notes_journal_handlers import register_notes_journal_handlers
+from .handlers.openclaw_skill_handlers import register_openclaw_skill_handlers
+from .routers.progression_http_router import register_progression_http_routes
+from .handlers.settings_profile_handlers import register_settings_profile_handlers
+from .handlers.session_mode_handlers import register_session_mode_handlers
+from .handlers.shared_activity_handlers import register_shared_activity_handlers
+from .routers.frontend_router import (
     clear_active_frontend_sid,
     emit_to_frontend as _emit_to_frontend,
     register_socketio,
@@ -63,15 +63,15 @@ from .lifecycle_startup import (
 )
 from .lifecycle_telegram import start_telegram_service, stop_telegram_service
 from .lifecycle_discord import start_discord_service, stop_discord_service
-from .minecraft_autonomy_runtime import (
+from .runtimes.minecraft_autonomy_runtime import (
     build_minecraft_autonomy_cfg,
     run_minecraft_autonomy_loop,
     set_minecraft_game_mode as set_minecraft_game_mode_runtime,
 )
-from .minecraft_http_router import register_minecraft_http_routes
-from .minecraft_perception_runtime import register_minecraft_perception_callback
-from .minecraft_socket_handlers import register_minecraft_socket_handlers
-from .screen_ocr_runtime import ScreenOcrRuntime
+from .routers.minecraft_http_router import register_minecraft_http_routes
+from .runtimes.minecraft_perception_runtime import register_minecraft_perception_callback
+from .handlers.minecraft_socket_handlers import register_minecraft_socket_handlers
+from .runtimes.screen_ocr_runtime import ScreenOcrRuntime
 from .settings_store import DEFAULT_SETTINGS, SETTINGS, load_settings, save_settings
 from .runtime_serializers import serialize_reminders
 from .storage_activity_helpers import (
@@ -84,12 +84,12 @@ from .storage_activity_helpers import (
     resolve_memory_page,
     write_notes_text,
 )
-from .system_frontend_handlers import register_system_frontend_handlers
-from .system_http_router import register_system_http_routes
-from .study_http_router import register_study_http_routes
-from .study_socket_handlers import register_study_socket_handlers
-from .vn_scene_runtime import VnSceneRuntime
-from ..ai.daily_briefing import DEFAULT_SECTIONS
+from .handlers.system_frontend_handlers import register_system_frontend_handlers
+from .routers.system_http_router import register_system_http_routes
+from .routers.study_http_router import register_study_http_routes
+from .handlers.study_socket_handlers import register_study_socket_handlers
+from .runtimes.vn_scene_runtime import VnSceneRuntime
+from backend.services.daily_briefing import DEFAULT_SECTIONS
 from ..agents.kasa_agent import KasaAgent
 from ..vn.activity_runtime import SharedActivityRuntime
 MAIN_LOOP = None
@@ -237,13 +237,15 @@ async def lifespan(app: FastAPI):
     )
 
     # v2 Soul Engine — initialize db + personality + discovery engines.
-    # Non-critical: if this fails, the app continues on v1 behaviour.
+    from backend.core import v2_runtime as _v2
     try:
-        from backend.core import v2_runtime as _v2
         await _v2.initialize()
-        print("[SERVER] v2 Soul Engine initialized")
-    except Exception as _v2_exc:
-        print(f"[SERVER] v2 init skipped (non-critical): {_v2_exc}")
+        if not _v2.get():
+            raise RuntimeError("V2Runtime singleton is None after initialization")
+        print("[SERVER] v2 Soul Engine initialized successfully.")
+    except Exception as e:
+        print(f"[CRITICAL] Failed to initialize MonikAI v2 runtime: {e}")
+        raise RuntimeError(f"MonikAI v2 runtime failed to initialize: {e}") from e
 
     try:
         yield
@@ -259,7 +261,6 @@ async def lifespan(app: FastAPI):
             telegram_task,
         )
 
-        global discord_service, discord_task
         discord_service, discord_task = await stop_discord_service(
             discord_service,
             discord_task,

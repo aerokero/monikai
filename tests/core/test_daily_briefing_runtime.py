@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.core.daily_briefing_runtime import DailyBriefingRuntime
+from backend.core.runtimes.daily_briefing_runtime import DailyBriefingRuntime
 
 
 class _FakeV2Runtime:

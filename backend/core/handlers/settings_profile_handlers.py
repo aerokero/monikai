@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 
-from . import model_config as _mc
+from backend.core import model_config as _mc
 
 
 def register_settings_profile_handlers(

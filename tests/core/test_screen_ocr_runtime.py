@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.core.screen_ocr_runtime import ScreenOcrRuntime
+from backend.core.runtimes.screen_ocr_runtime import ScreenOcrRuntime
 from backend.vn.activity_runtime import SharedActivityRuntime
 
 

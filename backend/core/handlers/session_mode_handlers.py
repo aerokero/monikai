@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime
 
-from .therapy_persona import resolve_session_kind
+from backend.core.therapy_persona import resolve_session_kind
 
 
 # Model used for the auto-generated session summary fallback (Gemini, like the
@@ -65,7 +65,7 @@ async def _generate_session_summary(turns) -> str:
     )
     try:
         from google.genai import types
-        from .model_config import client
+        from backend.core.model_config import client
         resp = await client.aio.models.generate_content(
             model=SESSION_SUMMARY_MODEL,
             contents=prompt,

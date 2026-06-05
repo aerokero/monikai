@@ -177,3 +177,52 @@ async def test_list_available_filters_by_unlock(tmp_path, tmp_db):
     ids = [s.id for s in available]
     assert "free" in ids
     assert "locked" not in ids
+
+
+async def test_is_unlocked_date(tmp_path):
+    from datetime import datetime
+    now = datetime.now()
+    d = tmp_path / "stories"
+    d.mkdir()
+    
+    # Matching date
+    (d / "today.yaml").write_text(f"id: today\ntitle: Today\nunlock: 'date[{now.month:02d}-{now.day:02d}]'\nopening:\n  context: x", encoding="utf-8")
+    # Non-matching date
+    other_month = 1 if now.month != 1 else 2
+    (d / "other_day.yaml").write_text(f"id: other_day\ntitle: Other\nunlock: 'date[{other_month:02d}-15]'\nopening:\n  context: y", encoding="utf-8")
+    
+    s1 = load_story("today", stories_dir=d)
+    s2 = load_story("other_day", stories_dir=d)
+    
+    assert await is_unlocked(s1)
+    assert not await is_unlocked(s2)
+
+
+async def test_is_unlocked_date_range(tmp_path):
+    from datetime import datetime, timedelta
+    now = datetime.now()
+    d = tmp_path / "stories"
+    d.mkdir()
+    
+    yesterday = now - timedelta(days=1)
+    tomorrow = now + timedelta(days=1)
+    
+    # Active range
+    (d / "active.yaml").write_text(
+        f"id: active\ntitle: Active\nunlock: 'date_range[{yesterday.month:02d}-{yesterday.day:02d} to {tomorrow.month:02d}-{tomorrow.day:02d}]'\nopening:\n  context: x",
+        encoding="utf-8"
+    )
+    
+    # Past range
+    past_start = now - timedelta(days=5)
+    past_end = now - timedelta(days=3)
+    (d / "past.yaml").write_text(
+        f"id: past\ntitle: Past\nunlock: 'date_range[{past_start.month:02d}-{past_start.day:02d} to {past_end.month:02d}-{past_end.day:02d}]'\nopening:\n  context: y",
+        encoding="utf-8"
+    )
+    
+    s1 = load_story("active", stories_dir=d)
+    s2 = load_story("past", stories_dir=d)
+    
+    assert await is_unlocked(s1)
+    assert not await is_unlocked(s2)

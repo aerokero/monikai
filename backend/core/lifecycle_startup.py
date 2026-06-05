@@ -5,7 +5,7 @@ from ..agents.hue_agent import HueAgent
 from ..agents.home_assistant_agent import HomeAssistantAgent
 from ..agents.spotify_manager import SpotifyManager
 from ..integrations.games.minecraft_agent import MinecraftBotManager
-from .minecraft_runtime import load_minecraft_bot_config
+from .runtimes.minecraft_runtime import load_minecraft_bot_config
 
 
 async def initialize_smart_home_agents(kasa_agent, settings: dict):
@@ -112,32 +112,8 @@ def initialize_reminder_and_personality(
     reminder_manager.load()
     print("[SERVER] Reminder Manager initialized.")
 
-    def on_personality_update_server(state):
-        data = asdict(state)
-
-        aff = max(0.0, min(100.0, float(data.get("affection", 0))))
-        score = aff / 10.0
-        full = int(score)
-        hearts = "❤️" * full + "🤍" * (10 - full)
-        data["affection_hearts"] = f"{hearts} ({score:.1f}/10)"
-
-        async def _emit():
-            await emit_to_frontend("personality_status", data)
-
-        try:
-            main_loop = get_main_loop()
-            if main_loop and main_loop.is_running():
-                asyncio.run_coroutine_threadsafe(_emit(), main_loop)
-            else:
-                asyncio.create_task(_emit())
-        except Exception as e:
-            print(f"[SERVER] Failed to emit personality_status: {e}")
-
-    personality_system = monikai_module.PersonalitySystem(
-        storage_dir=user_memory_dir,
-        on_update=on_personality_update_server,
-    )
-    print("[SERVER] Personality System initialized.")
+    personality_system = None
+    print("[SERVER] Personality System bypassed in V2.")
 
     return reminder_manager, personality_system
 
