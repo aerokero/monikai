@@ -614,3 +614,61 @@ logger = logging.getLogger(__name__)  # per-module, no print()
 ---
 
 *Related: `docs/research/ai-companions-landscape.md`, `docs/research/ai-companion-functionality.md`, `data/characters/monika/character.md`*
+
+---
+
+# PART VII — CURRENT STATUS & NEXT STEPS
+
+_Snapshot date: 2026-06-05_
+
+## Current working phase
+
+We are at the start of **Phase 6 - Feature additions**, with part of Phase 6 already implemented. Phases 0-5 are not merely planned; their package structure, runtime hooks, and test coverage exist in the repository. Phase 7 has partially adjacent UI work, but the planned UI rewrite itself has not started as a dedicated phase.
+
+## Phase checkpoint
+
+| Phase | Status | Evidence |
+|-------|--------|----------|
+| Phase 0 - Foundation | Implemented | `backend/soul/`, `backend/progression/`, `backend/vn/`, `backend/worker/`, `backend/llm/`, typed event/model/db modules, pytest tree. |
+| Phase 1 - Memory core | Implemented enough to build on | `backend/soul/memory/store.py`, `retrieval.py`, `compaction.py`, `importance.py`, `tools.py`; tests under `tests/soul/`. |
+| Phase 2 - Personality engine | Implemented enough to build on | `backend/soul/personality/` affect, needs, signals, engine, state store; used by `backend/core/v2_runtime.py`. |
+| Phase 3 - Context Assembler + cognition | Implemented enough to build on | `backend/soul/assembler/context.py`, `backend/llm/cognition.py`, `V2Runtime.process_turn()`, `V2Runtime.refresh_prompt()`. |
+| Phase 4 - Progression system | Implemented enough to build on | `backend/progression/` catalog, discoveries, milestones, rituals, proactivity, state; progression tests present. |
+| Phase 5 - VN + Stories + Shared Activities | Implemented with known Phase 6 follow-ups | `backend/vn/story.py`, `mapping.py`, `runner.py`, `activities.py`; story/activity tests present. |
+| Phase 6 - Feature additions | **Active now** | User mood tracker, Time Engine, and Daily Briefing v2 generator exist; Discord and spaced-repetition loop are not found as completed implementations. |
+| Phase 7 - UI + Daily Briefing rewrite | Not started as a phase | Existing briefing/progression panels exist, but no broad v2 UI rewrite or dedicated Relationship panel phase is evident. |
+
+## Phase 6 inventory
+
+### Already present
+
+- **User mood / emotional pattern tracking:** `backend/soul/user_model.py` defines `UserMoodTracker`; `backend/core/v2_runtime.py` loads it, records signals on each turn, saves it, and exposes it to briefing generation. `backend/soul/assembler/context.py` injects the weekly mood summary into the assembled prompt.
+- **Time-aware runtime:** `backend/soul/time_engine/engine.py` handles time context, long-gap detection, interaction timestamps, and anniversaries; `V2Runtime` initializes it and records interactions.
+- **Daily Briefing v2 backend draft:** `backend/llm/briefing.py` generates a Soul State + Time Engine + UserMoodTracker briefing. This is still template-based and explicitly marks model-generated prose as Phase 7.
+- **Daily Briefing v2 feature flag:** `backend/core/daily_briefing_runtime.py` can attach `V2Runtime.generate_briefing()` markdown under `v2_briefing` when `daily_briefing.use_v2_briefing` is enabled, preserving the existing structured UI payload.
+- **Shared Activities foundation:** `backend/vn/activities.py` creates VN scene context, memories, and first-activity discoveries for film/game sessions. `ActivitySession.update_context()` exists as the hook for live OCR context.
+- **Shared Activities runtime + OCR bridge:** `backend/vn/activity_runtime.py` owns the active shared activity; `backend/core/shared_activity_handlers.py` exposes socket start/context/status/end events; `backend/core/screen_ocr_runtime.py` can now feed OCR text into the active session and run a low-rate activity OCR loop.
+- **Phase 6 primitive tests:** `tests/soul/test_user_model.py`, `tests/soul/test_time_engine.py`, `tests/llm/test_briefing.py`, and `tests/core/test_daily_briefing_runtime.py` cover the mood tracker, Time Engine, v2 briefing generator, and feature-flagged handoff.
+- **VN branch selector abstraction:** `backend/vn/branch_selector.py` provides deterministic heuristic selection plus an opt-in `llm` selector path with fallback; `StoryRunner` accepts `branch_selection_mode` and `branch_selector`. Tests cover both paths.
+- **Daily Briefing v2 UI adoption:** `src/components/panels/DailyBriefingShellPanel.jsx` and `src/components/DailyBriefingWindow.jsx` render optional `v2_briefing.text` as a Soul briefing prose block when the backend feature flag provides it.
+
+### Still incomplete / next in Phase 6
+
+- **Model-backed story branch selector:** the opt-in selector interface exists, but no concrete Ollama/Gemini selector is wired yet.
+- **Study spaced-repetition loop:** no completed SRS implementation was found in the targeted search. Existing study OCR/UI remains separate.
+- **Discord channel:** no backend Discord channel adapter was found. Character style mentions Discord, but runtime integration is not present.
+- **Daily Briefing v2 full replacement:** v2 prose is displayed when present, but the older structured feed/card briefing remains the primary UI contract.
+
+## Recommended next steps
+
+1. **Wire a concrete model-backed story branch selector.** Use the new `BranchSelectionContext` prompt helper and keep heuristic fallback.
+2. **Choose the next large Phase 6 feature by ROI.** Recommended order: concrete story selector, then Discord. Defer spaced repetition unless study becomes the active product focus.
+3. **Plan Daily Briefing v2 replacement only if needed.** The additive prose block works now; a full structured-to-prose UI rewrite belongs closer to Phase 7.
+
+## Risks & notes
+
+- The worktree is currently dirty across many runtime, data, and frontend files. Treat this status section as a checkpoint, not proof that every modified file is finished or committed.
+- Keep Phase 6 changes small and reversible. Prefer feature flags around OCR streaming, briefing replacement, and LLM branch selection.
+- Screen OCR and mood tracking are privacy-sensitive. Keep them local by default, opt-in where appropriate, and avoid storing raw screen text longer than needed.
+
+---

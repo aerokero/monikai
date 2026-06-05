@@ -20,6 +20,7 @@ from pathlib import Path
 from backend.soul.events import SceneChanged, StoryEnded, StoryStarted, bus
 from backend.soul.models import SoulState
 from backend.soul.personality.signals import ConversationSignals
+from backend.vn.branch_selector import BranchSelectionContext, select_branch
 from backend.vn.story import Story, StoryBranch, StoryEnding, load_story
 
 logger = logging.getLogger(__name__)
@@ -28,9 +29,15 @@ logger = logging.getLogger(__name__)
 class StoryRunner:
     """Manages one story session at a time."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        branch_selection_mode: str = "heuristic",
+        branch_selector: Any = None,
+    ) -> None:
         self._active_story_id: str | None = None
         self._active_branch_id: str | None = None
+        self.branch_selection_mode = branch_selection_mode
+        self.branch_selector = branch_selector
 
     # ------------------------------------------------------------------
     # Public API
@@ -43,6 +50,8 @@ class StoryRunner:
         hour: int = 12,
         signals: ConversationSignals | None = None,
         stories_dir: Path | None = None,
+        branch_selection_mode: str | None = None,
+        branch_selector: Any = None,
     ) -> str | None:
         """Start a story and return its context block for prompt injection.
 
@@ -52,7 +61,12 @@ class StoryRunner:
         if story is None:
             return None
 
-        branch = _select_branch(story, soul_state, hour, signals)
+        mode = branch_selection_mode if branch_selection_mode is not None else self.branch_selection_mode
+        selector = branch_selector if branch_selector is not None else self.branch_selector
+
+        ctx = BranchSelectionContext(story=story, soul_state=soul_state, hour=hour, signals=signals)
+        branch = await select_branch(ctx, mode=mode, selector=selector)
+
         context_text = branch.context if branch else story.opening
         self._active_story_id = story_id
         self._active_branch_id = branch.id if branch else None
@@ -159,47 +173,6 @@ async def list_available_stories(
 # ---------------------------------------------------------------------------
 # Branch / ending selection
 # ---------------------------------------------------------------------------
-
-def _select_branch(
-    story: Story,
-    soul_state: SoulState,
-    hour: int,
-    signals: ConversationSignals | None,
-) -> StoryBranch | None:
-    """Pick the best branch for the current context.
-
-    Phase 5 heuristic: match soul_state.active_register to branch semantics.
-    Phase 6+: LLM picks the branch.
-    """
-    if not story.branches:
-        return None
-
-    register = soul_state.active_register
-    hour_bucket = _time_bucket(hour)
-
-    # Register-based keyword matching against branch IDs and when-descriptions
-    register_keywords = {
-        "protective": ["melancholic", "heavy", "sad", "difficult", "tired"],
-        "emotional":  ["melancholic", "emotional", "heavy"],
-        "intellectual": ["curious", "direct", "playful"],
-        "casual":     ["playful", "curious"],
-    }
-    keywords = register_keywords.get(register, [])
-
-    # Try time-based branch first
-    if hour_bucket == "night":
-        for b in story.branches:
-            if "late" in b.id or "night" in b.id:
-                return b
-
-    # Then register-based
-    for b in story.branches:
-        combined = f"{b.id} {b.when}".lower()
-        if any(kw in combined for kw in keywords):
-            return b
-
-    return story.branches[0]  # fallback to first branch
-
 
 def _select_ending(
     story: Story,

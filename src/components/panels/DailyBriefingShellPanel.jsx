@@ -114,6 +114,7 @@ const DailyBriefingShellPanel = ({ socket, language }) => {
     }
     return null;
   }, [sections]);
+  const v2BriefingText = String(briefing?.v2_briefing?.text || '').trim();
 
   const requestBriefing = (force = false) => {
     if (!socket) return;
@@ -332,6 +333,18 @@ const DailyBriefingShellPanel = ({ socket, language }) => {
               </button>
             </div>
           </div>
+        ) : null}
+
+        {v2BriefingText ? (
+          <section className="mt-3 rounded-[18px] border border-cyan-300/20 bg-cyan-300/[0.07] p-4">
+            <div className="flex items-center gap-2 text-sm font-medium text-cyan-100">
+              <Sparkles size={15} />
+              <span>{t('briefing.soul_briefing')}</span>
+            </div>
+            <div className="mt-3 max-h-52 overflow-y-auto whitespace-pre-wrap break-words pr-1 text-sm leading-relaxed text-white/78 custom-scrollbar">
+              {v2BriefingText}
+            </div>
+          </section>
         ) : null}
 
         {error ? (

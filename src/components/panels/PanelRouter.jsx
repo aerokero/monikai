@@ -13,6 +13,7 @@ import NotesShellPanel from './NotesShellPanel';
 import DailyBriefingShellPanel from './DailyBriefingShellPanel';
 import CalendarShellPanel from './CalendarShellPanel';
 import ProfileShellPanel from './ProfileShellPanel';
+import GoalsShellPanel from './GoalsShellPanel';
 
 const PANEL_COMPONENTS = {
   chat: ChatPanel,
@@ -22,6 +23,7 @@ const PANEL_COMPONENTS = {
   companion: CompanionWindow,
   calendar: CalendarShellPanel,
   profile: ProfileShellPanel,
+  goals: GoalsShellPanel,
 };
 
 /**

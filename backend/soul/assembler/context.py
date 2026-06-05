@@ -55,17 +55,27 @@ class ContextAssembler:
         if psych:
             parts.append(psych)
 
-        # 3. MEMORY
+        # 3. TIME CONTEXT
+        time_ctx = self._time_context_block()
+        if time_ctx:
+            parts.append(time_ctx)
+
+        # 4. USER MOOD (from UserMoodTracker)
+        user_mood = self._user_mood_block()
+        if user_mood:
+            parts.append(user_mood)
+
+        # 5. MEMORY
         memory = await self._memory_block(db_path)
         if memory:
             parts.append(memory)
 
-        # 4. PROGRESSION (stub)
+        # 6. PROGRESSION
         progression = await self._progression_block(db_path)
         if progression:
             parts.append(progression)
 
-        # 5. OPERATIONAL (verbatim)
+        # 7. OPERATIONAL (verbatim)
         if operational_prompt:
             parts.append(operational_prompt.strip())
 
@@ -111,6 +121,29 @@ class ContextAssembler:
             lines.append("Chciałabym być bardziej pomocna — mam wrażenie że nie daję z siebie tyle ile mogłabym.")
 
         return "\n".join(lines)
+
+    def _time_context_block(self) -> str:
+        """Current time-of-day and seasonal context from the Time Engine."""
+        try:
+            from backend.soul.time_engine.engine import TimeEngine
+            te = TimeEngine()
+            return te.format_context()
+        except Exception as exc:
+            logger.debug("Assembler: time context failed: %s", exc)
+            return ""
+
+    def _user_mood_block(self) -> str:
+        """Recent user mood summary from UserMoodTracker, if meaningful."""
+        try:
+            from backend.soul.user_model import UserMoodTracker
+            tracker = UserMoodTracker.load()
+            summary = tracker.weekly_summary()
+            if summary:
+                return f"**Obserwacje nastroju rozmówcy (ostatni tydzień):**\n{summary}"
+            return ""
+        except Exception as exc:
+            logger.debug("Assembler: user mood block failed: %s", exc)
+            return ""
 
     async def _memory_block(self, db_path: Path | None) -> str:
         """Ambient memory: recent STM + high-importance LTM entries."""

@@ -1,0 +1,7 @@
+
+defaults: {bg: room_day, outfit: casual, expr: neutral, light: natural}
+rules:
+  - when:
+      affect_pleasure: ">0.5"
+    scene:
+      expr: happy

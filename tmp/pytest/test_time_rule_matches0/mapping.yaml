@@ -1,0 +1,8 @@
+
+defaults: {bg: room_day, outfit: casual, expr: neutral, light: natural}
+rules:
+  - when:
+      time: night
+    scene:
+      bg: room_night
+      light: dim_warm

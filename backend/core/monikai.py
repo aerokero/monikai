@@ -55,7 +55,7 @@ from .model_config import (
     DREAM_SLEEP_GAP_HOURS, DREAM_MORNING_START_HOUR, DREAM_MORNING_END_HOUR,
     DREAM_CONTEXT_HISTORY_LIMIT, DEFAULT_MODE,
     BASE_CONTEXT_WINDOW_COMPRESSION, BASE_REALTIME_INPUT_CONFIG,
-    MAX_INTERNAL_THOUGHT_CHARS, _sanitize_internal_thought,
+    MAX_INTERNAL_THOUGHT_CHARS, _sanitize_internal_thought, client,
 )
 from .session_context import load_settings_safe, get_time_context, HOLIDAYS, get_holiday_context
 from .tool_definitions import tools
@@ -458,6 +458,9 @@ class AudioLoop:
                 "study_set_fields": False,
                 "study_set_notes": False,
                 "study_set_page": False,
+                "study_create_flashcard": False,
+                "study_review_flashcards": False,
+                "study_record_review": False,
                 "run_web_agent": False,  # Browser-agent tasks are allowed without confirmation when explicitly routed.
                 "run_openclaw_agent": True,
                 "manage_agent_job": True,
@@ -2734,6 +2737,9 @@ class AudioLoop:
                                 "session_prompt",
                                 "study_set_fields",
                                 "study_set_page",
+                                "study_create_flashcard",
+                                "study_review_flashcards",
+                                "study_record_review",
                                 "create_event",
                                 "list_events",
                                 "delete_event",
@@ -3598,6 +3604,74 @@ class AudioLoop:
                                             result_str = "ok"
                                         except Exception as e:
                                             result_str = f"Error setting study page: {e}"
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+
+                                elif fc.name == "study_create_flashcard":
+                                    try:
+                                        from backend.soul.memory.srs import SRSManager
+                                        from backend.core.v2_runtime import get as _v2_get
+                                        v2_rt = _v2_get()
+                                        db_path = v2_rt._db_path if v2_rt else None
+                                        srs = SRSManager(db_path=db_path)
+
+                                        front = fc.args.get("front") or ""
+                                        back = fc.args.get("back") or ""
+                                        tags = fc.args.get("tags") or []
+
+                                        if not front or not back:
+                                            raise ValueError("Front and back of flashcard must be specified")
+
+                                        card = await srs.add_card(front=front, back=back, tags=tags)
+                                        result_str = f"Successfully created flashcard with ID {card.id}."
+                                    except Exception as e:
+                                        result_str = f"Error creating flashcard: {e}"
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+
+                                elif fc.name == "study_review_flashcards":
+                                    try:
+                                        from backend.soul.memory.srs import SRSManager
+                                        from backend.core.v2_runtime import get as _v2_get
+                                        v2_rt = _v2_get()
+                                        db_path = v2_rt._db_path if v2_rt else None
+                                        srs = SRSManager(db_path=db_path)
+
+                                        limit = fc.args.get("limit")
+                                        limit_val = int(limit) if limit is not None else 5
+
+                                        due_cards = await srs.get_due_cards(limit=limit_val)
+                                        if not due_cards:
+                                            result_str = "No due flashcards for review."
+                                        else:
+                                            lines = [
+                                                f"- ID: {card.id}, Front: '{card.front}', Back: '{card.back}', Tags: {card.tags}"
+                                                for card in due_cards
+                                            ]
+                                            result_str = "Found due flashcards:\n" + "\n".join(lines)
+                                    except Exception as e:
+                                        result_str = f"Error fetching due flashcards: {e}"
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+
+                                elif fc.name == "study_record_review":
+                                    try:
+                                        from backend.soul.memory.srs import SRSManager
+                                        from backend.core.v2_runtime import get as _v2_get
+                                        v2_rt = _v2_get()
+                                        db_path = v2_rt._db_path if v2_rt else None
+                                        srs = SRSManager(db_path=db_path)
+
+                                        card_id = fc.args.get("card_id")
+                                        quality = fc.args.get("quality")
+
+                                        if not card_id or quality is None:
+                                            raise ValueError("card_id and quality must be specified")
+
+                                        updated_card = await srs.review_card(card_id=card_id, quality=int(quality))
+                                        if not updated_card:
+                                            result_str = f"Flashcard with ID {card_id} not found."
+                                        else:
+                                            result_str = f"Flashcard review recorded. Next review scheduled in {updated_card.interval} days."
+                                    except Exception as e:
+                                        result_str = f"Error recording review: {e}"
                                     function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
 
                                 # --- Calendar Tools ---

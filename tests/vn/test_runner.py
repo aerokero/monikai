@@ -88,6 +88,28 @@ async def test_start_selects_casual_branch(tmp_path):
     assert runner.active_branch_id == "if_playful"
 
 
+async def test_start_uses_opt_in_branch_selector(tmp_path):
+    d = _make_stories_dir(tmp_path)
+
+    async def selector(context):
+        return "if_playful"
+
+    runner = StoryRunner(branch_selection_mode="llm", branch_selector=selector)
+    await runner.start("warmth_story", _state(register="protective"), stories_dir=d)
+    assert runner.active_branch_id == "if_playful"
+
+
+async def test_start_selector_falls_back_to_heuristic(tmp_path):
+    d = _make_stories_dir(tmp_path)
+
+    async def selector(context):
+        return "missing"
+
+    runner = StoryRunner(branch_selection_mode="llm", branch_selector=selector)
+    await runner.start("warmth_story", _state(register="protective"), stories_dir=d)
+    assert runner.active_branch_id == "if_melancholic"
+
+
 async def test_end_story_returns_ending_context(tmp_path):
     d = _make_stories_dir(tmp_path)
     runner = StoryRunner()

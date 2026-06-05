@@ -40,6 +40,7 @@ from .openclaw_skill_handlers import register_openclaw_skill_handlers
 from .progression_http_router import register_progression_http_routes
 from .settings_profile_handlers import register_settings_profile_handlers
 from .session_mode_handlers import register_session_mode_handlers
+from .shared_activity_handlers import register_shared_activity_handlers
 from .frontend_router import (
     clear_active_frontend_sid,
     emit_to_frontend as _emit_to_frontend,
@@ -61,6 +62,7 @@ from .lifecycle_startup import (
     initialize_spotify_manager,
 )
 from .lifecycle_telegram import start_telegram_service, stop_telegram_service
+from .lifecycle_discord import start_discord_service, stop_discord_service
 from .minecraft_autonomy_runtime import (
     build_minecraft_autonomy_cfg,
     run_minecraft_autonomy_loop,
@@ -89,6 +91,7 @@ from .study_socket_handlers import register_study_socket_handlers
 from .vn_scene_runtime import VnSceneRuntime
 from ..ai.daily_briefing import DEFAULT_SECTIONS
 from ..agents.kasa_agent import KasaAgent
+from ..vn.activity_runtime import SharedActivityRuntime
 MAIN_LOOP = None
 minecraft_bot_manager = None
 minecraft_autonomy_task = None
@@ -224,6 +227,15 @@ async def lifespan(app: FastAPI):
         personality=personality_system,
     )
 
+    global discord_service, discord_task
+    discord_service, discord_task = start_discord_service(
+        lambda: SETTINGS,
+        calendar_manager=calendar_manager,
+        reminder_manager=reminder_manager,
+        spotify_manager=spotify_manager,
+        personality=personality_system,
+    )
+
     # v2 Soul Engine — initialize db + personality + discovery engines.
     # Non-critical: if this fails, the app continues on v1 behaviour.
     try:
@@ -245,6 +257,12 @@ async def lifespan(app: FastAPI):
         telegram_service, telegram_task = await stop_telegram_service(
             telegram_service,
             telegram_task,
+        )
+
+        global discord_service, discord_task
+        discord_service, discord_task = await stop_discord_service(
+            discord_service,
+            discord_task,
         )
 
         try:
@@ -316,6 +334,8 @@ STUDY_DIR = DATA_DIR / "study"
 last_start_params = {}
 telegram_service = None
 telegram_task = None
+discord_service = None
+discord_task = None
 DAILY_BRIEFING_RUNTIME = DailyBriefingRuntime(
     SETTINGS,
     get_audio_loop=lambda: audio_loop,
@@ -453,11 +473,16 @@ register_control_handlers(
 SCREEN_OCR_RUNTIME = ScreenOcrRuntime(
     get_audio_loop=lambda: audio_loop,
     ocr_image_bytes_fn=ocr_image_bytes,
+    get_shared_activity_runtime=lambda: SHARED_ACTIVITY_RUNTIME,
 )
 
 VN_SCENE_RUNTIME = VnSceneRuntime(
     sio=sio,
     get_audio_loop=lambda: audio_loop,
+)
+
+SHARED_ACTIVITY_RUNTIME = SharedActivityRuntime(
+    db_path=DATA_DIR / "monika.db",
 )
 
 register_audio_lifecycle_handlers(
@@ -532,6 +557,13 @@ register_session_mode_handlers(
 register_openclaw_skill_handlers(
     sio,
     get_audio_loop=lambda: audio_loop,
+)
+
+register_shared_activity_handlers(
+    sio,
+    runtime=SHARED_ACTIVITY_RUNTIME,
+    get_audio_loop=lambda: audio_loop,
+    screen_ocr_runtime=SCREEN_OCR_RUNTIME,
 )
 
 

@@ -149,6 +149,7 @@
     "no_items": "No items available",
     "dynamic_hint": "Sections are dynamic: your pinned picks + AI suggestions from recent context.",
     "dynamic_hint": "This section is dynamically populated based on your preferences and global trends.",
+    "soul_briefing": "Soul briefing",
     "ai_proposal": "AI suggestion",
     "swap": "Suggested swap",
     "accept": "Accept",

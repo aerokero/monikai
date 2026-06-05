@@ -149,6 +149,7 @@
     "no_items": "没有可用项目",
     "dynamic_hint": "部分是动态的：你的固定选择 + 来自最近上下文的 AI 建议。",
     "dynamic_hint": "该部分根据你的偏好和全球趋势动态填充。",
+    "soul_briefing": "灵魂简报",
     "ai_proposal": "AI 建议",
     "swap": "建议的交换",
     "accept": "接受",

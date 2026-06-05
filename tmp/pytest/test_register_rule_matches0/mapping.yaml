@@ -1,0 +1,8 @@
+
+defaults: {bg: room_day, outfit: casual, expr: neutral, light: natural}
+rules:
+  - when:
+      register: protective
+    scene:
+      expr: serious
+      light: cool_blue

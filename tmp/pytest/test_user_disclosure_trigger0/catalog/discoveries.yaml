@@ -1,0 +1,5 @@
+
+- id: opening_up
+  title: "Opening Up"
+  trigger: "UserDisclosure[emotional_depth>=0.7]"
+  hidden: true

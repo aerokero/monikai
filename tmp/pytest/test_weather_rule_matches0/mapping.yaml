@@ -1,0 +1,8 @@
+
+defaults: {bg: room_day, outfit: casual, expr: neutral, light: natural}
+rules:
+  - when:
+      weather: rain
+    scene:
+      bg: room_window_rain
+      ambience: rain_window

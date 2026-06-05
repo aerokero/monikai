@@ -750,3 +750,60 @@ update_event_tool = {
     },
 }
 tools_list[0]["function_declarations"].append(update_event_tool)
+
+# ====================================
+# Study / Spaced Repetition (SRS)
+# ====================================
+
+study_create_flashcard_tool = {
+    "name": "study_create_flashcard",
+    "description": "Creates a new spaced-repetition flashcard. Use this when the user struggles with a concept, vocabulary word, or Kanji during study.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "front": {"type": "STRING", "description": "The question, word, or concept."},
+            "back": {"type": "STRING", "description": "The answer, translation, or explanation."},
+            "tags": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Optional categories (e.g., 'kanji', 'grammar')."}
+        },
+        "required": ["front", "back"],
+    },
+}
+tools_list[0]["function_declarations"].append(study_create_flashcard_tool)
+
+study_review_flashcards_tool = {
+    "name": "study_review_flashcards",
+    "description": "Fetches due flashcards so you can test the user on them. Call this during study sessions or if the user asks to review flashcards.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "limit": {"type": "INTEGER", "description": "Max number of cards to pull for this review batch (default 5)."}
+        },
+    },
+}
+tools_list[0]["function_declarations"].append(study_review_flashcards_tool)
+
+study_record_review_tool = {
+    "name": "study_record_review",
+    "description": "Updates a flashcard's review interval using SuperMemo-2 algorithm. Call this after testing the user to record how well they remembered the card.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "card_id": {"type": "STRING", "description": "The unique ID of the flashcard being reviewed."},
+            "quality": {
+                "type": "INTEGER",
+                "description": (
+                    "Review quality score (0 to 5):\n"
+                    "0 = Complete blackout, forgot completely\n"
+                    "1 = Incorrect, but remembered upon seeing the answer\n"
+                    "2 = Incorrect, but seemed easy to remember\n"
+                    "3 = Correct, but required significant effort\n"
+                    "4 = Correct, after some hesitation\n"
+                    "5 = Perfect response"
+                ),
+            },
+        },
+        "required": ["card_id", "quality"],
+    },
+}
+tools_list[0]["function_declarations"].append(study_record_review_tool)
+

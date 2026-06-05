@@ -1,0 +1,6 @@
+
+id: locked
+title: Locked
+unlock: "turn_count >= 5"
+opening:
+  context: "You unlocked this."

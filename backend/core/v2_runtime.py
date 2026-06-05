@@ -61,12 +61,16 @@ class V2Runtime:
         personality,    # PersonalityEngine
         discovery,      # DiscoveryEngine
         milestone,      # MilestoneEngine
+        time_engine=None,    # TimeEngine
+        mood_tracker=None,   # UserMoodTracker
         cached_prompt: str = "",
     ) -> None:
         self._db_path = db_path
         self._personality = personality
         self._discovery = discovery
         self._milestone = milestone
+        self._time_engine = time_engine
+        self._mood_tracker = mood_tracker
         self._cached_prompt = cached_prompt
 
     # ------------------------------------------------------------------
@@ -79,6 +83,8 @@ class V2Runtime:
         from backend.soul.personality.engine import PersonalityEngine
         from backend.progression.discoveries import DiscoveryEngine
         from backend.progression.milestones import MilestoneEngine
+        from backend.soul.time_engine.engine import TimeEngine
+        from backend.soul.user_model import UserMoodTracker
 
         _DATA_DIR.mkdir(parents=True, exist_ok=True)
         await init_db(db_path)
@@ -87,15 +93,27 @@ class V2Runtime:
         personality = PersonalityEngine.load()
         discovery = DiscoveryEngine(db_path=db_path)
         milestone = MilestoneEngine(db_path=db_path)
+        time_engine = TimeEngine()
+        mood_tracker = UserMoodTracker.load()
 
         await discovery.start()
         await milestone.start()
+
+        # Check for gap since last session; apply needs decay if needed
+        gap = await time_engine.check_gap(db_path)
+        if gap.needs_decay_days > 0:
+            personality.apply_daily_decay(days_elapsed=gap.needs_decay_days)
+
+        # Check for anniversaries (silent — events are emitted to bus)
+        await time_engine.check_anniversaries(db_path)
 
         runtime = cls(
             db_path=db_path,
             personality=personality,
             discovery=discovery,
             milestone=milestone,
+            time_engine=time_engine,
+            mood_tracker=mood_tracker,
         )
         runtime._cached_prompt = await runtime.refresh_prompt()
         logger.info("v2: runtime initialized (prompt=%d chars)", len(runtime._cached_prompt))
@@ -130,10 +148,25 @@ class V2Runtime:
         """Update personality from this turn. Return cognition monologue message."""
         try:
             from backend.llm.cognition import generate
+            from backend.soul.personality.signals import extract
+
+            signals = extract(user_text)
+
+            # Track user mood signals
+            if self._mood_tracker is not None:
+                self._mood_tracker.observe(signals)
+                self._mood_tracker.save()
+
+            # Update personality engine (affect + needs)
             soul = self._personality.soul_state
-            cog = await generate(user_text, soul)
-            await self._personality.observe_turn(user_text, monika_text)
+            cog = await generate(user_text, soul, signals=signals)
+            await self._personality.observe_turn(user_text, monika_text, reciprocity=None)
             self._personality.save()
+
+            # Record last interaction timestamp for gap detection
+            if self._time_engine is not None:
+                await self._time_engine.record_interaction(self._db_path)
+
             return cog.as_message()
         except Exception as exc:
             logger.warning("v2: process_turn failed: %s", exc)
@@ -150,6 +183,29 @@ class V2Runtime:
     @property
     def needs_status(self):
         return self._personality.needs_status
+
+    @property
+    def time_engine(self):
+        return self._time_engine
+
+    @property
+    def mood_tracker(self):
+        return self._mood_tracker
+
+    async def generate_briefing(self, language: str = "pl") -> str:
+        """Generate today's daily briefing using all available context."""
+        try:
+            from backend.llm.briefing import generate as gen_briefing
+            return await gen_briefing(
+                soul_state=self._personality.soul_state,
+                time_engine=self._time_engine,
+                mood_tracker=self._mood_tracker,
+                db_path=self._db_path,
+                language=language,
+            )
+        except Exception as exc:
+            logger.warning("v2: briefing generation failed: %s", exc)
+            return ""
 
     # ------------------------------------------------------------------
     # Shutdown

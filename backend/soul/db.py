@@ -117,6 +117,21 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs (status, created_at);
+
+-- Spaced repetition flashcards (Phase 6).
+CREATE TABLE IF NOT EXISTS flashcards (
+    id           TEXT    PRIMARY KEY,
+    front        TEXT    NOT NULL,
+    back         TEXT    NOT NULL,
+    tags         TEXT    DEFAULT '[]',   -- JSON array
+    repetitions  INTEGER NOT NULL DEFAULT 0,
+    interval     INTEGER NOT NULL DEFAULT 0,
+    ease_factor  REAL    NOT NULL DEFAULT 2.5,
+    next_review  TEXT    NOT NULL,       -- ISO datetime
+    created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_flashcards_review ON flashcards (next_review);
 """
 
 

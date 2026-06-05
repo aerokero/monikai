@@ -1,5 +1,5 @@
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 from ..ai.daily_briefing import (
     DEFAULT_SECTIONS,
@@ -10,10 +10,18 @@ from ..ai.daily_briefing import (
 
 
 class DailyBriefingRuntime:
-    def __init__(self, settings: dict, *, get_audio_loop, get_personality_system):
+    def __init__(
+        self,
+        settings: dict,
+        *,
+        get_audio_loop,
+        get_personality_system,
+        get_v2_runtime=None,
+    ):
         self._settings = settings
         self._get_audio_loop = get_audio_loop
         self._get_personality_system = get_personality_system
+        self._get_v2_runtime = get_v2_runtime or _default_v2_runtime
         self._cache = {"ts": 0.0, "lang": "pl", "payload": None}
         self._rejected_until = {}
 
@@ -51,6 +59,24 @@ class DailyBriefingRuntime:
         pair = f"{proposal.get('from_section')}->{proposal.get('to_section')}"
         until = float(self._rejected_until.get(pair, 0.0) or 0.0)
         return time.time() < until
+
+    async def _build_v2_briefing(self, language: str = "pl") -> dict | None:
+        try:
+            runtime = self._get_v2_runtime()
+            if runtime is None or not hasattr(runtime, "generate_briefing"):
+                return None
+            text = await runtime.generate_briefing(language=language)
+        except Exception:
+            return None
+
+        text = str(text or "").strip()
+        if not text:
+            return None
+        return {
+            "mode": "soul_engine",
+            "format": "markdown",
+            "text": text,
+        }
 
     def _collect_context(self, language: str = "pl") -> tuple[list, str, str, dict]:
         memory_entries = []
@@ -98,7 +124,7 @@ class DailyBriefingRuntime:
         cfg = self._settings.setdefault("daily_briefing", {})
         if not bool(cfg.get("enabled", True)):
             return {
-                "generated_at": datetime.utcnow().isoformat() + "Z",
+                "generated_at": datetime.now(timezone.utc).isoformat(),
                 "language": lang,
                 "active_sections": [],
                 "sections": [],
@@ -137,7 +163,20 @@ class DailyBriefingRuntime:
         if proposal and self._is_proposal_rejected(proposal):
             payload["proposal"] = None
 
+        if bool(cfg.get("use_v2_briefing", False)):
+            v2_briefing = await self._build_v2_briefing(language=lang)
+            if v2_briefing:
+                payload["v2_briefing"] = v2_briefing
+
         self._cache["payload"] = payload
         self._cache["lang"] = lang
         self._cache["ts"] = now_ts
         return payload
+
+
+def _default_v2_runtime():
+    try:
+        from backend.core.v2_runtime import get
+        return get()
+    except Exception:
+        return None

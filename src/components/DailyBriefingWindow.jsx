@@ -104,6 +104,7 @@ const DailyBriefingWindow = ({
     }
     return null;
   }, [activeSections]);
+  const v2BriefingText = String(briefing?.v2_briefing?.text || '').trim();
 
   const requestBriefing = (force = false) => {
     setIsLoading(true);
@@ -266,6 +267,18 @@ const DailyBriefingWindow = ({
               </button>
             </div>
           </div>
+        )}
+
+        {v2BriefingText && (
+          <section className="mt-3 rounded-lg border border-cyan-300/20 bg-cyan-300/[0.07] p-3">
+            <div className="flex items-center gap-2 text-xs font-medium text-cyan-100">
+              <Sparkles size={14} />
+              <span>{t('briefing.soul_briefing')}</span>
+            </div>
+            <div className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap break-words pr-1 text-xs leading-relaxed text-white/76 custom-scrollbar">
+              {v2BriefingText}
+            </div>
+          </section>
         )}
       </div>
 

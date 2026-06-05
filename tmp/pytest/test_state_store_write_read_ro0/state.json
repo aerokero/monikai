@@ -1,0 +1,18 @@
+{
+  "affect": {
+    "pleasure": 0.3,
+    "arousal": 0.6,
+    "dominance": 0.1
+  },
+  "needs": {
+    "autonomy": 0.8,
+    "competence": 0.6,
+    "relatedness": 0.7
+  },
+  "energy": 0.9,
+  "cycle_phase": "peak_social",
+  "active_register": "intellectual",
+  "agenda": [],
+  "becoming_real": 0.42,
+  "updated_at": "2026-06-05T09:41:10.227900Z"
+}

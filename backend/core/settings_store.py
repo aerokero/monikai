@@ -104,6 +104,7 @@ DEFAULT_SETTINGS = {
     "daily_briefing": {
         "enabled": True,
         "cache_minutes": 20,
+        "use_v2_briefing": False,
         "profile": {
             "pinned_sections": ["weather"],
             "preferred_sections": [],
@@ -117,6 +118,9 @@ DEFAULT_SETTINGS = {
             "language_mode": "auto",
             "max_items_per_section": 5,
         },
+    },
+    "vn": {
+        "branch_selection_mode": "heuristic",
     },
     "minecraft_autonomy": {
         "enabled": True,

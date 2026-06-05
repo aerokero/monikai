@@ -1,0 +1,7 @@
+
+id: single_time
+title: X
+unlock: always
+preferred_time: evening
+opening:
+  context: "x"

@@ -1,0 +1,28 @@
+
+id: test_story
+title: "Test Story"
+unlock: always
+discovery: test_discovery
+
+scene:
+  bg: test_bg
+  outfit: test_outfit
+  expr: happy
+  light: bright
+
+opening:
+  context: |
+    She opens with warmth.
+
+branches:
+  - id: branch_a
+    when: "user is happy"
+    context: "Happy branch context."
+  - id: branch_b
+    when: "user is sad"
+    context: "Sad branch context."
+
+endings:
+  - id: good_end
+    when: "things went well"
+    context: "It was a good evening."

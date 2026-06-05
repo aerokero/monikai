@@ -1,0 +1,5 @@
+
+- id: placeholder
+  title: X
+  trigger: "count:99"
+  hidden: false
