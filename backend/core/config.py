@@ -64,3 +64,10 @@ MEMORY_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 WORKSPACE_DIR = DATA_DIR / "workspace"
 WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
+
+# ============================================================================
+# Legacy v1 paths (kept for backward-compat, files may not exist)
+# ============================================================================
+
+UNLOCKS_CATALOG_PATH = DATA_DIR / "unlocks" / "unlocks_catalog.json"
+UNLOCKS_STATE_PATH = DATA_DIR / "unlocks" / "unlocks_state.json"
