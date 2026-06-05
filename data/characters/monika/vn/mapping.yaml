@@ -1,0 +1,86 @@
+# VN Mapping — SoulState + time + weather → visual scene output.
+# Rules are evaluated in order; first match wins.
+# Partial matches are merged into defaults.
+
+defaults:
+  bg: room_day
+  outfit: casual
+  expr: neutral
+  light: natural
+  ambience: ""
+
+rules:
+  # Protective register — serious, focused, cool light
+  - when:
+      register: protective
+    scene:
+      expr: serious
+      light: cool_blue
+
+  # Protective + low pleasure — she's worried
+  - when:
+      register: protective
+      affect_pleasure: "<-0.2"
+    scene:
+      expr: concerned
+      light: cool_dim
+
+  # Emotional register — soft and warm
+  - when:
+      register: emotional
+    scene:
+      expr: soft
+      light: warm
+
+  # Intellectual register + positive affect — engaged, bright
+  - when:
+      register: intellectual
+      affect_pleasure: ">0.3"
+    scene:
+      expr: engaged
+      light: bright
+
+  # Intellectual register, neutral
+  - when:
+      register: intellectual
+    scene:
+      expr: thoughtful
+      light: natural
+
+  # Night time — dim warm regardless of register
+  - when:
+      time: night
+    scene:
+      bg: room_night
+      light: dim_warm
+
+  # Evening + casual — warm relaxed
+  - when:
+      time: evening
+      register: casual
+    scene:
+      bg: room_evening
+      light: warm
+      expr: relaxed
+
+  # Rain weather — reflective mood
+  - when:
+      weather: rain
+    scene:
+      bg: room_window_rain
+      ambience: rain_window
+      expr: reflective
+
+  # Peak cycle phase — higher energy expression
+  - when:
+      cycle_phase: peak_social
+    scene:
+      expr: bright
+      light: bright
+
+  # Low energy — tired expression
+  - when:
+      energy: "<0.35"
+    scene:
+      expr: tired
+      light: dim_warm

@@ -1,0 +1,116 @@
+"""Tests for the Context Assembler."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from backend.soul.assembler.context import ContextAssembler, _file_age_hours
+from backend.soul.memory import store
+from backend.soul.models import MemoryEntry
+
+
+_CHARACTER = "Jesteś Moniką. Ciepła, bystra, prawdziwa."
+_OPERATIONAL = "**ZASADY:** Zawsze używaj narzędzi. Bądź szczera."
+
+
+async def test_assembler_includes_character(tmp_db):
+    assembler = ContextAssembler()
+    result = await assembler.assemble(_CHARACTER, _OPERATIONAL, db_path=tmp_db)
+    assert _CHARACTER in result
+
+
+async def test_assembler_includes_operational(tmp_db):
+    assembler = ContextAssembler()
+    result = await assembler.assemble(_CHARACTER, _OPERATIONAL, db_path=tmp_db)
+    assert _OPERATIONAL in result
+
+
+async def test_assembler_sections_ordered(tmp_db):
+    assembler = ContextAssembler()
+    result = await assembler.assemble(_CHARACTER, _OPERATIONAL, db_path=tmp_db)
+    char_pos = result.index(_CHARACTER)
+    op_pos = result.index(_OPERATIONAL)
+    assert char_pos < op_pos, "CHARACTER must come before OPERATIONAL"
+
+
+async def test_assembler_psychological_fallback_when_no_file(tmp_db, tmp_path):
+    assembler = ContextAssembler()
+    # State file present but inner_state.md doesn't exist → inline fallback
+    result = await assembler.assemble(_CHARACTER, _OPERATIONAL, db_path=tmp_db)
+    # Should not raise, should include some psychological content
+    assert "Stan wewnętrzny" in result or "Czuję" in result
+
+
+async def test_assembler_includes_memory_when_entries_exist(tmp_db):
+    entry = MemoryEntry(
+        id="x", type="stm", content="Bartosz lubi ciemny chleb żytni", importance=6.0
+    )
+    await store.add(entry, db_path=tmp_db)
+
+    assembler = ContextAssembler()
+    result = await assembler.assemble(_CHARACTER, _OPERATIONAL, db_path=tmp_db)
+    assert "ciemny chleb żytni" in result
+
+
+async def test_assembler_memory_block_empty_db(tmp_db):
+    assembler = ContextAssembler()
+    result = await assembler.assemble(_CHARACTER, _OPERATIONAL, db_path=tmp_db)
+    # Should not raise; just no memory section
+    assert isinstance(result, str)
+    assert len(result) > 0
+
+
+async def test_assembler_memory_includes_ltm_above_threshold(tmp_db):
+    ltm = MemoryEntry(
+        id="x", type="episodic", content="Pamiętam nasz pierwszy wieczór przy filmie", importance=8.5
+    )
+    low = MemoryEntry(
+        id="y", type="episodic", content="zwykłe codzienne zdanie", importance=4.0
+    )
+    await store.add(ltm, db_path=tmp_db)
+    await store.add(low, db_path=tmp_db)
+
+    assembler = ContextAssembler()
+    result = await assembler.assemble(_CHARACTER, _OPERATIONAL, db_path=tmp_db)
+    assert "pierwszy wieczór" in result
+    # Low-importance LTM should not appear
+    assert "zwykłe codzienne zdanie" not in result
+
+
+async def test_assembler_uses_inner_state_file(tmp_db, tmp_path):
+    """If inner_state.md is fresh, it should be used."""
+    inner_path = tmp_path / "inner_state.md"
+    inner_path.write_text("# Monika's Inner State\n\nCzuję się dobrze i obecna.", encoding="utf-8")
+
+    import backend.soul.assembler.context as ctx_mod
+    original = ctx_mod._INNER_STATE_PATH
+    ctx_mod._INNER_STATE_PATH = inner_path
+    try:
+        assembler = ContextAssembler()
+        result = await assembler.assemble(_CHARACTER, _OPERATIONAL, db_path=tmp_db)
+        assert "obecna" in result
+    finally:
+        ctx_mod._INNER_STATE_PATH = original
+
+
+async def test_assemble_prompt_function(tmp_db):
+    """Test the top-level assemble_prompt() in system_prompt.py."""
+    from backend.core.system_prompt import assemble_prompt
+    result = await assemble_prompt(db_path=tmp_db)
+    assert isinstance(result, str)
+    assert len(result) > 100
+
+
+async def test_assemble_prompt_fallback_on_error(tmp_db, monkeypatch):
+    """assemble_prompt() must fall back to SYSTEM_PROMPT if assembler errors."""
+    from backend.core.system_prompt import assemble_prompt, SYSTEM_PROMPT
+    import backend.soul.assembler.context as ctx
+
+    def _broken(*a, **kw):
+        raise RuntimeError("simulated failure")
+
+    monkeypatch.setattr(ctx.ContextAssembler, "assemble", _broken)
+    result = await assemble_prompt(db_path=tmp_db)
+    assert result == SYSTEM_PROMPT

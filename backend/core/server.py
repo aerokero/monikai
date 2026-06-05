@@ -224,6 +224,15 @@ async def lifespan(app: FastAPI):
         personality=personality_system,
     )
 
+    # v2 Soul Engine — initialize db + personality + discovery engines.
+    # Non-critical: if this fails, the app continues on v1 behaviour.
+    try:
+        from backend.core import v2_runtime as _v2
+        await _v2.initialize()
+        print("[SERVER] v2 Soul Engine initialized")
+    except Exception as _v2_exc:
+        print(f"[SERVER] v2 init skipped (non-critical): {_v2_exc}")
+
     try:
         yield
     finally:
@@ -232,11 +241,17 @@ async def lifespan(app: FastAPI):
             minecraft_bot_manager,
             minecraft_autonomy_task,
         )
-        
+
         telegram_service, telegram_task = await stop_telegram_service(
             telegram_service,
             telegram_task,
         )
+
+        try:
+            from backend.core import v2_runtime as _v2
+            await _v2.shutdown()
+        except Exception:
+            pass
 
 # Create a Socket.IO server
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*', max_http_buffer_size=25 * 1024 * 1024)

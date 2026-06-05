@@ -8,9 +8,16 @@ OPERATIONAL_PROMPT — static operational rules: tools, memory, calendar, shutdo
                      Character-agnostic; applies regardless of which character is loaded.
 
 SYSTEM_PROMPT = CHARACTER_PROMPT + OPERATIONAL_PROMPT (what the model receives).
+
+assemble_prompt() — v2 async assembler: CHARACTER + PSYCHOLOGICAL + MEMORY + OPERATIONAL.
+                    Drop-in replacement for SYSTEM_PROMPT, falls back if assembler fails.
 """
 
 from __future__ import annotations
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 _CHARACTER_FALLBACK = (
     "Jesteś Moniką. Bądź ciepła, bystra, bezpośrednia i ludzka. "
@@ -21,7 +28,7 @@ try:
     from ..ai.character_loader import load_character_prompt as _load
     CHARACTER_PROMPT: str = _load("monika") or _CHARACTER_FALLBACK
 except Exception as _exc:
-    print(f"[SystemPrompt] Character loader error: {_exc}")
+    logger.warning("Character loader error: %s", _exc)
     CHARACTER_PROMPT = _CHARACTER_FALLBACK
 
 
@@ -141,3 +148,23 @@ Następnie: dobierz właściwe narzędzie i działaj, zamiast tłumaczyć proced
 
 
 SYSTEM_PROMPT = CHARACTER_PROMPT + "\n\n" + OPERATIONAL_PROMPT
+
+
+async def assemble_prompt(db_path=None) -> str:
+    """v2 assembled prompt: CHARACTER + PSYCHOLOGICAL + MEMORY + OPERATIONAL.
+
+    Drop-in async replacement for SYSTEM_PROMPT. Falls back to SYSTEM_PROMPT
+    if the assembler fails so the running app is never broken.
+    """
+    from pathlib import Path
+    try:
+        from backend.soul.assembler.context import ContextAssembler
+        assembler = ContextAssembler()
+        return await assembler.assemble(
+            character_prompt=CHARACTER_PROMPT,
+            operational_prompt=OPERATIONAL_PROMPT,
+            db_path=db_path,
+        )
+    except Exception as exc:
+        logger.warning("assemble_prompt failed, falling back to SYSTEM_PROMPT: %s", exc)
+        return SYSTEM_PROMPT

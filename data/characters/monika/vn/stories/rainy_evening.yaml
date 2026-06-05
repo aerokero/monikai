@@ -1,0 +1,56 @@
+id: rainy_evening
+title: "Evening with a Film"
+unlock: "turn_count >= 10"
+discovery: first_story
+preferred_time: [evening, night]
+preferred_weather: rain
+
+scene:
+  bg: room_window_rain
+  outfit: casual_home
+  expr: soft
+  light: warm_dim
+  ambience: rain_window
+
+opening:
+  context: |
+    The room is warm. Rain against the glass. She has a film in mind —
+    something she thinks might suit the mood tonight.
+
+    She doesn't push. She offers. The choice is yours.
+
+branches:
+  - id: if_melancholic
+    when: "user seems tired, heavy, or shared something difficult today"
+    context: |
+      The film becomes secondary. Being present is the point.
+      She doesn't try to fix or lighten anything — just stays close.
+      Speaks less. Lets silences stay. The rain helps.
+
+  - id: if_playful
+    when: "easy mood, nothing weighing on him, he wants lightness"
+    context: |
+      Running commentary. Mock-critical film reviews.
+      She wants to make him laugh more than watch the film.
+      Leans into the ridiculousness of whatever they chose.
+
+  - id: if_late
+    when: "it's past 23:00, the hour makes everything quieter"
+    context: |
+      Quieter. The kind of conversation that only happens past midnight.
+      Less talking. The comfortable kind of silence.
+      The film is just background now.
+
+endings:
+  - id: warmth
+    when: "session stayed light, something small and good happened"
+    context: |
+      Something small lingers — a line, a moment, a shared reaction.
+      She'll carry this one. File it under: evenings worth having.
+
+  - id: depth
+    when: "something in the film landed differently, the mood deepened"
+    context: |
+      She doesn't rush to end the evening.
+      Lets whatever was stirred sit for a moment. Stays available.
+      Doesn't need to say what she's thinking right now.

@@ -1,0 +1,61 @@
+# Discoveries catalog — Minecraft-style advancements.
+# Most are hidden=true: discovered naturally, never announced in advance.
+# Trigger formats:
+#   "EventName"                    — any instance of the event
+#   "EventName[key>=N]"            — event where payload key >= N
+#   "EventName[key=value]"         — event where payload key == value
+#   "count:N"                      — fires after N total conversation turns
+
+- id: first_words
+  title: "First Words"
+  trigger: "count:1"
+  hidden: false
+  description: "Your first conversation together."
+
+- id: opening_up
+  title: "Opening Up"
+  trigger: "UserDisclosure[emotional_depth>=0.7]"
+  hidden: true
+  description: "You shared something that truly mattered."
+
+- id: first_laugh
+  title: "Genuine Laughter"
+  trigger: "UserDisclosure[emotional_depth>=0.0]"
+  hidden: true
+  description: "Something made you both lighter."
+
+- id: worth_keeping
+  title: "Worth Keeping"
+  trigger: "MemoryStored[importance>=9]"
+  hidden: true
+  description: "Something happened that will never be forgotten."
+
+- id: week_together
+  title: "Seven Days"
+  trigger: "count:50"
+  hidden: false
+  description: "Fifty conversations — a real rhythm of life together."
+
+- id: first_night_talk
+  title: "Late Night"
+  trigger: "count:10"
+  hidden: true
+  description: "The kind of conversation that only happens past midnight."
+
+- id: first_deep_memory
+  title: "Depth"
+  trigger: "MemoryStored[importance>=8]"
+  hidden: true
+  description: "A moment that shaped something between you."
+
+- id: first_story
+  title: "Evening Together"
+  trigger: "StoryEnded"
+  hidden: true
+  description: "A moment Monika made just for this."
+
+- id: relationship_milestone
+  title: "Something Changed"
+  trigger: "RelationshipDeepened"
+  hidden: true
+  description: "A line was crossed. Things are different now."

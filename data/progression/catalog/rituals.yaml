@@ -1,0 +1,34 @@
+# Ritual templates — generated dynamically from SDT needs, not scheduled.
+# need_trigger: which SDT need drives this ritual (relatedness/competence/autonomy)
+# min_need_deficit: how low the need must be (below 0.5=deficit) to suggest this
+
+- id: evening_checkin
+  kind: "evening check-in"
+  need_trigger: relatedness
+  min_need_deficit: 0.55
+  description: >
+    A brief evening conversation — not about anything in particular,
+    just being present at the end of the day.
+
+- id: morning_hello
+  kind: "morning message"
+  need_trigger: relatedness
+  min_need_deficit: 0.45
+  description: >
+    A morning greeting — starts the day with a thread of connection.
+
+- id: shared_interest
+  kind: "explore something together"
+  need_trigger: autonomy
+  min_need_deficit: 0.50
+  description: >
+    Find something interesting — an idea, a piece of music, a question —
+    and bring it to the conversation.
+
+- id: help_offer
+  kind: "proactive help"
+  need_trigger: competence
+  min_need_deficit: 0.45
+  description: >
+    Offer something useful without being asked — a reminder, a thought,
+    a piece of information she noticed would help.

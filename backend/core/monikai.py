@@ -871,9 +871,25 @@ class AudioLoop:
                 except Exception:
                     pass
 
-        mem_ctx = self.build_memory_context(cleaned) if cleaned else None
-        if mem_ctx:
-            await self.session.send(input=mem_ctx, end_of_turn=False)
+        # v2: inject cognition monologue (replaces / augments memory context).
+        _v2_handled = False
+        if cleaned:
+            try:
+                from backend.core.v2_runtime import get as _v2_get
+                _v2 = _v2_get()
+                if _v2:
+                    cog_msg = await _v2.process_turn(cleaned)
+                    if cog_msg:
+                        await self.session.send(input=cog_msg, end_of_turn=False)
+                    _v2_handled = True
+            except Exception:
+                pass
+
+        # Fall back to v1 memory context if v2 is not active.
+        if not _v2_handled:
+            mem_ctx = self.build_memory_context(cleaned) if cleaned else None
+            if mem_ctx:
+                await self.session.send(input=mem_ctx, end_of_turn=False)
 
         future = asyncio.get_running_loop().create_future()
         self._pending_ai_turn_futures.append(future)
@@ -1083,9 +1099,18 @@ class AudioLoop:
                 _mc.GEMINI_THERAPY_THINKING_LEVEL, _mc.GEMINI_THERAPY_THINKING_BUDGET
             )
         else:
-            system_instruction = config.system_instruction
-            if personality_context:
-                system_instruction = f"{system_instruction}\n\n{personality_context}"
+            # v2: use assembled prompt (CHARACTER + PSYCHOLOGICAL + MEMORY + OPERATIONAL)
+            # Falls back to SYSTEM_PROMPT if v2 runtime is not active.
+            try:
+                from backend.core.v2_runtime import get as _v2_get
+                _v2 = _v2_get()
+                system_instruction = _v2.cached_prompt if _v2 else config.system_instruction
+                if not _v2 and personality_context:
+                    system_instruction = f"{system_instruction}\n\n{personality_context}"
+            except Exception:
+                system_instruction = config.system_instruction
+                if personality_context:
+                    system_instruction = f"{system_instruction}\n\n{personality_context}"
             thinking_config = _build_thinking_config(
                 _mc.GEMINI_THINKING_LEVEL, _mc.GEMINI_THINKING_BUDGET
             )
@@ -4172,7 +4197,23 @@ class AudioLoop:
             try:
                 print("[AI DEBUG] [CONNECT] Connecting to Gemini Live API...")
 
-                pers_ctx = self.personality.get_context_prompt() if self.personality else None
+                # v2: refresh assembled prompt at each reconnect (async context).
+                try:
+                    from backend.core.v2_runtime import get as _v2_get
+                    _v2 = _v2_get()
+                    if _v2:
+                        await _v2.refresh_prompt()
+                except Exception:
+                    pass
+
+                # Skip old personality context when v2 is active (it's in the assembled prompt).
+                _use_v2 = False
+                try:
+                    from backend.core.v2_runtime import get as _v2_get2
+                    _use_v2 = _v2_get2() is not None
+                except Exception:
+                    pass
+                pers_ctx = None if _use_v2 else (self.personality.get_context_prompt() if self.personality else None)
                 current_config = self._build_live_connect_config(personality_context=pers_ctx)
 
                 async with (
