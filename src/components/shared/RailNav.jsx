@@ -19,6 +19,9 @@ const RailNav = () => {
   const { isMuted, toggleMute, isVideoOn, toggleVideo, visionMode, toggleScreenCapture, isConnected, togglePower, onLogout, onMonikaTemporaryMood } = useAudioVideo();
   const { layoutMode } = useLayoutMode();
   const { t } = useLanguage();
+  const canExpandRail = ['desktop', 'desktop-wide'].includes(layoutMode);
+  const [isRailExpanded, setIsRailExpanded] = useState(false);
+  const isExpanded = canExpandRail && isRailExpanded;
   
   // Quit button floating state
   const [quitHoverOffset, setQuitHoverOffset] = useState({ x: 0, y: 0 });
@@ -55,6 +58,14 @@ const RailNav = () => {
   };
   
   const panels = getAllPanels().filter((panel) => !panel.hiddenInRail);
+  const railPanelLabels = {
+    chat: 'Talk',
+    notes: 'Journal',
+    daily_briefing: 'Briefing',
+    goals: 'Relationship',
+    calendar: 'Calendar',
+    profile: 'Her profile',
+  };
   const railButtonBase = `
     rail-button
     flex items-center justify-center
@@ -98,6 +109,20 @@ const RailNav = () => {
     opacity-0 group-hover:opacity-100 transition-opacity
     z-50
   `;
+  const renderLabel = (label, extraClassName = '') => (
+    isExpanded ? (
+      <span className={`rail-button-label ${extraClassName}`}>
+        {label}
+      </span>
+    ) : null
+  );
+  const renderTooltip = (label) => (
+    canExpandRail && !isExpanded ? (
+      <div className={tooltipClassName}>
+        {label}
+      </div>
+    ) : null
+  );
 
   // Determine rail className based on layout mode
   const railClassName = {
@@ -109,11 +134,31 @@ const RailNav = () => {
   }[layoutMode] || 'monika-rail--left-vertical';
 
   return (
-    <nav className={`monika-rail ${railClassName}`} role="navigation" aria-label="Panel navigation">
+    <nav className={`monika-rail ${railClassName} ${isExpanded ? 'monika-rail--expanded' : ''}`} role="navigation" aria-label="Panel navigation">
       <div className="rail-buttons">
+        {canExpandRail && (
+          <button
+            onClick={() => setIsRailExpanded((current) => !current)}
+            className={`${railButtonBase} ${railButtonIdle} rail-toggle-button`}
+            aria-label={isExpanded ? 'Collapse navigation' : 'Expand navigation'}
+            aria-expanded={isExpanded}
+            title={isExpanded ? 'Collapse navigation' : 'Expand navigation'}
+          >
+            <Icons.Maximize2 size={20} />
+            {isExpanded ? (
+              <span className="rail-toggle-copy">
+                <span className="rail-toggle-title">Navigation</span>
+                <span className="rail-toggle-subtitle">Collapse to icons</span>
+              </span>
+            ) : null}
+            {renderTooltip('Expand navigation')}
+          </button>
+        )}
+
         {panels.map((panel) => {
           const IconComponent = Icons[panel.icon] || Icons.Zap;
           const isActive = activeContext === panel.id;
+          const label = railPanelLabels[panel.id] || t('panels.' + panel.id);
 
           return (
             <button
@@ -125,13 +170,10 @@ const RailNav = () => {
               aria-current={isActive ? 'page' : undefined}
             >
               <IconComponent size={20} />
+              {renderLabel(label)}
               
               {/* Tooltip label (shows on hover, desktop) */}
-              {['desktop', 'desktop-wide'].includes(layoutMode) && (
-                <div className={tooltipClassName}>
-                  {t('panels.' + panel.id)}
-                </div>
-              )}
+              {renderTooltip(label)}
             </button>
           );
         })}
@@ -147,12 +189,9 @@ const RailNav = () => {
           title={isConnected ? t('tools.ai_on') : t('tools.ai_off')}
         >
           <Icons.Power size={20} />
+          {renderLabel(isConnected ? 'Connected' : 'Disconnected')}
           
-          {['desktop', 'desktop-wide'].includes(layoutMode) && (
-            <div className={tooltipClassName}>
-              {isConnected ? t('tools.ai_on') : t('tools.ai_off')}
-            </div>
-          )}
+          {renderTooltip(isConnected ? t('tools.ai_on') : t('tools.ai_off'))}
         </button>
         
         {/* Microphone Button */}
@@ -163,12 +202,9 @@ const RailNav = () => {
           title={isMuted ? t('tools.microphone_off') : t('tools.microphone_on')}
         >
           <Icons.Mic size={20} />
+          {renderLabel(isMuted ? 'Mic muted' : 'Mic')}
           
-          {['desktop', 'desktop-wide'].includes(layoutMode) && (
-            <div className={tooltipClassName}>
-              {isMuted ? t('tools.microphone_off') : t('tools.microphone_on')}
-            </div>
-          )}
+          {renderTooltip(isMuted ? t('tools.microphone_off') : t('tools.microphone_on'))}
         </button>
         
         {/* Camera Button */}
@@ -179,12 +215,9 @@ const RailNav = () => {
           title={isVideoOn ? t('tools.camera_on') : t('tools.camera_off')}
         >
           <Icons.Video size={20} />
+          {renderLabel('Camera')}
           
-          {['desktop', 'desktop-wide'].includes(layoutMode) && (
-            <div className={tooltipClassName}>
-              {isVideoOn ? t('tools.camera_on') : t('tools.camera_off')}
-            </div>
-          )}
+          {renderTooltip(isVideoOn ? t('tools.camera_on') : t('tools.camera_off'))}
         </button>
         
         {/* Screen Share Button */}
@@ -195,12 +228,9 @@ const RailNav = () => {
           title={visionMode === 'screen' ? t('tools.share_screen_off') : t('tools.share_screen_on')}
         >
           <Icons.Share2 size={20} />
+          {renderLabel('Share')}
           
-          {['desktop', 'desktop-wide'].includes(layoutMode) && (
-            <div className={tooltipClassName}>
-              {visionMode === 'screen' ? t('tools.share_screen_off') : t('tools.share_screen_on')}
-            </div>
-          )}
+          {renderTooltip(visionMode === 'screen' ? t('tools.share_screen_off') : t('tools.share_screen_on'))}
         </button>
         
         {/* Divider line */}
@@ -214,13 +244,10 @@ const RailNav = () => {
           title={t('tools.settings')}
         >
           <Icons.Settings size={20} />
+          {renderLabel(t('tools.settings'))}
           
           {/* Tooltip label (shows on hover, desktop) */}
-          {['desktop', 'desktop-wide'].includes(layoutMode) && (
-            <div className={tooltipClassName}>
-              {t('tools.settings')}
-            </div>
-          )}
+          {renderTooltip(t('tools.settings'))}
         </button>
 
         {/* Quit Button - Floats Away on Hover */}
@@ -240,13 +267,10 @@ const RailNav = () => {
           title={t('tools.logout')}
         >
           <Icons.LogOut size={20} />
+          {renderLabel(t('tools.logout'))}
           
           {/* Tooltip label (shows on hover, desktop) */}
-          {['desktop', 'desktop-wide'].includes(layoutMode) && (
-            <div className={tooltipClassName}>
-              {isQuitHovered ? t('tools.dont_leave_me') : t('tools.logout')}
-            </div>
-          )}
+          {renderTooltip(isQuitHovered ? t('tools.dont_leave_me') : t('tools.logout'))}
         </button>
       </div>
     </nav>

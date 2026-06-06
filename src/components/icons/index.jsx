@@ -93,6 +93,7 @@ export const Share2 = pick('ShareNetwork', 'Share2');
 export const ZoomIn = pick('MagnifyingGlassPlus', 'ZoomIn');
 export const ZoomOut = pick('MagnifyingGlassMinus', 'ZoomOut');
 export const LogOut = pick('SignOut', 'LogOut');
+export const Leaf = pick('Leaf', 'Leaf');
 
 export default {
   X,
@@ -183,4 +184,5 @@ export default {
   ZoomIn,
   ZoomOut,
   LogOut,
+  Leaf,
 };

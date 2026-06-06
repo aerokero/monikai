@@ -6,8 +6,10 @@ import {
   Gamepad2,
   Gift,
   Heart,
+  Leaf,
   Maximize2,
   MessageSquare,
+  Mic,
   Paperclip,
   Send,
   Settings,
@@ -251,6 +253,19 @@ const ChatPanel = ({
     return source.slice(-120);
   }, [agenticLogs]);
   const latestVisibleMessage = visibleMessages.length ? visibleMessages[visibleMessages.length - 1] : null;
+  const latestAssistantMessage = useMemo(() => {
+    return [...visibleMessages].reverse().find((message) => {
+      const sender = String(message?.sender || '');
+      const lower = sender.toLowerCase();
+      return lower !== 'ty' && lower !== 'you' && !sender.includes('(Thought)');
+    }) || null;
+  }, [visibleMessages]);
+  const latestUserMessage = useMemo(() => {
+    return [...visibleMessages].reverse().find((message) => {
+      const lower = String(message?.sender || '').toLowerCase();
+      return lower === 'ty' || lower === 'you';
+    }) || null;
+  }, [visibleMessages]);
 
   const totalAttachBytes = useMemo(
     () => attachments.reduce((sum, item) => sum + (item?.file?.size || 0), 0),
@@ -258,6 +273,9 @@ const ChatPanel = ({
   );
   const canSend = Boolean((inputValue || '').trim()) || attachments.length > 0;
   const isEatTogetherActive = Boolean(eatTogetherActive || localEatTogetherActive);
+  const dialogueMessage = latestAssistantMessage;
+  const userLine = String(latestUserMessage?.text || '').trim();
+  const userLinePreview = userLine.length > 54 ? `${userLine.slice(0, 54)}...` : userLine;
 
   const toggleThoughts = () => {
     if (!socket) return;
@@ -416,8 +434,8 @@ const ChatPanel = ({
   return (
     <div
       ref={rootRef}
-      className={`flex h-full w-full min-h-0 flex-col overflow-visible gap-0 px-3 pt-0 pb-3 box-border transition-[box-shadow,background-color] duration-700 ${
-        sessionActive ? 'rounded-2xl ring-1 ring-amber-400/25 bg-amber-500/[0.04] shadow-[0_0_60px_-15px_rgba(245,158,11,0.25)]' : ''
+      className={`relative flex h-full w-full min-h-0 flex-col justify-end overflow-visible px-4 pb-3 pt-0 box-border transition-[box-shadow,background-color] duration-700 ${
+        sessionActive ? 'rounded-2xl ring-1 ring-amber-400/20 bg-amber-500/[0.025] shadow-[0_0_60px_-15px_rgba(245,158,11,0.25)]' : ''
       }`}
     >
       {/* Subtle "you've stepped into a different space" cue during a session */}
@@ -428,22 +446,10 @@ const ChatPanel = ({
           </span>
         </div>
       )}
-      {/* Speaker Label - Outside the box */}
-      <div className="flex items-center justify-between px-3 shrink-0 mb-[-1px] z-20">
-        <div
-          className="rounded-t-[10px] rounded-b-none px-4 py-1.5 border border-b-0 border-white/10"
-          style={{
-            background: 'linear-gradient(135deg, rgba(18,12,8,0.74), rgba(45,31,20,0.58))',
-            backdropFilter: 'blur(12px)',
-          }}
-        >
-          <span className="text-[15px] font-semibold tracking-wide" style={{ color: 'rgba(255,255,255,0.88)' }}>
-            {speakerLabel}
-          </span>
-        </div>
+      <div className="absolute right-6 top-1 z-30">
         <button
           onClick={onToggleExpand}
-          className="text-white/40 transition hover:text-white/70 mb-1"
+          className="rounded-lg border border-[rgba(232,178,102,0.12)] bg-black/25 p-1.5 text-[rgba(255,224,190,0.38)] transition hover:bg-[rgba(232,178,102,0.08)] hover:text-[rgba(255,240,218,0.74)]"
           title={isExpanded ? 'Collapse' : 'Expand'}
         >
           <Maximize2 size={15} />
@@ -452,31 +458,31 @@ const ChatPanel = ({
 
       {/* Main Box - Chat content */}
       <div
-        className="relative flex-1 min-h-0 overflow-hidden rounded-[16px] rounded-tl-none border border-[rgba(232,178,102,0.12)] flex flex-col"
+        className="relative flex-1 min-h-0 overflow-hidden border-0 bg-transparent flex flex-col"
         style={{
-          background: 'linear-gradient(135deg, rgba(18,12,8,0.68), rgba(43,31,22,0.5))',
-          backdropFilter: 'blur(12px)',
-          boxShadow: '0 12px 34px rgba(13,9,6,0.42)',
+          background: 'transparent',
+          backdropFilter: 'none',
+          boxShadow: 'none',
         }}
       >
         {/* Content Area - Main scrollable messages and views */}
-        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar relative flex flex-col p-4 z-10">
+        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar relative flex flex-col px-1 pb-2 pt-0 z-10">
         {/* Chat View */}
         {viewMode === 'chat' && (
-          <div className="space-y-3">
+          <div className="flex min-h-full flex-col justify-end">
             {showAgenticLog && hasAgenticActivity ? (
-              <div className="mb-4 overflow-hidden rounded-[14px] border border-white/10 bg-white/4 shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
-                <div className="flex items-center gap-2 border-b border-white/30 px-3 py-2 font-mono text-[12px] uppercase tracking-wider text-white/70">
+              <div className="mb-3 max-h-32 overflow-hidden rounded-[12px] border border-[rgba(232,178,102,0.14)] bg-black/45 shadow-[0_10px_28px_rgba(0,0,0,0.32)]">
+                <div className="flex items-center gap-2 border-b border-[rgba(232,178,102,0.14)] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.16em] text-[rgba(232,178,102,0.72)]">
                   <Terminal size={12} />
                   Agent Log
                 </div>
-                <div className="max-h-36 space-y-1 overflow-y-auto px-3 py-2 font-mono text-[13px] text-white/60 custom-scrollbar">
+                <div className="max-h-24 space-y-1 overflow-y-auto px-3 py-2 font-mono text-[12px] text-[rgba(255,240,218,0.58)] custom-scrollbar">
                   {visibleAgenticLogs.length === 0 ? (
-                    <div className="text-white/50">Thinking...</div>
+                    <div>Thinking...</div>
                   ) : (
                     visibleAgenticLogs.map((entry, index) => (
                       <div key={`agentic-${index}`} className="break-words">
-                        <span className="mr-2 text-white/70">{'>'}</span>
+                        <span className="mr-2 text-[rgba(232,178,102,0.62)]">{'>'}</span>
                         {String(entry || '')}
                       </div>
                     ))
@@ -485,54 +491,27 @@ const ChatPanel = ({
               </div>
             ) : null}
 
-            {visibleMessages.length === 0 ? (
-              <div className="py-12 text-center text-white/30">
-                <p>No messages yet.</p>
-                <p className="mt-2 text-sm text-white/20">Start a conversation with Monika!</p>
+            {dialogueMessage ? (
+              <div className="px-1 pb-6">
+                <div className="mb-1 flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-[rgba(232,178,102,0.72)]">
+                  <span>{latestUserMessage ? (t('chat.you') || 'You') : speakerLabel}</span>
+                  {latestUserMessage ? (
+                    <>
+                      <span className="text-[rgba(255,224,190,0.28)]">-</span>
+                      <span className="max-w-[62vw] truncate normal-case tracking-normal text-[rgba(255,240,218,0.36)]">
+                        {userLinePreview}
+                      </span>
+                    </>
+                  ) : null}
+                </div>
+                <div className="max-h-[11.5rem] overflow-y-auto pr-3 font-serif text-[clamp(1.45rem,2.38vw,2.58rem)] leading-[1.14] text-[rgba(255,246,233,0.96)] drop-shadow-[0_2px_10px_rgba(0,0,0,0.45)] scrollbar-hide">
+                  {renderMarkdown(dialogueMessage?.text)}
+                </div>
               </div>
             ) : (
-              visibleMessages.map((message, index) => {
-                const sender = String(message?.sender || '');
-                const lower = sender.toLowerCase();
-                const isUser = lower === 'ty' || lower === 'you';
-                const isThought = sender.includes('(Thought)');
-                const displaySender = isThought
-                  ? 'Thought'
-                  : (isUser ? (t('chat.you') || 'You') : 'Monika');
-
-                return (
-                  <div key={index} className={`relative flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
-                    {isThought && !showThoughts ? null : (
-                      <>
-                        {/* Sender label — only for Monika, tiny and subtle */}
-                        {!isUser && (
-                          <div className="mb-0.5 flex items-baseline gap-1.5">
-                            <span className="text-[10px] font-medium tracking-widest text-[rgba(232,178,102,0.62)]">
-                              {displaySender}
-                            </span>
-                            {message?.time ? (
-                              <span className="font-mono text-[9px] text-white/15">{message.time}</span>
-                            ) : null}
-                          </div>
-                        )}
-                        {isUser ? (
-                          <p className="w-full text-[14px] leading-relaxed text-white/45 text-right">
-                            {renderMarkdown(message?.text)}
-                          </p>
-                        ) : isThought ? (
-                          <p className="text-[14px] leading-relaxed italic pl-3 border-l border-white/12 text-white/35">
-                            {renderMarkdown(message?.text)}
-                          </p>
-                        ) : (
-                          <p className="text-[15px] leading-relaxed text-white/90">
-                            {renderMarkdown(message?.text)}
-                          </p>
-                        )}
-                      </>
-                    )}
-                  </div>
-                );
-              })
+              <div className="px-1 pb-5 font-serif text-[clamp(1.4rem,2.2vw,2.4rem)] leading-tight text-[rgba(255,246,233,0.52)]">
+                Say something to her...
+              </div>
             )}
             <div ref={messagesEndRef} />
           </div>
@@ -689,19 +668,20 @@ const ChatPanel = ({
         </div>
 
         {/* Unified Bottom Bar - All controls in one place */}
-        <div className="flex flex-col gap-2 border-t border-white/8 bg-transparent px-3 py-2 shrink-0 text-sm">
+        <div className="shrink-0 rounded-[18px] border border-[rgba(232,178,102,0.12)] bg-black/[0.74] px-3 py-2 text-sm shadow-[0_14px_34px_rgba(0,0,0,0.48)] backdrop-blur-xl">
         {/* Input Row - Only shows in chat or activities */}
         {(viewMode === 'chat' || viewMode === 'activities') && (
           <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
+            <div className="flex min-h-[42px] items-center gap-2">
+              <Leaf size={18} className="shrink-0 text-[rgba(232,178,102,0.72)]" />
               <textarea
                 ref={textareaRef}
                 value={inputValue}
                 onChange={(event) => setInputValue(event.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Type your message... (Shift+Enter for new line)"
+                placeholder="Say something to her..."
                 rows={1}
-                className="flex-1 resize-none rounded-[12px] border border-[rgba(232,178,102,0.14)] bg-[rgba(255,238,212,0.055)] px-3 py-2 text-sm text-[rgba(255,246,233,0.92)] placeholder:text-[rgba(255,224,190,0.3)] outline-none focus:border-[rgba(232,178,102,0.48)] transition-colors"
+                className="max-h-20 min-h-[28px] flex-1 resize-none border-0 bg-transparent px-2 py-1.5 text-[15px] font-medium text-[rgba(255,246,233,0.9)] placeholder:text-[rgba(255,224,190,0.42)] outline-none"
               />
               <input
                 ref={fileInputRef}
@@ -713,16 +693,40 @@ const ChatPanel = ({
               />
               <button
                 type="button"
+                onClick={() => fileInputRef.current?.click()}
+                title={t('chat.attach_file_tab') || 'Attach file'}
+                className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[rgba(255,224,190,0.42)] transition hover:bg-[rgba(255,238,212,0.06)] hover:text-[rgba(255,240,218,0.74)]"
+              >
+                <Paperclip size={17} />
+                {attachments.length > 0 && (
+                  <span className="absolute right-0.5 top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[rgba(232,178,102,0.95)] text-[9px] font-bold text-[#20160f]">
+                    {attachments.length}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                title={userSpeaking ? 'Listening' : 'Microphone'}
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition ${
+                  userSpeaking
+                    ? 'bg-[rgba(232,178,102,0.12)] text-[rgba(232,178,102,0.95)]'
+                    : 'text-[rgba(255,224,190,0.42)] hover:bg-[rgba(255,238,212,0.06)] hover:text-[rgba(255,240,218,0.74)]'
+                }`}
+              >
+                <Mic size={17} />
+              </button>
+              <button
+                type="button"
                 onClick={handleSendMessage}
                 disabled={!canSend}
-                className={`font-semibold whitespace-nowrap transition-all ${
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition ${
                   canSend
-                    ? 'text-[rgba(232,178,102,0.88)] hover:text-[rgba(255,213,151,1)]'
-                    : 'text-white/25 cursor-not-allowed'
+                    ? 'text-[rgba(232,178,102,0.95)] hover:bg-[rgba(232,178,102,0.1)] hover:text-[rgba(255,213,151,1)]'
+                    : 'text-[rgba(255,224,190,0.22)] cursor-not-allowed'
                 }`}
                 title="Send message"
               >
-                Send
+                <Send size={17} />
               </button>
             </div>
 
@@ -733,7 +737,7 @@ const ChatPanel = ({
                   return (
                     <div
                       key={item.id}
-                      className="flex items-center gap-1 rounded-[10px] border border-white/20 bg-white/15 px-2 py-1 text-[12px]"
+                      className="flex items-center gap-1 rounded-[10px] border border-[rgba(232,178,102,0.16)] bg-[rgba(255,238,212,0.08)] px-2 py-1 text-[12px]"
                       title={`${item.file?.name} (${Math.round((item.file?.size || 0) / 1024)} KB)`}
                     >
                       {isImage && item.previewUrl ? (
@@ -743,7 +747,7 @@ const ChatPanel = ({
                           F
                         </div>
                       )}
-                      <span className="max-w-[150px] truncate text-white/70">{item.file?.name}</span>
+                      <span className="max-w-[150px] truncate text-[rgba(255,240,218,0.7)]">{item.file?.name}</span>
                       <button
                         type="button"
                         onClick={() => removeAttachment(item.id)}
@@ -761,7 +765,7 @@ const ChatPanel = ({
         )}
 
         {/* Menu Bar - Icon tabs */}
-        <div className="flex items-center justify-center gap-1">
+        <div className="mt-1 flex items-center justify-center gap-1">
           {[
             { mode: 'chat', icon: MessageSquare, title: t('chat.chat_tab') || 'Chat' },
             { mode: 'activities', icon: Zap, title: t('chat.activities_tab') || 'Activities' },
@@ -785,23 +789,9 @@ const ChatPanel = ({
 
           <button
             type="button"
-            onClick={() => fileInputRef.current?.click()}
-            title={t('chat.attach_file_tab') || 'Attach file'}
-            className="relative flex items-center justify-center w-7 h-7 rounded-lg text-white/35 hover:text-white/65 hover:bg-white/5 transition-all"
-          >
-            <Paperclip size={14} />
-            {attachments.length > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[rgba(232,178,102,0.95)] text-[9px] font-bold text-[#20160f]">
-                {attachments.length}
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
             onClick={onOpenSettings}
             title={t('chat.settings_tab') || 'Settings'}
-            className="flex items-center justify-center w-7 h-7 rounded-lg text-white/35 hover:text-white/65 hover:bg-white/5 transition-all"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-[rgba(255,224,190,0.36)] transition-all hover:bg-[rgba(255,238,212,0.055)] hover:text-[rgba(255,240,218,0.68)]"
           >
             <Settings size={14} />
           </button>
