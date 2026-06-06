@@ -512,6 +512,7 @@ register_audio_lifecycle_handlers(
     get_hue_agent=_get_hue_agent,
     get_home_assistant_agent=_get_home_assistant_agent,
     get_minecraft_bot_manager=_get_minecraft_bot_manager,
+    shutdown_and_exit=_shutdown_and_exit,
 )
 
 

@@ -36,6 +36,7 @@ def register_audio_lifecycle_handlers(
     get_hue_agent,
     get_home_assistant_agent,
     get_minecraft_bot_manager,
+    shutdown_and_exit,
 ):
     last_start_params = {"sid": None, "data": None}
 
