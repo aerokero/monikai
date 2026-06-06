@@ -591,6 +591,7 @@ function AppContent() {
       setStatus(tRef.current('system.connected'));
       setSocketConnected(true);
       socket.emit('get_settings');
+      socket.emit('get_personality_status');
     });
 
     socket.on('personality_status', (data) => {
@@ -1468,7 +1469,40 @@ function AppContent() {
           isVideoOn={isVideoOn}
           videoRef={videoRef}
           isCameraFlipped={isCameraFlipped}
+          setIsCameraFlipped={(flipped) => {
+            setIsCameraFlipped(flipped);
+            socket.emit('update_settings', { camera_flipped: flipped });
+          }}
           toggleVideo={toggleVideo}
+          micDevices={micDevices}
+          speakerDevices={speakerDevices}
+          webcamDevices={webcamDevices}
+          selectedMicId={selectedMicId}
+          setSelectedMicId={setSelectedMicId}
+          selectedSpeakerId={selectedSpeakerId}
+          setSelectedSpeakerId={setSelectedSpeakerId}
+          selectedWebcamId={selectedWebcamId}
+          setSelectedWebcamId={setSelectedWebcamId}
+          toolPermissions={toolPermissions}
+          onTogglePermission={handleTogglePermission}
+          handleFileUpload={handleFileUpload}
+          skills={skills}
+          skillsLoading={skillsLoading}
+          skillsActionBusy={skillsActionBusy}
+          onRefreshSkills={handleRefreshSkills}
+          onUploadSkillZip={handleSkillZipUpload}
+          onInstallSkillSource={handleInstallSkillSource}
+          onUninstallSkill={handleUninstallSkill}
+          geminiModelPreset={geminiModelPreset}
+          onModelPresetChange={(preset) => {
+            setGeminiModelPreset(preset);
+            socket.emit('update_settings', { gemini_model_preset: preset });
+          }}
+          geminiVoice={geminiVoice}
+          onVoiceChange={(voice) => {
+            setGeminiVoice(voice);
+            socket.emit('update_settings', { gemini_voice: voice });
+          }}
         />
 
         {activeSessionPrompt && (
@@ -1496,45 +1530,6 @@ function AppContent() {
             if (message) pushToast(message, 'system', 3200);
           }}
         />
-
-        {/* Settings Modal (overlay on top of MonikaShell) */}
-        {showSettings && (
-          <SettingsWindow
-            socket={socket}
-            micDevices={micDevices}
-            speakerDevices={speakerDevices}
-            webcamDevices={webcamDevices}
-            selectedMicId={selectedMicId}
-            setSelectedMicId={setSelectedMicId}
-            selectedSpeakerId={selectedSpeakerId}
-            setSelectedSpeakerId={setSelectedSpeakerId}
-            selectedWebcamId={selectedWebcamId}
-            setSelectedWebcamId={setSelectedWebcamId}
-            isCameraFlipped={isCameraFlipped}
-            setIsCameraFlipped={setIsCameraFlipped}
-            toolPermissions={toolPermissions}
-            onTogglePermission={handleTogglePermission}
-            handleFileUpload={handleFileUpload}
-            skills={skills}
-            skillsLoading={skillsLoading}
-            skillsActionBusy={skillsActionBusy}
-            onRefreshSkills={handleRefreshSkills}
-            onUploadSkillZip={handleSkillZipUpload}
-            onInstallSkillSource={handleInstallSkillSource}
-            onUninstallSkill={handleUninstallSkill}
-            geminiModelPreset={geminiModelPreset}
-            onModelPresetChange={(preset) => {
-              setGeminiModelPreset(preset);
-              socket.emit('update_settings', { gemini_model_preset: preset });
-            }}
-            geminiVoice={geminiVoice}
-            onVoiceChange={(voice) => {
-              setGeminiVoice(voice);
-              socket.emit('update_settings', { gemini_voice: voice });
-            }}
-            onClose={() => setShowSettings(false)}
-          />
-        )}
 
         <ConfirmationPopup
           request={activeConfirmationRequest}

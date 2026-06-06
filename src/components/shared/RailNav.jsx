@@ -238,8 +238,8 @@ const RailNav = () => {
         
         {/* Settings Button */}
         <button
-          onClick={openSettings}
-          className={`${railButtonBase} ${railButtonIdle} mt-auto`}
+          onClick={() => setActiveContext('settings')}
+          className={`${railButtonBase} ${activeContext === 'settings' ? railButtonActive : railButtonIdle} mt-auto`}
           aria-label="Settings"
           title={t('tools.settings')}
         >

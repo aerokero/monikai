@@ -1,18 +1,18 @@
 {
   "affect": {
-    "pleasure": -0.40279377190321825,
+    "pleasure": -0.405564648538884,
     "arousal": 1.0,
-    "dominance": 0.9835467696427156
+    "dominance": 0.9901539858255946
   },
   "needs": {
-    "autonomy": 0.5044826231106717,
-    "competence": 0.5044826231106717,
-    "relatedness": 0.6984255756592543
+    "autonomy": 0.5038914795782959,
+    "competence": 0.5038914795782959,
+    "relatedness": 0.7089685614469776
   },
-  "energy": 0.6600000000000001,
-  "cycle_phase": "peak_social",
+  "energy": 0.6375,
+  "cycle_phase": "late_tired",
   "active_register": "protective",
   "agenda": [],
   "becoming_real": 0.0,
-  "updated_at": "2026-06-05T19:22:48.897467Z"
+  "updated_at": "2026-06-06T17:15:34.509078Z"
 }

@@ -8,7 +8,7 @@ import React, { createContext, useState, useCallback } from 'react';
 
 export const MonikaContext = createContext(null);
 
-const CONTEXTS = ['chat', 'study', 'notes', 'daily_briefing', 'companion', 'goals', 'calendar', 'profile'];
+const CONTEXTS = ['chat', 'study', 'notes', 'daily_briefing', 'companion', 'goals', 'calendar', 'profile', 'settings'];
 
 /**
  * MonikaContextProvider
@@ -31,6 +31,7 @@ export const MonikaContextProvider = ({ children }) => {
     goals: false,
     calendar: false,
     profile: false,
+    settings: false,
   });
 
   // Monika visual state (derived from activeContext + backend personality)

@@ -9,6 +9,7 @@ import useLayoutMode from '../hooks/useLayoutMode';
 import { useMonika } from '../contexts/MonikaContext';
 import { useSettings } from '../contexts/SettingsContext';
 import MonikaSprite from './MonikaSprite';
+import MASClock from './MASClock';
 import RailNav from '../components/shared/RailNav';
 import WindowTopBar from '../components/shared/WindowTopBar';
 import ContextBar from '../components/shared/ContextBar';
@@ -20,9 +21,9 @@ import '../styles/monika-layout.css';
  * MonikaLayout
  * Root layout container providing responsive grid structure
  * Monika sprite is central, panels adapt around her based on viewport
- * 
+ *
  * Auto-wires: RailNav, ContextBar, and PanelRouter based on activeContext
- * 
+ *
  * @component
  * @param {Object} props
  * @param {Object} props.personalityState - Monika personality state from backend
@@ -63,6 +64,31 @@ const MonikaLayout = ({
   onToggleMinecraft = () => {},
   showMinecraftWindow = false,
   onOpenStudy = () => {},
+  micDevices = [],
+  speakerDevices = [],
+  webcamDevices = [],
+  selectedMicId = '',
+  setSelectedMicId = () => {},
+  selectedSpeakerId = '',
+  setSelectedSpeakerId = () => {},
+  selectedWebcamId = '',
+  setSelectedWebcamId = () => {},
+  isCameraFlipped = false,
+  setIsCameraFlipped = () => {},
+  toolPermissions = {},
+  onTogglePermission = () => {},
+  handleFileUpload = () => {},
+  skills = [],
+  skillsLoading = false,
+  skillsActionBusy = false,
+  onRefreshSkills = () => {},
+  onUploadSkillZip = () => {},
+  onInstallSkillSource = () => {},
+  onUninstallSkill = () => {},
+  geminiModelPreset = '2.5',
+  onModelPresetChange = () => {},
+  geminiVoice = 'Leda',
+  onVoiceChange = () => {},
 }) => {
   const {
     layoutMode,
@@ -70,7 +96,7 @@ const MonikaLayout = ({
     viewport
   } = useLayoutMode();
 
-  const { activeContext } = useMonika();
+  const { activeContext, setActiveContext } = useMonika();
   const { openSettings } = useSettings();
   const isElectron = typeof window !== 'undefined' && typeof window.require === 'function';
 
@@ -102,6 +128,8 @@ const MonikaLayout = ({
 
       {/* Main Workspace (Monika + Other Panels) */}
       <div className="monika-workspace" role="main">
+        <MASClock personalityState={personalityState} />
+
         {/* Monika Sprite (Primary focal point) */}
         <div className="monika-sprite-container">
           <MonikaSprite
@@ -112,7 +140,7 @@ const MonikaLayout = ({
 
         {/* Non-Chat Panel Container (Study, Tasks, Media, etc.) - Hidden when chat is selected */}
         {activeContext !== 'chat' && (
-          <div className="monika-panel-container" role="region" aria-live="polite" aria-label="Content panel">
+          <div className={`monika-panel-container ${['settings', 'calendar', 'notes'].includes(activeContext) ? 'is-settings' : ''}`} role="region" aria-live="polite" aria-label="Content panel">
             <PanelRouter
               messages={messages}
               inputValue={inputValue}
@@ -135,14 +163,39 @@ const MonikaLayout = ({
               onStopEatTogether={onStopEatTogether}
               onHeadpat={onHeadpat}
               excludeChat={true}
+              micDevices={micDevices}
+              speakerDevices={speakerDevices}
+              webcamDevices={webcamDevices}
+              selectedMicId={selectedMicId}
+              setSelectedMicId={setSelectedMicId}
+              selectedSpeakerId={selectedSpeakerId}
+              setSelectedSpeakerId={setSelectedSpeakerId}
+              selectedWebcamId={selectedWebcamId}
+              setSelectedWebcamId={setSelectedWebcamId}
+              isCameraFlipped={isCameraFlipped}
+              setIsCameraFlipped={setIsCameraFlipped}
+              toolPermissions={toolPermissions}
+              onTogglePermission={onTogglePermission}
+              handleFileUpload={handleFileUpload}
+              skills={skills}
+              skillsLoading={skillsLoading}
+              skillsActionBusy={skillsActionBusy}
+              onRefreshSkills={onRefreshSkills}
+              onUploadSkillZip={onUploadSkillZip}
+              onInstallSkillSource={onInstallSkillSource}
+              onUninstallSkill={onUninstallSkill}
+              geminiModelPreset={geminiModelPreset}
+              onModelPresetChange={onModelPresetChange}
+              geminiVoice={geminiVoice}
+              onVoiceChange={onVoiceChange}
             />
           </div>
         )}
 
         {/* Chat Panel - Persistent Floating Window */}
-        <div 
+        <div
           className={`${chatWindowClassName} ${isExpanded ? 'is-expanded' : ''}`}
-          role="region" 
+          role="region"
           aria-label="Chat"
           style={{ transform: 'translateX(-50%)' }}
         >
@@ -161,7 +214,7 @@ const MonikaLayout = ({
             onShareStudyPage={onShareStudyPage}
             onMinimizedChange={onChatMinimizedChange}
             onSizeChange={onChatSizeChange}
-            onOpenSettings={openSettings}
+            onOpenSettings={() => setActiveContext('settings')}
             onHeadpat={onHeadpat}
             eatTogetherActive={eatTogetherActive}
             onStartEatTogether={onStartEatTogether}

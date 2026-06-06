@@ -157,6 +157,26 @@ export const PANELS = {
     },
     ariaLabel: 'User profile settings',
     keyboardShortcut: 'Alt+8'
+  },
+  settings: {
+    id: 'settings',
+    name: 'Settings',
+    displayName: 'Settings',
+    description: 'Nasze ustawienia',
+    icon: 'Settings',
+    contextKey: 'settings',
+    component: 'SettingsPanel',
+    order: 9,
+    draggable: false,
+    collapsible: true,
+    dockPreference: {
+      desktop: 'main-panel',
+      tablet: 'drawer',
+      portrait: 'drawer'
+    },
+    ariaLabel: 'System settings',
+    keyboardShortcut: 'Alt+9',
+    hiddenInRail: true
   }
 };
 

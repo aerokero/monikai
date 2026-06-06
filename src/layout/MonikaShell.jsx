@@ -64,7 +64,31 @@ const MonikaShell = ({
   isVideoOn = false,
   videoRef = null,
   isCameraFlipped = false,
+  setIsCameraFlipped = () => {},
   toggleVideo = () => {},
+  micDevices = [],
+  speakerDevices = [],
+  webcamDevices = [],
+  selectedMicId = '',
+  setSelectedMicId = () => {},
+  selectedSpeakerId = '',
+  setSelectedSpeakerId = () => {},
+  selectedWebcamId = '',
+  setSelectedWebcamId = () => {},
+  toolPermissions = {},
+  onTogglePermission = () => {},
+  handleFileUpload = () => {},
+  skills = [],
+  skillsLoading = false,
+  skillsActionBusy = false,
+  onRefreshSkills = () => {},
+  onUploadSkillZip = () => {},
+  onInstallSkillSource = () => {},
+  onUninstallSkill = () => {},
+  geminiModelPreset = '2.5',
+  onModelPresetChange = () => {},
+  geminiVoice = 'Leda',
+  onVoiceChange = () => {},
 }) => {
   return (
     <div className="monika-shell h-screen w-screen bg-black text-white/85 overflow-hidden relative">
@@ -124,6 +148,31 @@ const MonikaShell = ({
           onToggleMinecraft={onToggleMinecraft}
           showMinecraftWindow={showMinecraftWindow}
           onOpenStudy={onOpenStudy}
+          micDevices={micDevices}
+          speakerDevices={speakerDevices}
+          webcamDevices={webcamDevices}
+          selectedMicId={selectedMicId}
+          setSelectedMicId={setSelectedMicId}
+          selectedSpeakerId={selectedSpeakerId}
+          setSelectedSpeakerId={setSelectedSpeakerId}
+          selectedWebcamId={selectedWebcamId}
+          setSelectedWebcamId={setSelectedWebcamId}
+          isCameraFlipped={isCameraFlipped}
+          setIsCameraFlipped={setIsCameraFlipped}
+          toolPermissions={toolPermissions}
+          onTogglePermission={onTogglePermission}
+          handleFileUpload={handleFileUpload}
+          skills={skills}
+          skillsLoading={skillsLoading}
+          skillsActionBusy={skillsActionBusy}
+          onRefreshSkills={onRefreshSkills}
+          onUploadSkillZip={onUploadSkillZip}
+          onInstallSkillSource={onInstallSkillSource}
+          onUninstallSkill={onUninstallSkill}
+          geminiModelPreset={geminiModelPreset}
+          onModelPresetChange={onModelPresetChange}
+          geminiVoice={geminiVoice}
+          onVoiceChange={onVoiceChange}
         />
 
         {visionMode === 'screen' && (

@@ -14,6 +14,7 @@ import DailyBriefingShellPanel from './DailyBriefingShellPanel';
 import CalendarShellPanel from './CalendarShellPanel';
 import ProfileShellPanel from './ProfileShellPanel';
 import GoalsShellPanel from './GoalsShellPanel';
+import SettingsPanel from './SettingsPanel';
 
 const PANEL_COMPONENTS = {
   chat: ChatPanel,
@@ -24,6 +25,7 @@ const PANEL_COMPONENTS = {
   calendar: CalendarShellPanel,
   profile: ProfileShellPanel,
   goals: GoalsShellPanel,
+  settings: SettingsPanel,
 };
 
 /**
@@ -62,6 +64,31 @@ const PanelRouter = ({
   onStopEatTogether = () => {},
   onHeadpat = () => {},
   excludeChat = true,
+  micDevices = [],
+  speakerDevices = [],
+  webcamDevices = [],
+  selectedMicId = '',
+  setSelectedMicId = () => {},
+  selectedSpeakerId = '',
+  setSelectedSpeakerId = () => {},
+  selectedWebcamId = '',
+  setSelectedWebcamId = () => {},
+  isCameraFlipped = false,
+  setIsCameraFlipped = () => {},
+  toolPermissions = {},
+  onTogglePermission = () => {},
+  handleFileUpload = () => {},
+  skills = [],
+  skillsLoading = false,
+  skillsActionBusy = false,
+  onRefreshSkills = () => {},
+  onUploadSkillZip = () => {},
+  onInstallSkillSource = () => {},
+  onUninstallSkill = () => {},
+  geminiModelPreset = '2.5',
+  onModelPresetChange = () => {},
+  geminiVoice = 'Leda',
+  onVoiceChange = () => {},
 }) => {
   const { activeContext, setActiveContext } = useMonika();
   
@@ -126,6 +153,34 @@ const PanelRouter = ({
       case 'profile':
         return {
           socket,
+        };
+      case 'settings':
+        return {
+          micDevices,
+          speakerDevices,
+          webcamDevices,
+          selectedMicId,
+          setSelectedMicId,
+          selectedSpeakerId,
+          setSelectedSpeakerId,
+          selectedWebcamId,
+          setSelectedWebcamId,
+          isCameraFlipped,
+          setIsCameraFlipped,
+          toolPermissions,
+          onTogglePermission,
+          handleFileUpload,
+          skills,
+          skillsLoading,
+          skillsActionBusy,
+          onRefreshSkills,
+          onUploadSkillZip,
+          onInstallSkillSource,
+          onUninstallSkill,
+          geminiModelPreset,
+          onModelPresetChange,
+          geminiVoice,
+          onVoiceChange,
         };
       case 'chat':
       default:

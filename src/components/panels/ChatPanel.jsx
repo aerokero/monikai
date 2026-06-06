@@ -277,6 +277,18 @@ const ChatPanel = ({
   const userLine = String(latestUserMessage?.text || '').trim();
   const userLinePreview = userLine.length > 54 ? `${userLine.slice(0, 54)}...` : userLine;
 
+  const getMessageStyle = (index, total) => {
+    const distance = total - 1 - index;
+    const opacity = Math.max(0.12, 1 - distance * 0.38);
+    const scale = Math.max(0.78, 1 - distance * 0.08);
+    return {
+      opacity,
+      transform: `scale(${scale})`,
+      transformOrigin: 'left bottom',
+      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+    };
+  };
+
   const toggleThoughts = () => {
     if (!socket) return;
     const next = !showThoughts;
@@ -469,7 +481,8 @@ const ChatPanel = ({
         <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar relative flex flex-col px-1 pb-2 pt-0 z-10">
         {/* Chat View */}
         {viewMode === 'chat' && (
-          <div className="flex min-h-full flex-col justify-end">
+          <div className="flex min-h-full flex-col">
+            <div className="mt-auto" />
             {showAgenticLog && hasAgenticActivity ? (
               <div className="mb-3 max-h-32 overflow-hidden rounded-[12px] border border-[rgba(232,178,102,0.14)] bg-black/45 shadow-[0_10px_28px_rgba(0,0,0,0.32)]">
                 <div className="flex items-center gap-2 border-b border-[rgba(232,178,102,0.14)] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.16em] text-[rgba(232,178,102,0.72)]">
@@ -491,28 +504,43 @@ const ChatPanel = ({
               </div>
             ) : null}
 
-            {dialogueMessage ? (
-              <div className="px-1 pb-6">
-                <div className="mb-1 flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-[rgba(232,178,102,0.72)]">
-                  <span>{latestUserMessage ? (t('chat.you') || 'You') : speakerLabel}</span>
-                  {latestUserMessage ? (
-                    <>
-                      <span className="text-[rgba(255,224,190,0.28)]">-</span>
-                      <span className="max-w-[62vw] truncate normal-case tracking-normal text-[rgba(255,240,218,0.36)]">
-                        {userLinePreview}
-                      </span>
-                    </>
-                  ) : null}
-                </div>
-                <div className="max-h-[11.5rem] overflow-y-auto pr-3 font-serif text-[clamp(1.15rem,1.5vw,1.45rem)] leading-[1.35] text-[rgba(255,246,233,0.96)] drop-shadow-[0_2px_10px_rgba(0,0,0,0.45)] scrollbar-hide">
-                  {renderMarkdown(dialogueMessage?.text)}
-                </div>
+            {visibleMessages.length > 0 ? (
+              <div className="flex flex-col gap-5 pb-6">
+                {visibleMessages.map((message, index) => {
+                  const isUser = ['you', 'ty'].includes(String(message?.sender || '').toLowerCase());
+                  const isThought = String(message?.sender || '').includes('(Thought)');
+                  const style = getMessageStyle(index, visibleMessages.length);
+
+                  if (isUser) {
+                    return (
+                      <div key={message.id || index} className="px-1" style={style}>
+                        <div className="flex items-baseline gap-2">
+                          <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-[rgba(232,178,102,0.72)] shrink-0 select-none">
+                            {t('chat.you') || 'You'} —
+                          </span>
+                          <span className="font-serif text-[clamp(1.05rem,1.3vw,1.25rem)] leading-[1.35] text-[rgba(255,240,218,0.75)] drop-shadow-[0_1px_5px_rgba(0,0,0,0.35)]">
+                            {renderMarkdown(message.text)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div key={message.id || index} className={`px-1 ${isThought ? 'opacity-60 italic' : ''}`} style={style}>
+                      {isThought && (
+                        <div className="mb-1 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[rgba(232,178,102,0.5)]">
+                          Thought
+                        </div>
+                      )}
+                      <div className="font-serif text-[clamp(1.15rem,1.5vw,1.45rem)] leading-[1.35] text-[rgba(255,246,233,0.96)] drop-shadow-[0_2px_10px_rgba(0,0,0,0.45)]">
+                        {renderMarkdown(message.text)}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            ) : (
-              <div className="px-1 pb-5 font-serif text-[clamp(1.1rem,1.4vw,1.35rem)] leading-[1.35] text-[rgba(255,246,233,0.52)]">
-                {t('chat.placeholder')}
-              </div>
-            )}
+            ) : null}
             <div ref={messagesEndRef} />
           </div>
         )}

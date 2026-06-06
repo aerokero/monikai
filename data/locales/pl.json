@@ -122,20 +122,20 @@
     "tip_priority": "Wskazówka: ustaw jedno (data/czas ma priorytet)."
   },
   "settings": {
-    "title": "Nasze ustawienia",
+    "title": "Ustawienia",
     "security": "Bezpieczeństwo",
     "face_auth": "Rozpoznawanie twarzy",
-    "microphone": "Mój słuch (mikrofon)",
-    "speaker": "Mój głos (głośnik)",
-    "camera": "Mój wzrok (kamera)",
-    "mirror_vision": "Lustrzane odbicie",
+    "microphone": "Słuch (mikrofon)",
+    "speaker": "Głos (głośnik)",
+    "camera": "Wzrok (kamera)",
+    "mirror_vision": "Odbij obraz z kamery (lustrzane odbicie)",
     "permissions": "Czy chciałbyś żebym pytała o pozwolenie do...",
     "memory": "Zarządzanie pamięcią",
     "import_memory": "Importuj plik do zapamiętania",
     "language": "Język"
   },
   "briefing": {
-    "title": "Codzienny Przegląd",
+    "title": "Codzienny przegląd",
     "subtitle": "Wyselekcjowana inteligencja z globalnych źródeł.",
     "breaking": "PILNE",
     "refresh": "Odswiez briefing",
@@ -438,6 +438,36 @@
     "placeholder": "Polecenie dla Agenta...",
     "send": "Wyślij",
     "waiting": "Oczekiwanie na strumień..."
+  },
+  "mas_clock": {
+    "mood": {
+      "neutral": "neutralna",
+      "excited": "podekscytowana",
+      "happy": "szczęśliwa",
+      "calm": "spokojna",
+      "angry": "zła",
+      "intensely_protective": "bardzo opiekuńcza",
+      "protective": "opiekuńcza",
+      "sad": "smutna",
+      "tired": "zmęczona"
+    },
+    "time_of_day": {
+      "morning": "o poranku",
+      "afternoon": "popołudniu",
+      "evening": "wieczorem",
+      "night": "w nocy"
+    },
+    "weather": {
+      "clear": "słonecznie",
+      "mostly_clear": "pogodnie",
+      "partly_cloudy": "umiarkowane zachmurzenie",
+      "cloudy": "pochmurno",
+      "fog": "mgliście",
+      "drizzle": "mżawka",
+      "rain": "deszczowo",
+      "snow": "śnieżnie",
+      "storm": "burzowo"
+    }
   },
   "navigation": {
     "title": "Nawigacja",

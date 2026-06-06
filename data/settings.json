@@ -46,7 +46,7 @@
         }
     },
     "gemini_model_preset": "2.5",
-    "gemini_voice": "Leda",
+    "gemini_voice": "Sulafat",
     "camera_flipped": false,
     "camera_source": "frontend",
     "video_mode": "screen",

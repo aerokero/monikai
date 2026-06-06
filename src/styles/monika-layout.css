@@ -28,7 +28,7 @@
   --monika-accent-rose: rgb(226, 151, 153);
   --monika-line-warm: rgba(232, 178, 102, 0.16);
   --monika-backdrop-fade: rgba(13, 9, 6, 0.14);
-  
+
   /* Transitions */
   --monika-transition-fast: 200ms cubic-bezier(0.4, 0, 0.2, 1);
   --monika-transition-normal: 300ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -380,6 +380,70 @@
   align-items: stretch;
   justify-items: center;
   background-color: transparent;
+}
+
+.mas-clock {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 55;
+  min-width: 250px;
+  max-width: min(420px, 100%);
+  padding: clamp(14px, 2vw, 24px) clamp(16px, 3vw, 34px) 34px 88px;
+  text-align: right;
+  pointer-events: none;
+  color: rgba(255, 242, 220, 0.92);
+  background:
+    radial-gradient(120% 115% at 100% 0%, rgba(12, 8, 6, 0.34) 0%, rgba(12, 8, 6, 0.22) 42%, rgba(12, 8, 6, 0) 78%),
+    linear-gradient(225deg, rgba(12, 8, 6, 0.22) 0%, rgba(12, 8, 6, 0) 64%);
+  backdrop-filter: blur(1.5px);
+}
+
+.mas-clock__content {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.mas-clock__mood {
+  overflow: hidden;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(16px, 1.45vw, 22px);
+  font-style: italic;
+  line-height: 1.05;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  letter-spacing: 0;
+}
+
+.mas-clock__details {
+  overflow: hidden;
+  margin-top: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: clamp(10px, 0.78vw, 12px);
+  line-height: 1;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  letter-spacing: 0;
+  color: rgba(255, 230, 196, 0.64);
+}
+
+.monika-layout--tablet .mas-clock,
+.monika-layout--portrait .mas-clock,
+.monika-layout--landscape-phone .mas-clock {
+  min-width: 230px;
+  max-width: min(330px, 100%);
+  padding: 12px 10px 28px 52px;
+}
+
+.monika-layout--tablet .mas-clock__content,
+.monika-layout--portrait .mas-clock__content,
+.monika-layout--landscape-phone .mas-clock__content {
+  max-width: 100%;
+}
+
+.monika-layout--portrait .mas-clock {
+  max-width: min(236px, calc(100% - 16px));
 }
 
 .monika-info-bar {
@@ -961,4 +1025,23 @@
 
 .monika-panel-container--exiting {
   animation: vn-panel-slide-out var(--monika-transition-fast) cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
+}
+
+
+/* Settings Mockup Override */
+.monika-panel-container.is-settings {
+  border-radius: 0 !important;
+  border: none !important;
+  border-left: 1px solid rgba(232, 178, 102, 0.12) !important;
+  background: #130c07 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+.monika-panel-container.is-settings section {
+  border-radius: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
 }

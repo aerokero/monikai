@@ -440,6 +440,36 @@
     "send": "Send",
     "waiting": "Waiting for browser stream..."
   },
+  "mas_clock": {
+    "mood": {
+      "neutral": "neutral",
+      "excited": "excited",
+      "happy": "happy",
+      "calm": "calm",
+      "angry": "angry",
+      "intensely_protective": "intensely protective",
+      "protective": "protective",
+      "sad": "sad",
+      "tired": "tired"
+    },
+    "time_of_day": {
+      "morning": "this morning",
+      "afternoon": "this afternoon",
+      "evening": "this evening",
+      "night": "tonight"
+    },
+    "weather": {
+      "clear": "clear",
+      "mostly_clear": "mostly clear",
+      "partly_cloudy": "partly cloudy",
+      "cloudy": "cloudy",
+      "fog": "foggy",
+      "drizzle": "drizzling",
+      "rain": "rainy",
+      "snow": "snowing",
+      "storm": "stormy"
+    }
+  },
   "navigation": {
     "title": "Navigation",
     "collapse_to_icons": "Collapse to icons",

@@ -24,6 +24,15 @@ def register_system_frontend_handlers(
 
     @sio.event
     async def get_personality_status(sid):
+        try:
+            from backend.core.runtimes import v2_runtime
+            runtime = v2_runtime.get()
+            if runtime is not None:
+                await sio.emit("personality_status", await runtime.get_status_payload(), room=sid)
+                return
+        except Exception:
+            pass
+
         if get_personality_system():
             data = asdict(get_personality_system().state)
             aff = max(0.0, min(100.0, float(data.get("affection", 0))))
