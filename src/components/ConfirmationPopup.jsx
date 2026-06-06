@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, Check, X, Terminal, AlertTriangle } from 'lucide-react';
+import { Shield, Check, X, Terminal, AlertTriangle } from './icons';
 
 const ConfirmationPopup = ({ request, onConfirm, onDeny }) => {
     if (!request) return null;

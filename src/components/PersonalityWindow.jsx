@@ -1,5 +1,5 @@
 import React from 'react';
-import { Heart, Activity, Moon, Zap } from 'lucide-react';
+import { Heart, Activity, Moon, Zap } from './icons';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const PersonalityWindow = ({ state }) => {

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Gamepad2, Loader2, Server, X } from 'lucide-react';
+import { Gamepad2, Loader2, Server, X } from './icons';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const LAST_HOST_KEY = 'minecraft_last_host';

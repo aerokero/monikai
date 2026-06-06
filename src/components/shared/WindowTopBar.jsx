@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Minus, X } from 'lucide-react';
+import { Minus, X } from '../icons';
 
 const WindowTopBar = () => {
   const ipcRenderer = useMemo(() => {

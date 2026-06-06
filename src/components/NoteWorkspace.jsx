@@ -12,7 +12,7 @@ import {
   Loader2,
   Plus,
   Trash2,
-} from 'lucide-react';
+} from './icons';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const INLINE_TOKEN_RE = /(\*\*[^*\n]+?\*\*|\*[^*\n]+?\*|==[^=\n]+?==|`[^`\n]+?`|<u>[\s\S]+?<\/u>|<mark>[\s\S]+?<\/mark>|<span[^>]*>[\s\S]+?<\/span>)/g;

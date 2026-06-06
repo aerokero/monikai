@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, X, Power } from 'lucide-react';
+import { Save, X, Power } from './icons';
 
 const MemoryPrompt = ({ onConfirm, onDeny, onCancel }) => {
     const [filename, setFilename] = useState('');

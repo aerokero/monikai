@@ -11,7 +11,7 @@ import { useAudioVideo } from '../../contexts/AudioVideoContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import useLayoutMode from '../../hooks/useLayoutMode';
 import { getAllPanels } from '../../config/panelRegistry';
-import * as Icons from 'lucide-react';
+import * as Icons from '../icons';
 
 const RailNav = () => {
   const { activeContext, setActiveContext } = useMonika();
@@ -55,6 +55,49 @@ const RailNav = () => {
   };
   
   const panels = getAllPanels().filter((panel) => !panel.hiddenInRail);
+  const railButtonBase = `
+    rail-button
+    flex items-center justify-center
+    transition-all duration-200
+    group relative
+    border
+  `;
+  const railButtonIdle = `
+    bg-[rgba(255,238,212,0.035)]
+    text-[rgba(255,240,218,0.62)]
+    hover:bg-[rgba(232,178,102,0.08)]
+    hover:text-[rgba(255,246,233,0.86)]
+    border-[rgba(232,178,102,0.12)]
+    hover:border-[rgba(232,178,102,0.24)]
+  `;
+  const railButtonActive = `
+    bg-[linear-gradient(180deg,rgba(242,186,100,0.98),rgba(222,157,80,0.94))]
+    text-[#20160f]
+    border-[rgba(255,225,175,0.66)]
+    shadow-[0_8px_22px_rgba(232,178,102,0.28)]
+  `;
+  const railButtonOn = `
+    bg-[rgba(88,118,73,0.14)]
+    text-[#9fbd8f]
+    border-[rgba(146,174,126,0.38)]
+    hover:bg-[rgba(88,118,73,0.22)]
+    hover:text-[#c0d4ad]
+  `;
+  const railButtonWarn = `
+    bg-[rgba(166,72,58,0.14)]
+    text-[#df8978]
+    border-[rgba(202,104,85,0.34)]
+    hover:bg-[rgba(166,72,58,0.22)]
+    hover:text-[#f0ad9d]
+  `;
+  const tooltipClassName = `
+    rail-tooltip
+    absolute left-full ml-2 px-2 py-1 rounded-md
+    text-xs font-medium
+    whitespace-nowrap pointer-events-none
+    opacity-0 group-hover:opacity-100 transition-opacity
+    z-50
+  `;
 
   // Determine rail className based on layout mode
   const railClassName = {
@@ -76,18 +119,7 @@ const RailNav = () => {
             <button
               key={panel.id}
               onClick={() => setActiveContext(panel.id)}
-              className={`
-                rail-button
-                flex items-center justify-center
-                p-3 rounded-lg
-                transition-all duration-200
-                group relative
-                
-                ${isActive
-                  ? 'bg-monika-accent-primary/20 text-monika-accent-primary border border-monika-accent-primary/50'
-                  : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/80 border border-transparent'
-                }
-              `}
+              className={`${railButtonBase} ${isActive ? railButtonActive : railButtonIdle}`}
               aria-label={panel.ariaLabel}
               title={t('panels.' + panel.id)}
               aria-current={isActive ? 'page' : undefined}
@@ -96,13 +128,7 @@ const RailNav = () => {
               
               {/* Tooltip label (shows on hover, desktop) */}
               {['desktop', 'desktop-wide'].includes(layoutMode) && (
-                <div className="
-                  absolute left-full ml-2 px-2 py-1 rounded
-                  bg-black/80 text-white/90 text-xs font-medium
-                  whitespace-nowrap pointer-events-none
-                  opacity-0 group-hover:opacity-100 transition-opacity
-                  z-50
-                ">
+                <div className={tooltipClassName}>
                   {t('panels.' + panel.id)}
                 </div>
               )}
@@ -116,30 +142,14 @@ const RailNav = () => {
         {/* AI Power Button */}
         <button
           onClick={togglePower}
-          className={`
-            rail-button
-            flex items-center justify-center
-            p-3 rounded-lg
-            transition-all duration-200
-            group relative
-            ${isConnected
-              ? 'bg-green-500/20 text-green-400 border border-green-500/50'
-              : 'bg-red-500/20 text-red-400 border border-red-500/50'
-            }
-          `}
+          className={`${railButtonBase} ${isConnected ? railButtonOn : railButtonWarn}`}
           aria-label="AI Power"
           title={isConnected ? t('tools.ai_on') : t('tools.ai_off')}
         >
           <Icons.Power size={20} />
           
           {['desktop', 'desktop-wide'].includes(layoutMode) && (
-            <div className="
-              absolute left-full ml-2 px-2 py-1 rounded
-              bg-black/80 text-white/90 text-xs font-medium
-              whitespace-nowrap pointer-events-none
-              opacity-0 group-hover:opacity-100 transition-opacity
-              z-50
-            ">
+            <div className={tooltipClassName}>
               {isConnected ? t('tools.ai_on') : t('tools.ai_off')}
             </div>
           )}
@@ -148,30 +158,14 @@ const RailNav = () => {
         {/* Microphone Button */}
         <button
           onClick={toggleMute}
-          className={`
-            rail-button
-            flex items-center justify-center
-            p-3 rounded-lg
-            transition-all duration-200
-            group relative
-            ${isMuted
-              ? 'bg-red-500/20 text-red-400 border border-red-500/50'
-              : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/80 border border-transparent'
-            }
-          `}
+          className={`${railButtonBase} ${isMuted ? railButtonWarn : railButtonIdle}`}
           aria-label="Microphone"
           title={isMuted ? t('tools.microphone_off') : t('tools.microphone_on')}
         >
           <Icons.Mic size={20} />
           
           {['desktop', 'desktop-wide'].includes(layoutMode) && (
-            <div className="
-              absolute left-full ml-2 px-2 py-1 rounded
-              bg-black/80 text-white/90 text-xs font-medium
-              whitespace-nowrap pointer-events-none
-              opacity-0 group-hover:opacity-100 transition-opacity
-              z-50
-            ">
+            <div className={tooltipClassName}>
               {isMuted ? t('tools.microphone_off') : t('tools.microphone_on')}
             </div>
           )}
@@ -180,30 +174,14 @@ const RailNav = () => {
         {/* Camera Button */}
         <button
           onClick={toggleVideo}
-          className={`
-            rail-button
-            flex items-center justify-center
-            p-3 rounded-lg
-            transition-all duration-200
-            group relative
-            ${isVideoOn
-              ? 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/80 border border-transparent'
-              : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/80 border border-transparent'
-            }
-          `}
+          className={`${railButtonBase} ${isVideoOn ? railButtonOn : railButtonIdle}`}
           aria-label="Camera"
           title={isVideoOn ? t('tools.camera_on') : t('tools.camera_off')}
         >
           <Icons.Video size={20} />
           
           {['desktop', 'desktop-wide'].includes(layoutMode) && (
-            <div className="
-              absolute left-full ml-2 px-2 py-1 rounded
-              bg-black/80 text-white/90 text-xs font-medium
-              whitespace-nowrap pointer-events-none
-              opacity-0 group-hover:opacity-100 transition-opacity
-              z-50
-            ">
+            <div className={tooltipClassName}>
               {isVideoOn ? t('tools.camera_on') : t('tools.camera_off')}
             </div>
           )}
@@ -212,50 +190,26 @@ const RailNav = () => {
         {/* Screen Share Button */}
         <button
           onClick={toggleScreenCapture}
-          className={`
-            rail-button
-            flex items-center justify-center
-            p-3 rounded-lg
-            transition-all duration-200
-            group relative
-            ${visionMode === 'screen'
-              ? 'bg-green-500/20 text-green-400 border border-green-500/50'
-              : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/80 border border-transparent'
-            }
-          `}
+          className={`${railButtonBase} ${visionMode === 'screen' ? railButtonOn : railButtonIdle}`}
           aria-label="Screen Share"
           title={visionMode === 'screen' ? t('tools.share_screen_off') : t('tools.share_screen_on')}
         >
           <Icons.Share2 size={20} />
           
           {['desktop', 'desktop-wide'].includes(layoutMode) && (
-            <div className="
-              absolute left-full ml-2 px-2 py-1 rounded
-              bg-black/80 text-white/90 text-xs font-medium
-              whitespace-nowrap pointer-events-none
-              opacity-0 group-hover:opacity-100 transition-opacity
-              z-50
-            ">
+            <div className={tooltipClassName}>
               {visionMode === 'screen' ? t('tools.share_screen_off') : t('tools.share_screen_on')}
             </div>
           )}
         </button>
         
         {/* Divider line */}
-        <div className="w-8 h-px bg-white/10 my-2"></div>
+        <div className="rail-divider"></div>
         
         {/* Settings Button */}
         <button
           onClick={openSettings}
-          className={`
-            rail-button
-            flex items-center justify-center
-            p-3 rounded-lg
-            transition-all duration-200
-            group relative
-            mt-auto
-            bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/80 border border-transparent
-          `}
+          className={`${railButtonBase} ${railButtonIdle} mt-auto`}
           aria-label="Settings"
           title={t('tools.settings')}
         >
@@ -263,13 +217,7 @@ const RailNav = () => {
           
           {/* Tooltip label (shows on hover, desktop) */}
           {['desktop', 'desktop-wide'].includes(layoutMode) && (
-            <div className="
-              absolute left-full ml-2 px-2 py-1 rounded
-              bg-black/80 text-white/90 text-xs font-medium
-              whitespace-nowrap pointer-events-none
-              opacity-0 group-hover:opacity-100 transition-opacity
-              z-50
-            ">
+            <div className={tooltipClassName}>
               {t('tools.settings')}
             </div>
           )}
@@ -281,15 +229,7 @@ const RailNav = () => {
           onMouseMove={handleQuitMouseMove}
           onMouseLeave={handleQuitMouseLeave}
           onClick={onLogout}
-          className={`
-            rail-button
-            flex items-center justify-center
-            p-3 rounded-lg
-            transition-all duration-100
-            group relative
-            bg-white/5 text-white/60 hover:bg-red-500/20 hover:text-red-400 border border-transparent
-            pointer-events-auto cursor-pointer
-          `}
+          className={`${railButtonBase} ${railButtonIdle} transition-all duration-100 pointer-events-auto cursor-pointer hover:bg-[rgba(166,72,58,0.18)] hover:text-[#f0ad9d]`}
           style={{
             transform: `translate(${quitHoverOffset.x}px, ${quitHoverOffset.y}px)`,
             transitionProperty: 'transform, background-color, color, border-color',
@@ -303,13 +243,7 @@ const RailNav = () => {
           
           {/* Tooltip label (shows on hover, desktop) */}
           {['desktop', 'desktop-wide'].includes(layoutMode) && (
-            <div className="
-              absolute left-full ml-2 px-2 py-1 rounded
-              bg-black/80 text-white/90 text-xs font-medium
-              whitespace-nowrap pointer-events-none
-              opacity-0 group-hover:opacity-100 transition-opacity
-              z-50
-            ">
+            <div className={tooltipClassName}>
               {isQuitHovered ? t('tools.dont_leave_me') : t('tools.logout')}
             </div>
           )}

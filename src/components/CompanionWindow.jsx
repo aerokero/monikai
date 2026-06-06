@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Heart, Utensils, Gift, Smile, Book, X, ClipboardList, Coffee, Gamepad2 } from 'lucide-react';
+import { Heart, Utensils, Gift, Smile, Book, X, ClipboardList, Coffee, Gamepad2 } from './icons';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const TabButton = ({ active, icon: Icon, label, onClick }) => (

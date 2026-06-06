@@ -8,7 +8,7 @@ import {
   Share2,
   ZoomIn,
   ZoomOut,
-} from 'lucide-react';
+} from '../icons';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import workerSrc from 'pdfjs-dist/legacy/build/pdf.worker.mjs?url';
 import NoteWorkspace from '../NoteWorkspace';

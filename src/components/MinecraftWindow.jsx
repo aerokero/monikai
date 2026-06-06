@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X } from 'lucide-react';
+import { X } from './icons';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const MinecraftWindow = ({ socket, onClose, position, onMouseDown, activeDragElement, zIndex }) => {

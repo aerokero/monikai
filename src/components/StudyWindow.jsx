@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, X, Send, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
+import { BookOpen, X, Send, RefreshCw, ChevronLeft, ChevronRight } from './icons';
 import NoteWorkspace from './NoteWorkspace';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import workerSrc from 'pdfjs-dist/legacy/build/pdf.worker.mjs?url';

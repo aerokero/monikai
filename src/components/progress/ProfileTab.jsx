@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Edit2, Save, X } from 'lucide-react';
+import { Edit2, Save, X } from '../icons';
 import { useProgression } from '../../contexts/ProgressionContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { formatTimestamp } from '../../utils/progressionTransformers';

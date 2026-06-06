@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckCircle, Clock, Zap } from 'lucide-react';
+import { CheckCircle, Clock, Zap } from '../icons';
 import { useProgression } from '../../contexts/ProgressionContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { calculateQuestExpiration, getQuestSlotIcon, formatTimestamp } from '../../utils/progressionTransformers';

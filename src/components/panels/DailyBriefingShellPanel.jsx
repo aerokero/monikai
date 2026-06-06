@@ -14,7 +14,7 @@ import {
   Sparkles,
   Sun,
   XCircle,
-} from 'lucide-react';
+} from '../icons';
 import ShellPanelFrame from '../shared/ShellPanelFrame';
 import useElementSize from '../../hooks/useElementSize';
 import { useLanguage } from '../../contexts/LanguageContext';

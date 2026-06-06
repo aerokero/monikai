@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Video, X, Minus } from 'lucide-react';
+import { Video, X, Minus } from './icons';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const CameraWindow = ({ 

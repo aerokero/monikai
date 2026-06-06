@@ -7,7 +7,7 @@
 import React, { useState } from 'react';
 import PanelHeader from '../shared/PanelHeader';
 import PanelContent from '../shared/PanelContent';
-import { BookOpen, Folder } from 'lucide-react';
+import { BookOpen, Folder } from '../icons';
 
 const StudyPanel = ({ socket = null }) => {
   const [selectedFolder, setSelectedFolder] = useState(null);

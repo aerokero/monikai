@@ -7,7 +7,7 @@
 import React, { useState } from 'react';
 import PanelHeader from '../shared/PanelHeader';
 import PanelContent from '../shared/PanelContent';
-import { CheckSquare } from 'lucide-react';
+import { CheckSquare } from '../icons';
 
 const TasksPanel = ({ socket = null }) => {
   const [tasks] = useState([

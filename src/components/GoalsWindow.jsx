@@ -11,7 +11,7 @@ import {
   MessageCircleHeart,
   BookOpenText,
   Flame,
-} from 'lucide-react';
+} from './icons';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const TREE_NODE_SIZE = 64;

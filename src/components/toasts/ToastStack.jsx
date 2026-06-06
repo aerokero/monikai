@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Bell, AlertCircle } from 'lucide-react';
+import { X, Bell, AlertCircle } from '../icons';
 
 const ToastStack = ({ toasts = [], onDismiss = () => {} }) => {
   return (

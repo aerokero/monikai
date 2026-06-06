@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { X, Upload, Mic, Speaker, Video, Shield, Cpu, Globe, Lock, Package, RefreshCw, Trash2, Sparkles } from 'lucide-react';
+import { X, Upload, Mic, Speaker, Video, Shield, Cpu, Globe, Lock, Package, RefreshCw, Trash2, Sparkles } from './icons';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const GEMINI_VOICES = [

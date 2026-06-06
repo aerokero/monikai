@@ -15,7 +15,7 @@ import {
   Utensils,
   X,
   Zap,
-} from 'lucide-react';
+} from '../icons';
 import AudioBar from '../AudioBar';
 import { useLanguage } from '../../contexts/LanguageContext';
 
@@ -123,8 +123,8 @@ const ActivityTile = ({ icon: Icon, title, description, onClick, accentClass, ac
     onClick={onClick}
     className={`group rounded-xl border p-3 text-left transition-all duration-200 hover:-translate-y-0.5 ${
       active
-        ? 'border-[rgba(255,100,140,0.3)] bg-[rgba(255,100,140,0.08)]'
-        : 'border-white/10 bg-white/4 hover:border-white/20 hover:bg-white/6'
+        ? 'border-[rgba(232,178,102,0.32)] bg-[rgba(232,178,102,0.08)]'
+        : 'border-[rgba(232,178,102,0.12)] bg-[rgba(255,238,212,0.035)] hover:border-[rgba(232,178,102,0.22)] hover:bg-[rgba(255,238,212,0.06)]'
     }`}
   >
     <div className="flex items-start gap-3">
@@ -433,7 +433,7 @@ const ChatPanel = ({
         <div
           className="rounded-t-[10px] rounded-b-none px-4 py-1.5 border border-b-0 border-white/10"
           style={{
-            background: 'linear-gradient(135deg, rgba(0,0,0,0.55), rgba(32,8,48,0.45))',
+            background: 'linear-gradient(135deg, rgba(18,12,8,0.74), rgba(45,31,20,0.58))',
             backdropFilter: 'blur(12px)',
           }}
         >
@@ -452,11 +452,11 @@ const ChatPanel = ({
 
       {/* Main Box - Chat content */}
       <div
-        className="relative flex-1 min-h-0 overflow-hidden rounded-[16px] rounded-tl-none border border-white/5 flex flex-col"
+        className="relative flex-1 min-h-0 overflow-hidden rounded-[16px] rounded-tl-none border border-[rgba(232,178,102,0.12)] flex flex-col"
         style={{
-          background: 'linear-gradient(135deg, rgba(0,0,0,0.55), rgba(32,8,48,0.35))',
+          background: 'linear-gradient(135deg, rgba(18,12,8,0.68), rgba(43,31,22,0.5))',
           backdropFilter: 'blur(12px)',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+          boxShadow: '0 12px 34px rgba(13,9,6,0.42)',
         }}
       >
         {/* Content Area - Main scrollable messages and views */}
@@ -507,7 +507,7 @@ const ChatPanel = ({
                         {/* Sender label — only for Monika, tiny and subtle */}
                         {!isUser && (
                           <div className="mb-0.5 flex items-baseline gap-1.5">
-                            <span className="text-[10px] font-medium tracking-widest text-[rgba(255,100,140,0.5)]">
+                            <span className="text-[10px] font-medium tracking-widest text-[rgba(232,178,102,0.62)]">
                               {displaySender}
                             </span>
                             {message?.time ? (
@@ -555,7 +555,7 @@ const ChatPanel = ({
                 title={t('companion.activities.headpat')}
                 description={t('companion.activities.headpat_desc')}
                 onClick={() => handleAction('headpat')}
-                accentClass="bg-pink-500/22 text-pink-200"
+                accentClass="bg-[rgba(226,151,153,0.18)] text-[rgba(255,210,210,0.9)]"
               />
               <ActivityTile
                 icon={Gift}
@@ -701,7 +701,7 @@ const ChatPanel = ({
                 onKeyDown={handleKeyDown}
                 placeholder="Type your message... (Shift+Enter for new line)"
                 rows={1}
-                className="flex-1 resize-none rounded-[12px] border border-white/12 bg-white/6 px-3 py-2 text-sm text-white/90 placeholder:text-white/30 outline-none focus:border-[rgba(255,100,140,0.45)] transition-colors"
+                className="flex-1 resize-none rounded-[12px] border border-[rgba(232,178,102,0.14)] bg-[rgba(255,238,212,0.055)] px-3 py-2 text-sm text-[rgba(255,246,233,0.92)] placeholder:text-[rgba(255,224,190,0.3)] outline-none focus:border-[rgba(232,178,102,0.48)] transition-colors"
               />
               <input
                 ref={fileInputRef}
@@ -717,7 +717,7 @@ const ChatPanel = ({
                 disabled={!canSend}
                 className={`font-semibold whitespace-nowrap transition-all ${
                   canSend
-                    ? 'text-[rgba(255,100,140,0.85)] hover:text-[rgba(255,100,140,1)]'
+                    ? 'text-[rgba(232,178,102,0.88)] hover:text-[rgba(255,213,151,1)]'
                     : 'text-white/25 cursor-not-allowed'
                 }`}
                 title="Send message"
@@ -773,8 +773,8 @@ const ChatPanel = ({
               title={title}
               className={`flex items-center justify-center w-7 h-7 rounded-lg transition-all ${
                 viewMode === mode
-                  ? 'text-[rgba(255,100,140,0.9)] bg-[rgba(255,100,140,0.1)]'
-                  : 'text-white/35 hover:text-white/65 hover:bg-white/5'
+                  ? 'text-[rgba(232,178,102,0.95)] bg-[rgba(232,178,102,0.12)]'
+                  : 'text-[rgba(255,224,190,0.36)] hover:text-[rgba(255,240,218,0.68)] hover:bg-[rgba(255,238,212,0.055)]'
               }`}
             >
               <Icon size={14} />
@@ -791,7 +791,7 @@ const ChatPanel = ({
           >
             <Paperclip size={14} />
             {attachments.length > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[rgba(255,100,140,0.9)] text-[9px] font-bold text-white">
+              <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[rgba(232,178,102,0.95)] text-[9px] font-bold text-[#20160f]">
                 {attachments.length}
               </span>
             )}
@@ -812,8 +812,8 @@ const ChatPanel = ({
               title="Agent logs"
               className={`flex items-center justify-center w-7 h-7 rounded-lg transition-all ${
                 showAgenticLog
-                  ? 'text-[rgba(255,100,140,0.9)] bg-[rgba(255,100,140,0.1)]'
-                  : 'text-white/35 hover:text-white/65 hover:bg-white/5'
+                  ? 'text-[rgba(232,178,102,0.95)] bg-[rgba(232,178,102,0.12)]'
+                  : 'text-[rgba(255,224,190,0.36)] hover:text-[rgba(255,240,218,0.68)] hover:bg-[rgba(255,238,212,0.055)]'
               }`}
             >
               <Terminal size={14} />

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { X, Newspaper, RefreshCw, Pin, PinOff, Check, XCircle, Sparkles, ExternalLink, CloudSun, CloudRain, CloudSnow, CloudLightning, Sun, Cloud } from 'lucide-react';
+import { X, Newspaper, RefreshCw, Pin, PinOff, Check, XCircle, Sparkles, ExternalLink, CloudSun, CloudRain, CloudSnow, CloudLightning, Sun, Cloud } from './icons';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const openUrl = (url) => {

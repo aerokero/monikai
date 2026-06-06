@@ -1578,19 +1578,19 @@ function App() {
                 background: transparent;
               }
               ::-webkit-scrollbar-thumb {
-                background: rgba(255, 255, 255, 0.1);
+                background: rgba(232, 178, 102, 0.18);
                 border-radius: 3px;
                 transition: background 0.2s ease;
               }
               ::-webkit-scrollbar-thumb:hover {
-                background: rgba(255, 255, 255, 0.4);
+                background: rgba(232, 178, 102, 0.42);
               }
               ::-webkit-scrollbar-corner {
                 background: transparent;
               }
               * {
                 scrollbar-width: thin;
-                scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+                scrollbar-color: rgba(232, 178, 102, 0.18) transparent;
               }
             `}</style>
 

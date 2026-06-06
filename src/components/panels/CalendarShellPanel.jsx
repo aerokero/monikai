@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Calendar, Plus, RefreshCw, Trash2, Edit2, ChevronLeft, ChevronRight, Check, Users } from 'lucide-react';
+import { Calendar, Plus, RefreshCw, Trash2, Edit2, ChevronLeft, ChevronRight, Check, Users } from '../icons';
 import { useLanguage } from '../../contexts/LanguageContext';
 import ShellPanelFrame from '../shared/ShellPanelFrame';
 import useElementSize from '../../hooks/useElementSize';

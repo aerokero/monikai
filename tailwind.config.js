@@ -10,6 +10,19 @@ module.exports = {
         mono: ['"Share Tech Mono"', "monospace"],
       },
       colors: {
+        monika: {
+          accent: {
+            primary: "rgb(232,178,102)",
+            secondary: "rgb(216,126,80)",
+            rose: "rgb(226,151,153)",
+          },
+          warm: {
+            glass: "rgba(36,27,18,0.74)",
+            line: "rgba(232,178,102,0.16)",
+            ink: "rgba(255,246,233,0.94)",
+          },
+        },
+
         // Główna paleta UI – odcienie bieli
         surface: {
           50:  "rgba(255,255,255,0.02)",

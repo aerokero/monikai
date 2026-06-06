@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, FileText } from 'lucide-react';
+import { X, FileText } from './icons';
 import { useLanguage } from '../contexts/LanguageContext';
 import NoteWorkspace from './NoteWorkspace';
 

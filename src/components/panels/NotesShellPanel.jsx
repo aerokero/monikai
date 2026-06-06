@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText } from 'lucide-react';
+import { FileText } from '../icons';
 import NoteWorkspace from '../NoteWorkspace';
 import ShellPanelFrame from '../shared/ShellPanelFrame';
 import useElementSize from '../../hooks/useElementSize';

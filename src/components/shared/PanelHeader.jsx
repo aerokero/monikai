@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { X, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, ChevronDown, ChevronUp } from '../icons';
 
 const PanelHeader = ({
   title,
@@ -22,8 +22,8 @@ const PanelHeader = ({
       panel-header
       flex items-center justify-between
       px-4 py-3
-      border-b border-white/10
-      bg-white/5
+      border-b border-[rgba(232,178,102,0.12)]
+      bg-[rgba(255,238,212,0.045)]
       ${className}
     `}>
       {/* Title Section */}
@@ -32,11 +32,11 @@ const PanelHeader = ({
           <Icon size={18} className="text-monika-accent-primary flex-shrink-0" />
         )}
         <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold text-white/90 truncate">
+          <h3 className="text-sm font-semibold text-[rgba(255,246,233,0.94)] truncate">
             {title}
           </h3>
           {subtitle && (
-            <p className="text-xs text-white/50 truncate">
+            <p className="text-xs text-[rgba(255,224,190,0.5)] truncate">
               {subtitle}
             </p>
           )}
@@ -50,8 +50,8 @@ const PanelHeader = ({
           <button
             onClick={onCollapse}
             className="
-              p-1.5 rounded hover:bg-white/10 transition-colors
-              text-white/60 hover:text-white/90
+              p-1.5 rounded hover:bg-[rgba(232,178,102,0.1)] transition-colors
+              text-[rgba(255,240,218,0.62)] hover:text-[rgba(255,246,233,0.94)]
               flex-shrink-0
             "
             aria-label={isCollapsed ? 'Expand panel' : 'Collapse panel'}
@@ -70,8 +70,8 @@ const PanelHeader = ({
           <button
             onClick={onClose}
             className="
-              p-1.5 rounded hover:bg-white/10 transition-colors
-              text-white/60 hover:text-white/90
+              p-1.5 rounded hover:bg-[rgba(232,178,102,0.1)] transition-colors
+              text-[rgba(255,240,218,0.62)] hover:text-[rgba(255,246,233,0.94)]
               flex-shrink-0
             "
             aria-label="Close panel"

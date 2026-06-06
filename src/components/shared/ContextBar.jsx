@@ -37,20 +37,20 @@ const ContextBar = () => {
       context-bar
       flex items-center justify-between
       px-4 py-2
-      bg-black/40 backdrop-blur-lg
-      border-b border-white/10
+      bg-[rgba(24,17,12,0.58)] backdrop-blur-lg
+      border-b border-[rgba(232,178,102,0.14)]
       text-sm
     ">
       {/* Left: Context Info */}
       <div className="flex items-center gap-3">
         {panel && (
           <>
-            <div className="text-white/70">
-              <span className="font-medium text-white/90">
+            <div className="text-[rgba(255,240,218,0.68)]">
+              <span className="font-medium text-[rgba(255,246,233,0.94)]">
                 {t('panels.' + panel.id)}
               </span>
-              <span className="text-white/40 mx-2">•</span>
-              <span className="text-white/50">
+              <span className="text-[rgba(232,178,102,0.36)] mx-2">•</span>
+              <span className="text-[rgba(255,224,190,0.46)]">
                 {panel.description}
               </span>
             </div>
@@ -59,7 +59,7 @@ const ContextBar = () => {
       </div>
 
       {/* Right: Time */}
-      <div className="text-white/50 font-mono text-xs">
+      <div className="text-[rgba(255,224,190,0.5)] font-mono text-xs">
         {currentTime}
       </div>
     </div>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, Unlock, Lock } from 'lucide-react';
+import { ChevronDown, ChevronUp, Unlock, Lock } from '../icons';
 import { useProgression } from '../../contexts/ProgressionContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 

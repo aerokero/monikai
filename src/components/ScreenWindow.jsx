@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Monitor, X, Minus } from 'lucide-react';
+import { Monitor, X, Minus } from './icons';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const ScreenWindow = ({ 

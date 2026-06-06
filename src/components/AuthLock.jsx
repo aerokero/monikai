@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Lock, Unlock, User } from 'lucide-react';
+import { Lock, Unlock, User } from './icons';
 
 const AuthLock = ({ socket, onAuthenticated, onAnimationComplete }) => {
     const [frameSrc, setFrameSrc] = useState(null);

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Heart, X } from 'lucide-react';
+import { Heart, X } from './icons';
 
 const normalizeGender = (value) => {
   const v = String(value || '').toLowerCase();

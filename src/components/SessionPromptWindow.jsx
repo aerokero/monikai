@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { X, ClipboardList, HelpCircle, Info, PenTool, Sparkles, Check } from 'lucide-react';
+import { X, ClipboardList, HelpCircle, Info, PenTool, Sparkles, Check } from './icons';
 
 const KIND_META = {
   exercise: { icon: ClipboardList, label: 'Exercise' },

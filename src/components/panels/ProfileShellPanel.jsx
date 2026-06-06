@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { User, Edit2, Save, X, Heart, Cake } from 'lucide-react';
+import { User, Edit2, Save, X, Heart, Cake } from '../icons';
 import ShellPanelFrame from '../shared/ShellPanelFrame';
 import useElementSize from '../../hooks/useElementSize';
 import { useLanguage } from '../../contexts/LanguageContext';
