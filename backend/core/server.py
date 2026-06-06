@@ -237,7 +237,7 @@ async def lifespan(app: FastAPI):
     )
 
     # v2 Soul Engine — initialize db + personality + discovery engines.
-    from backend.core import v2_runtime as _v2
+    from backend.core.runtimes import v2_runtime as _v2
     try:
         await _v2.initialize()
         if not _v2.get():
@@ -267,7 +267,7 @@ async def lifespan(app: FastAPI):
         )
 
         try:
-            from backend.core import v2_runtime as _v2
+            from backend.core.runtimes import v2_runtime as _v2
             await _v2.shutdown()
         except Exception:
             pass
