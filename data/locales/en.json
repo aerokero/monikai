@@ -439,5 +439,23 @@
     "placeholder": "Command for Web Agent...",
     "send": "Send",
     "waiting": "Waiting for browser stream..."
+  },
+  "navigation": {
+    "title": "Navigation",
+    "collapse_to_icons": "Collapse to icons",
+    "expand": "Expand navigation",
+    "collapse": "Collapse navigation",
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "mic_muted": "Mic muted",
+    "mic": "Mic",
+    "camera": "Camera",
+    "share": "Share",
+    "talk": "Talk",
+    "journal": "Journal",
+    "briefing": "Briefing",
+    "relationship": "Relationship",
+    "calendar": "Calendar",
+    "her_profile": "Her profile"
   }
 }

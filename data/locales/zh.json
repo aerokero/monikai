@@ -435,5 +435,23 @@
     "placeholder": "网络代理的命令...",
     "send": "发送",
     "waiting": "等待浏览器流中..."
+  },
+  "navigation": {
+    "title": "导航",
+    "collapse_to_icons": "折叠为图标",
+    "expand": "展开导航",
+    "collapse": "折叠导航",
+    "connected": "已连接",
+    "disconnected": "已断开",
+    "mic_muted": "麦克风已静音",
+    "mic": "麦克风",
+    "camera": "摄像头",
+    "share": "共享",
+    "talk": "聊天",
+    "journal": "日志",
+    "briefing": "简报",
+    "relationship": "人际关系",
+    "calendar": "日历",
+    "her_profile": "她的个人资料"
   }
 }

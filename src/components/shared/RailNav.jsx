@@ -59,12 +59,12 @@ const RailNav = () => {
   
   const panels = getAllPanels().filter((panel) => !panel.hiddenInRail);
   const railPanelLabels = {
-    chat: 'Talk',
-    notes: 'Journal',
-    daily_briefing: 'Briefing',
-    goals: 'Relationship',
-    calendar: 'Calendar',
-    profile: 'Her profile',
+    chat: t('navigation.talk'),
+    notes: t('navigation.journal'),
+    daily_briefing: t('navigation.briefing'),
+    goals: t('navigation.relationship'),
+    calendar: t('navigation.calendar'),
+    profile: t('navigation.her_profile'),
   };
   const railButtonBase = `
     rail-button
@@ -140,18 +140,18 @@ const RailNav = () => {
           <button
             onClick={() => setIsRailExpanded((current) => !current)}
             className={`${railButtonBase} ${railButtonIdle} rail-toggle-button`}
-            aria-label={isExpanded ? 'Collapse navigation' : 'Expand navigation'}
+            aria-label={isExpanded ? t('navigation.collapse') : t('navigation.expand')}
             aria-expanded={isExpanded}
-            title={isExpanded ? 'Collapse navigation' : 'Expand navigation'}
+            title={isExpanded ? t('navigation.collapse') : t('navigation.expand')}
           >
             <Icons.Maximize2 size={20} />
             {isExpanded ? (
               <span className="rail-toggle-copy">
-                <span className="rail-toggle-title">Navigation</span>
-                <span className="rail-toggle-subtitle">Collapse to icons</span>
+                <span className="rail-toggle-title">{t('navigation.title')}</span>
+                <span className="rail-toggle-subtitle">{t('navigation.collapse_to_icons')}</span>
               </span>
             ) : null}
-            {renderTooltip('Expand navigation')}
+            {renderTooltip(t('navigation.expand'))}
           </button>
         )}
 
@@ -189,7 +189,7 @@ const RailNav = () => {
           title={isConnected ? t('tools.ai_on') : t('tools.ai_off')}
         >
           <Icons.Power size={20} />
-          {renderLabel(isConnected ? 'Connected' : 'Disconnected')}
+          {renderLabel(isConnected ? t('navigation.connected') : t('navigation.disconnected'))}
           
           {renderTooltip(isConnected ? t('tools.ai_on') : t('tools.ai_off'))}
         </button>
@@ -202,7 +202,7 @@ const RailNav = () => {
           title={isMuted ? t('tools.microphone_off') : t('tools.microphone_on')}
         >
           <Icons.Mic size={20} />
-          {renderLabel(isMuted ? 'Mic muted' : 'Mic')}
+          {renderLabel(isMuted ? t('navigation.mic_muted') : t('navigation.mic'))}
           
           {renderTooltip(isMuted ? t('tools.microphone_off') : t('tools.microphone_on'))}
         </button>
@@ -215,7 +215,7 @@ const RailNav = () => {
           title={isVideoOn ? t('tools.camera_on') : t('tools.camera_off')}
         >
           <Icons.Video size={20} />
-          {renderLabel('Camera')}
+          {renderLabel(t('navigation.camera'))}
           
           {renderTooltip(isVideoOn ? t('tools.camera_on') : t('tools.camera_off'))}
         </button>
@@ -228,7 +228,7 @@ const RailNav = () => {
           title={visionMode === 'screen' ? t('tools.share_screen_off') : t('tools.share_screen_on')}
         >
           <Icons.Share2 size={20} />
-          {renderLabel('Share')}
+          {renderLabel(t('navigation.share'))}
           
           {renderTooltip(visionMode === 'screen' ? t('tools.share_screen_off') : t('tools.share_screen_on'))}
         </button>

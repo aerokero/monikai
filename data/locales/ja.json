@@ -435,5 +435,23 @@
     "placeholder": "ウェブ エージェント用のコマンド...",
     "send": "送信",
     "waiting": "ブラウザ ストリームを待機中..."
+  },
+  "navigation": {
+    "title": "ナビゲーション",
+    "collapse_to_icons": "アイコンに折りたたむ",
+    "expand": "ナビゲーションを展開",
+    "collapse": "ナビゲーションを折りたたむ",
+    "connected": "接続済み",
+    "disconnected": "切断済み",
+    "mic_muted": "マイクミュート",
+    "mic": "マイク",
+    "camera": "カメラ",
+    "share": "共有",
+    "talk": "会話",
+    "journal": "ジャーナル",
+    "briefing": "ブリーフィング",
+    "relationship": "関係性",
+    "calendar": "カレンダー",
+    "her_profile": "彼女のプロフィール"
   }
 }

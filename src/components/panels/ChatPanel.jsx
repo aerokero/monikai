@@ -504,13 +504,13 @@ const ChatPanel = ({
                     </>
                   ) : null}
                 </div>
-                <div className="max-h-[11.5rem] overflow-y-auto pr-3 font-serif text-[clamp(1.45rem,2.38vw,2.58rem)] leading-[1.14] text-[rgba(255,246,233,0.96)] drop-shadow-[0_2px_10px_rgba(0,0,0,0.45)] scrollbar-hide">
+                <div className="max-h-[11.5rem] overflow-y-auto pr-3 font-serif text-[clamp(1.15rem,1.5vw,1.45rem)] leading-[1.35] text-[rgba(255,246,233,0.96)] drop-shadow-[0_2px_10px_rgba(0,0,0,0.45)] scrollbar-hide">
                   {renderMarkdown(dialogueMessage?.text)}
                 </div>
               </div>
             ) : (
-              <div className="px-1 pb-5 font-serif text-[clamp(1.4rem,2.2vw,2.4rem)] leading-tight text-[rgba(255,246,233,0.52)]">
-                Say something to her...
+              <div className="px-1 pb-5 font-serif text-[clamp(1.1rem,1.4vw,1.35rem)] leading-[1.35] text-[rgba(255,246,233,0.52)]">
+                {t('chat.placeholder')}
               </div>
             )}
             <div ref={messagesEndRef} />
@@ -679,7 +679,7 @@ const ChatPanel = ({
                 value={inputValue}
                 onChange={(event) => setInputValue(event.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Say something to her..."
+                placeholder={t('chat.placeholder')}
                 rows={1}
                 className="max-h-20 min-h-[28px] flex-1 resize-none border-0 bg-transparent px-2 py-1.5 text-[15px] font-medium text-[rgba(255,246,233,0.9)] placeholder:text-[rgba(255,224,190,0.42)] outline-none"
               />

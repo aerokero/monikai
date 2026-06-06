@@ -438,5 +438,23 @@
     "placeholder": "Polecenie dla Agenta...",
     "send": "Wyślij",
     "waiting": "Oczekiwanie na strumień..."
+  },
+  "navigation": {
+    "title": "Nawigacja",
+    "collapse_to_icons": "Zwiń do ikon",
+    "expand": "Rozwiń nawigację",
+    "collapse": "Zwiń nawigację",
+    "connected": "Połączona",
+    "disconnected": "Rozłączona",
+    "mic_muted": "Wyciszona",
+    "mic": "Mikrofon",
+    "camera": "Kamera",
+    "share": "Udostępnij",
+    "talk": "Rozmowa",
+    "journal": "Notatnik",
+    "briefing": "Przegląd",
+    "relationship": "Relacja",
+    "calendar": "Kalendarz",
+    "her_profile": "Jej profil"
   }
 }
