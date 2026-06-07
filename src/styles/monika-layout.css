@@ -14,6 +14,8 @@
   --safe-area-inset-left: 0;
   --safe-area-inset-right: 0;
   --monika-window-topbar-height: 0px;
+  --monika-bottom-rail-height: 70px;
+  --monika-portrait-chat-dock-height: 126px;
 
   /* Monika Layout Colors (candlelight aesthetic) */
   --monika-bg-primary: #0d0906;
@@ -51,6 +53,11 @@
   font-family: var(--font-ui);
   color: var(--monika-text-primary);
   z-index: 0;
+}
+
+.monika-layout--desktop-wide,
+.monika-layout--desktop {
+  transition: grid-template-columns var(--monika-transition-normal);
 }
 
 .monika-layout--with-window-topbar {
@@ -133,12 +140,16 @@
    ============================================ */
 
 .monika-layout--desktop-wide {
-  grid-template-columns: 84px 1fr;
+  grid-template-columns: 70px 1fr;
   grid-template-rows: auto 1fr;
   grid-template-areas:
     "rail      context-bar"
     "rail      workspace";
   --monika-chat-reserved-space: 282px;
+}
+
+.monika-layout--desktop-wide:has(.monika-rail--expanded) {
+  grid-template-columns: 300px 1fr;
 }
 
 .monika-layout--desktop-wide .monika-workspace {
@@ -158,11 +169,11 @@
 
 .monika-layout--desktop-wide .monika-panel-container {
   position: fixed;
-  left: 84px;
+  left: 70px;
   right: auto;
   top: var(--monika-window-topbar-height);
   bottom: 0;
-  width: min(420px, calc(100vw - 140px));
+  width: min(420px, calc(100vw - 126px));
   height: calc(100vh - var(--monika-window-topbar-height));
   max-height: calc(100vh - var(--monika-window-topbar-height));
   z-index: 50;
@@ -184,12 +195,16 @@
    ============================================ */
 
 .monika-layout--desktop {
-  grid-template-columns: 84px 1fr;
+  grid-template-columns: 70px 1fr;
   grid-template-rows: auto 1fr;
   grid-template-areas:
     "rail      context-bar"
     "rail      workspace";
   --monika-chat-reserved-space: 272px;
+}
+
+.monika-layout--desktop:has(.monika-rail--expanded) {
+  grid-template-columns: 300px 1fr;
 }
 
 .monika-layout--desktop .monika-workspace {
@@ -209,11 +224,11 @@
 
 .monika-layout--desktop .monika-panel-container {
   position: fixed;
-  left: 84px;
+  left: 70px;
   right: auto;
   top: var(--monika-window-topbar-height);
   bottom: 0;
-  width: min(400px, calc(100vw - 120px));
+  width: min(400px, calc(100vw - 106px));
   height: calc(100vh - var(--monika-window-topbar-height));
   max-height: calc(100vh - var(--monika-window-topbar-height));
   z-index: 50;
@@ -277,30 +292,30 @@
 
 .monika-layout--portrait {
   grid-template-columns: 1fr;
-  grid-template-rows: auto 1fr 70px;
+  grid-template-rows: auto 1fr var(--monika-bottom-rail-height);
   grid-template-areas:
     "context-bar"
     "workspace"
     "rail";
-  --monika-chat-reserved-space: 108px;
+  --monika-chat-reserved-space: 178px;
 }
 
 .monika-layout--portrait .monika-workspace {
   grid-template-columns: 1fr;
-  align-content: start;
+  align-content: end;
   justify-items: stretch;
-  padding: 10px 8px calc(var(--monika-chat-reserved-space) + 6px);
+  padding: 10px 8px calc(var(--monika-chat-reserved-space) + 10px);
   gap: 10px;
-  overflow-y: auto;
+  overflow: hidden;
   overflow-x: hidden;
 }
 
 .monika-layout--portrait .monika-sprite-container {
-  order: 2;
-  min-height: min(34vh, 320px);
-  max-height: 38vh;
+  min-height: min(48vh, 560px);
+  max-height: calc(100vh - var(--monika-window-topbar-height) - var(--monika-bottom-rail-height) - 138px);
   width: min(100%, 92vw);
   justify-self: center;
+  align-self: end;
 }
 
 .monika-layout--portrait .monika-rail--bottom-horizontal {
@@ -312,11 +327,22 @@
 }
 
 .monika-layout--portrait .monika-panel-container {
-  order: 1;
-  width: 100%;
-  min-height: 280px;
-  height: calc((100vh - var(--monika-chat-reserved-space) - 190px) / 2);
-  max-height: calc((100vh - var(--monika-chat-reserved-space) - 190px) / 2);
+  position: fixed;
+  left: max(8px, var(--safe-area-inset-left));
+  right: max(8px, var(--safe-area-inset-right));
+  bottom: calc(var(--monika-bottom-rail-height) + var(--safe-area-inset-bottom) + 8px);
+  width: auto;
+  min-height: 300px;
+  height: min(70vh, calc(100vh - var(--monika-window-topbar-height) - var(--monika-bottom-rail-height) - 98px));
+  max-height: min(70vh, calc(100vh - var(--monika-window-topbar-height) - var(--monika-bottom-rail-height) - 98px));
+  padding-bottom: calc(var(--monika-portrait-chat-dock-height) - 18px);
+  z-index: 82;
+  border-radius: 18px 18px 0 0;
+  border-color: rgba(232, 178, 102, 0.18);
+  box-shadow:
+    0 -18px 48px rgba(13, 9, 6, 0.54),
+    inset 0 1px 0 rgba(255, 246, 233, 0.04);
+  animation: monika-bottom-sheet-in var(--monika-transition-normal) cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ============================================
@@ -325,35 +351,48 @@
 
 .monika-layout--landscape-phone {
   grid-template-columns: 1fr;
-  grid-template-rows: auto 1fr 70px;
+  grid-template-rows: auto 1fr var(--monika-bottom-rail-height);
   grid-template-areas:
     "context-bar"
     "workspace"
     "rail";
-  --monika-chat-reserved-space: 96px;
+  --monika-chat-reserved-space: 170px;
 }
 
 .monika-layout--landscape-phone .monika-workspace {
-  grid-template-columns: minmax(180px, 0.7fr) minmax(240px, 1fr);
-  align-items: stretch;
-  padding: 8px 8px calc(var(--monika-chat-reserved-space) + 6px);
+  grid-template-columns: 1fr;
+  align-content: end;
+  justify-items: stretch;
+  padding: 8px 8px calc(var(--monika-chat-reserved-space) + 10px);
   gap: 8px;
   overflow: hidden;
 }
 
 .monika-layout--landscape-phone .monika-sprite-container {
-  order: 2;
-  min-height: 0;
-  max-height: none;
-  width: 100%;
+  min-height: min(46vh, 480px);
+  max-height: calc(100vh - var(--monika-window-topbar-height) - var(--monika-bottom-rail-height) - 134px);
+  width: min(100%, 92vw);
   justify-self: center;
+  align-self: end;
 }
 
 .monika-layout--landscape-phone .monika-panel-container {
-  order: 1;
-  width: 100%;
-  height: 100%;
-  max-height: calc(100vh - var(--monika-chat-reserved-space) - 154px);
+  position: fixed;
+  left: max(8px, var(--safe-area-inset-left));
+  right: max(8px, var(--safe-area-inset-right));
+  bottom: calc(var(--monika-bottom-rail-height) + var(--safe-area-inset-bottom) + 8px);
+  width: auto;
+  min-height: 280px;
+  height: min(68vh, calc(100vh - var(--monika-window-topbar-height) - var(--monika-bottom-rail-height) - 94px));
+  max-height: min(68vh, calc(100vh - var(--monika-window-topbar-height) - var(--monika-bottom-rail-height) - 94px));
+  padding-bottom: calc(var(--monika-portrait-chat-dock-height) - 18px);
+  z-index: 82;
+  border-radius: 18px 18px 0 0;
+  border-color: rgba(232, 178, 102, 0.18);
+  box-shadow:
+    0 -18px 48px rgba(13, 9, 6, 0.54),
+    inset 0 1px 0 rgba(255, 246, 233, 0.04);
+  animation: monika-bottom-sheet-in var(--monika-transition-normal) cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ============================================
@@ -408,9 +447,9 @@
 .mas-clock__mood {
   overflow: hidden;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(16px, 1.45vw, 22px);
+  font-size: clamp(20px, 1.8vw, 26px);
   font-style: italic;
-  line-height: 1.05;
+  line-height: 1.15;
   white-space: nowrap;
   text-overflow: ellipsis;
   letter-spacing: 0;
@@ -419,9 +458,10 @@
 .mas-clock__details {
   overflow: hidden;
   margin-top: 6px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: clamp(10px, 0.78vw, 12px);
-  line-height: 1;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(13px, 1.1vw, 16px);
+  font-style: italic;
+  line-height: 1.25;
   white-space: nowrap;
   text-overflow: ellipsis;
   letter-spacing: 0;
@@ -499,7 +539,7 @@
   flex: 1;
   background: linear-gradient(180deg, rgba(35, 25, 17, 0.72), rgba(15, 10, 7, 0.82));
   border: 1px solid var(--monika-line-warm);
-  border-radius: 10px;
+  border-radius: 0;
   backdrop-filter: blur(20px);
   box-shadow: 0 14px 38px rgba(13, 9, 6, 0.38);
   overflow: hidden;
@@ -507,6 +547,7 @@
   min-height: 0;
   min-width: 0;
   padding: 0;
+  transition: left var(--monika-transition-normal), width var(--monika-transition-normal);
 }
 
 .monika-panel-container--exiting {
@@ -525,7 +566,7 @@
   height: 318px;
   max-height: 52vh;
   max-width: 96vw;
-  z-index: 50;
+  z-index: 74;
   animation: monika-panel-appear var(--monika-transition-normal) ease-in-out forwards;
 }
 
@@ -567,23 +608,51 @@
 }
 
 .monika-chat-window--portrait {
-  width: calc(100vw - 36px);
-  height: min(42vh, 330px);
-  bottom: calc(95px + var(--safe-area-inset-bottom));
+  top: auto !important;
+  width: min(720px, calc(100vw - 20px));
+  height: min(34vh, 260px);
+  bottom: calc(var(--monika-bottom-rail-height) + 12px + var(--safe-area-inset-bottom));
+  z-index: 92;
 }
 
 .monika-chat-window--portrait.is-expanded {
-  height: min(54vh, 480px);
+  height: min(48vh, 420px);
+}
+
+.monika-chat-window--portrait.monika-chat-window--panel-open {
+  top: auto !important;
+  width: min(720px, calc(100vw - 20px));
+  height: var(--monika-portrait-chat-dock-height);
+  max-height: var(--monika-portrait-chat-dock-height);
+  bottom: calc(var(--monika-bottom-rail-height) + 12px + var(--safe-area-inset-bottom));
+}
+
+.monika-chat-window--portrait.monika-chat-window--panel-open.is-expanded {
+  height: var(--monika-portrait-chat-dock-height);
 }
 
 .monika-chat-window--landscape-phone {
-  width: calc(100vw - 10px);
-  height: min(62vh, 360px);
-  bottom: calc(16px + var(--safe-area-inset-bottom));
+  top: auto !important;
+  width: min(720px, calc(100vw - 20px));
+  height: min(34vh, 260px);
+  bottom: calc(var(--monika-bottom-rail-height) + 12px + var(--safe-area-inset-bottom));
+  z-index: 92;
 }
 
 .monika-chat-window--landscape-phone.is-expanded {
-  height: min(78vh, 520px);
+  height: min(48vh, 420px);
+}
+
+.monika-chat-window--landscape-phone.monika-chat-window--panel-open {
+  top: auto !important;
+  width: min(720px, calc(100vw - 20px));
+  height: var(--monika-portrait-chat-dock-height);
+  max-height: var(--monika-portrait-chat-dock-height);
+  bottom: calc(var(--monika-bottom-rail-height) + 12px + var(--safe-area-inset-bottom));
+}
+
+.monika-chat-window--landscape-phone.monika-chat-window--panel-open.is-expanded {
+  height: var(--monika-portrait-chat-dock-height);
 }
 
 .monika-embedded-panel {
@@ -663,6 +732,17 @@
   }
 }
 
+@keyframes monika-bottom-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes fidget {
   0%, 100% { transform: translateX(0); }
   25% { transform: translateX(-2px); }
@@ -735,7 +815,7 @@
 
 .monika-rail--left-vertical {
   flex-direction: column;
-  width: 84px;
+  width: 70px;
   padding: 14px 10px;
   gap: 10px;
   border-right: 1px solid rgba(232, 178, 102, 0.14);
@@ -743,7 +823,7 @@
 
 .monika-rail--left-vertical.monika-rail--expanded {
   width: 300px;
-  padding: 22px 16px;
+  padding: 14px 10px;
   background:
     linear-gradient(120deg, rgba(68, 48, 34, 0.18), transparent 46%),
     linear-gradient(180deg, rgba(29, 21, 15, 0.97), rgba(15, 10, 7, 0.98));
@@ -793,7 +873,7 @@
 
 .monika-rail--expanded .rail-buttons {
   align-items: stretch;
-  gap: 9px;
+  gap: 10px;
 }
 
 .monika-rail--top-horizontal .rail-buttons,
@@ -823,20 +903,28 @@
   box-shadow: inset 0 0 0 1px rgba(255, 246, 233, 0.018);
 }
 
-.monika-rail--expanded .rail-button {
+.monika-rail--left-vertical .rail-button {
   width: 100%;
-  height: 40px;
   justify-content: flex-start;
-  gap: 14px;
-  padding: 0 14px;
+  padding: 0 0 0 15px;
+  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease, transform 200ms ease;
+}
+
+.monika-rail--left-vertical .rail-button svg {
+  flex-shrink: 0;
+}
+
+.monika-rail--expanded .rail-button {
   border-radius: 12px !important;
   text-align: left;
+  padding-right: 15px;
+}
+
+.monika-rail--left-vertical .rail-toggle-button {
+  margin-bottom: 12px;
 }
 
 .monika-rail--expanded .rail-toggle-button {
-  height: 58px;
-  margin-bottom: 12px;
-  align-items: center;
   background: rgba(255, 238, 212, 0.02);
 }
 
@@ -849,6 +937,17 @@
   font-size: 13px;
   font-weight: 700;
   line-height: 1;
+  opacity: 0;
+  width: 0;
+  flex-shrink: 0;
+  margin-left: 0;
+  transition: opacity 150ms ease, width var(--monika-transition-normal) ease, margin-left var(--monika-transition-normal) ease;
+}
+
+.monika-rail--expanded .rail-button-label {
+  opacity: 1;
+  width: 200px;
+  margin-left: 14px;
 }
 
 .rail-toggle-copy {
@@ -856,6 +955,19 @@
   min-width: 0;
   flex-direction: column;
   gap: 4px;
+  opacity: 0;
+  width: 0;
+  flex-shrink: 0;
+  margin-left: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: opacity 150ms ease, width var(--monika-transition-normal) ease, margin-left var(--monika-transition-normal) ease;
+}
+
+.monika-rail--expanded .rail-toggle-copy {
+  opacity: 1;
+  width: 200px;
+  margin-left: 14px;
 }
 
 .rail-toggle-title {
@@ -891,6 +1003,10 @@
   height: 1px;
   margin: 6px 0;
   background: linear-gradient(90deg, transparent, rgba(232, 178, 102, 0.2), transparent);
+}
+
+.monika-rail--left-vertical .rail-divider {
+  margin: 12px 0 6px;
 }
 
 .monika-rail--expanded .rail-divider {
@@ -942,6 +1058,49 @@
 
 .panel-content::-webkit-scrollbar-thumb:hover {
   background: rgba(232, 178, 102, 0.42);
+}
+
+.monika-chat-panel-root.is-compact-dock {
+  padding: 0 6px 8px;
+}
+
+.monika-chat-panel-root.is-compact-dock > div {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+.monika-layout--portrait .settings-row,
+.monika-layout--landscape-phone .settings-row {
+  align-items: stretch;
+}
+
+.monika-layout--portrait .settings-row__control,
+.monika-layout--landscape-phone .settings-row__control {
+  width: min(260px, 44vw);
+}
+
+.monika-layout--portrait .settings-dropdown,
+.monika-layout--landscape-phone .settings-dropdown {
+  width: 100%;
+}
+
+@media (max-width: 620px), (max-aspect-ratio: 1/1.2) {
+  .monika-layout--portrait .settings-row,
+  .monika-layout--landscape-phone .settings-row {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .monika-layout--portrait .settings-row__control,
+  .monika-layout--landscape-phone .settings-row__control {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .monika-layout--portrait .settings-dropdown,
+  .monika-layout--landscape-phone .settings-dropdown {
+    width: 100%;
+  }
 }
 
 /* ============================================
@@ -1044,4 +1203,310 @@
   background: transparent !important;
   box-shadow: none !important;
   backdrop-filter: none !important;
+}
+
+.monika-layout--portrait .monika-panel-container.is-settings,
+.monika-layout--landscape-phone .monika-panel-container.is-settings {
+  border-radius: 18px 18px 0 0 !important;
+  border: 1px solid rgba(232, 178, 102, 0.18) !important;
+  background: linear-gradient(180deg, rgba(28, 18, 12, 0.96), rgba(10, 7, 4, 0.98)) !important;
+  box-shadow:
+    0 -18px 48px rgba(13, 9, 6, 0.54),
+    inset 0 1px 0 rgba(255, 246, 233, 0.04) !important;
+}
+
+@media (orientation: portrait) {
+  .monika-layout {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto 1fr var(--monika-bottom-rail-height) !important;
+    grid-template-areas:
+      "context-bar"
+      "workspace"
+      "rail" !important;
+    --monika-chat-reserved-space: 176px;
+  }
+
+  .monika-workspace {
+    grid-template-columns: 1fr !important;
+    align-content: end !important;
+    justify-items: stretch !important;
+    overflow: hidden !important;
+    padding: 8px 8px calc(var(--monika-chat-reserved-space) + 10px) !important;
+  }
+
+  .monika-sprite-container {
+    order: initial !important;
+    width: min(100%, 92vw) !important;
+    min-height: min(48vh, 560px) !important;
+    max-height: calc(100vh - var(--monika-window-topbar-height) - var(--monika-bottom-rail-height) - 138px) !important;
+    justify-self: center !important;
+    align-self: end !important;
+  }
+
+  .monika-rail--bottom-horizontal,
+  .monika-rail {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    height: var(--monika-bottom-rail-height) !important;
+    z-index: 120 !important;
+  }
+
+  .monika-layout--panel-open .monika-panel-container {
+    position: fixed !important;
+    left: max(8px, var(--safe-area-inset-left)) !important;
+    right: max(8px, var(--safe-area-inset-right)) !important;
+    top: auto !important;
+    bottom: calc(var(--monika-bottom-rail-height) + var(--safe-area-inset-bottom) + 8px) !important;
+    width: auto !important;
+    height: min(68vh, calc(100vh - var(--monika-window-topbar-height) - var(--monika-bottom-rail-height) - 94px)) !important;
+    min-height: 280px !important;
+    max-height: min(68vh, calc(100vh - var(--monika-window-topbar-height) - var(--monika-bottom-rail-height) - 94px)) !important;
+    padding-bottom: calc(var(--monika-portrait-chat-dock-height) - 18px) !important;
+    z-index: 82 !important;
+    border-radius: 18px 18px 0 0 !important;
+    border: 1px solid rgba(232, 178, 102, 0.18) !important;
+    box-shadow:
+      0 -18px 48px rgba(13, 9, 6, 0.54),
+      inset 0 1px 0 rgba(255, 246, 233, 0.04) !important;
+    animation: monika-bottom-sheet-in var(--monika-transition-normal) cubic-bezier(0.4, 0, 0.2, 1) !important;
+  }
+
+  .monika-chat-window {
+    position: fixed !important;
+    top: auto !important;
+    left: 50% !important;
+    right: auto !important;
+    width: min(720px, calc(100vw - 20px)) !important;
+    height: min(34vh, 260px) !important;
+    max-height: 260px !important;
+    bottom: calc(var(--monika-bottom-rail-height) + 12px + var(--safe-area-inset-bottom)) !important;
+    z-index: 92 !important;
+  }
+
+  .monika-layout--panel-open .monika-chat-window {
+    max-height: min(36vh, 360px) !important;
+  }
+}
+
+/* Portrait app design: one viewport-driven mode shared by scene, dock, chat, and sheets. */
+.monika-layout.monika-layout--portrait-viewport {
+  grid-template-columns: 1fr !important;
+  grid-template-rows: 1fr !important;
+  grid-template-areas: "workspace" !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  --monika-bottom-dock-side: 20px;
+  --monika-bottom-dock-gap: 12px;
+  --monika-bottom-rail-height: 74px;
+  --monika-portrait-chat-dock-height: 96px;
+}
+
+.monika-layout--portrait-viewport .window-topbar {
+  z-index: 160 !important;
+}
+
+.monika-layout--portrait-viewport .monika-context-bar,
+.monika-layout--portrait-viewport .mas-clock {
+  display: none !important;
+}
+
+.monika-layout--portrait-viewport .monika-workspace {
+  grid-area: workspace !important;
+  display: block !important;
+  position: relative !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+.monika-layout--portrait-viewport .monika-sprite-container {
+  position: absolute !important;
+  left: 50% !important;
+  bottom: 168px !important;
+  width: min(58vw, 360px) !important;
+  height: min(38vh, 430px) !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  transform: translateX(-50%) !important;
+  z-index: 24 !important;
+  pointer-events: none !important;
+}
+
+.monika-layout--portrait-viewport.monika-layout--panel-open .monika-sprite-container {
+  bottom: calc(56vh + 18px) !important;
+  width: min(34vw, 220px) !important;
+  height: min(24vh, 260px) !important;
+  opacity: 0.92 !important;
+}
+
+.monika-layout--portrait-viewport .monika-rail {
+  position: fixed !important;
+  left: var(--monika-bottom-dock-side) !important;
+  right: var(--monika-bottom-dock-side) !important;
+  bottom: max(16px, env(safe-area-inset-bottom)) !important;
+  width: auto !important;
+  height: var(--monika-bottom-rail-height) !important;
+  padding: 8px 12px !important;
+  border-radius: 22px !important;
+  z-index: 130 !important;
+  background:
+    linear-gradient(180deg, rgba(42, 30, 21, 0.86), rgba(20, 14, 10, 0.92)) !important;
+  border: 1px solid rgba(232, 178, 102, 0.18) !important;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.46) !important;
+  backdrop-filter: blur(18px) !important;
+}
+
+.monika-layout--portrait-viewport .rail-buttons {
+  display: grid !important;
+  grid-auto-flow: column !important;
+  grid-auto-columns: minmax(0, 1fr) !important;
+  align-items: center !important;
+  justify-items: center !important;
+  justify-content: stretch !important;
+  gap: clamp(4px, 1vw, 10px) !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow-x: hidden !important;
+  overflow-y: hidden !important;
+  padding: 0 !important;
+}
+
+.monika-layout--portrait-viewport .rail-buttons::-webkit-scrollbar {
+  display: none !important;
+}
+
+.monika-layout--portrait-viewport .rail-button {
+  width: min(64px, 100%) !important;
+  height: clamp(44px, 8vw, 52px) !important;
+  max-height: 52px !important;
+  min-width: 0 !important;
+  border-radius: clamp(12px, 2.8vw, 16px) !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  scroll-snap-align: center !important;
+}
+
+.monika-layout--portrait-viewport .rail-buttons > .flex-grow {
+  display: none !important;
+}
+
+.monika-layout--portrait-viewport .rail-divider {
+  display: none !important;
+}
+
+.monika-layout--portrait-viewport .rail-button svg {
+  width: min(20px, 52%) !important;
+  height: min(20px, 52%) !important;
+}
+
+.monika-layout--portrait-viewport .monika-chat-window {
+  position: fixed !important;
+  top: auto !important;
+  left: var(--monika-bottom-dock-side) !important;
+  right: var(--monika-bottom-dock-side) !important;
+  bottom: calc(var(--monika-bottom-rail-height) + var(--monika-bottom-dock-gap) + max(16px, env(safe-area-inset-bottom))) !important;
+  width: auto !important;
+  height: min(34vh, 320px) !important;
+  max-height: min(34vh, 320px) !important;
+  max-width: none !important;
+  transform: none !important;
+  z-index: 128 !important;
+  animation: none !important;
+}
+
+.monika-layout--portrait-viewport .monika-chat-window.is-expanded {
+  height: min(42vh, 430px) !important;
+  max-height: min(42vh, 430px) !important;
+}
+
+.monika-layout--portrait-viewport .monika-chat-panel-root {
+  padding: 0 14px 10px !important;
+}
+
+.monika-layout--portrait-viewport .monika-chat-window .shrink-0.rounded-\[18px\] {
+  border-radius: 18px !important;
+  background:
+    linear-gradient(180deg, rgba(34, 25, 18, 0.94), rgba(15, 10, 7, 0.96)) !important;
+  border-color: rgba(232, 178, 102, 0.24) !important;
+  box-shadow:
+    0 14px 34px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 246, 233, 0.04) !important;
+}
+
+.monika-layout--portrait-viewport .monika-chat-window .shrink-0.rounded-\[18px\] button {
+  flex-shrink: 0 !important;
+}
+
+.monika-layout--portrait-viewport .monika-chat-window textarea {
+  color: rgba(255, 246, 233, 0.94) !important;
+  opacity: 1 !important;
+}
+
+.monika-layout--portrait-viewport .monika-chat-window textarea::placeholder {
+  color: rgba(255, 224, 190, 0.58) !important;
+}
+
+.monika-layout--portrait-viewport .monika-panel-container {
+  position: fixed !important;
+  left: 18px !important;
+  right: 18px !important;
+  top: auto !important;
+  bottom: 0 !important;
+  width: auto !important;
+  height: min(62vh, 620px) !important;
+  min-height: 420px !important;
+  max-height: calc(100vh - 116px) !important;
+  padding: 0 !important;
+  z-index: 132 !important;
+  border-radius: 28px 28px 0 0 !important;
+  border: 1px solid rgba(232, 178, 102, 0.17) !important;
+  border-bottom: none !important;
+  background: linear-gradient(180deg, rgba(27, 19, 13, 0.98), rgba(9, 7, 5, 0.99)) !important;
+  box-shadow:
+    0 -24px 62px rgba(0, 0, 0, 0.58),
+    inset 0 1px 0 rgba(255, 246, 233, 0.05) !important;
+  overflow: hidden !important;
+  animation: monika-bottom-sheet-in 260ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.monika-layout--portrait-viewport .monika-panel-container::before {
+  content: "";
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  width: 44px;
+  height: 4px;
+  border-radius: 999px;
+  transform: translateX(-50%);
+  background: rgba(232, 178, 102, 0.32);
+  z-index: 2;
+}
+
+.monika-layout--portrait-viewport .monika-panel-container > * {
+  height: 100% !important;
+}
+
+.monika-layout--portrait-viewport .monika-panel-container.is-settings,
+.monika-layout--portrait-viewport .monika-panel-container.is-notes,
+.monika-layout--portrait-viewport .monika-panel-container.is-calendar,
+.monika-layout--portrait-viewport .monika-panel-container.is-daily_briefing,
+.monika-layout--portrait-viewport .monika-panel-container.is-goals,
+.monika-layout--portrait-viewport .monika-panel-container.is-profile {
+  border-radius: 28px 28px 0 0 !important;
+  border: 1px solid rgba(232, 178, 102, 0.17) !important;
+  border-bottom: none !important;
+}
+
+.monika-layout--portrait-viewport .settings-row {
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 10px !important;
+}
+
+.monika-layout--portrait-viewport .settings-row__control,
+.monika-layout--portrait-viewport .settings-dropdown {
+  width: 100% !important;
 }

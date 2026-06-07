@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections import deque
 from pathlib import Path
 import time
 from typing import Optional
@@ -163,6 +164,9 @@ class V2Runtime:
         self._time_engine = time_engine
         self._mood_tracker = mood_tracker
         self._cached_prompt = cached_prompt
+        self._session_turns: deque[str] = deque(maxlen=8)
+        from backend.soul.agenda import AgendaManager
+        self._agenda = AgendaManager()
 
     # ------------------------------------------------------------------
     # Factory
@@ -213,6 +217,14 @@ class V2Runtime:
             time_engine=time_engine,
             mood_tracker=mood_tracker,
         )
+
+        # Generate fresh inner_state.md before assembling the prompt
+        try:
+            from backend.worker.narrative_job import NarrativeJob
+            await NarrativeJob().run(db_path=db_path, mood_tracker=mood_tracker)
+        except Exception as e:
+            logger.warning("v2: NarrativeJob failed at startup: %s", e)
+
         runtime._cached_prompt = await runtime.refresh_prompt()
         logger.info("v2: runtime initialized (prompt=%d chars)", len(runtime._cached_prompt))
         return runtime
@@ -247,6 +259,7 @@ class V2Runtime:
         try:
             from backend.llm.cognition import generate
             from backend.soul.personality.signals import extract
+            from backend.soul.memory import store as mem_store
 
             signals = extract(user_text)
 
@@ -257,9 +270,48 @@ class V2Runtime:
 
             # Update personality engine (affect + needs)
             soul = self._personality.soul_state
-            cog = await generate(user_text, soul, signals=signals)
             await self._personality.observe_turn(user_text, monika_text, reciprocity=None)
             self._personality.save()
+
+            # Pull recent STM entries for cognition context
+            stm_entries: list = []
+            try:
+                stm_entries = await mem_store.list_recent(
+                    limit=4, types=["stm"], db_path=self._db_path
+                )
+            except Exception as e:
+                logger.debug("v2: stm fetch failed: %s", e)
+
+            # Get mood summary
+            mood_summary: str | None = None
+            if self._mood_tracker is not None:
+                try:
+                    mood_summary = self._mood_tracker.weekly_summary() or None
+                except Exception:
+                    pass
+
+            # Agenda: age existing items, extract new ones from this turn
+            self._agenda.age()
+            new_agenda = self._agenda.extract_from_turn(user_text, signals)
+
+            # Build cognition with full context
+            session_turns = list(self._session_turns)
+            cog = await generate(
+                user_text,
+                soul,
+                signals=signals,
+                stm_entries=stm_entries or None,
+                session_turns=session_turns or None,
+                mood_summary=mood_summary,
+                agenda=self._agenda.active() or None,
+            )
+
+            # Add new agenda items after generating cognition (they go into next turn)
+            self._agenda.add_items(new_agenda)
+
+            # Record this turn in session buffer
+            if user_text.strip():
+                self._session_turns.append(user_text.strip())
 
             # Record last interaction timestamp for gap detection
             if self._time_engine is not None:
@@ -339,6 +391,12 @@ class V2Runtime:
         full = int(score)
         hearts = "❤️" * full + "🤍" * (10 - full)
 
+        needs = {
+            "relatedness": round(soul.needs.relatedness * 100),
+            "autonomy": round(soul.needs.autonomy * 100),
+            "competence": round(soul.needs.competence * 100),
+        }
+
         return {
             "v2": True,
             "mood": mood,
@@ -346,6 +404,7 @@ class V2Runtime:
             "affection_hearts": f"{hearts} ({score:.1f}/10)",
             "relationship_days": days,
             "weather": weather,
+            "needs": needs,
         }
 
     # ------------------------------------------------------------------

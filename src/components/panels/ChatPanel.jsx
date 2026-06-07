@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
-  Brain,
   ClipboardList,
   Gamepad2,
   Gift,
@@ -166,6 +165,7 @@ const ChatPanel = ({
   sessionActive = false,
   onToggleSession = null,
   onOpenStudy = null,
+  compactDock = false,
 }) => {
   const { t } = useLanguage();
   const rootRef = useRef(null);
@@ -173,7 +173,6 @@ const ChatPanel = ({
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  const [showThoughts, setShowThoughts] = useState(false);
   const [attachments, setAttachments] = useState([]);
   const [attachError, setAttachError] = useState('');
   const [viewMode, setViewMode] = useState('chat');
@@ -206,18 +205,6 @@ const ChatPanel = ({
   }, [agenticLogs, prevAgenticLogLength]);
 
   useEffect(() => {
-    if (!socket) return undefined;
-    const onSettings = (data) => {
-      if (data && typeof data.show_internal_thoughts !== 'undefined') {
-        setShowThoughts(data.show_internal_thoughts);
-      }
-    };
-    socket.on('settings', onSettings);
-    socket.emit('get_settings');
-    return () => socket.off('settings', onSettings);
-  }, [socket]);
-
-  useEffect(() => {
     if (typeof onMinimizedChange === 'function') {
       onMinimizedChange(false);
     }
@@ -241,12 +228,9 @@ const ChatPanel = ({
   }, [attachments]);
 
   const visibleMessages = useMemo(() => {
-    let list = Array.isArray(messages) ? messages : [];
-    if (!showThoughts) {
-      list = list.filter((message) => !String(message?.sender || '').includes('(Thought)'));
-    }
-    return list.slice(-40);
-  }, [messages, showThoughts]);
+    const list = Array.isArray(messages) ? messages : [];
+    return list.filter((message) => !String(message?.sender || '').includes('(Thought)')).slice(-40);
+  }, [messages]);
 
   const visibleAgenticLogs = useMemo(() => {
     const source = Array.isArray(agenticLogs) ? agenticLogs : [];
@@ -287,13 +271,6 @@ const ChatPanel = ({
       transformOrigin: 'left bottom',
       transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
     };
-  };
-
-  const toggleThoughts = () => {
-    if (!socket) return;
-    const next = !showThoughts;
-    setShowThoughts(next);
-    socket.emit('update_settings', { show_internal_thoughts: next });
   };
 
   const handleAction = (action, arg) => {
@@ -441,12 +418,12 @@ const ChatPanel = ({
     }
   };
 
-  const speakerLabel = 'Monika';
-
   return (
     <div
       ref={rootRef}
-      className={`relative flex h-full w-full min-h-0 flex-col justify-end overflow-visible px-4 pb-3 pt-0 box-border transition-[box-shadow,background-color] duration-700 ${
+      className={`monika-chat-panel-root relative flex h-full w-full min-h-0 flex-col justify-end overflow-visible px-4 pb-3 pt-0 box-border transition-[box-shadow,background-color] duration-700 ${
+        compactDock ? 'is-compact-dock' : ''
+      } ${
         sessionActive ? 'rounded-2xl ring-1 ring-amber-400/20 bg-amber-500/[0.025] shadow-[0_0_60px_-15px_rgba(245,158,11,0.25)]' : ''
       }`}
     >
@@ -458,15 +435,17 @@ const ChatPanel = ({
           </span>
         </div>
       )}
-      <div className="absolute right-6 top-1 z-30">
-        <button
-          onClick={onToggleExpand}
-          className="rounded-lg border border-[rgba(232,178,102,0.12)] bg-black/25 p-1.5 text-[rgba(255,224,190,0.38)] transition hover:bg-[rgba(232,178,102,0.08)] hover:text-[rgba(255,240,218,0.74)]"
-          title={isExpanded ? 'Collapse' : 'Expand'}
-        >
-          <Maximize2 size={15} />
-        </button>
-      </div>
+      {!compactDock && (
+        <div className="absolute right-6 top-1 z-30">
+          <button
+            onClick={onToggleExpand}
+            className="rounded-lg border border-[rgba(232,178,102,0.12)] bg-black/25 p-1.5 text-[rgba(255,224,190,0.38)] transition hover:bg-[rgba(232,178,102,0.08)] hover:text-[rgba(255,240,218,0.74)]"
+            title={isExpanded ? 'Collapse' : 'Expand'}
+          >
+            <Maximize2 size={15} />
+          </button>
+        </div>
+      )}
 
       {/* Main Box - Chat content */}
       <div
@@ -478,7 +457,8 @@ const ChatPanel = ({
         }}
       >
         {/* Content Area - Main scrollable messages and views */}
-        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar relative flex flex-col px-1 pb-2 pt-0 z-10">
+        {!compactDock && (
+          <div className="monika-chat-panel-content flex-1 min-h-0 overflow-y-auto custom-scrollbar relative flex flex-col px-1 pb-2 pt-0 z-10">
         {/* Chat View */}
         {viewMode === 'chat' && (
           <div className="flex min-h-full flex-col">
@@ -508,7 +488,6 @@ const ChatPanel = ({
               <div className="flex flex-col gap-5 pb-6">
                 {visibleMessages.map((message, index) => {
                   const isUser = ['you', 'ty'].includes(String(message?.sender || '').toLowerCase());
-                  const isThought = String(message?.sender || '').includes('(Thought)');
                   const style = getMessageStyle(index, visibleMessages.length);
 
                   if (isUser) {
@@ -527,12 +506,7 @@ const ChatPanel = ({
                   }
 
                   return (
-                    <div key={message.id || index} className={`px-1 ${isThought ? 'opacity-60 italic' : ''}`} style={style}>
-                      {isThought && (
-                        <div className="mb-1 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[rgba(232,178,102,0.5)]">
-                          Thought
-                        </div>
-                      )}
+                    <div key={message.id || index} className="px-1" style={style}>
                       <div className="font-serif text-[clamp(1.15rem,1.5vw,1.45rem)] leading-[1.35] text-[rgba(255,246,233,0.96)] drop-shadow-[0_2px_10px_rgba(0,0,0,0.45)]">
                         {renderMarkdown(message.text)}
                       </div>
@@ -547,7 +521,7 @@ const ChatPanel = ({
 
         {/* Activities View */}
         {viewMode === 'activities' && (
-          <div className="rounded-[14px] border border-white/8 bg-white/3 p-3">
+          <div className="mb-3 rounded-[18px] border border-[rgba(232,178,102,0.12)] bg-black/45 p-4 shadow-[0_14px_34px_rgba(0,0,0,0.48)] backdrop-blur-md">
             <div className="grid grid-cols-2 gap-3">
               <ActivityTile
                 icon={Utensils}
@@ -620,85 +594,13 @@ const ChatPanel = ({
           </div>
         )}
 
-        {/* Attachments View */}
-        {viewMode === 'attachments' && (
-          <div>
-            {attachments.length === 0 ? (
-              <div className="flex items-center justify-center text-center text-white/70">
-                <div>
-                  <p className="text-sm">No attachments yet</p>
-                  <p className="text-sm text-white/50 mt-1">Add files to share with Monika</p>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {attachments.map((item) => {
-                  const isImage = (item.file?.type || '').startsWith('image/');
-                  return (
-                    <div
-                      key={item.id}
-                      className="flex items-center justify-between gap-3 rounded-[12px] border border-white/20 bg-white/15 p-3 hover:bg-white/20 transition"
-                    >
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                        {isImage && item.previewUrl ? (
-                          <img src={item.previewUrl} alt={item.file?.name} className="h-12 w-12 rounded-lg border border-white/10 object-cover flex-shrink-0" />
-                        ) : (
-                          <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-white/20 bg-white/10 text-lg flex-shrink-0">
-                            📄
-                          </div>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium text-white/90 truncate">{item.file?.name}</div>
-                          <div className="text-sm text-white/60">{Math.round((item.file?.size || 0) / 1024)} KB</div>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeAttachment(item.id)}
-                        className="text-white/60 transition hover:text-red-400 flex-shrink-0 font-semibold text-sm"
-                        title="Remove"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
           </div>
         )}
-
-        {/* Thoughts View */}
-        {viewMode === 'thoughts' && (
-          <div className="rounded-[16px] border border-white/20 bg-white/10 overflow-hidden">
-            <div className="px-4 py-3 border-b border-white/20 bg-white/15">
-              <h3 className="text-sm font-semibold text-white/90">{t('chat.internal_thoughts')}</h3>
-              <p className="text-sm text-white/60 mt-1">
-                {showThoughts ? t('chat.thoughts_visible') : t('chat.enable_thoughts')}
-              </p>
-            </div>
-            <div className="p-4 space-y-3 max-h-96 overflow-y-auto">
-              {visibleMessages.filter(m => String(m?.sender || '').includes('(Thought)')).length === 0 ? (
-                <p className="text-sm text-white/60">{t('chat.no_thoughts')}</p>
-              ) : (
-                visibleMessages
-                  .filter(m => String(m?.sender || '').includes('(Thought)'))
-                  .map((message, index) => (
-                    <div key={index} className="rounded-[12px] border border-dashed border-white/20 bg-white/10 p-3 italic text-sm text-white/80">
-                      {renderMarkdown(message?.text)}
-                    </div>
-                  ))
-              )}
-            </div>
-          </div>
-        )}
-
-        </div>
 
         {/* Unified Bottom Bar - All controls in one place */}
         <div className="shrink-0 rounded-[18px] border border-[rgba(232,178,102,0.12)] bg-black/[0.74] px-3 py-2 text-sm shadow-[0_14px_34px_rgba(0,0,0,0.48)] backdrop-blur-xl">
         {/* Input Row - Only shows in chat or activities */}
-        {(viewMode === 'chat' || viewMode === 'activities') && (
+        {(compactDock || viewMode === 'chat' || viewMode === 'activities') && (
           <div className="flex flex-col gap-2">
             <div className="flex min-h-[42px] items-center gap-2">
               <Leaf size={18} className="shrink-0 text-[rgba(232,178,102,0.72)]" />
@@ -797,7 +699,6 @@ const ChatPanel = ({
           {[
             { mode: 'chat', icon: MessageSquare, title: t('chat.chat_tab') || 'Chat' },
             { mode: 'activities', icon: Zap, title: t('chat.activities_tab') || 'Activities' },
-            { mode: 'thoughts', icon: Brain, title: t('chat.thoughts_tab') || 'Thoughts' },
           ].map(({ mode, icon: Icon, title }) => (
             <button
               key={mode}

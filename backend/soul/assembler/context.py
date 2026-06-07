@@ -167,12 +167,15 @@ class ContextAssembler:
             if not all_entries:
                 return ""
 
-            lines = ["**Kontekst pamięci:**"]
+            lines = [
+                "**Kontekst pamięci (z poprzednich sesji):**",
+                "Poniższe wpisy to wspomnienia — fakty i epizody z przeszłości, NIE opis tego co widzisz teraz na ekranie ani przez kamerę.",
+            ]
             for e in all_entries:
                 tag_str = ", ".join(e.tags) if e.tags else ""
                 suffix = f" [{tag_str}]" if tag_str else ""
                 lines.append(f"- [{e.type}] {e.content}{suffix}")
-            lines.append("Wykorzystaj te wspomnienia naturalnie — nie wspominaj o wyszukiwaniu pamięci.")
+            lines.append("Używaj tych wspomnień naturalnie w rozmowie — nie mylić z aktualnym obrazem.")
             return "\n".join(lines)
         except Exception as exc:
             logger.warning("Assembler: memory block failed: %s", exc)

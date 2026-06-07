@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import re
 import time
 
@@ -212,16 +213,14 @@ def register_chat_input_handlers(
                 except Exception as e:
                     print(f"[SERVER DEBUG] Failed to send study page image: {e}")
 
+            piggyback_payload = None
             if not sent_visual and audio_loop and getattr(audio_loop, "_latest_image_payload", None):
                 if getattr(audio_loop, "_latest_image_ts", None):
                     latest_age = time.time() - audio_loop._latest_image_ts
                 if latest_age is None or latest_age <= max_visual_age_sec:
                     print(f"[SERVER DEBUG] Piggybacking video frame with text input.")
-                    try:
-                        await audio_loop.session.send(input=audio_loop._latest_image_payload, end_of_turn=False)
-                        sent_visual = True
-                    except Exception as e:
-                        print(f"[SERVER DEBUG] Failed to send piggyback frame: {e}")
+                    piggyback_payload = audio_loop._latest_image_payload
+                    sent_visual = True
                 else:
                     print(f"[SERVER DEBUG] Skipping stale visual frame (age {latest_age:.2f}s).")
 
@@ -264,7 +263,20 @@ def register_chat_input_handlers(
 
             if text:
                 try:
-                    await _send_with_reconnect_retry(text, end_of_turn=True)
+                    if piggyback_payload and hasattr(audio_loop.session, "send_client_content"):
+                        from google.genai import types as _genai_types
+                        _raw = base64.b64decode(piggyback_payload["data"])
+                        _mime = piggyback_payload.get("mime_type", "image/jpeg")
+                        _content = _genai_types.Content(
+                            role="user",
+                            parts=[
+                                _genai_types.Part(inline_data=_genai_types.Blob(data=_raw, mime_type=_mime)),
+                                _genai_types.Part(text=text),
+                            ],
+                        )
+                        await audio_loop.session.send_client_content(turns=_content, turn_complete=True)
+                    else:
+                        await _send_with_reconnect_retry(text, end_of_turn=True)
                     print(f"[SERVER DEBUG] Message sent to model successfully.")
                 except Exception as e:
                     print(f"[SERVER DEBUG] Failed to send message to model: {e}")

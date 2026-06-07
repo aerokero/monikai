@@ -337,7 +337,48 @@ class ProactivityWrapper:
 
         return msg, asked_question
 
-    async def run_reasoning_check(self) -> Optional[str]:
+    def _build_reasoning_prompt(self, silence_sec: float, allow_speak: bool) -> str:
+        time_str = time.strftime("%H:%M", time.localtime(time.time()))
+        silence_min = max(1, int(silence_sec / 60))
+        lines = [
+            f"It is {time_str}.",
+            f"The user has been silent for {silence_min} minute{'s' if silence_min != 1 else ''}.",
+        ]
+
+        from backend.core.runtimes.v2_runtime import get as _v2_get
+        _v2 = _v2_get()
+        if _v2 and _v2.soul_state:
+            energy = _v2.soul_state.energy
+            if energy < 0.4:
+                lines.append("You feel tired and low on energy.")
+            action = evaluate_proactivity(_v2.soul_state.needs, _v2.soul_state)
+            if action:
+                lines.append(f"You notice within yourself: {action.context}")
+            agenda = _v2._agenda.active() if hasattr(_v2, "_agenda") else []
+            if agenda:
+                items_str = "; ".join(agenda[:2])
+                lines.append(f"You have unresolved threads from this conversation you wanted to return to: {items_str}. If the moment feels natural, bring one up.")
+
+        motion = getattr(self.loop, "_latest_motion_score", 0.0)
+        if getattr(self.loop, "video_mode", "none") == "screen" and motion > 1.5:
+            lines.append("You can see the user's screen has been active recently.")
+
+        if allow_speak:
+            lines.append(
+                "Reflect on the current moment. "
+                "If you genuinely have something to say — a thought, a feeling, curiosity about what the user is doing — "
+                "speak naturally and briefly. "
+                "If nothing feels right to say, stay silent and think to yourself using <internal>...</internal>."
+            )
+        else:
+            lines.append(
+                "Generate a brief internal monologue about the current situation. "
+                "Output ONLY <internal>...</internal>. Do NOT speak to the user. Do NOT ask questions."
+            )
+
+        return " ".join(lines)
+
+    async def run_reasoning_check(self) -> Optional[tuple[str, bool]]:
         if not self.loop._reasoning_enabled:
             return None
 
@@ -345,13 +386,21 @@ class ProactivityWrapper:
         if (now - self.loop._last_reasoning_ts) < self.loop._reasoning_interval_sec:
             return None
 
-        # Local heuristic: If user is silent for > 120s, trigger an internal thought loop
-        if (now - self.loop._last_user_activity_ts) > 120.0:
-            if (now - self.loop._last_reasoning_ts) > 60.0:
-                self.loop._last_reasoning_ts = now
-                time_str = time.strftime("%H:%M", time.localtime(time.time()))
-                return f"It is {time_str}. The user has been silent for over 2 minutes. Generate an internal monologue about the current situation. If the user requested silence, respect it and do not speak."
-        return None
+        silence_sec = now - self.loop._last_user_activity_ts
+        if silence_sec < 120.0:
+            return None
+        if (now - self.loop._last_reasoning_ts) < 60.0:
+            return None
+
+        self.loop._last_reasoning_ts = now
+
+        allow_speak = self.should_nudge(
+            is_user_speaking=False,
+            is_paused=getattr(self.loop, "paused", False),
+        )
+
+        prompt = self._build_reasoning_prompt(silence_sec, allow_speak)
+        return prompt, allow_speak
 
 
 class AudioLoop:
@@ -597,6 +646,7 @@ class AudioLoop:
         self._latest_image_ts = 0.0
         self._last_ui_frame_ts = 0.0
         self._video_stream_enabled = True
+        self._latest_motion_score = 0.0
 
         # VAD State
         self._reminders_loaded = False
@@ -1432,30 +1482,6 @@ class AudioLoop:
             if self.minecraft_game_mode:
                 continue
 
-            should = self.proactivity.should_nudge(
-                is_user_speaking=self._is_speaking,
-                is_paused=self.paused,
-                threshold_override=None
-            )
-            if not should:
-                continue
-
-            mood = None
-            if self.personality:
-                mood = self.personality.state.mood
-            allow_question = self.proactivity.can_ask_question()
-            msg, asked_question = self.proactivity.get_nudge_message(
-                mood=mood,
-                video_mode=self.video_mode,
-                allow_question=allow_question,
-            )
-
-            try:
-                await self.session.send(input=msg, end_of_turn=True)
-                self.proactivity.record_nudge(asked_question=asked_question)
-                self.mark_ai_activity()
-            except Exception as e:
-                print(f"[AI DEBUG] [NUDGE] Failed to send idle nudge: {e}")
 
     async def generate_daily_dream(self):
         """Seeds a morning dream directly inside the active Live session."""
@@ -1597,18 +1623,37 @@ class AudioLoop:
                         except Exception:
                             pass
 
-            prompt = await self.proactivity.run_reasoning_check()
-            if prompt and self.session and not self._ai_turn_open:
-                print(f"[AI DEBUG] [REASONING] Triggering internal thought.")
+            result = await self.proactivity.run_reasoning_check()
+            if result and self.session and not self._ai_turn_open:
+                prompt, allow_speak = result
+                print(f"[AI DEBUG] [REASONING] Triggering {'proactive' if allow_speak else 'internal'} thought.")
                 try:
-                    # Send prompt to trigger internal thinking (no spoken output)
-                    self._suppress_spoken_output = True
-                    await self.send_system_message(
-                        f"System Notification: {prompt} "
-                        "Output ONLY <internal>...</internal>. Do NOT speak to the user. "
-                        "Do NOT ask questions.",
-                        end_of_turn=True
-                    )
+                    if allow_speak:
+                        screen_payload = self._latest_image_payload if self.video_mode == "screen" else None
+                        screen_fresh = screen_payload and (time.time() - self._latest_image_ts) < 10.0
+                        if screen_fresh:
+                            try:
+                                await self.refresh_latest_frame(min_age_sec=0.5)
+                                screen_payload = self._latest_image_payload
+                            except Exception:
+                                pass
+                            raw = base64.b64decode(screen_payload["data"])
+                            mime = screen_payload.get("mime_type", "image/jpeg")
+                            content = types.Content(
+                                role="user",
+                                parts=[
+                                    types.Part(inline_data=types.Blob(data=raw, mime_type=mime)),
+                                    types.Part(text=f"System Notification: {prompt}"),
+                                ],
+                            )
+                            await self.session.send_client_content(turns=content, turn_complete=True)
+                        else:
+                            await self.send_system_message(f"System Notification: {prompt}", end_of_turn=True)
+                        self.proactivity.record_nudge(asked_question=False)
+                        self.mark_ai_activity()
+                    else:
+                        self._suppress_spoken_output = True
+                        await self.send_system_message(f"System Notification: {prompt}", end_of_turn=True)
                 except Exception:
                     self._suppress_spoken_output = False
 
@@ -4374,6 +4419,7 @@ class AudioLoop:
                 active_interval = self._screen_interval
                 if last_gray is not None and gray is not None and last_gray.shape == gray.shape:
                     score = np.mean(cv2.absdiff(last_gray, gray))
+                    self._latest_motion_score = float(score)
                     if score > 0.5:  # Threshold for activity
                         current_interval = active_interval
                     else:

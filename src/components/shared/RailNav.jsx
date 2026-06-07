@@ -109,13 +109,14 @@ const RailNav = () => {
     opacity-0 group-hover:opacity-100 transition-opacity
     z-50
   `;
-  const renderLabel = (label, extraClassName = '') => (
-    isExpanded ? (
+  const renderLabel = (label, extraClassName = '') => {
+    if (!canExpandRail) return null;
+    return (
       <span className={`rail-button-label ${extraClassName}`}>
         {label}
       </span>
-    ) : null
-  );
+    );
+  };
   const renderTooltip = (label) => (
     canExpandRail && !isExpanded ? (
       <div className={tooltipClassName}>
@@ -145,12 +146,10 @@ const RailNav = () => {
             title={isExpanded ? t('navigation.collapse') : t('navigation.expand')}
           >
             <Icons.Maximize2 size={20} />
-            {isExpanded ? (
-              <span className="rail-toggle-copy">
-                <span className="rail-toggle-title">{t('navigation.title')}</span>
-                <span className="rail-toggle-subtitle">{t('navigation.collapse_to_icons')}</span>
-              </span>
-            ) : null}
+            <span className="rail-toggle-copy">
+              <span className="rail-toggle-title">{t('navigation.title')}</span>
+              <span className="rail-toggle-subtitle">{t('navigation.collapse_to_icons')}</span>
+            </span>
             {renderTooltip(t('navigation.expand'))}
           </button>
         )}

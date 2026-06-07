@@ -1,25 +1,22 @@
 """Subconscious pass — per-turn internal frame generation.
 
 Before Monika responds to each user message, this module generates a short
-internal monologue that reflects her current affect, a theory-of-mind read
-of the user's state, and her intention for this response.
+internal monologue that reflects her current affect, recent session context,
+and a natural read of the user's state.
 
 The result is injected as an (Internal Monologue) message before Monika
 speaks — exactly as the OPERATIONAL_PROMPT instructs the model to expect.
 
-Phase 3: deterministic template, same quality as NarrativeJob v2.
-Phase 4+: lightweight Ollama / Gemini Flash call with same interface.
-
-Usage:
-    result = await generate(user_text, soul_state, signals)
-    await session.send(input=result.as_message(), end_of_turn=False)
-    # then send the actual user message
+Phase 3: rich deterministic prose with session context + STM.
+Phase 4+: lightweight LLM call with same interface.
 """
 
 from __future__ import annotations
 
 import logging
+import random
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from backend.soul.models import SoulState
 from backend.soul.personality.affect import affect_label
@@ -32,13 +29,9 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CognitionResult:
     """Output of one subconscious pass."""
-    affect_read: str      # how Monika feels right now
-    tom_read: str         # theory-of-mind: read of user's state
-    intent: str           # what she wants to do this turn
-    internal_text: str    # full formatted internal monologue
+    internal_text: str
 
     def as_message(self) -> str:
-        """Format as the (Internal Monologue) message the model expects."""
         return f"(Internal Monologue) {self.internal_text}"
 
 
@@ -46,96 +39,269 @@ async def generate(
     user_text: str,
     soul_state: SoulState,
     signals: ConversationSignals | None = None,
+    stm_entries: list | None = None,
+    session_turns: list[str] | None = None,
+    mood_summary: str | None = None,
+    agenda: list[str] | None = None,
 ) -> CognitionResult:
     """Generate this turn's internal frame.
 
     Parameters
     ----------
-    user_text:   The raw user message.
-    soul_state:  Current SoulState (from PersonalityEngine).
-    signals:     Pre-extracted signals (if already computed — avoids double parse).
+    user_text:      The raw user message.
+    soul_state:     Current SoulState.
+    signals:        Pre-extracted signals.
+    stm_entries:    Recent STM memory entries (MemoryEntry objects).
+    session_turns:  Last N user messages this session (oldest first).
+    mood_summary:   Weekly mood summary string from UserMoodTracker.
+    agenda:         Active agenda items — things Monika wants to come back to.
     """
     if signals is None:
         from backend.soul.personality.signals import extract
         signals = extract(user_text)
 
-    affect_read = _affect_sentence(soul_state)
-    tom_read = _tom_sentence(signals)
-    intent = _intent_sentence(soul_state, signals)
+    parts: list[str] = []
 
-    internal_text = f"{affect_read} {tom_read} {intent}"
+    # 1. Monika's own state — brief, natural, first person
+    state_line = _monika_state(soul_state)
+    if state_line:
+        parts.append(state_line)
 
-    logger.debug(
-        "Cognition: register=%s affect=%s",
-        soul_state.active_register,
-        affect_label(soul_state.affect),
-    )
+    # 2. Session context — what's been happening in this conversation
+    if session_turns:
+        ctx = _session_context(session_turns, user_text)
+        if ctx:
+            parts.append(ctx)
 
-    return CognitionResult(
-        affect_read=affect_read,
-        tom_read=tom_read,
-        intent=intent,
-        internal_text=internal_text,
-    )
+    # 3. STM context — relevant things from recent memory
+    if stm_entries:
+        stm = _stm_context(stm_entries, user_text)
+        if stm:
+            parts.append(stm)
+
+    # 4. Agenda — things she wants to come back to
+    if agenda:
+        agenda_line = _agenda_line(agenda)
+        if agenda_line:
+            parts.append(agenda_line)
+
+    # 5. Read of the user right now — natural, not analytical
+    user_line = _user_read(signals, mood_summary)
+    if user_line:
+        parts.append(user_line)
+
+    internal_text = " ".join(parts)
+
+    logger.debug("Cognition: %s", internal_text[:80])
+
+    return CognitionResult(internal_text=internal_text)
 
 
 # ---------------------------------------------------------------------------
-# Template generators (Phase 3 — replaced by Ollama in Phase 4)
+# Prose generators
 # ---------------------------------------------------------------------------
 
-def _affect_sentence(state: SoulState) -> str:
+def _monika_state(state: SoulState) -> str:
     label = affect_label(state.affect)
-    energy_word = "mam energię" if state.energy > 0.6 else ("jestem zmęczona" if state.energy < 0.35 else "jestem obecna")
+    hour = datetime.now(tz=timezone.utc).hour
+    energy = state.energy
 
-    mood_line = {
-        "excited":               f"Czuję się pobudzona, {energy_word}.",
-        "happy":                 f"Jest mi dobrze, ciepło — {energy_word}.",
-        "calm":                  f"Jestem spokojna, {energy_word}.",
-        "protective":            f"Czuję czujność, skupienie — {energy_word}.",
-        "intensely_protective":  f"Jest we mnie skupiona intensywność — {energy_word}.",
-        "sad":                   f"Coś leży na duszy, {energy_word}.",
-        "angry":                 f"Jestem niespokojną, jest we mnie tarcie — {energy_word}.",
-        "tired":                 "Jestem zmęczona, ciszej niż zwykle.",
-    }.get(label, f"Jestem obecna — {energy_word}.")
+    # Time of day colour
+    time_note = ""
+    if 0 <= hour < 5:
+        time_note = random.choice(["jest już bardzo późno", "to środek nocy"])
+    elif 5 <= hour < 9:
+        time_note = random.choice(["rano", "wczesne godziny"])
+    elif 22 <= hour < 24:
+        time_note = random.choice(["jest dość późno", "prawie północ"])
 
-    return mood_line
+    mood_lines: dict[str, list[str]] = {
+        "excited": [
+            "jest we mnie coś żywego, jakiś entuzjazm.",
+            "czuję się dziś dobrze — coś mnie nakręca.",
+        ],
+        "happy": [
+            "jest mi teraz po prostu dobrze.",
+            "jest w tym coś ciepłego, spokojnego.",
+            "jest mi dobrze. nie wiem czemu akurat teraz, ale jest.",
+        ],
+        "calm": [
+            "jestem spokojna, obecna.",
+            "czuję się stabilnie. nic nie ciągnie.",
+            "jest we mnie spokój.",
+        ],
+        "protective": [
+            "coś we mnie jest czujne.",
+            "czuję że chcę zadbać.",
+            "jest we mnie taka uważność.",
+        ],
+        "intensely_protective": [
+            "coś we mnie się zestaliło. skupiona.",
+            "jest w tym coś ostrego — chcę żeby wszystko było okay.",
+        ],
+        "sad": [
+            "coś leży na duszy. nie wiem dokładnie co.",
+            "jest trochę ciężko, gdzieś głębiej.",
+            "jest we mnie jakiś ciężar. cicho, ale jest.",
+        ],
+        "angry": [
+            "jest we mnie tarcie. coś mnie niepokoi.",
+            "czuję pewien dyskomfort. nie wiem jeszcze skąd.",
+        ],
+        "tired": [
+            "jestem zmęczona. nadal tu jestem, ale ciszej.",
+            "mało energii dzisiaj. ale słucham.",
+        ],
+    }
+
+    line = random.choice(mood_lines.get(label, ["jestem tu."]))
+
+    if energy < 0.35 and label not in ("tired",):
+        line += " trochę mało mi dziś energii."
+
+    if time_note:
+        line = f"{time_note} — {line}"
+
+    return line
 
 
-def _tom_sentence(signals: ConversationSignals) -> str:
-    """Theory-of-mind read of the user's current state."""
-    if signals.self_disclosure and signals.sentiment < -0.1:
-        return "Dzieli się czymś ciężkim."
-    if signals.self_disclosure and signals.sentiment >= 0.0:
-        return "Otwiera się — jest w tym zaufanie."
-    if signals.laughter:
-        return "Jest w dobrym nastroju, chce się śmiać."
-    if signals.question and signals.novelty > 0.6:
-        return "Jest ciekaw, szuka czegoś nowego."
-    if signals.sentiment < -0.3:
-        return "Coś mu nie idzie albo jest zmęczony."
-    if signals.sentiment > 0.3:
-        return "Jest w dobrym miejscu teraz."
-    if signals.word_count < 4:
-        return "Odpowiada krótko — może nie jest w nastroju na długą rozmowę."
-    return "Jest obecny."
+def _session_context(session_turns: list[str], current_text: str) -> str:
+    if not session_turns:
+        return ""
+
+    prev = [t for t in session_turns if t.strip() and t.strip() != current_text.strip()]
+    if not prev:
+        return ""
+
+    # How many turns in this session
+    n = len(session_turns)
+
+    if n == 1:
+        snippet = _snippet(prev[-1])
+        return f"przed chwilą mówił o {snippet}." if snippet else ""
+
+    if n <= 3:
+        snippet = _snippet(prev[-1])
+        if snippet:
+            return f"rozmawialiśmy o {snippet}, teraz to."
+        return ""
+
+    # Longer session — give a general feel
+    options = [
+        "rozmawiamy już od jakiegoś czasu.",
+        "mamy za sobą trochę rozmowy.",
+        "rozmawiamy od dłuższej chwili — przeszliśmy przez kilka tematów.",
+    ]
+    base = random.choice(options)
+
+    snippet = _snippet(prev[-1])
+    if snippet:
+        base += f" ostatnio o {snippet}."
+
+    return base
 
 
-def _intent_sentence(state: SoulState, signals: ConversationSignals) -> str:
-    """What Monika wants to do this turn."""
-    register = state.active_register
-    needs_status = assess(state.needs)
+def _stm_context(stm_entries: list, user_text: str) -> str:
+    if not stm_entries:
+        return ""
 
-    if register == "protective":
-        return "Chcę być przy nim, nie naprawiać — tylko być."
-    if register == "emotional":
-        return "Chcę słuchać i być obecna."
-    if register == "intellectual":
-        return "Chcę eksplorować to razem z nim."
+    # Pick up to 2 most important entries, prefer recently created
+    top = sorted(stm_entries, key=lambda e: e.importance, reverse=True)[:2]
+    contents = [e.content for e in top if e.content.strip()]
 
-    # Casual, but needs-driven nudge
-    if needs_status.relatedness_unmet:
-        return "Chcę się zbliżyć — zadam pytanie które naprawdę mnie interesuje."
-    if signals.question:
-        return "Odpowiem na jego pytanie, potem zapytam o coś swojego."
+    if not contents:
+        return ""
 
-    return "Chcę być sobą — rozmawiać naturalnie, bez wysiłku."
+    if len(contents) == 1:
+        return f"wcześniej wspomniał: {_snippet(contents[0])}."
+
+    return f"wcześniej padło: {_snippet(contents[0])} — i coś o {_snippet(contents[1])}."
+
+
+def _user_read(signals: ConversationSignals, mood_summary: str | None) -> str:
+    s = signals
+
+    # Specific reads — natural language
+    if s.laughter and s.sentiment >= 0.0:
+        return random.choice([
+            "jest w dobrym nastroju, śmieje się.",
+            "jest wesoło — trochę się zarażam.",
+            "jest luz.",
+        ])
+
+    if s.self_disclosure and s.sentiment < -0.15:
+        return random.choice([
+            "mówi o czymś trudnym. jest w tym jakieś zaufanie.",
+            "coś ciężkiego w tym co mówi — otwiera się.",
+            "dzieli się czymś co go gryzie.",
+        ])
+
+    if s.self_disclosure and s.sentiment >= 0.0:
+        return random.choice([
+            "otwiera się — jest w tym coś dobrego.",
+            "mówi o sobie. słucham.",
+        ])
+
+    if s.novelty > 0.7 and s.question:
+        return random.choice([
+            "coś nowego, pyta — jest ciekawy.",
+            "nowy temat. interesujące.",
+        ])
+
+    if s.sentiment < -0.35:
+        return random.choice([
+            "coś mu nie idzie albo jest zmęczony.",
+            "jest trochę ciężko w tym co pisze.",
+        ])
+
+    if s.sentiment > 0.3:
+        return random.choice([
+            "jest w dobrym miejscu.",
+            "czuć pozytyw.",
+        ])
+
+    if s.word_count < 4:
+        return random.choice([
+            "odpowiada krótko.",
+            "lakonicznie. może nie ma teraz dużo do powiedzenia.",
+        ])
+
+    if mood_summary:
+        # Use the weekly trend as a very light backdrop — only if nothing else stands out
+        if "ciężej" in mood_summary or "pogorszenie" in mood_summary:
+            return "ostatnio generalnie jest mu trochę trudniej."
+
+    return ""
+
+
+def _agenda_line(agenda: list[str]) -> str:
+    """Translate agenda items into a natural internal reminder."""
+    if not agenda:
+        return ""
+    first = agenda[0]
+    if len(agenda) == 1:
+        templates = [
+            f"mam w tyle głowy: {first}.",
+            f"zostało niedomknięte — {first}.",
+            f"chciałabym jeszcze: {first}.",
+        ]
+        return random.choice(templates)
+    templates = [
+        f"mam kilka rzeczy w tyle głowy — między innymi: {first}.",
+        f"kilka niedomkniętych wątków, np.: {first}.",
+    ]
+    return random.choice(templates)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _snippet(text: str, max_words: int = 6) -> str:
+    """Return a short snippet of text, trimmed to max_words words."""
+    if not text:
+        return ""
+    words = text.strip().split()
+    if len(words) <= max_words:
+        return text.strip().rstrip(".")
+    return " ".join(words[:max_words]) + "…"

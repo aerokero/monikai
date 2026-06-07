@@ -1,5 +1,47 @@
 import { AHOGE_ACCESSORIES } from './outfitConstants';
 
+const WEATHER_CODE_TO_KEY: Array<[number[], string]> = [
+  [[0], 'clear'],
+  [[1], 'mostly_clear'],
+  [[2], 'partly_cloudy'],
+  [[3], 'cloudy'],
+  [[45, 48], 'fog'],
+  [[51, 52, 53, 54, 55, 56, 57], 'drizzle'],
+  [[61, 62, 63, 64, 65, 66, 67, 80, 81, 82], 'rain'],
+  [[71, 72, 73, 74, 75, 76, 77, 85, 86], 'snow'],
+  [[95, 96, 99], 'storm'],
+];
+
+const weatherKeyFromCode = (code: unknown) => {
+  const numericCode = Number(code);
+  if (Number.isNaN(numericCode)) return '';
+
+  const match = WEATHER_CODE_TO_KEY.find(([codes]) => codes.includes(numericCode));
+  return match ? match[1] : '';
+};
+
+const weatherText = (weather: unknown) => {
+  if (!weather) return '';
+
+  if (typeof weather === 'string') return weather;
+
+  if (typeof weather === 'object') {
+    const record = weather as Record<string, unknown>;
+    const condition = record.condition ?? record.weather ?? record.description;
+
+    if (typeof condition === 'string' && condition.trim()) {
+      return condition;
+    }
+
+    const codeKey = weatherKeyFromCode(record.code);
+    if (codeKey) return codeKey;
+
+    if (condition != null) return String(condition);
+  }
+
+  return String(weather);
+};
+
 export const buildVisualState = ({
   mood,
   affection,
@@ -28,7 +70,7 @@ export const buildVisualState = ({
   showStudyWindow: boolean;
 }) => {
   const normalizedMood = (mood || 'neutral').toLowerCase();
-  const normalizedWeather = (weather || '').toLowerCase();
+  const normalizedWeather = weatherText(weather).toLowerCase();
   const isHalloween = currentMonth === 9 && currentDay === 31;
   const isChristmas = currentMonth === 11 && currentDay >= 24 && currentDay <= 26;
   const isValentines = currentMonth === 1 && currentDay === 14;

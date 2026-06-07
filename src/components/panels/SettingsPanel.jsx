@@ -31,12 +31,12 @@ const CONFIGURABLE_TOOLS = [
 ];
 
 const SettingsRow = ({ title, description, children }) => (
-  <div className="flex items-center justify-between py-3.5 border-b border-[#2c1e15] gap-4">
+  <div className="settings-row flex items-center justify-between py-3.5 border-b border-[#2c1e15] gap-4">
     <div className="flex flex-col min-w-0 flex-1">
       <span className="text-[13px] font-semibold text-[#f5e6d3] font-sans tracking-wide">{title}</span>
       {description && <span className="text-[11px] text-[#8c7769] font-sans mt-0.5 leading-relaxed">{description}</span>}
     </div>
-    <div className="shrink-0 flex items-center justify-end">
+    <div className="settings-row__control shrink-0 flex items-center justify-end">
       {children}
     </div>
   </div>
@@ -56,7 +56,7 @@ const Toggle = ({ checked, onChange }) => (
 );
 
 const Dropdown = ({ value, onChange, options, className = "w-[220px] shrink-0" }) => (
-  <div className={`relative select-none ${className}`}>
+  <div className={`settings-dropdown relative select-none ${className}`}>
     <select
       value={value}
       onChange={onChange}

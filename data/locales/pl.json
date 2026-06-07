@@ -471,20 +471,20 @@
   },
   "navigation": {
     "title": "Nawigacja",
-    "collapse_to_icons": "Zwiń do ikon",
+    "collapse_to_icons": "Zwiń",
     "expand": "Rozwiń nawigację",
     "collapse": "Zwiń nawigację",
-    "connected": "Połączona",
-    "disconnected": "Rozłączona",
-    "mic_muted": "Wyciszona",
-    "mic": "Mikrofon",
-    "camera": "Kamera",
-    "share": "Udostępnij",
+    "connected": "Połączono!",
+    "disconnected": "Rozłączono...",
+    "mic_muted": "Mikrofon wyciszony",
+    "mic": "Mikrofon aktywny",
+    "camera": "Udostępnij obraz z kamery",
+    "share": "Udostępnij obraz z ekranu",
     "talk": "Rozmowa",
     "journal": "Notatnik",
     "briefing": "Przegląd",
     "relationship": "Relacja",
     "calendar": "Kalendarz",
-    "her_profile": "Jej profil"
+    "her_profile": "Profil"
   }
 }

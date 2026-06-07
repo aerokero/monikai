@@ -7,7 +7,6 @@ import {
   CloudSnow,
   CloudSun,
   ExternalLink,
-  Newspaper,
   Pin,
   PinOff,
   RefreshCw,
@@ -27,22 +26,16 @@ const openUrl = (url) => {
       shell.openExternal(url);
       return;
     }
-  } catch (error) {
-    console.error('Failed to open external url:', error);
-  }
+  } catch {}
   window.open(url, '_blank', 'noopener,noreferrer');
 };
 
 const getHostLabel = (url) => {
-  try {
-    return url ? new URL(url).hostname.replace(/^www\./, '') : '';
-  } catch {
-    return '';
-  }
+  try { return url ? new URL(url).hostname.replace(/^www\./, '') : ''; } catch { return ''; }
 };
 
 const parseMinMax = (summary) => {
-  const text = String(summary || '').toLowerCase();
+  const text = String(summary || '');
   const minMatch = text.match(/min\s*(-?\d+(?:[\.,]\d+)?)/i);
   const maxMatch = text.match(/max\s*(-?\d+(?:[\.,]\d+)?)/i);
   return {
@@ -68,10 +61,44 @@ const formatForecastDay = (value, language) => {
   if (Number.isNaN(asDate.getTime())) return String(value || '');
   const now = new Date();
   if (asDate.toDateString() === now.toDateString()) {
-    return (language || 'pl').startsWith('pl') ? 'Dzis' : 'Today';
+    return (language || 'pl').startsWith('pl') ? 'Dzisiaj' : 'Today';
   }
-  return asDate.toLocaleDateString(language || 'pl', { month: 'short', day: '2-digit' });
+  return asDate.toLocaleDateString(language || 'pl', { weekday: 'short', month: 'short', day: 'numeric' });
 };
+
+/* ── Shared card — identical structure to calendar event card ──── */
+const BriefingCard = ({ meta, title, description, icon: Icon, url, onClick, active }) => (
+  <div
+    role={onClick ? 'button' : undefined}
+    tabIndex={onClick ? 0 : undefined}
+    onClick={onClick}
+    onKeyDown={onClick ? (e) => e.key === 'Enter' && onClick() : undefined}
+    className={`rounded-lg border p-4 transition-colors ${
+      active
+        ? 'border-[#de9d50]/30 bg-[#de9d50]/[0.06]'
+        : 'border-[#2c1e15] bg-[#140d08]/40 hover:border-[#3c2e26]'
+    } ${onClick ? 'cursor-pointer' : ''}`}
+  >
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0 flex-1">
+        {meta && <div className="mb-0.5 text-xs text-[#8c7769]">{meta}</div>}
+        <div className="text-sm font-semibold text-[#f5e6d3]">{title}</div>
+        {description && <div className="mt-1 text-xs text-[#8c7769]">{description}</div>}
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {Icon && <Icon size={15} className="text-[#de9d50]" />}
+        {url && (
+          <button
+            onClick={(e) => { e.stopPropagation(); openUrl(url); }}
+            className="rounded-full border border-[#3c2e26] bg-[#1e1612] p-1.5 text-[#8c7769] transition-colors hover:border-[#de9d50] hover:text-[#de9d50]"
+          >
+            <ExternalLink size={11} />
+          </button>
+        )}
+      </div>
+    </div>
+  </div>
+);
 
 const DailyBriefingShellPanel = ({ socket, language }) => {
   const { t } = useLanguage();
@@ -79,41 +106,29 @@ const DailyBriefingShellPanel = ({ socket, language }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [activeSectionId, setActiveSectionId] = useState('');
-  const [activeItemIndex, setActiveItemIndex] = useState(0);
-  const [panelRef, panelSize] = useElementSize();
+  const [panelRef] = useElementSize();
 
   const sections = briefing?.sections || [];
   const pinned = briefing?.profile?.pinned_sections || [];
-  const isWide = panelSize.width >= 940;
 
   useEffect(() => {
-    if (!sections.length) {
-      setActiveSectionId('');
-      return;
-    }
-    if (!sections.some((section) => section.id === activeSectionId)) {
-      setActiveSectionId(sections[0].id);
-    }
+    if (!sections.length) { setActiveSectionId(''); return; }
+    if (!sections.some((s) => s.id === activeSectionId)) setActiveSectionId(sections[0].id);
   }, [activeSectionId, sections]);
 
-  useEffect(() => {
-    setActiveItemIndex(0);
-  }, [activeSectionId]);
-
   const currentSection = useMemo(
-    () => sections.find((section) => section.id === activeSectionId) || sections[0] || null,
-    [activeSectionId, sections]
+    () => sections.find((s) => s.id === activeSectionId) || sections[0] || null,
+    [activeSectionId, sections],
   );
   const currentItems = Array.isArray(currentSection?.items) ? currentSection.items : [];
-  const activeItem = currentItems[activeItemIndex] || currentItems[0] || null;
+
   const breakingItem = useMemo(() => {
     for (const section of sections) {
-      if (Array.isArray(section?.items) && section.items.length) {
-        return section.items[0];
-      }
+      if (Array.isArray(section?.items) && section.items.length) return section.items[0];
     }
     return null;
   }, [sections]);
+
   const v2BriefingText = String(briefing?.v2_briefing?.text || '').trim();
 
   const requestBriefing = (force = false) => {
@@ -126,28 +141,14 @@ const DailyBriefingShellPanel = ({ socket, language }) => {
   useEffect(() => {
     if (!socket) return undefined;
     requestBriefing(false);
-
-    const onData = (payload) => {
-      setBriefing(payload || null);
-      setIsLoading(false);
-      setError('');
-    };
-
+    const onData = (payload) => { setBriefing(payload || null); setIsLoading(false); setError(''); };
     const onError = (payload) => {
-      const message = String(payload?.msg || 'Daily briefing error');
-      if (message.toLowerCase().includes('briefing')) {
-        setError(message);
-        setIsLoading(false);
-      }
+      const msg = String(payload?.msg || '');
+      if (msg.toLowerCase().includes('briefing')) { setError(msg); setIsLoading(false); }
     };
-
     socket.on('daily_briefing_data', onData);
     socket.on('error', onError);
-
-    return () => {
-      socket.off('daily_briefing_data', onData);
-      socket.off('error', onError);
-    };
+    return () => { socket.off('daily_briefing_data', onData); socket.off('error', onError); };
   }, [language, socket]);
 
   const updatePinned = (sectionId, shouldPin) => {
@@ -156,7 +157,7 @@ const DailyBriefingShellPanel = ({ socket, language }) => {
     const nextPinned = (profile.pinned_sections || []).filter((id) => id !== sectionId);
     if (shouldPin) nextPinned.push(sectionId);
     const nextProfile = { ...profile, pinned_sections: nextPinned.slice(0, 3) };
-    setBriefing((current) => (current ? { ...current, profile: nextProfile } : current));
+    setBriefing((cur) => (cur ? { ...cur, profile: nextProfile } : cur));
     socket.emit('set_daily_briefing_profile', { profile: nextProfile, language });
   };
 
@@ -165,233 +166,207 @@ const DailyBriefingShellPanel = ({ socket, language }) => {
     socket.emit('accept_daily_briefing_proposal', { proposal: briefing.proposal, language });
     setIsLoading(true);
   };
-
   const handleRejectProposal = () => {
     if (!briefing?.proposal || !socket) return;
     socket.emit('reject_daily_briefing_proposal', { proposal: briefing.proposal, language });
     setIsLoading(true);
   };
 
-  const renderWeatherSection = () => {
+  /* ── Weather: vertical list identical to calendar event list ──── */
+  const renderWeatherItems = () => {
     const overview = currentItems.find((item) => String(item.kind || '').toLowerCase() === 'overview') || currentItems[0];
     const forecast = currentItems.filter((item) => String(item.kind || '').toLowerCase() === 'forecast');
+
     return (
-      <div className="grid gap-3 md:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-        <div className="rounded-[18px] border border-white/10 bg-white/[0.03] p-4">
-          <div className="text-[11px] uppercase tracking-[0.2em] text-white/40">Weather</div>
-          <div className="mt-3 text-3xl font-semibold text-white">{overview?.title || '--'}</div>
-          <div className="mt-2 text-sm leading-relaxed text-white/70">{overview?.summary || t('briefing.no_items')}</div>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          {forecast.slice(0, 6).map((item, index) => {
-            const Icon = weatherIconForSummary(item.summary);
-            const temps = parseMinMax(item.summary);
-            return (
-              <div key={`${currentSection?.id}-forecast-${index}`} className="rounded-[18px] border border-white/10 bg-black/22 p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm text-white/90">{formatForecastDay(item.title, language)}</div>
-                    <div className="mt-1 text-xs text-white/50">{parseCondition(item.summary)}</div>
-                  </div>
-                  <Icon size={26} className="text-cyan-300" />
-                </div>
-                <div className="mt-3 space-y-1 text-sm text-white/76">
-                  <div><span className="text-white/45">Min:</span> {temps.min ? `${temps.min}°C` : '-'}</div>
-                  <div><span className="text-white/45">Max:</span> {temps.max ? `${temps.max}°C` : '-'}</div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+      <div className="space-y-1.5">
+        {/* Overview — like a calendar "today" event */}
+        {overview && (() => {
+          const Icon = weatherIconForSummary(overview.summary);
+          return (
+            <BriefingCard
+              meta={`${t('briefing.today') || 'Dzisiaj'} · Pogoda`}
+              title={overview.title}
+              description={overview.summary}
+              icon={Icon}
+            />
+          );
+        })()}
+        {/* Forecast days — each as a calendar-style event card */}
+        {forecast.map((item, index) => {
+          const Icon = weatherIconForSummary(item.summary);
+          const temps = parseMinMax(item.summary);
+          const condition = parseCondition(item.summary);
+          const tempStr = (temps.min || temps.max)
+            ? [temps.min ? `Min ${temps.min}°` : null, temps.max ? `Max ${temps.max}°` : null].filter(Boolean).join(' · ')
+            : null;
+          return (
+            <BriefingCard
+              key={`forecast-${index}`}
+              meta={`${formatForecastDay(item.title, language)} · Prognoza`}
+              title={condition || item.title}
+              description={tempStr}
+              icon={Icon}
+            />
+          );
+        })}
       </div>
     );
   };
 
-  const renderStoryDetail = () => {
-    if (!activeItem) {
-      return (
-        <div className="rounded-[18px] border border-dashed border-white/10 bg-white/[0.02] px-4 py-6 text-sm text-white/40">
-          {t('briefing.no_items')}
-        </div>
-      );
-    }
+  /* ── News: vertical list identical to calendar event list ─────── */
+  const renderNewsItems = () => (
+    <div className="space-y-1.5">
+      {currentItems.slice(0, 12).map((item, index) => {
+        const host = getHostLabel(item.url);
+        const meta = [host || currentSection?.title, item.published_at ? new Date(item.published_at).toLocaleDateString(language || 'pl') : null]
+          .filter(Boolean).join(' · ');
+        const description = item.summary
+          ? (item.summary.length > 180 ? `${item.summary.slice(0, 180)}…` : item.summary)
+          : null;
+        return (
+          <BriefingCard
+            key={`${currentSection?.id}-${index}`}
+            meta={meta}
+            title={item.title}
+            description={description}
+            url={item.url}
+          />
+        );
+      })}
+    </div>
+  );
 
-    return (
-      <article className="rounded-[18px] border border-white/10 bg-white/[0.03] p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-cyan-200/70">
-              {getHostLabel(activeItem.url) || currentSection?.title}
-            </div>
-            <h3 className="mt-2 text-lg font-semibold leading-snug text-white">{activeItem.title}</h3>
-          </div>
-          {activeItem.url ? (
-            <button
-              onClick={() => openUrl(activeItem.url)}
-              className="shrink-0 rounded-xl border border-white/10 bg-white/[0.05] p-2 text-white/70 transition-colors hover:bg-white/[0.1] hover:text-white"
-              title={t('briefing.open')}
-            >
-              <ExternalLink size={15} />
-            </button>
-          ) : null}
-        </div>
-        {activeItem.summary ? (
-          <p className="mt-4 text-sm leading-relaxed text-white/74">{activeItem.summary}</p>
-        ) : null}
-      </article>
-    );
-  };
-
+  /* ── Render ───────────────────────────────────────────────────── */
   return (
     <ShellPanelFrame
-      icon={Newspaper}
+      icon={null}
       title={t('briefing.title')}
-      subtitle="Responsive briefing cards with active story focus."
+      titleClassName="font-serif text-[28px] text-[#f5e6d3] font-normal tracking-wide py-1"
+      headerClassName="flex items-start justify-between gap-4 border-b border-[#2c1e15] bg-transparent px-6 pt-6 pb-4"
+      bodyClassName="flex flex-col h-full overflow-hidden"
       actions={(
         <button
           onClick={() => requestBriefing(true)}
-          className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs transition-colors ${
+          className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${
             isLoading
-              ? 'border-white/10 bg-white/[0.03] text-white/35'
-              : 'border-white/12 bg-white/[0.06] text-white/78 hover:bg-white/[0.11]'
+              ? 'border-[#2c1e15] bg-[#1e1612] text-[#8c7769]/40'
+              : 'border-[#3c2e26] bg-[#1e1612] text-[#8c7769] hover:border-[#de9d50] hover:text-[#de9d50]'
           }`}
         >
-          <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
+          <RefreshCw size={12} className={`mr-1.5 inline ${isLoading ? 'animate-spin' : ''}`} />
           {t('briefing.refresh')}
         </button>
       )}
-      bodyClassName="min-h-0"
     >
-      <div ref={panelRef} className="flex h-full min-h-0 flex-col overflow-auto p-3 custom-scrollbar">
-        <div className="rounded-[18px] border border-white/10 bg-white/[0.03] px-4 py-3">
-          <div className="flex items-center gap-2 text-sm text-white/84">
-            <span className="rounded-full border border-red-400/28 bg-red-500/16 px-2 py-0.5 text-[10px] font-bold tracking-[0.18em] text-red-200">
-              BREAKING
-            </span>
-            <span className="truncate">{breakingItem?.title || t('briefing.no_items')}</span>
-          </div>
-        </div>
+      <div ref={panelRef} className="flex-1 overflow-y-auto px-6 py-4 pb-10 custom-scrollbar text-sm">
+        <div className="flex flex-col gap-4">
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {sections.map((section) => {
-            const isActive = currentSection?.id === section.id;
-            return (
-              <button
-                key={section.id}
-                onClick={() => setActiveSectionId(section.id)}
-                className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${
-                  isActive
-                    ? 'border-white/32 bg-white/[0.14] text-white'
-                    : 'border-white/10 bg-white/[0.04] text-white/68 hover:bg-white/[0.09]'
-                }`}
-              >
-                {section.title}
-              </button>
-            );
-          })}
-          {currentSection ? (
-            <button
-              onClick={() => updatePinned(currentSection.id, !pinned.includes(currentSection.id))}
-              className={`ml-auto inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition-colors ${
-                pinned.includes(currentSection.id)
-                  ? 'border-amber-400/30 bg-amber-400/12 text-amber-100'
-                  : 'border-white/12 bg-white/[0.04] text-white/70 hover:bg-white/[0.09]'
-              }`}
-            >
-              {pinned.includes(currentSection.id) ? <PinOff size={12} /> : <Pin size={12} />}
-              {pinned.includes(currentSection.id) ? t('briefing.unpin') : t('briefing.pin')}
-            </button>
-          ) : null}
-        </div>
-
-        {briefing?.proposal ? (
-          <div className="mt-3 rounded-[18px] border border-emerald-400/25 bg-emerald-400/10 p-4">
-            <div className="flex items-start gap-3 text-emerald-100">
-              <Sparkles size={15} className="mt-0.5 shrink-0" />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium">{t('briefing.ai_proposal')}</div>
-                <div className="mt-1 text-sm text-emerald-100/88">{briefing.proposal.reason}</div>
-                <div className="mt-2 text-xs text-emerald-100/74">
-                  {t('briefing.swap')}: {briefing.proposal.from_section} -&gt; {briefing.proposal.to_section} ({Math.round((briefing.proposal.confidence || 0) * 100)}%)
-                </div>
+          {/* BREAKING — same card style */}
+          {breakingItem && (
+            <div className="rounded-lg border border-[#2c1e15] bg-[#140d08]/40 px-4 py-3">
+              <div className="flex items-center gap-2.5">
+                <span className="shrink-0 rounded-full border border-red-400/30 bg-red-500/14 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.2em] text-red-300">
+                  Breaking
+                </span>
+                <span className="truncate text-sm text-[#f5e6d3]/80">{breakingItem.title}</span>
               </div>
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                onClick={handleAcceptProposal}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300/30 bg-emerald-400/18 px-3 py-2 text-xs text-emerald-100"
-              >
-                <Check size={13} />
-                {t('briefing.accept')}
-              </button>
-              <button
-                onClick={handleRejectProposal}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-white/12 bg-white/[0.06] px-3 py-2 text-xs text-white/76"
-              >
-                <XCircle size={13} />
-                {t('briefing.reject')}
-              </button>
-            </div>
-          </div>
-        ) : null}
+          )}
 
-        {v2BriefingText ? (
-          <section className="mt-3 rounded-[18px] border border-cyan-300/20 bg-cyan-300/[0.07] p-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-cyan-100">
-              <Sparkles size={15} />
-              <span>{t('briefing.soul_briefing')}</span>
-            </div>
-            <div className="mt-3 max-h-52 overflow-y-auto whitespace-pre-wrap break-words pr-1 text-sm leading-relaxed text-white/78 custom-scrollbar">
-              {v2BriefingText}
-            </div>
-          </section>
-        ) : null}
-
-        {error ? (
-          <div className="mt-3 rounded-[18px] border border-red-400/24 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-            {error}
-          </div>
-        ) : null}
-
-        {!error && !isLoading && !currentSection ? (
-          <div className="mt-3 rounded-[18px] border border-dashed border-white/10 bg-white/[0.02] px-4 py-8 text-center text-sm text-white/40">
-            {t('briefing.no_items')}
-          </div>
-        ) : null}
-
-        {currentSection?.id === 'weather' ? (
-          <div className="mt-3">{renderWeatherSection()}</div>
-        ) : currentSection ? (
-          <div className={`mt-3 grid min-h-0 gap-3 ${isWide ? 'grid-cols-[minmax(280px,0.82fr)_minmax(0,1.18fr)]' : 'grid-cols-1'}`}>
-            <div className="space-y-2">
-              {currentItems.slice(0, 10).map((item, index) => (
+          {/* Section tabs — same pill switcher as calendar */}
+          {sections.length > 0 && (
+            <div className="flex items-center gap-2">
+              <div className="flex flex-1 gap-1 rounded-full border border-[#3c2e26] bg-[#1e1612] p-1">
+                {sections.map((section) => {
+                  const isActive = currentSection?.id === section.id;
+                  return (
+                    <button
+                      key={section.id}
+                      onClick={() => setActiveSectionId(section.id)}
+                      className={`flex-1 rounded-full py-1.5 text-xs font-semibold transition-all ${
+                        isActive ? 'bg-[#de9d50] text-[#16100d]' : 'text-[#8c7769] hover:text-[#f5e6d3]'
+                      }`}
+                    >
+                      {section.title}
+                    </button>
+                  );
+                })}
+              </div>
+              {currentSection && (
                 <button
-                  key={`${currentSection.id}-${index}`}
-                  onClick={() => setActiveItemIndex(index)}
-                  className={`w-full rounded-[18px] border p-3 text-left transition-colors ${
-                    index === activeItemIndex
-                      ? 'border-white/28 bg-white/[0.12] text-white'
-                      : 'border-white/10 bg-white/[0.03] text-white/74 hover:bg-white/[0.08]'
+                  onClick={() => updatePinned(currentSection.id, !pinned.includes(currentSection.id))}
+                  className={`rounded-full border p-2 transition-colors ${
+                    pinned.includes(currentSection.id)
+                      ? 'border-[#de9d50] bg-[#de9d50]/[0.1] text-[#de9d50]'
+                      : 'border-[#3c2e26] bg-[#1e1612] text-[#8c7769] hover:border-[#de9d50] hover:text-[#de9d50]'
                   }`}
                 >
-                  <div className="text-xs uppercase tracking-[0.18em] text-cyan-200/62">
-                    {getHostLabel(item.url) || currentSection.title}
-                  </div>
-                  <div className="mt-2 text-sm font-medium leading-snug">{item.title}</div>
-                  {item.summary ? (
-                    <div className="mt-2 text-xs leading-relaxed text-white/50">
-                      {item.summary.length > 150 ? `${item.summary.slice(0, 150)}...` : item.summary}
-                    </div>
-                  ) : null}
+                  {pinned.includes(currentSection.id) ? <PinOff size={12} /> : <Pin size={12} />}
                 </button>
-              ))}
+              )}
             </div>
-            <div className="min-h-0">{renderStoryDetail()}</div>
-          </div>
-        ) : null}
+          )}
 
-        <div className="mt-3 text-[11px] text-white/42">
-          {briefing?.generated_at ? `${t('briefing.updated')}: ${new Date(briefing.generated_at).toLocaleString()}` : t('briefing.loading')}
+          {/* AI Proposal */}
+          {briefing?.proposal && (
+            <div className="rounded-lg border border-[#de9d50]/20 bg-[#de9d50]/[0.04] p-4">
+              <div className="flex items-start gap-3">
+                <Sparkles size={13} className="mt-0.5 shrink-0 text-[#de9d50]" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold text-[#f5e6d3]">{t('briefing.ai_proposal')}</div>
+                  <div className="mt-0.5 text-xs text-[#8c7769]">{briefing.proposal.reason}</div>
+                  <div className="mt-1 text-xs text-[#8c7769]/50">
+                    {briefing.proposal.from_section} → {briefing.proposal.to_section} · {Math.round((briefing.proposal.confidence || 0) * 100)}%
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 flex gap-2">
+                <button onClick={handleAcceptProposal} className="flex-1 rounded-full bg-[#de9d50] py-2 text-xs font-bold text-[#16100d] hover:brightness-110">
+                  <Check size={11} className="mr-1 inline" />{t('briefing.accept')}
+                </button>
+                <button onClick={handleRejectProposal} className="flex-1 rounded-full border border-[#3c2e26] bg-[#1e1612] py-2 text-xs text-[#8c7769] hover:text-[#f5e6d3]">
+                  <XCircle size={11} className="mr-1 inline" />{t('briefing.reject')}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Soul briefing */}
+          {v2BriefingText && (
+            <div className="rounded-lg border border-[#de9d50]/18 bg-[#de9d50]/[0.04] p-4">
+              <div className="mb-2 flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.22em] text-[#de9d50]/70">
+                <Sparkles size={10} />{t('briefing.soul_briefing')}
+              </div>
+              <div className="max-h-40 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-[#8c7769] custom-scrollbar">
+                {v2BriefingText}
+              </div>
+            </div>
+          )}
+
+          {/* Error */}
+          {error && (
+            <div className="rounded-lg border border-red-400/20 bg-red-500/8 px-4 py-3 text-xs text-red-300">{error}</div>
+          )}
+
+          {/* Loading / empty */}
+          {isLoading && !currentSection && (
+            <div className="flex items-center justify-center py-12 text-sm text-[#8c7769]/50">{t('briefing.loading')}</div>
+          )}
+          {!isLoading && !error && !currentSection && (
+            <div className="flex items-center justify-center py-12 text-sm text-[#8c7769]/50">{t('briefing.no_items')}</div>
+          )}
+
+          {/* Content — weather or news, both as vertical lists */}
+          {currentSection?.id === 'weather' && renderWeatherItems()}
+          {currentSection && currentSection.id !== 'weather' && renderNewsItems()}
+
+          {/* Timestamp */}
+          {briefing?.generated_at && (
+            <div className="text-[11px] text-[#8c7769]/40">
+              {t('briefing.updated')}: {new Date(briefing.generated_at).toLocaleString()}
+            </div>
+          )}
+
         </div>
       </div>
     </ShellPanelFrame>

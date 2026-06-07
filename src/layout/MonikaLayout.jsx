@@ -101,11 +101,18 @@ const MonikaLayout = ({
   const isElectron = typeof window !== 'undefined' && typeof window.require === 'function';
 
   const [isExpanded, setIsExpanded] = useState(false);
+  const hasUtilityPanel = activeContext !== 'chat';
+  const isPortraitViewport = viewport.height > viewport.width;
 
   // CSS class for current layout mode
   const layoutClassName = useMemo(() => {
-    return `monika-layout monika-layout--${layoutMode}`;
-  }, [layoutMode]);
+    return [
+      'monika-layout',
+      `monika-layout--${layoutMode}`,
+      hasUtilityPanel ? 'monika-layout--panel-open' : '',
+      isPortraitViewport ? 'monika-layout--portrait-viewport' : '',
+    ].filter(Boolean).join(' ');
+  }, [layoutMode, hasUtilityPanel, isPortraitViewport]);
 
   // Monika sprite scale based on layout mode
   const monikaScale = useMemo(() => {
@@ -113,8 +120,13 @@ const MonikaLayout = ({
   }, [monikaConfig]);
 
   const chatWindowClassName = useMemo(() => {
-    return `monika-chat-window monika-chat-window--${layoutMode}`;
-  }, [layoutMode]);
+    return `monika-chat-window monika-chat-window--${layoutMode}${hasUtilityPanel ? ' monika-chat-window--panel-open' : ''}`;
+  }, [layoutMode, hasUtilityPanel]);
+
+  const panelContainerClassName = useMemo(() => {
+    const sharedShellClass = ['settings', 'calendar', 'notes'].includes(activeContext) ? ' is-settings' : '';
+    return `monika-panel-container is-${activeContext}${sharedShellClass}`;
+  }, [activeContext]);
 
   return (
     <div className={`${layoutClassName} ${isElectron ? 'monika-layout--with-window-topbar' : ''}`}>
@@ -140,7 +152,7 @@ const MonikaLayout = ({
 
         {/* Non-Chat Panel Container (Study, Tasks, Media, etc.) - Hidden when chat is selected */}
         {activeContext !== 'chat' && (
-          <div className={`monika-panel-container ${['settings', 'calendar', 'notes'].includes(activeContext) ? 'is-settings' : ''}`} role="region" aria-live="polite" aria-label="Content panel">
+          <div className={panelContainerClassName} role="region" aria-live="polite" aria-label="Content panel">
             <PanelRouter
               messages={messages}
               inputValue={inputValue}
