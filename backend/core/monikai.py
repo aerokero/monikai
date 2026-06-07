@@ -66,7 +66,6 @@ from backend.services.memory_adapter import MemoryEngine
 from .session_manager import SessionManager
 from .therapy_persona import build_therapy_system_instruction, build_opening_trigger
 from .config import BASE_DIR, DATA_DIR, SETTINGS_PATH
-from backend.progression.proactivity import evaluate as evaluate_proactivity
 from backend.services.personality_notifications import build_relationship_notification_lines
 from ..tools.openclaw_skills import OpenClawSkillManager
 from ..integrations.games.minecraft_agent import MinecraftBotManager
@@ -314,28 +313,12 @@ class ProactivityWrapper:
             self.loop._last_question_ts = now
 
     def get_nudge_message(self, mood: Optional[str] = None, video_mode: str = "none", allow_question: bool = True) -> tuple[str, bool]:
-        from backend.core.runtimes.v2_runtime import get as _v2_get
-        _v2 = _v2_get()
-        action = None
-        if _v2 and _v2.soul_state:
-            action = evaluate_proactivity(_v2.soul_state.needs, _v2.soul_state)
-
-        if action:
-            msg = (
-                "System Notification: [Proactivity] Monika odczuwa potrzebę inicjatywy. "
-                f"Impuls: {action.context} (Potrzeba: {action.need}, pilność: {action.urgency:.1f}). "
-                "Nawiąż do tego w naturalny, ciepły i krótki sposób w rozmowie z użytkownikiem."
-            )
-            asked_question = (action.kind in ("reach_out", "offer_help"))
-        else:
-            msg = (
-                "System Notification: [Proactivity] Użytkownik milczy od dłuższego czasu. "
-                "Jeśli użytkownik poprosił o ciszę, skupia się lub pracuje, milcz. "
-                "W przeciwnym razie powiedz jedno krótkie, spokojne zdanie, np. pytając łagodnie co u niego."
-            )
-            asked_question = allow_question
-
-        return msg, asked_question
+        msg = (
+            "System Notification: [Proactivity] Użytkownik milczy od dłuższego czasu. "
+            "Jeśli użytkownik poprosił o ciszę, skupia się lub pracuje, milcz. "
+            "W przeciwnym razie powiedz jedno krótkie, spokojne zdanie, np. pytając łagodnie co u niego."
+        )
+        return msg, allow_question
 
     def _build_reasoning_prompt(self, silence_sec: float, allow_speak: bool) -> str:
         time_str = time.strftime("%H:%M", time.localtime(time.time()))
@@ -347,13 +330,7 @@ class ProactivityWrapper:
 
         from backend.core.runtimes.v2_runtime import get as _v2_get
         _v2 = _v2_get()
-        if _v2 and _v2.soul_state:
-            energy = _v2.soul_state.energy
-            if energy < 0.4:
-                lines.append("You feel tired and low on energy.")
-            action = evaluate_proactivity(_v2.soul_state.needs, _v2.soul_state)
-            if action:
-                lines.append(f"You notice within yourself: {action.context}")
+        if _v2:
             agenda = _v2._agenda.active() if hasattr(_v2, "_agenda") else []
             if agenda:
                 items_str = "; ".join(agenda[:2])

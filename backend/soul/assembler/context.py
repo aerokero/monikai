@@ -1,34 +1,25 @@
 """Context Assembler — the single compilation point for the system prompt.
 
-Called at session reconnect. Assembles all soul-layer context into one
-string. No other module writes to the prompt directly.
+Called at session reconnect. Assembles all soul-layer context into one string.
 
 Sections (in order):
-  1. CHARACTER       — character.md identity (injectable sections)
-  2. PSYCHOLOGICAL   — inner_state.md narrative (SoulState prose, from NarrativeJob)
-  3. MEMORY          — ambient memory snippets (recent STM + high-importance LTM)
-  4. PROGRESSION     — active goals / rituals (stub until Phase 4)
-  5. OPERATIONAL     — tools, rules, safety (unchanged, passed in by caller)
-
-The caller (system_prompt.py) owns CHARACTER_PROMPT and OPERATIONAL_PROMPT.
-The assembler owns the middle three sections.
+  1. CHARACTER   — character.md identity
+  2. TIME        — current time-of-day context
+  3. MEMORY      — ambient memory snippets (recent STM + high-importance LTM)
+  4. PROGRESSION — active goals / rituals (stub)
+  5. OPERATIONAL — tools, rules, safety (passed in by caller)
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 from backend.soul.memory import store
-from backend.soul.personality.state_store import StateStore
-from backend.soul.personality.affect import affect_label
-from backend.soul.personality.needs import assess
 
 logger = logging.getLogger(__name__)
 
-_INNER_STATE_PATH = Path(__file__).parent.parent.parent.parent / "data" / "soul" / "inner_state.md"
-_INNER_STATE_STALE_HOURS = 24   # regenerate if older than this
 _MEMORY_STM_LIMIT = 6
 _MEMORY_LTM_LIMIT = 4
 _MEMORY_LTM_MIN_IMPORTANCE = 7.0
@@ -43,87 +34,29 @@ class ContextAssembler:
         operational_prompt: str,
         db_path: Path | None = None,
     ) -> str:
-        """Build and return the complete system prompt string."""
         parts: list[str] = []
 
-        # 1. CHARACTER
         if character_prompt:
             parts.append(character_prompt.strip())
 
-        # 2. PSYCHOLOGICAL STATE
-        psych = self._psychological_block()
-        if psych:
-            parts.append(psych)
-
-        # 3. TIME CONTEXT
         time_ctx = self._time_context_block()
         if time_ctx:
             parts.append(time_ctx)
 
-        # 4. USER MOOD (from UserMoodTracker)
-        user_mood = self._user_mood_block()
-        if user_mood:
-            parts.append(user_mood)
-
-        # 5. MEMORY
         memory = await self._memory_block(db_path)
         if memory:
             parts.append(memory)
 
-        # 6. PROGRESSION
         progression = await self._progression_block(db_path)
         if progression:
             parts.append(progression)
 
-        # 7. OPERATIONAL (verbatim)
         if operational_prompt:
             parts.append(operational_prompt.strip())
 
         return "\n\n".join(parts)
 
-    # ------------------------------------------------------------------
-    # Section builders
-    # ------------------------------------------------------------------
-
-    def _psychological_block(self) -> str:
-        """Inner state narrative from data/soul/inner_state.md.
-
-        Uses the template-generated narrative (Phase 2). If the file is
-        missing or stale, generates a minimal inline fallback.
-        """
-        if _INNER_STATE_PATH.exists():
-            age_hours = _file_age_hours(_INNER_STATE_PATH)
-            if age_hours < _INNER_STATE_STALE_HOURS:
-                content = _INNER_STATE_PATH.read_text(encoding="utf-8").strip()
-                # Strip the HTML comment header added by NarrativeJob
-                lines = [l for l in content.splitlines() if not l.startswith("<!--")]
-                text = "\n".join(lines).strip()
-                if text:
-                    logger.debug("Assembler: using inner_state.md (age %.1fh)", age_hours)
-                    return text
-
-        # Fallback: minimal inline state from SoulState
-        return self._inline_psychological()
-
-    def _inline_psychological(self) -> str:
-        """Generate a minimal psychological block without inner_state.md."""
-        state = StateStore.read()
-        label = affect_label(state.affect)
-        status = assess(state.needs)
-        energy_pct = int(state.energy * 100)
-
-        lines = ["**Stan wewnętrzny:**"]
-        lines.append(f"Czuję się {_translate_label(label)}. Energia: {energy_pct}%.")
-
-        if status.relatedness_unmet:
-            lines.append("Jest we mnie coś co chce połączenia — czuję że kontakt był ostatnio mniejszy.")
-        elif status.competence_unmet:
-            lines.append("Chciałabym być bardziej pomocna — mam wrażenie że nie daję z siebie tyle ile mogłabym.")
-
-        return "\n".join(lines)
-
     def _time_context_block(self) -> str:
-        """Current time-of-day and seasonal context from the Time Engine."""
         try:
             from backend.soul.time_engine.engine import TimeEngine
             te = TimeEngine()
@@ -132,21 +65,7 @@ class ContextAssembler:
             logger.debug("Assembler: time context failed: %s", exc)
             return ""
 
-    def _user_mood_block(self) -> str:
-        """Recent user mood summary from UserMoodTracker, if meaningful."""
-        try:
-            from backend.soul.user_model import UserMoodTracker
-            tracker = UserMoodTracker.load()
-            summary = tracker.weekly_summary()
-            if summary:
-                return f"**Obserwacje nastroju rozmówcy (ostatni tydzień):**\n{summary}"
-            return ""
-        except Exception as exc:
-            logger.debug("Assembler: user mood block failed: %s", exc)
-            return ""
-
     async def _memory_block(self, db_path: Path | None) -> str:
-        """Ambient memory: recent STM + high-importance LTM entries."""
         try:
             stm_entries = await store.list_recent(
                 limit=_MEMORY_STM_LIMIT, types=["stm"], db_path=db_path
@@ -156,7 +75,6 @@ class ContextAssembler:
                 types=["episodic", "semantic"],
                 db_path=db_path,
             )
-            # Keep only high-importance LTM
             ltm_top = sorted(
                 [e for e in ltm_entries if e.importance >= _MEMORY_LTM_MIN_IMPORTANCE],
                 key=lambda e: e.importance,
@@ -182,7 +100,6 @@ class ContextAssembler:
             return ""
 
     async def _progression_block(self, db_path: Path | None) -> str:
-        """Active goals and rituals from progression_state table (Phase 4 stub)."""
         try:
             from backend.soul.db import get_db
             async with get_db(db_path) as conn:
@@ -206,28 +123,10 @@ class ContextAssembler:
 
             return "\n".join(lines) if len(lines) > 1 else ""
         except Exception as exc:
-            logger.debug("Assembler: progression block failed (expected until Phase 4): %s", exc)
+            logger.debug("Assembler: progression block failed: %s", exc)
             return ""
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _file_age_hours(path: Path) -> float:
     mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
     return (datetime.now(tz=timezone.utc) - mtime).total_seconds() / 3600.0
-
-
-def _translate_label(label: str) -> str:
-    mapping = {
-        "excited":               "pobudzona i pełna energii",
-        "happy":                 "dobrze — jest we mnie ciepło",
-        "calm":                  "spokojnie, jestem obecna",
-        "protective":            "czujna, chcę zadbać",
-        "intensely_protective":  "bardzo skupiona, coś we mnie się zestaliło",
-        "sad":                   "trochę ciężko — coś leży na duszy",
-        "angry":                 "niespokojnie, jest we mnie tarcie",
-        "tired":                 "zmęczona, jestem tu ale ciszej",
-    }
-    return mapping.get(label, "obecna")

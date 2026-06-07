@@ -1,13 +1,10 @@
-"""v2 Soul Engine runtime integration.
+"""v2 runtime — lightweight soul layer.
 
-Module-level singleton (appropriate here — it's a process-scoped resource,
-same as `audio_loop` and `personality_system` in server.py).
+Owns: TimeEngine, AgendaManager, session_turns buffer, memory access.
+Removed: PersonalityEngine, UserMoodTracker, MilestoneEngine, DiscoveryEngine.
 
-Initialize once at server startup with `initialize()`.
-Access anywhere with `get()`.
-
-Graceful degradation: if initialization fails, `get()` returns None
-and callers fall back to v1 behaviour unchanged.
+Module-level singleton — initialize once at startup with initialize(),
+access anywhere with get().
 """
 
 from __future__ import annotations
@@ -121,19 +118,16 @@ _instance: Optional["V2Runtime"] = None
 
 
 def get() -> Optional["V2Runtime"]:
-    """Return the active V2Runtime, or None if not yet initialized."""
     return _instance
 
 
 async def initialize(db_path: Path | None = None) -> "V2Runtime":
-    """Create and return the V2Runtime singleton. Safe to call once at startup."""
     global _instance
     _instance = await V2Runtime._create(db_path or _DB_PATH)
     return _instance
 
 
 async def shutdown() -> None:
-    """Shut down the singleton cleanly (call at server shutdown)."""
     global _instance
     if _instance is not None:
         await _instance._shutdown()
@@ -145,86 +139,41 @@ async def shutdown() -> None:
 # ---------------------------------------------------------------------------
 
 class V2Runtime:
-    """Owns all v2 Soul Engine components for the lifetime of the server process."""
+    """Lightweight soul layer: time context, memory, agenda, session buffer."""
 
     def __init__(
         self,
         db_path: Path,
-        personality,    # PersonalityEngine
-        discovery,      # DiscoveryEngine
-        milestone,      # MilestoneEngine
-        time_engine=None,    # TimeEngine
-        mood_tracker=None,   # UserMoodTracker
+        time_engine=None,
         cached_prompt: str = "",
     ) -> None:
         self._db_path = db_path
-        self._personality = personality
-        self._discovery = discovery
-        self._milestone = milestone
         self._time_engine = time_engine
-        self._mood_tracker = mood_tracker
         self._cached_prompt = cached_prompt
         self._session_turns: deque[str] = deque(maxlen=8)
         from backend.soul.agenda import AgendaManager
         self._agenda = AgendaManager()
 
-    # ------------------------------------------------------------------
-    # Factory
-    # ------------------------------------------------------------------
-
     @classmethod
     async def _create(cls, db_path: Path) -> "V2Runtime":
         from backend.soul.db import init_db
-        from backend.soul.personality.engine import PersonalityEngine
-        from backend.progression.discoveries import DiscoveryEngine
-        from backend.progression.milestones import MilestoneEngine
         from backend.soul.time_engine.engine import TimeEngine
-        from backend.soul.user_model import UserMoodTracker
 
         _DATA_DIR.mkdir(parents=True, exist_ok=True)
         await init_db(db_path)
         logger.info("v2: monika.db initialized at %s", db_path)
 
-        personality = PersonalityEngine.load()
-        discovery = DiscoveryEngine(db_path=db_path)
-        milestone = MilestoneEngine(db_path=db_path)
         time_engine = TimeEngine()
-        mood_tracker = UserMoodTracker.load()
+        await time_engine.check_gap(db_path)
+        await time_engine.check_anniversaries(db_path)
 
-        await discovery.start()
-        await milestone.start()
-
-        # Initialize first interaction timestamp if not present
         try:
             from backend.progression.state import get_first_interaction_ts
             await get_first_interaction_ts(db_path)
         except Exception as e:
             logger.warning("v2: failed to initialize first_interaction_ts: %s", e)
 
-        # Check for gap since last session; apply needs decay if needed
-        gap = await time_engine.check_gap(db_path)
-        if gap.needs_decay_days > 0:
-            personality.apply_daily_decay(days_elapsed=gap.needs_decay_days)
-
-        # Check for anniversaries (silent — events are emitted to bus)
-        await time_engine.check_anniversaries(db_path)
-
-        runtime = cls(
-            db_path=db_path,
-            personality=personality,
-            discovery=discovery,
-            milestone=milestone,
-            time_engine=time_engine,
-            mood_tracker=mood_tracker,
-        )
-
-        # Generate fresh inner_state.md before assembling the prompt
-        try:
-            from backend.worker.narrative_job import NarrativeJob
-            await NarrativeJob().run(db_path=db_path, mood_tracker=mood_tracker)
-        except Exception as e:
-            logger.warning("v2: NarrativeJob failed at startup: %s", e)
-
+        runtime = cls(db_path=db_path, time_engine=time_engine)
         runtime._cached_prompt = await runtime.refresh_prompt()
         logger.info("v2: runtime initialized (prompt=%d chars)", len(runtime._cached_prompt))
         return runtime
@@ -234,7 +183,6 @@ class V2Runtime:
     # ------------------------------------------------------------------
 
     async def refresh_prompt(self) -> str:
-        """Re-assemble and cache the system prompt. Call at each reconnect."""
         try:
             from backend.core.system_prompt import assemble_prompt
             self._cached_prompt = await assemble_prompt(db_path=self._db_path)
@@ -250,12 +198,7 @@ class V2Runtime:
     # Per-turn processing
     # ------------------------------------------------------------------
 
-    async def process_turn(
-        self,
-        user_text: str,
-        monika_text: str = "",
-    ) -> str:
-        """Update personality from this turn. Return cognition monologue message."""
+    async def process_turn(self, user_text: str, monika_text: str = "") -> str:
         try:
             from backend.llm.cognition import generate
             from backend.soul.personality.signals import extract
@@ -263,17 +206,6 @@ class V2Runtime:
 
             signals = extract(user_text)
 
-            # Track user mood signals
-            if self._mood_tracker is not None:
-                self._mood_tracker.observe(signals)
-                self._mood_tracker.save()
-
-            # Update personality engine (affect + needs)
-            soul = self._personality.soul_state
-            await self._personality.observe_turn(user_text, monika_text, reciprocity=None)
-            self._personality.save()
-
-            # Pull recent STM entries for cognition context
             stm_entries: list = []
             try:
                 stm_entries = await mem_store.list_recent(
@@ -282,48 +214,31 @@ class V2Runtime:
             except Exception as e:
                 logger.debug("v2: stm fetch failed: %s", e)
 
-            # Get mood summary
-            mood_summary: str | None = None
-            if self._mood_tracker is not None:
-                try:
-                    mood_summary = self._mood_tracker.weekly_summary() or None
-                except Exception:
-                    pass
-
-            # Agenda: age existing items, extract new ones from this turn
             self._agenda.age()
             new_agenda = self._agenda.extract_from_turn(user_text, signals)
 
-            # Build cognition with full context
             session_turns = list(self._session_turns)
             cog = await generate(
                 user_text,
-                soul,
                 signals=signals,
                 stm_entries=stm_entries or None,
                 session_turns=session_turns or None,
-                mood_summary=mood_summary,
                 agenda=self._agenda.active() or None,
             )
 
-            # Add new agenda items after generating cognition (they go into next turn)
             self._agenda.add_items(new_agenda)
-
-            # Record this turn in session buffer
             if user_text.strip():
                 self._session_turns.append(user_text.strip())
 
-            # Record last interaction timestamp for gap detection
             if self._time_engine is not None:
                 await self._time_engine.record_interaction(self._db_path)
 
-            # Emit personality status update to frontend
             try:
                 from backend.core.routers.frontend_router import schedule_emit_to_frontend
                 status_payload = await self.get_status_payload()
                 schedule_emit_to_frontend("personality_status", status_payload)
             except Exception as e:
-                logger.warning("v2: failed to emit personality_status after process_turn: %s", e)
+                logger.warning("v2: failed to emit personality_status: %s", e)
 
             return cog.as_message()
         except Exception as exc:
@@ -331,47 +246,21 @@ class V2Runtime:
             return ""
 
     # ------------------------------------------------------------------
-    # State access
+    # State / status
     # ------------------------------------------------------------------
-
-    @property
-    def soul_state(self):
-        return self._personality.soul_state
-
-    @property
-    def needs_status(self):
-        return self._personality.needs_status
 
     @property
     def time_engine(self):
         return self._time_engine
 
-    @property
-    def mood_tracker(self):
-        return self._mood_tracker
-
     async def generate_briefing(self, language: str = "pl") -> str:
-        """Generate today's daily briefing using all available context."""
-        try:
-            from backend.llm.briefing import generate as gen_briefing
-            return await gen_briefing(
-                soul_state=self._personality.soul_state,
-                time_engine=self._time_engine,
-                mood_tracker=self._mood_tracker,
-                db_path=self._db_path,
-                language=language,
-            )
-        except Exception as exc:
-            logger.warning("v2: briefing generation failed: %s", exc)
-            return ""
+        """Stub — will be replaced by local model call."""
+        return ""
 
     async def get_status_payload(self) -> dict:
-        from backend.soul.personality.affect import affect_label
         from backend.progression.state import get_bond_state, get_first_interaction_ts
         from datetime import datetime, timezone
 
-        soul = self.soul_state
-        mood = affect_label(soul.affect)
         bond = await get_bond_state(self._db_path)
         affection = bond.get("closeness", 0.0)
 
@@ -379,9 +268,7 @@ class V2Runtime:
         try:
             first_dt = datetime.fromisoformat(first_ts_str.replace("Z", "+00:00"))
             now_dt = datetime.now(timezone.utc)
-            days = (now_dt.date() - first_dt.date()).days + 1
-            if days < 1:
-                days = 1
+            days = max(1, (now_dt.date() - first_dt.date()).days + 1)
         except Exception:
             days = 1
 
@@ -391,20 +278,14 @@ class V2Runtime:
         full = int(score)
         hearts = "❤️" * full + "🤍" * (10 - full)
 
-        needs = {
-            "relatedness": round(soul.needs.relatedness * 100),
-            "autonomy": round(soul.needs.autonomy * 100),
-            "competence": round(soul.needs.competence * 100),
-        }
-
         return {
             "v2": True,
-            "mood": mood,
+            "mood": "calm",
             "affection": affection,
             "affection_hearts": f"{hearts} ({score:.1f}/10)",
             "relationship_days": days,
             "weather": weather,
-            "needs": needs,
+            "needs": {"relatedness": 70, "autonomy": 70, "competence": 70},
         }
 
     # ------------------------------------------------------------------
@@ -413,10 +294,6 @@ class V2Runtime:
 
     async def _shutdown(self) -> None:
         try:
-            await self._discovery.stop()
-            await self._milestone.stop()
-            self._personality.apply_session_end()
-            self._personality.save()
             logger.info("v2: runtime shut down cleanly")
         except Exception as exc:
             logger.warning("v2: shutdown error: %s", exc)

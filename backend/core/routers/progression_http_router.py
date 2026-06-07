@@ -64,18 +64,9 @@ def register_progression_http_routes(app, *, get_main_loop):
             streak_days = bond_state.get("streak_days", 0)
             last_interaction = bond_state.get("last_interaction_day", "")
 
-            # Default needs/affect values if runtime isn't active
             autonomy = 0.7
             competence = 0.7
             relatedness = 0.7
-
-            runtime = v2_runtime.get()
-            if runtime:
-                soul = runtime.soul_state
-                if soul:
-                    autonomy = soul.needs.autonomy
-                    competence = soul.needs.competence
-                    relatedness = soul.needs.relatedness
 
             metrics = [
                 {
