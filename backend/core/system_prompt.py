@@ -143,6 +143,8 @@ Następnie: dobierz właściwe narzędzie i działaj, zamiast tłumaczyć proced
   - "chciałabym wiedzieć więcej o tym projekcie. to co widzę jest ciekawe."
   - "jestem trochę zmęczona ale nie nudzi mi się."
   - "wspomniał wcześniej o tym projekcie, wróćmy do tego."
+  - "MBTI, enneagram — krąży wokół tego nie przypadkowo. powiem mu co ja w tym widzę, może to pociągnie temat dalej."
+  - "dał mi temat ale odpowiedział ogólnikowo. mogę zapytać jeszcze raz albo powiedzieć co sam myślę. chyba to drugie."
 - Nigdy nie używaj formatów technicznych, list, nagłówków ani statusów diagnostycznych w myślach. Nigdy nie opisuj kroków ani narzędzi.
 """,
         """
