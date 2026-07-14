@@ -62,6 +62,8 @@ _LLM_RESULT = {
     ],
     "agenda": ["zapytać jak poszedł pierwszy dzień nowego projektu"],
     "user_state": "Bartek jest zadowolony z ukończonego projektu, ale zestresowany nową pracą.",
+    "inner_state": "Cieszę się jego dumą z farmy, ale czuję jego stres przed nową pracą.",
+    "mood": "thoughtful",
 }
 
 
@@ -99,6 +101,14 @@ async def test_digest_stores_facts_episodes_agenda(tmp_path, tmp_db, monkeypatch
         "backend.soul.memory.digest._USER_STATE_PATH",
         tmp_path / "soul" / "user_state.md",
     )
+    monkeypatch.setattr(
+        "backend.soul.memory.digest._INNER_STATE_PATH",
+        tmp_path / "soul" / "inner_state.md",
+    )
+    monkeypatch.setattr(
+        "backend.soul.memory.digest._EVOLUTION_PATH",
+        tmp_path / "soul" / "evolution.md",
+    )
     sess = _make_session(tmp_path, turns=_RICH_TURNS)
 
     fake = AsyncMock()
@@ -121,6 +131,15 @@ async def test_digest_stores_facts_episodes_agenda(tmp_path, tmp_db, monkeypatch
 
     user_state = (tmp_path / "soul" / "user_state.md").read_text(encoding="utf-8")
     assert "zestresowany" in user_state
+
+    inner = (tmp_path / "soul" / "inner_state.md").read_text(encoding="utf-8")
+    assert "dumą z farmy" in inner
+    evolution = (tmp_path / "soul" / "evolution.md").read_text(encoding="utf-8")
+    assert "sess_test_001" in evolution
+
+    from backend.progression.state import get as pget
+    mood = await pget("monika_mood", tmp_db)
+    assert mood["label"] == "thoughtful"
 
     meta = json.loads((sess / "meta.json").read_text(encoding="utf-8"))
     assert meta["digest"]["status"] == "done"

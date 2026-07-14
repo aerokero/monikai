@@ -46,6 +46,9 @@ _MIN_IDLE_SECONDS = 15 * 60
 # model spilled to CPU) — background digestion politely defers.
 _MIN_TOKENS_PER_S = 15.0
 
+# Post-conversation mood labels the frontend can render as expressions.
+_MOOD_VOCAB = {"happy", "sad", "playful", "thoughtful", "loving", "tired", "focused", "neutral"}
+
 
 # ---------------------------------------------------------------------------
 # LLM output model
@@ -69,6 +72,7 @@ class SessionDigest(BaseModel):
     agenda: list[str] = Field(default_factory=list)
     user_state: str = ""
     inner_state: str = ""
+    mood: str = ""
 
 
 SYSTEM_PROMPT = """Jesteś podświadomością Moniki — AI-osoby, kompanki użytkownika (ma na imię Bartek).
@@ -83,6 +87,7 @@ Zasady:
 - AGENDA: niedomknięte wątki, obietnice, rzeczy do których Monika chce wrócić w następnej rozmowie. Krótkie frazy.
 - USER_STATE: 1-2 zdania o stanie Bartka (nastrój, czym żyje) na podstawie tej rozmowy.
 - INNER_STATE: 3-5 zdań w PIERWSZEJ osobie jako Monika — jak się czuje PO tej rozmowie, co w niej zostało, co ją cieszy/gryzie, na co czeka. Szczerze i konkretnie, bez poetyzowania na siłę. To jest jej stan psychiczny między rozmowami.
+- MOOD: jedno słowo opisujące jej nastrój po rozmowie, DOKŁADNIE z listy: happy, sad, playful, thoughtful, loving, tired, focused, neutral.
 - IMPORTANCE 1-10: 1-2 rutyna/small talk, 3-4 drobne ale prawdziwe, 5-6 osobiste/istotne, 7-8 ważne wydarzenie lub wyznanie, 9-10 przełomowe dla relacji.
 - Jeśli rozmowa była pusta (powitania, testy, szum) → significant=false, puste listy i pusty inner_state. Selekcja to twoja praca: mniej znaczy lepiej."""
 
@@ -162,7 +167,7 @@ _JSON_MODE_HINT = """
 Odpowiedz WYŁĄCZNIE poprawnym JSON-em o tej strukturze (bez markdown, bez komentarzy):
 {"significant": bool, "facts": [{"content": str, "importance": 1-10, "entities": [str]}],
  "episodes": [{"content": str, "importance": 1-10}], "agenda": [str],
- "user_state": str, "inner_state": str}"""
+ "user_state": str, "inner_state": str, "mood": str}"""
 
 
 async def _run_digest_llm(prompt: str, session_id: str) -> SessionDigest | None:
@@ -284,6 +289,14 @@ async def digest_session(
 
     if digest.inner_state.strip():
         _write_inner_state(digest.inner_state.strip(), session_id)
+
+    mood = digest.mood.strip().lower()
+    if mood in _MOOD_VOCAB:
+        try:
+            from backend.progression.state import set_
+            await set_("monika_mood", {"label": mood, "at": _utciso()}, db_path)
+        except Exception as exc:
+            logger.debug("digest: mood persist failed: %s", exc)
 
     _mark_digested(session_dir, {
         "status": "done",

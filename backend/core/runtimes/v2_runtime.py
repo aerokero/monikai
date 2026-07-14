@@ -352,8 +352,31 @@ class V2Runtime:
         except Exception:
             pass
 
+        # Real mood: classified by the digest from the last significant
+        # conversation (stale after 72h — absence beats staleness).
+        mood = None
+        try:
+            from backend.progression.state import get as _pget
+            mood_rec = await _pget("monika_mood", self._db_path)
+            if isinstance(mood_rec, dict) and mood_rec.get("label"):
+                at = datetime.fromisoformat(str(mood_rec["at"]).replace("Z", "+00:00"))
+                if (datetime.now(timezone.utc) - at).total_seconds() < 72 * 3600:
+                    mood = mood_rec["label"]
+        except Exception as exc:
+            logger.debug("v2: mood read failed: %s", exc)
+
+        # Real energy: time-of-day hint from the TimeEngine (local clock).
+        energy = None
+        try:
+            if self._time_engine is not None:
+                energy = self._time_engine.get_context().energy_hint
+        except Exception:
+            pass
+
         return {
             "v2": True,
+            "mood": mood,
+            "energy": energy,
             "relationship_days": days,
             "weather": weather,
             "memory": {
