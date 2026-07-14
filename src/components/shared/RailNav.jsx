@@ -61,8 +61,6 @@ const RailNav = () => {
   const railPanelLabels = {
     chat: t('navigation.talk'),
     notes: t('navigation.journal'),
-    daily_briefing: t('navigation.briefing'),
-    goals: t('navigation.relationship'),
     calendar: t('navigation.calendar'),
     profile: t('navigation.her_profile'),
   };

@@ -37,7 +37,6 @@ from .handlers.audio_lifecycle_handlers import register_audio_lifecycle_handlers
 from .handlers.memory_page_handlers import register_memory_page_handlers
 from .handlers.notes_journal_handlers import register_notes_journal_handlers
 from .handlers.openclaw_skill_handlers import register_openclaw_skill_handlers
-from .routers.progression_http_router import register_progression_http_routes
 from .handlers.settings_profile_handlers import register_settings_profile_handlers
 from .handlers.session_mode_handlers import register_session_mode_handlers
 from .handlers.shared_activity_handlers import register_shared_activity_handlers
@@ -89,7 +88,6 @@ from .routers.system_http_router import register_system_http_routes
 from .routers.study_http_router import register_study_http_routes
 from .handlers.study_socket_handlers import register_study_socket_handlers
 from .runtimes.vn_scene_runtime import VnSceneRuntime
-from backend.services.daily_briefing import DEFAULT_SECTIONS
 from ..agents.kasa_agent import KasaAgent
 from ..vn.activity_runtime import SharedActivityRuntime
 MAIN_LOOP = None
@@ -282,11 +280,6 @@ register_minecraft_http_routes(
     get_minecraft_bot_manager=lambda: minecraft_bot_manager,
 )
 
-register_progression_http_routes(
-    app,
-    get_main_loop=lambda: MAIN_LOOP,
-)
-
 register_system_http_routes(
     app,
     get_spotify_manager=lambda: spotify_manager,
@@ -454,7 +447,6 @@ register_daily_briefing_handlers(
     save_settings=save_settings,
     emit_to_frontend=_emit_to_frontend,
     settings=SETTINGS,
-    default_sections=DEFAULT_SECTIONS,
 )
 
 register_calendar_reminder_handlers(

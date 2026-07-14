@@ -1,4 +1,3 @@
-import time
 from datetime import datetime, timezone
 
 from backend.services.daily_briefing import (
@@ -23,7 +22,6 @@ class DailyBriefingRuntime:
         self._get_personality_system = get_personality_system
         self._get_v2_runtime = get_v2_runtime or _default_v2_runtime
         self._cache = {"ts": 0.0, "lang": "pl", "payload": None}
-        self._rejected_until = {}
 
     def _language(self, raw: str = "pl") -> str:
         raw_lower = str(raw or "pl").lower()
@@ -49,16 +47,6 @@ class DailyBriefingRuntime:
     def invalidate_cache(self):
         self._cache["payload"] = None
         self._cache["ts"] = 0.0
-
-    def reject_proposal(self, from_section: str, to_section: str, cooldown_hours: int):
-        if from_section and to_section:
-            key = f"{from_section}->{to_section}"
-            self._rejected_until[key] = time.time() + max(1, int(cooldown_hours)) * 3600
-
-    def _is_proposal_rejected(self, proposal: dict) -> bool:
-        pair = f"{proposal.get('from_section')}->{proposal.get('to_section')}"
-        until = float(self._rejected_until.get(pair, 0.0) or 0.0)
-        return time.time() < until
 
     async def _build_v2_briefing(self, language: str = "pl") -> dict | None:
         try:
@@ -129,12 +117,11 @@ class DailyBriefingRuntime:
                 "active_sections": [],
                 "sections": [],
                 "profile": self.get_profile(),
-                "proposal": None,
                 "disabled": True,
             }
 
         cache_minutes = max(1, int(cfg.get("cache_minutes", 20)))
-        now_ts = time.time()
+        now_ts = datetime.now(timezone.utc).timestamp()
         if not force and self._cache.get("payload") and self._cache.get("lang") == lang:
             if (now_ts - float(self._cache.get("ts", 0.0))) < (cache_minutes * 60):
                 return self._cache["payload"]
@@ -158,10 +145,6 @@ class DailyBriefingRuntime:
             }
             for sid, cfg_data in DEFAULT_SECTIONS.items()
         ]
-
-        proposal = payload.get("proposal")
-        if proposal and self._is_proposal_rejected(proposal):
-            payload["proposal"] = None
 
         if bool(cfg.get("use_v2_briefing", False)):
             v2_briefing = await self._build_v2_briefing(language=lang)

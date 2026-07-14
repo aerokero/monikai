@@ -62,25 +62,6 @@ export const PANELS = {
     ariaLabel: 'Notes workspace',
     keyboardShortcut: 'Alt+3'
   },
-  daily_briefing: {
-    id: 'daily_briefing',
-    name: 'Daily Briefing',
-    displayName: 'Briefing',
-    description: 'Curated updates and weather',
-    icon: 'Newspaper',
-    contextKey: 'daily_briefing',
-    component: 'DailyBriefingWindow',
-    order: 4,
-    draggable: false,
-    collapsible: true,
-    dockPreference: {
-      desktop: 'main-panel',
-      tablet: 'drawer',
-      portrait: 'drawer'
-    },
-    ariaLabel: 'Daily briefing',
-    keyboardShortcut: 'Alt+4'
-  },
   companion: {
     id: 'companion',
     name: 'Companion',
@@ -89,7 +70,7 @@ export const PANELS = {
     icon: 'Heart',
     contextKey: 'companion',
     component: 'CompanionWindow',
-    order: 5,
+    order: 4,
     draggable: false,
     collapsible: true,
     dockPreference: {
@@ -101,25 +82,6 @@ export const PANELS = {
     keyboardShortcut: 'Alt+5',
     hiddenInRail: true
   },
-  goals: {
-    id: 'goals',
-    name: 'Goals',
-    displayName: 'Relationship',
-    description: 'Relationship progress and active quests',
-    icon: 'Trophy',
-    contextKey: 'goals',
-    component: 'GoalsWindow',
-    order: 6,
-    draggable: false,
-    collapsible: true,
-    dockPreference: {
-      desktop: 'main-panel',
-      tablet: 'drawer',
-      portrait: 'drawer'
-    },
-    ariaLabel: 'Relationship progress and goals',
-    keyboardShortcut: 'Alt+6'
-  },
   calendar: {
     id: 'calendar',
     name: 'Calendar',
@@ -128,7 +90,7 @@ export const PANELS = {
     icon: 'Calendar',
     contextKey: 'calendar',
     component: 'CalendarWindow',
-    order: 7,
+    order: 5,
     draggable: false,
     collapsible: true,
     dockPreference: {
@@ -137,7 +99,7 @@ export const PANELS = {
       portrait: 'drawer'
     },
     ariaLabel: 'Calendar and events',
-    keyboardShortcut: 'Alt+7'
+    keyboardShortcut: 'Alt+5'
   },
   profile: {
     id: 'profile',
@@ -147,7 +109,7 @@ export const PANELS = {
     icon: 'User',
     contextKey: 'profile',
     component: 'ProfileWindow',
-    order: 8,
+    order: 6,
     draggable: false,
     collapsible: true,
     dockPreference: {
@@ -156,7 +118,7 @@ export const PANELS = {
       portrait: 'drawer'
     },
     ariaLabel: 'User profile settings',
-    keyboardShortcut: 'Alt+8'
+    keyboardShortcut: 'Alt+6'
   },
   settings: {
     id: 'settings',
@@ -166,7 +128,7 @@ export const PANELS = {
     icon: 'Settings',
     contextKey: 'settings',
     component: 'SettingsPanel',
-    order: 9,
+    order: 7,
     draggable: false,
     collapsible: true,
     dockPreference: {
@@ -175,7 +137,7 @@ export const PANELS = {
       portrait: 'drawer'
     },
     ariaLabel: 'System settings',
-    keyboardShortcut: 'Alt+9',
+    keyboardShortcut: 'Alt+7',
     hiddenInRail: true
   }
 };

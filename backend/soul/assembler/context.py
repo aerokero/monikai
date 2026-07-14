@@ -6,8 +6,7 @@ Sections (in order):
   1. CHARACTER   — character.md identity
   2. TIME        — current time-of-day context
   3. MEMORY      — ambient memory snippets (recent STM + high-importance LTM)
-  4. PROGRESSION — active goals / rituals (stub)
-  5. OPERATIONAL — tools, rules, safety (passed in by caller)
+  4. OPERATIONAL — tools, rules, safety (passed in by caller)
 """
 
 from __future__ import annotations
@@ -59,10 +58,6 @@ class ContextAssembler:
         agenda = await self._agenda_block(db_path)
         if agenda:
             parts.append(agenda)
-
-        progression = await self._progression_block(db_path)
-        if progression:
-            parts.append(progression)
 
         if operational_prompt:
             parts.append(operational_prompt.strip())
@@ -184,34 +179,6 @@ class ContextAssembler:
         except Exception as exc:
             logger.debug("Assembler: agenda block failed: %s", exc)
             return ""
-
-    async def _progression_block(self, db_path: Path | None) -> str:
-        try:
-            from backend.soul.db import get_db
-            async with get_db(db_path) as conn:
-                cursor = await conn.execute(
-                    "SELECT key, value FROM progression_state WHERE key IN "
-                    "('active_goals', 'active_rituals', 'active_anniversaries')"
-                )
-                rows = await cursor.fetchall()
-            if not rows:
-                return ""
-
-            import json
-            lines = ["**Aktywny kontekst relacji:**"]
-            for row in rows:
-                try:
-                    data = json.loads(row["value"])
-                    if data:
-                        lines.append(f"- {row['key']}: {data}")
-                except Exception:
-                    pass
-
-            return "\n".join(lines) if len(lines) > 1 else ""
-        except Exception as exc:
-            logger.debug("Assembler: progression block failed: %s", exc)
-            return ""
-
 
 def _file_age_hours(path: Path) -> float:
     mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)

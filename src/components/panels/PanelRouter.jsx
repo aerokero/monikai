@@ -10,21 +10,17 @@ import ChatPanel from './ChatPanel';
 import CompanionWindow from '../CompanionWindow';
 import StudyShellPanel from './StudyShellPanel';
 import NotesShellPanel from './NotesShellPanel';
-import DailyBriefingShellPanel from './DailyBriefingShellPanel';
 import CalendarShellPanel from './CalendarShellPanel';
 import ProfileShellPanel from './ProfileShellPanel';
-import GoalsShellPanel from './GoalsShellPanel';
 import SettingsPanel from './SettingsPanel';
 
 const PANEL_COMPONENTS = {
   chat: ChatPanel,
   study: StudyShellPanel,
   notes: NotesShellPanel,
-  daily_briefing: DailyBriefingShellPanel,
   companion: CompanionWindow,
   calendar: CalendarShellPanel,
   profile: ProfileShellPanel,
-  goals: GoalsShellPanel,
   settings: SettingsPanel,
 };
 
@@ -120,11 +116,6 @@ const PanelRouter = ({
         return {
           socket,
         };
-      case 'daily_briefing':
-        return {
-          socket,
-          language,
-        };
       case 'companion':
         return {
           socket,
@@ -141,10 +132,6 @@ const PanelRouter = ({
           personalityState,
           allowMinecraft: false,
           embedded: true,
-        };
-      case 'goals':
-        return {
-          personalityState,
         };
       case 'calendar':
         return {

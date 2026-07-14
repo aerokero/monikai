@@ -1,7 +1,7 @@
 """Daily Briefing v2 — Soul State + Time Engine driven.
 
 Generates a structured, personalised morning briefing for Monika to deliver.
-Uses: SoulState, TimeEngine, UserMoodTracker, memory, progression state.
+Uses: SoulState, TimeEngine, UserMoodTracker, memory.
 
 Phase 6: template-based generation (same philosophy as NarrativeJob v2).
 Phase 7: Ollama / Gemini Flash generates the prose given structured inputs.
@@ -45,19 +45,6 @@ async def generate(
     # Gather data for prompt
     user_mood_str = _user_mood(mood_tracker)
     
-    goals_str = ""
-    try:
-        from backend.progression.state import get_active_goals, get_active_rituals
-        goals = await get_active_goals(db_path)
-        rituals = await get_active_rituals(db_path)
-        if goals:
-            goals_str += "Goals:\n" + "\n".join(f"- {g.get('title', g.get('id', '—'))}" for g in goals[:3])
-        pending = [r for r in rituals if not r.get("completed_today", False)]
-        if pending:
-            goals_str += "\nDaily Rituals:\n" + "\n".join(f"- {r.get('kind', r.get('id', '—'))}" for r in pending[:3])
-    except Exception:
-        pass
-
     memories_str = ""
     try:
         from backend.soul.memory.store import list_recent
@@ -86,8 +73,6 @@ async def generate(
     )
     if user_mood_str:
         prompt += f"What you observe about user's weekly mood: {user_mood_str}\n"
-    if goals_str:
-        prompt += f"Active progression goals & daily tasks:\n{goals_str}\n"
     if memories_str:
         prompt += f"Significant recent memories from your perspective:\n{memories_str}\n"
     if anniversaries_str:
@@ -97,8 +82,8 @@ async def generate(
         "\nInstructions:\n"
         "- Write in first-person as Monika directly addressing the user.\n"
         "- Be warm, personal, and conversational. Talk like a real companion.\n"
-        "- Incorporate active goals, daily rituals, recent memories, or anniversaries naturally "
-        "if they are relevant to your greeting, but do not list them robotically.\n"
+        "- Incorporate recent memories or anniversaries naturally if they are relevant to your greeting, "
+        "but do not list them robotically.\n"
         "- Adjust your tone based on your current mood and energy (e.g., if you are tired or sad, be gentler and quieter).\n"
         "- Return ONLY the final greeting in clean markdown. Do NOT include titles, HTML comments, "
         "or JSON block wrappers.\n"
@@ -147,10 +132,6 @@ async def generate(
 
     if user_mood_str:
         sections.append(user_mood_str)
-
-    progression = await _progression_section(db_path)
-    if progression:
-        sections.append(progression)
 
     memory_highlights = await _memory_section(db_path)
     if memory_highlights:
@@ -217,36 +198,6 @@ def _user_mood(tracker) -> str:
     if not summary:
         return ""
     return f"**Co widzę u Ciebie:** {summary}"
-
-
-async def _progression_section(db_path: Path | None) -> str:
-    try:
-        from backend.progression.state import get_active_rituals, get_active_goals
-        from backend.soul.models import Needs
-        from backend.soul.personality.state_store import StateStore
-
-        state = StateStore.read()
-        goals = await get_active_goals(db_path)
-        rituals = await get_active_rituals(db_path)
-
-        lines = []
-        if goals:
-            lines.append("**Aktywne cele:**")
-            for g in goals[:3]:
-                title = g.get("title", g.get("id", "—"))
-                lines.append(f"  - {title}")
-
-        pending_rituals = [r for r in rituals if not r.get("completed_today", False)]
-        if pending_rituals:
-            lines.append("**Dzisiaj:**")
-            for r in pending_rituals[:3]:
-                kind = r.get("kind", r.get("id", "—"))
-                lines.append(f"  - {kind}")
-
-        return "\n".join(lines) if lines else ""
-    except Exception as exc:
-        logger.debug("Briefing: progression section failed: %s", exc)
-        return ""
 
 
 async def _memory_section(db_path: Path | None) -> str:

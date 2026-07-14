@@ -4,10 +4,11 @@
  * Renders responsive grid based on viewport size
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import useLayoutMode from '../hooks/useLayoutMode';
 import { useMonika } from '../contexts/MonikaContext';
 import { useSettings } from '../contexts/SettingsContext';
+import { getPanelById } from '../config/panelRegistry';
 import MonikaSprite from './MonikaSprite';
 import MASClock from './MASClock';
 import RailNav from '../components/shared/RailNav';
@@ -101,8 +102,16 @@ const MonikaLayout = ({
   const isElectron = typeof window !== 'undefined' && typeof window.require === 'function';
 
   const [isExpanded, setIsExpanded] = useState(false);
-  const hasUtilityPanel = activeContext !== 'chat';
+  const activePanel = getPanelById(activeContext);
+  const resolvedContext = activePanel ? activeContext : 'chat';
+  const hasUtilityPanel = resolvedContext !== 'chat';
   const isPortraitViewport = viewport.height > viewport.width;
+
+  useEffect(() => {
+    if (!activePanel) {
+      setActiveContext('chat');
+    }
+  }, [activePanel, setActiveContext]);
 
   // CSS class for current layout mode
   const layoutClassName = useMemo(() => {
@@ -124,9 +133,9 @@ const MonikaLayout = ({
   }, [layoutMode, hasUtilityPanel]);
 
   const panelContainerClassName = useMemo(() => {
-    const sharedShellClass = ['settings', 'calendar', 'notes'].includes(activeContext) ? ' is-settings' : '';
-    return `monika-panel-container is-${activeContext}${sharedShellClass}`;
-  }, [activeContext]);
+    const sharedShellClass = ['settings', 'calendar', 'notes'].includes(resolvedContext) ? ' is-settings' : '';
+    return `monika-panel-container is-${resolvedContext}${sharedShellClass}`;
+  }, [resolvedContext]);
 
   return (
     <div className={`${layoutClassName} ${isElectron ? 'monika-layout--with-window-topbar' : ''}`}>
@@ -151,7 +160,7 @@ const MonikaLayout = ({
         </div>
 
         {/* Non-Chat Panel Container (Study, Tasks, Media, etc.) - Hidden when chat is selected */}
-        {activeContext !== 'chat' && (
+        {resolvedContext !== 'chat' && (
           <div className={panelContainerClassName} role="region" aria-live="polite" aria-label="Content panel">
             <PanelRouter
               messages={messages}
@@ -222,7 +231,7 @@ const MonikaLayout = ({
             isExpanded={isExpanded}
             onToggleExpand={() => setIsExpanded((current) => !current)}
             agenticLogs={agenticLogs}
-            studyModeActive={activeContext === 'study'}
+            studyModeActive={resolvedContext === 'study'}
             onShareStudyPage={onShareStudyPage}
             onMinimizedChange={onChatMinimizedChange}
             onSizeChange={onChatSizeChange}

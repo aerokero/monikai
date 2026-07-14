@@ -36,15 +36,6 @@ export const MONIKA_STATES = {
     spriteName: 'monika_think',
     description: 'Writing notes - reflective and organized'
   },
-  daily_briefing: {
-    outfit: 'day',
-    pose: 'neutral',
-    expression: 'focused',
-    animationIdle: 'breathing',
-    spriteFolder: 'vn/monika/day',
-    spriteName: 'monika_neutral',
-    description: 'Reviewing the briefing - calm and informed'
-  },
   companion: {
     outfit: 'casual',
     pose: 'relaxed',
@@ -53,15 +44,6 @@ export const MONIKA_STATES = {
     spriteFolder: 'vn/monika/casual',
     spriteName: 'monika_relax',
     description: 'Companion activities - warm and playful'
-  },
-  goals: {
-    outfit: 'day',
-    pose: 'thinking',
-    expression: 'thoughtful',
-    animationIdle: 'weight_shift',
-    spriteFolder: 'vn/monika/day',
-    spriteName: 'monika_think',
-    description: 'Checking progress - proud and attentive'
   },
   idle: {
     outfit: 'day',

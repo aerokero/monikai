@@ -22,11 +22,10 @@ def _settings(use_v2: bool = False) -> dict:
             "profile": {
                 "pinned_sections": ["weather"],
                 "preferred_sections": [],
-                "auto_slots": 3,
+                "auto_slots": 1,
                 "candidate_pool": ["weather"],
-                "proposal_policy": {"enabled": True, "min_confidence": 0.65, "cooldown_hours": 12},
                 "language_mode": "auto",
-                "max_items_per_section": 5,
+                "max_items_per_section": 7,
             },
         }
     }

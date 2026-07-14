@@ -8,7 +8,7 @@ import React, { createContext, useState, useCallback } from 'react';
 
 export const MonikaContext = createContext(null);
 
-const CONTEXTS = ['chat', 'study', 'notes', 'daily_briefing', 'companion', 'goals', 'calendar', 'profile', 'settings'];
+const CONTEXTS = ['chat', 'study', 'notes', 'companion', 'calendar', 'profile', 'settings'];
 
 /**
  * MonikaContextProvider
@@ -26,9 +26,7 @@ export const MonikaContextProvider = ({ children }) => {
     chat: true,
     study: false,
     notes: false,
-    daily_briefing: false,
     companion: false,
-    goals: false,
     calendar: false,
     profile: false,
     settings: false,

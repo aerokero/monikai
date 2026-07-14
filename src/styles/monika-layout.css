@@ -1492,8 +1492,6 @@
 .monika-layout--portrait-viewport .monika-panel-container.is-settings,
 .monika-layout--portrait-viewport .monika-panel-container.is-notes,
 .monika-layout--portrait-viewport .monika-panel-container.is-calendar,
-.monika-layout--portrait-viewport .monika-panel-container.is-daily_briefing,
-.monika-layout--portrait-viewport .monika-panel-container.is-goals,
 .monika-layout--portrait-viewport .monika-panel-container.is-profile {
   border-radius: 28px 28px 0 0 !important;
   border: 1px solid rgba(232, 178, 102, 0.17) !important;

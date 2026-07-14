@@ -167,12 +167,6 @@ class V2Runtime:
         await time_engine.check_gap(db_path)
         await time_engine.check_anniversaries(db_path)
 
-        try:
-            from backend.progression.state import get_first_interaction_ts
-            await get_first_interaction_ts(db_path)
-        except Exception as e:
-            logger.warning("v2: failed to initialize first_interaction_ts: %s", e)
-
         runtime = cls(db_path=db_path, time_engine=time_engine)
         runtime._cached_prompt = await runtime.refresh_prompt()
         runtime._digest_task = asyncio.create_task(runtime._digest_loop())
@@ -315,16 +309,7 @@ class V2Runtime:
     async def get_status_payload(self) -> dict:
         """Honest status: only data the system actually has. No synthetic
         mood/needs numbers — absent is better than fake."""
-        from backend.progression.state import get_first_interaction_ts
         from datetime import datetime, timezone
-
-        first_ts_str = await get_first_interaction_ts(self._db_path)
-        try:
-            first_dt = datetime.fromisoformat(first_ts_str.replace("Z", "+00:00"))
-            now_dt = datetime.now(timezone.utc)
-            days = max(1, (now_dt.date() - first_dt.date()).days + 1)
-        except Exception:
-            days = 1
 
         weather = await get_cached_weather()
 
@@ -377,7 +362,6 @@ class V2Runtime:
             "v2": True,
             "mood": mood,
             "energy": energy,
-            "relationship_days": days,
             "weather": weather,
             "memory": {
                 "semantic": memory_counts.get("semantic", 0),

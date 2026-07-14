@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import date
 
 from backend.llm.briefing import generate
-from backend.progression.state import set_active_goals, set_active_rituals
 from backend.soul.memory import store
 from backend.soul.models import Affect, MemoryEntry, Needs, SoulState
 from backend.soul.time_engine.engine import TimeContext
@@ -51,9 +50,7 @@ async def test_generate_briefing_includes_core_sections(tmp_db):
     assert "Pierwszy film razem" in result
 
 
-async def test_generate_briefing_includes_progression_and_memory(tmp_db):
-    await set_active_goals([{"id": "shared_evening", "title": "Wspólny wieczór"}], tmp_db)
-    await set_active_rituals([{"id": "check_in", "kind": "wieczorny check-in"}], tmp_db)
+async def test_generate_briefing_includes_memory(tmp_db):
     await store.add(
         MemoryEntry(
             id="x",
@@ -71,10 +68,6 @@ async def test_generate_briefing_includes_progression_and_memory(tmp_db):
         db_path=tmp_db,
     )
 
-    assert "Aktywne cele" in result
-    assert "Wspólny wieczór" in result
-    assert "Dzisiaj:" in result
-    assert "wieczorny check-in" in result
     assert "Coś z pamięci" in result
     assert "spokojny wieczór" in result
 
@@ -112,4 +105,3 @@ async def test_generate_briefing_llm_path(tmp_db, monkeypatch):
     
     assert "Hello from Gemini Daily Briefing!" in result
     assert "# Dzisiaj" in result
-

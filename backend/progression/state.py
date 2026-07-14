@@ -23,7 +23,6 @@ _KEY_ACTIVE_RITUALS = "active_rituals"      # list[{id, kind, completed_today}]
 _KEY_TURN_COUNT = "turn_count"              # int
 _KEY_ANNIVERSARIES = "anniversaries"        # list[{label, date}]
 _KEY_BOND_STATE = "bond_state"              # {closeness, streak_days, ...}
-_KEY_FIRST_INTERACTION_TS = "first_interaction_ts"  # ISO timestamp
 
 
 
@@ -159,13 +158,3 @@ async def update_bond_state(updates: dict, db_path: Path | None = None) -> dict:
     bond.update(updates)
     await set_(_KEY_BOND_STATE, bond, db_path)
     return bond
-
-
-async def get_first_interaction_ts(db_path: Path | None = None) -> str:
-    """Get the first interaction timestamp, or initialize it to now if not set."""
-    val = await get(_KEY_FIRST_INTERACTION_TS, db_path)
-    if val is None:
-        val = datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
-        await set_(_KEY_FIRST_INTERACTION_TS, val, db_path)
-    return val
-
