@@ -73,6 +73,14 @@ def register_minecraft_perception_callback(
                     msg = f"[Minecraft Chat] {username}: {message}"
                     print(f"[PERCEPTION] Sending to Monika: {msg}")
                     await audio_loop.session.send(input=msg, end_of_turn=False)
+                    # v3: shared play becomes memory — in-game chat lands in the
+                    # session transcript, so the digest can remember it.
+                    try:
+                        sm = getattr(audio_loop, "session_manager", None)
+                        if sm:
+                            sm.log_chat(f"MC:{username}", message)
+                    except Exception:
+                        pass
 
             elif event.event_type == "action_result":
                 data = event.data or {}
@@ -99,8 +107,24 @@ def register_minecraft_perception_callback(
                     f"[Minecraft] You are now connected as player '{bot_name}'. "
                     "When user says 'come to me', ask for their nickname if missing, then use that target."
                 )
+                # v3: her own in-world goals give her life continuity between play sessions.
+                try:
+                    from backend.core.runtimes.v2_runtime import get as _v2_get
+                    from backend.progression.minecraft_goals import format_open_goals
+                    _v2rt = _v2_get()
+                    goals_line = await format_open_goals(_v2rt._db_path if _v2rt else None)
+                    if goals_line:
+                        msg += f" {goals_line} Use the minecraft_goals tool to manage them."
+                except Exception:
+                    pass
                 print(f"[PERCEPTION] Sending to Monika: {msg}")
                 await audio_loop.session.send(input=msg, end_of_turn=False)
+                try:
+                    sm = getattr(audio_loop, "session_manager", None)
+                    if sm:
+                        sm.log_chat("MC:system", f"Monika dołączyła do gry Minecraft jako '{bot_name}'.")
+                except Exception:
+                    pass
 
                 cfg = minecraft_autonomy_cfg()
                 if cfg.get("auto_game_mode_on_connect", True):

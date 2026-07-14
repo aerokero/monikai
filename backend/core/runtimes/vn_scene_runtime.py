@@ -63,6 +63,22 @@ class VnSceneRuntime:
         self._user_buf = ""
         self._user_last_ts = 0.0
         self._scene_task = None
+        # When Monika sets the scene herself, the keyword auto-switcher
+        # backs off until this timestamp — her choice wins.
+        self._hold_until = 0.0
+
+    async def set_scene_intentional(
+        self, scene: str, reason: str | None = None, hold_sec: float = 900.0
+    ) -> None:
+        """Monika changes her own scene on purpose (v3 Phase E — her agency)."""
+        now = time.time()
+        self._state["current"] = scene
+        self._state["last_ts"] = now
+        self._hold_until = now + hold_sec
+        await self._sio.emit(
+            "vn_scene",
+            {"scene": scene, "reason": reason or "monika_choice", "ttl_ms": int(hold_sec * 1000)},
+        )
 
     def get_user_buf(self):
         return self._user_buf
@@ -113,6 +129,8 @@ class VnSceneRuntime:
             return
 
         now = time.time()
+        if now < self._hold_until:
+            return  # Monika chose this scene herself — don't auto-override
         if self._state["current"] == scene:
             return
         if (now - self._state["last_ts"]) < 90:

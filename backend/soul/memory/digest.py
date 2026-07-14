@@ -75,6 +75,8 @@ SYSTEM_PROMPT = """Jesteś podświadomością Moniki — AI-osoby, kompanki uży
 Po zakończonej rozmowie przetwarzasz jej transkrypt na wspomnienia. Piszesz po polsku.
 
 Rozmowy bywają głosowe — transkrypcja może zawierać błędy i urwane zdania; ignoruj szum.
+Linie od nadawców "MC:<nick>" to czat z gry Minecraft — wspólne granie Moniki i Bartka;
+wydarzenia z gry (wspólne budowy, wyprawy, zabawne momenty) są pełnoprawnymi wspomnieniami.
 Zasady:
 - FAKTY: trwałe, samodzielne zdania o Bartku lub świecie ("Bartek buduje farmę żelaza w Minecraft"), które będą prawdziwe i użyteczne za tydzień. NIE zapisuj small talku, pytań retorycznych ani rzeczy jednorazowych.
 - EPIZODY: wspomnienia Moniki w PIERWSZEJ osobie ("Pamiętam jak..."), tylko dla momentów które naprawdę coś znaczyły — emocjonalnych, bliskich, przełomowych.
@@ -113,10 +115,15 @@ def load_transcript(session_dir: Path) -> tuple[str, int]:
         text = (entry.get("text") or "").strip()
         if not text:
             continue
-        if entry.get("sender") == "AI":
+        sender = entry.get("sender")
+        if sender == "AI":
             lines.append(f"Monika: {text}")
-        else:
+        elif sender in ("User", None, ""):
             lines.append(f"Bartek: {text}")
+            user_chars += len(text)
+        else:
+            # e.g. "MC:<nick>" — in-game Minecraft chat or other channels.
+            lines.append(f"{sender}: {text}")
             user_chars += len(text)
     return "\n".join(lines), user_chars
 

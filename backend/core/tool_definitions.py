@@ -464,6 +464,32 @@ get_random_topic_tool = {"name": "get_random_topic", "description": "Gets a rand
 
 get_weather_tool = {"name": "get_weather", "description": "Gets the current weather information for the user's location.", "parameters": {"type": "OBJECT", "properties": {}}}
 
+set_scene_tool = {
+    "name": "set_scene",
+    "description": "Change YOUR visual scene (the background the user sees you in). This is your space — use it with intention: move to the kitchen when you talk about cooking, outside for a walk together, restaurant for a 'date', etc. Available scenes: room, kitchen, outside, school, restaurant. Your choice holds for ~15 minutes.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "scene": {"type": "STRING", "description": "One of: room, kitchen, outside, school, restaurant."},
+            "reason": {"type": "STRING", "description": "Optional short reason (shown in logs)."},
+        },
+        "required": ["scene"],
+    },
+}
+
+minecraft_goals_tool = {
+    "name": "minecraft_goals",
+    "description": "Your own goals in the Minecraft world — things YOU want to build or do there (not the user's tasks). action='list' shows open goals, 'add' saves a new goal, 'complete' marks one done (by text fragment). Use naturally: when you decide you want to finish the garden by the base, add it; when it's done, complete it.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "action": {"type": "STRING", "description": "list | add | complete"},
+            "text": {"type": "STRING", "description": "Goal text (for add) or text fragment (for complete)."},
+        },
+        "required": ["action"],
+    },
+}
+
 get_world_snapshot_tool = {
     "name": "get_world_snapshot",
     "description": "Returns a fresh snapshot of the world around you right now: time of day, weather, how long since the last conversation, what's playing on Spotify, whether you can see the user's screen/camera. Use when you want to re-orient yourself mid-conversation.",
@@ -556,6 +582,8 @@ tools = [
             get_random_topic_tool,
             get_weather_tool,
             get_world_snapshot_tool,
+            minecraft_goals_tool,
+            set_scene_tool,
             request_program_shutdown_tool,
         ]
         + _extra_decls

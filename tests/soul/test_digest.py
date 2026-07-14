@@ -73,6 +73,17 @@ def test_load_transcript_maps_senders(tmp_path):
     assert user_chars == len("cześć")
 
 
+def test_load_transcript_preserves_minecraft_senders(tmp_path):
+    sess = _make_session(tmp_path, turns=[
+        ("MC:xtosu", "patrz jaka farma"),
+        ("AI", "[Minecraft] wow, ale wyszła!"),
+    ])
+    transcript, user_chars = load_transcript(sess)
+    assert "MC:xtosu: patrz jaka farma" in transcript
+    assert "Monika: [Minecraft] wow, ale wyszła!" in transcript
+    assert user_chars == len("patrz jaka farma")  # in-game chat counts as content
+
+
 async def test_digest_trivial_session_skipped_and_marked(tmp_path, tmp_db):
     sess = _make_session(tmp_path, turns=[("User", "hej"), ("AI", "hej!")])
     with patch("backend.soul.memory.digest.get_client") as mock_client:

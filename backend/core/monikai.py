@@ -550,6 +550,9 @@ class AudioLoop:
                 "get_random_farewell": False,
                 "get_random_topic": False,
                 "get_weather": False,
+                "get_world_snapshot": False,
+                "set_scene": False,
+                "minecraft_goals": False,
                 "request_program_shutdown": False,
                 "notes_get": False,
                 "notes_set": False,
@@ -3185,6 +3188,56 @@ class AudioLoop:
                                         types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str, "context": ctx})
                                     )
 
+                                elif fc.name == "set_scene":
+                                    try:
+                                        _scene = str(fc.args.get("scene") or "").strip().lower()
+                                        _valid = {"room", "kitchen", "outside", "school", "restaurant"}
+                                        if _scene not in _valid:
+                                            result_str = f"Unknown scene '{_scene}'. Available: {', '.join(sorted(_valid))}."
+                                        else:
+                                            from backend.core import server as _srv
+                                            await _srv.VN_SCENE_RUNTIME.set_scene_intentional(
+                                                _scene, reason=str(fc.args.get("reason") or "") or None
+                                            )
+                                            result_str = f"Scene changed to '{_scene}'."
+                                    except Exception as e:
+                                        result_str = f"Error changing scene: {e}"
+                                    function_responses.append(
+                                        types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str})
+                                    )
+
+                                elif fc.name == "minecraft_goals":
+                                    try:
+                                        from backend.core.runtimes.v2_runtime import get as _v2_get
+                                        from backend.progression import minecraft_goals as _mcg
+
+                                        _v2rt = _v2_get()
+                                        _db = _v2rt._db_path if _v2rt else None
+                                        _action = str(fc.args.get("action") or "list").lower()
+                                        _text = str(fc.args.get("text") or "")
+                                        if _action == "add":
+                                            _, _st = await _mcg.add_goal(_text, db_path=_db)
+                                            result_str = {
+                                                "ok": f"Goal saved: {_text}",
+                                                "dedup": "You already have that goal.",
+                                                "full": "You already have 5 open goals — complete one first.",
+                                            }[_st]
+                                        elif _action == "complete":
+                                            _found = await _mcg.complete_goal(_text, db_path=_db)
+                                            result_str = "Goal completed." if _found else "No open goal matches that."
+                                        else:
+                                            _goals = await _mcg.list_goals(db_path=_db)
+                                            result_str = (
+                                                "Your open Minecraft goals:\n"
+                                                + "\n".join(f"- {g['text']}" for g in _goals)
+                                                if _goals else "You have no open Minecraft goals."
+                                            )
+                                    except Exception as e:
+                                        result_str = f"Error managing Minecraft goals: {e}"
+                                    function_responses.append(
+                                        types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str})
+                                    )
+
                                 elif fc.name == "get_world_snapshot":
                                     try:
                                         from backend.core.runtimes.v2_runtime import get as _v2_get
@@ -4021,6 +4074,15 @@ class AudioLoop:
                                             params = {}
                                             if fc.name == "minecraft_chat_message":
                                                 params["message"] = fc.args.get("message", "")
+                                                # v3: her in-game words belong to the shared
+                                                # transcript too (memory of playing together).
+                                                try:
+                                                    if params["message"] and getattr(self, "session_manager", None):
+                                                        self.session_manager.log_chat(
+                                                            "AI", f"[Minecraft] {params['message']}"
+                                                        )
+                                                except Exception:
+                                                    pass
                                             elif fc.name == "minecraft_skip":
                                                 params = {}
                                             elif fc.name == "minecraft_stop_actions":
