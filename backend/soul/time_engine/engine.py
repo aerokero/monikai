@@ -93,8 +93,9 @@ class TimeEngine:
     # ------------------------------------------------------------------
 
     def get_context(self, now: datetime | None = None) -> TimeContext:
-        """Return a TimeContext for the current moment."""
-        dt = now or datetime.now(tz=timezone.utc)
+        """Return a TimeContext for the current moment (local time —
+        time-of-day must match the user's clock, not UTC)."""
+        dt = now or datetime.now().astimezone()
         season = _season(dt.month)
         tod = _time_of_day(dt.hour)
         energy = _energy_hint(dt.hour)

@@ -118,6 +118,19 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs (status, created_at);
 
+-- Monika's cross-session agenda — open threads she wants to return to (v3).
+CREATE TABLE IF NOT EXISTS agenda_items (
+    id             TEXT PRIMARY KEY,
+    text           TEXT NOT NULL,
+    status         TEXT NOT NULL DEFAULT 'open'
+                       CHECK (status IN ('open', 'done', 'expired')),
+    source_session TEXT,
+    created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    resolved_at    TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_agenda_status ON agenda_items (status, created_at);
+
 -- Spaced repetition flashcards (Phase 6).
 CREATE TABLE IF NOT EXISTS flashcards (
     id           TEXT    PRIMARY KEY,

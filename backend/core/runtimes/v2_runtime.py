@@ -12,7 +12,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections import deque
 from pathlib import Path
 import time
 from typing import Optional
@@ -150,9 +149,10 @@ class V2Runtime:
         self._db_path = db_path
         self._time_engine = time_engine
         self._cached_prompt = cached_prompt
-        self._session_turns: deque[str] = deque(maxlen=8)
-        from backend.soul.agenda import AgendaManager
-        self._agenda = AgendaManager()
+        self._digest_task: asyncio.Task | None = None
+        # Open agenda items (from session digests), cached for sync callers
+        # like the proactivity reasoning prompt. Refreshed with the prompt.
+        self._agenda_cache: list[str] = []
 
     @classmethod
     async def _create(cls, db_path: Path) -> "V2Runtime":
@@ -175,8 +175,57 @@ class V2Runtime:
 
         runtime = cls(db_path=db_path, time_engine=time_engine)
         runtime._cached_prompt = await runtime.refresh_prompt()
+        runtime._digest_task = asyncio.create_task(runtime._digest_loop())
         logger.info("v2: runtime initialized (prompt=%d chars)", len(runtime._cached_prompt))
         return runtime
+
+    # ------------------------------------------------------------------
+    # Background digestion — sessions become memory
+    # ------------------------------------------------------------------
+
+    _DIGEST_SCAN_INTERVAL_S = 20 * 60
+
+    async def _digest_loop(self) -> None:
+        """Periodically digest finished sessions into long-term memory.
+
+        First scan runs shortly after startup (catch-up for sessions that
+        ended while the app was off), then every _DIGEST_SCAN_INTERVAL_S.
+        """
+        await asyncio.sleep(90)  # let startup settle before touching Ollama
+        while True:
+            try:
+                from backend.soul.memory.digest import scan_and_digest, stm_maintenance
+
+                try:
+                    await stm_maintenance(db_path=self._db_path)
+                except Exception as exc:
+                    logger.debug("v2: stm maintenance failed: %s", exc)
+
+                current_id = None
+                try:
+                    from backend.core import server as _srv
+                    sm = getattr(_srv.audio_loop, "session_manager", None)
+                    if sm is not None:
+                        current_id = sm.get_current_session_id()
+                except Exception:
+                    pass
+
+                digested = await scan_and_digest(
+                    db_path=self._db_path, current_session_id=current_id
+                )
+                if digested:
+                    await self.refresh_prompt()
+
+                try:
+                    from backend.soul.proactivity import maybe_poke
+                    await maybe_poke(db_path=self._db_path)
+                except Exception as exc:
+                    logger.warning("v2: proactivity error: %s", exc)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("v2: digest loop error: %s", exc)
+            await asyncio.sleep(self._DIGEST_SCAN_INTERVAL_S)
 
     # ------------------------------------------------------------------
     # Prompt assembly
@@ -188,7 +237,16 @@ class V2Runtime:
             self._cached_prompt = await assemble_prompt(db_path=self._db_path)
         except Exception as exc:
             logger.warning("v2: prompt assembly failed, keeping cached: %s", exc)
+        try:
+            from backend.soul.memory.agenda_store import open_items
+            self._agenda_cache = [i["text"] for i in await open_items(db_path=self._db_path)]
+        except Exception as exc:
+            logger.debug("v2: agenda cache refresh failed: %s", exc)
         return self._cached_prompt
+
+    @property
+    def open_agenda(self) -> list[str]:
+        return list(self._agenda_cache)
 
     @property
     def cached_prompt(self) -> str:
@@ -198,38 +256,18 @@ class V2Runtime:
     # Per-turn processing
     # ------------------------------------------------------------------
 
+    # Only inject memories that actually match the turn — bm25_raw below this
+    # is keyword noise, and noise in context is worse than silence.
+    _RECALL_MIN_BM25 = 1.0
+
     async def process_turn(self, user_text: str, monika_text: str = "") -> str:
+        """Per-turn hook: honest memory recall, no synthetic cognition.
+
+        Retrieves memories relevant to what the user just said (cheap FTS +
+        Stanford scoring, no LLM) and returns them as a context message for
+        Gemini. Returns "" when nothing genuinely matches.
+        """
         try:
-            from backend.llm.cognition import generate
-            from backend.soul.personality.signals import extract
-            from backend.soul.memory import store as mem_store
-
-            signals = extract(user_text)
-
-            stm_entries: list = []
-            try:
-                stm_entries = await mem_store.list_recent(
-                    limit=4, types=["stm"], db_path=self._db_path
-                )
-            except Exception as e:
-                logger.debug("v2: stm fetch failed: %s", e)
-
-            self._agenda.age()
-            new_agenda = self._agenda.extract_from_turn(user_text, signals)
-
-            session_turns = list(self._session_turns)
-            cog = await generate(
-                user_text,
-                signals=signals,
-                stm_entries=stm_entries or None,
-                session_turns=session_turns or None,
-                agenda=self._agenda.active() or None,
-            )
-
-            self._agenda.add_items(new_agenda)
-            if user_text.strip():
-                self._session_turns.append(user_text.strip())
-
             if self._time_engine is not None:
                 await self._time_engine.record_interaction(self._db_path)
 
@@ -238,9 +276,26 @@ class V2Runtime:
                 status_payload = await self.get_status_payload()
                 schedule_emit_to_frontend("personality_status", status_payload)
             except Exception as e:
-                logger.warning("v2: failed to emit personality_status: %s", e)
+                logger.debug("v2: failed to emit personality_status: %s", e)
 
-            return cog.as_message()
+            if not user_text.strip():
+                return ""
+
+            from backend.soul.memory.retrieval import retrieve
+            results = await retrieve(
+                user_text, limit=3,
+                types=["semantic", "episodic"],
+                db_path=self._db_path,
+            )
+            hits = [r for r in results if r.bm25_raw >= self._RECALL_MIN_BM25]
+            if not hits:
+                return ""
+
+            lines = ["(Pamięć — Twoje wspomnienia pasujące do tego, co właśnie powiedział. Użyj tylko jeśli naprawdę pasują:)"]
+            for r in hits:
+                when = r.entry.created_at.strftime("%Y-%m-%d")
+                lines.append(f"- [{when}] {r.entry.content}")
+            return "\n".join(lines)
         except Exception as exc:
             logger.warning("v2: process_turn failed: %s", exc)
             return ""
@@ -258,11 +313,10 @@ class V2Runtime:
         return ""
 
     async def get_status_payload(self) -> dict:
-        from backend.progression.state import get_bond_state, get_first_interaction_ts
+        """Honest status: only data the system actually has. No synthetic
+        mood/needs numbers — absent is better than fake."""
+        from backend.progression.state import get_first_interaction_ts
         from datetime import datetime, timezone
-
-        bond = await get_bond_state(self._db_path)
-        affection = bond.get("closeness", 0.0)
 
         first_ts_str = await get_first_interaction_ts(self._db_path)
         try:
@@ -274,18 +328,42 @@ class V2Runtime:
 
         weather = await get_cached_weather()
 
-        score = affection / 10.0
-        full = int(score)
-        hearts = "❤️" * full + "🤍" * (10 - full)
+        memory_counts: dict[str, int] = {}
+        try:
+            from backend.soul.db import get_db
+            async with get_db(self._db_path) as conn:
+                cursor = await conn.execute(
+                    "SELECT type, COUNT(*) AS n FROM memory_entries GROUP BY type"
+                )
+                rows = await cursor.fetchall()
+            memory_counts = {r["type"]: r["n"] for r in rows}
+        except Exception as exc:
+            logger.debug("v2: memory counts failed: %s", exc)
+
+        inner_state_excerpt = ""
+        try:
+            path = _DATA_DIR / "soul" / "inner_state.md"
+            if path.exists():
+                text = "\n".join(
+                    ln for ln in path.read_text(encoding="utf-8").splitlines()
+                    if not ln.strip().startswith("<!--")
+                ).strip()
+                inner_state_excerpt = text[:280]
+        except Exception:
+            pass
 
         return {
             "v2": True,
-            "mood": "calm",
-            "affection": affection,
-            "affection_hearts": f"{hearts} ({score:.1f}/10)",
             "relationship_days": days,
             "weather": weather,
-            "needs": {"relatedness": 70, "autonomy": 70, "competence": 70},
+            "memory": {
+                "semantic": memory_counts.get("semantic", 0),
+                "episodic": memory_counts.get("episodic", 0),
+                "stm": memory_counts.get("stm", 0),
+                "total": sum(memory_counts.values()),
+            },
+            "agenda_open": list(self._agenda_cache),
+            "inner_state": inner_state_excerpt,
         }
 
     # ------------------------------------------------------------------
@@ -294,6 +372,15 @@ class V2Runtime:
 
     async def _shutdown(self) -> None:
         try:
+            if self._digest_task is not None:
+                self._digest_task.cancel()
+                try:
+                    await self._digest_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+                self._digest_task = None
+            from backend.llm import ollama_client
+            await ollama_client.shutdown()
             logger.info("v2: runtime shut down cleanly")
         except Exception as exc:
             logger.warning("v2: shutdown error: %s", exc)

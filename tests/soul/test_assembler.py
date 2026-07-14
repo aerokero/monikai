@@ -35,14 +35,6 @@ async def test_assembler_sections_ordered(tmp_db):
     assert char_pos < op_pos, "CHARACTER must come before OPERATIONAL"
 
 
-async def test_assembler_psychological_fallback_when_no_file(tmp_db, tmp_path):
-    assembler = ContextAssembler()
-    # State file present but inner_state.md doesn't exist → inline fallback
-    result = await assembler.assemble(_CHARACTER, _OPERATIONAL, db_path=tmp_db)
-    # Should not raise, should include some psychological content
-    assert "Stan wewnętrzny" in result or "Czuję" in result
-
-
 async def test_assembler_includes_memory_when_entries_exist(tmp_db):
     entry = MemoryEntry(
         id="x", type="stm", content="Bartosz lubi ciemny chleb żytni", importance=6.0
@@ -62,7 +54,9 @@ async def test_assembler_memory_block_empty_db(tmp_db):
     assert len(result) > 0
 
 
-async def test_assembler_memory_includes_ltm_above_threshold(tmp_db):
+async def test_assembler_memory_mixes_recent_and_important(tmp_db):
+    """v3: fresh LTM appears regardless of importance (the digest already
+    filtered noise); all-time important memories appear alongside it."""
     ltm = MemoryEntry(
         id="x", type="episodic", content="Pamiętam nasz pierwszy wieczór przy filmie", importance=8.5
     )
@@ -75,24 +69,7 @@ async def test_assembler_memory_includes_ltm_above_threshold(tmp_db):
     assembler = ContextAssembler()
     result = await assembler.assemble(_CHARACTER, _OPERATIONAL, db_path=tmp_db)
     assert "pierwszy wieczór" in result
-    # Low-importance LTM should not appear
-    assert "zwykłe codzienne zdanie" not in result
-
-
-async def test_assembler_uses_inner_state_file(tmp_db, tmp_path):
-    """If inner_state.md is fresh, it should be used."""
-    inner_path = tmp_path / "inner_state.md"
-    inner_path.write_text("# Monika's Inner State\n\nCzuję się dobrze i obecna.", encoding="utf-8")
-
-    import backend.soul.assembler.context as ctx_mod
-    original = ctx_mod._INNER_STATE_PATH
-    ctx_mod._INNER_STATE_PATH = inner_path
-    try:
-        assembler = ContextAssembler()
-        result = await assembler.assemble(_CHARACTER, _OPERATIONAL, db_path=tmp_db)
-        assert "obecna" in result
-    finally:
-        ctx_mod._INNER_STATE_PATH = original
+    assert "zwykłe codzienne zdanie" in result  # recent → included
 
 
 async def test_assemble_prompt_function(tmp_db):

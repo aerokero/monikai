@@ -197,8 +197,8 @@ memory_add_entry_tool = {
     "parameters": {
         "type": "OBJECT",
         "properties": {
-            "type": {"type": "STRING", "description": "Entry type (fact, preference, event, journal, reflection, roleplay_scene, roleplay_insight, memory_note)."},
-            "content": {"type": "STRING", "description": "Main content of the memory entry."},
+            "type": {"type": "STRING", "description": "Entry type: 'semantic' (durable fact/preference about the user or world), 'episodic' (a specific event worth remembering), 'stm' (session-scoped note, relevant only today). Legacy aliases (fact, preference, event, reflection, roleplay_scene, roleplay_insight, memory_note) still accepted."},
+            "content": {"type": "STRING", "description": "One short, self-contained sentence in third person. Distilled — never a raw transcript fragment."},
             "tags": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Optional tags."},
             "entities": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Related entities (e.g., user, monika)."},
             "origin": {"type": "STRING", "description": "real or roleplay."},
@@ -464,6 +464,12 @@ get_random_topic_tool = {"name": "get_random_topic", "description": "Gets a rand
 
 get_weather_tool = {"name": "get_weather", "description": "Gets the current weather information for the user's location.", "parameters": {"type": "OBJECT", "properties": {}}}
 
+get_world_snapshot_tool = {
+    "name": "get_world_snapshot",
+    "description": "Returns a fresh snapshot of the world around you right now: time of day, weather, how long since the last conversation, what's playing on Spotify, whether you can see the user's screen/camera. Use when you want to re-orient yourself mid-conversation.",
+    "parameters": {"type": "OBJECT", "properties": {}},
+}
+
 request_program_shutdown_tool = {
     "name": "request_program_shutdown",
     "description": (
@@ -549,6 +555,7 @@ tools = [
             get_random_farewell_tool,
             get_random_topic_tool,
             get_weather_tool,
+            get_world_snapshot_tool,
             request_program_shutdown_tool,
         ]
         + _extra_decls

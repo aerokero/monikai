@@ -331,10 +331,10 @@ class ProactivityWrapper:
         from backend.core.runtimes.v2_runtime import get as _v2_get
         _v2 = _v2_get()
         if _v2:
-            agenda = _v2._agenda.active() if hasattr(_v2, "_agenda") else []
+            agenda = _v2.open_agenda
             if agenda:
                 items_str = "; ".join(agenda[:2])
-                lines.append(f"You have unresolved threads from this conversation you wanted to return to: {items_str}. If the moment feels natural, bring one up.")
+                lines.append(f"You have unresolved threads you wanted to return to: {items_str}. If the moment feels natural, bring one up.")
 
         motion = getattr(self.loop, "_latest_motion_score", 0.0)
         if getattr(self.loop, "video_mode", "none") == "screen" and motion > 1.5:
@@ -3185,6 +3185,21 @@ class AudioLoop:
                                         types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str, "context": ctx})
                                     )
 
+                                elif fc.name == "get_world_snapshot":
+                                    try:
+                                        from backend.core.runtimes.v2_runtime import get as _v2_get
+                                        from backend.soul.world_snapshot import build_snapshot
+                                        _v2rt = _v2_get()
+                                        snapshot = await build_snapshot(
+                                            db_path=_v2rt._db_path if _v2rt else None
+                                        )
+                                        result_str = snapshot or "Brak danych o otoczeniu w tej chwili."
+                                    except Exception as e:
+                                        result_str = f"Error building world snapshot: {e}"
+                                    function_responses.append(
+                                        types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str})
+                                    )
+
                                 elif fc.name == "get_work_memory":
                                     md = "(memory disabled)"
                                     if getattr(self, "memory_engine", None):
@@ -3572,57 +3587,97 @@ class AudioLoop:
                                     function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
 
                                 elif fc.name == "memory_add_entry":
-                                    result_str = "Memory engine not initialized."
-                                    if getattr(self, "memory_engine", None):
-                                        try:
-                                            entry_id, status = self.memory_engine.add_entry(
-                                                type=str(fc.args.get("type") or ""),
-                                                content=str(fc.args.get("content") or ""),
-                                                tags=fc.args.get("tags") or [],
-                                                entities=fc.args.get("entities") or [],
-                                                origin=str(fc.args.get("origin") or "real"),
-                                                confidence=float(fc.args.get("confidence", 0.6)),
-                                                stability=str(fc.args.get("stability") or "medium"),
-                                                source=fc.args.get("source") or {},
-                                                data=fc.args.get("data") or {},
-                                            )
-                                            # Sync birthday to calendar if applicable
-                                            if self.calendar_manager:
-                                                data = fc.args.get("data") or {}
-                                                dob = data.get("date_of_birth") or data.get("birthday")
-                                                if isinstance(dob, str):
-                                                    parts = dob.replace("/", "-").split("-")
-                                                    if len(parts) == 3:
-                                                        try:
-                                                            self.calendar_manager.set_user_birthday(int(parts[1]), int(parts[2]))
-                                                        except Exception:
-                                                            pass
-                                                    elif len(parts) == 2:
-                                                        try:
-                                                            self.calendar_manager.set_user_birthday(int(parts[0]), int(parts[1]))
-                                                        except Exception:
-                                                            pass
-                                            result_str = f"{status}: {entry_id}"
-                                        except Exception as e:
-                                            result_str = f"Error adding memory entry: {e}"
+                                    # v3: distilled facts go to monika.db (same store
+                                    # the session digest writes to), not entries.jsonl.
+                                    try:
+                                        from backend.core.runtimes.v2_runtime import get as _v2_get
+                                        from backend.soul.memory import store as _mem_store
+                                        from backend.soul.models import MemoryEntry as _MemEntry
+
+                                        _v2rt = _v2_get()
+                                        _db = _v2rt._db_path if _v2rt else None
+                                        _raw_type = str(fc.args.get("type") or "fact")
+                                        _content = str(fc.args.get("content") or "").strip()
+                                        if not _content:
+                                            raise ValueError("empty content")
+
+                                        # Map tool types → memory tiers. Monika's own
+                                        # experiences are episodic; knowledge is semantic;
+                                        # stm = session-scoped notes cleaned up by compaction.
+                                        if _raw_type in ("reflection", "roleplay_scene", "roleplay_insight"):
+                                            _mtype, _persp = "episodic", "hers"
+                                        elif _raw_type in ("episodic", "event"):
+                                            _mtype, _persp = "episodic", "factual"
+                                        elif _raw_type == "stm":
+                                            _mtype, _persp = "stm", "factual"
+                                        else:  # semantic, fact, preference, memory_note, ...
+                                            _mtype, _persp = "semantic", "factual"
+                                        _stability = str(fc.args.get("stability") or "medium")
+                                        _importance = {"low": 3.0, "medium": 5.0, "high": 7.0}.get(_stability, 5.0)
+                                        if _mtype == "stm":
+                                            _importance = min(_importance, 3.0)
+                                        _tags = [t for t in (fc.args.get("tags") or []) if isinstance(t, str)]
+                                        if _raw_type not in ("fact",):
+                                            _tags.append(_raw_type)
+
+                                        _sess_id = None
+                                        if getattr(self, "session_manager", None):
+                                            _sess_id = self.session_manager.get_current_session_id()
+
+                                        entry_id, status = await _mem_store.add(
+                                            _MemEntry(
+                                                id="pending",
+                                                type=_mtype,
+                                                content=_content,
+                                                importance=_importance,
+                                                perspective=_persp,
+                                                tags=_tags,
+                                                entities=[e for e in (fc.args.get("entities") or []) if isinstance(e, str)],
+                                                source_session=_sess_id,
+                                            ),
+                                            db_path=_db,
+                                        )
+                                        result_str = f"{status}: {entry_id}"
+                                    except Exception as e:
+                                        result_str = f"Error adding memory entry: {e}"
+                                    # Sync birthday to calendar if applicable
+                                    try:
+                                        if self.calendar_manager:
+                                            data = fc.args.get("data") or {}
+                                            dob = data.get("date_of_birth") or data.get("birthday")
+                                            if isinstance(dob, str):
+                                                parts = dob.replace("/", "-").split("-")
+                                                if len(parts) == 3:
+                                                    self.calendar_manager.set_user_birthday(int(parts[1]), int(parts[2]))
+                                                elif len(parts) == 2:
+                                                    self.calendar_manager.set_user_birthday(int(parts[0]), int(parts[1]))
+                                    except Exception:
+                                        pass
                                     function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
 
                                 elif fc.name == "memory_search":
-                                    result_str = "Memory engine not initialized."
-                                    if getattr(self, "memory_engine", None):
-                                        try:
-                                            query = fc.args.get("query") or ""
-                                            types_ = fc.args.get("types") or []
-                                            tags = fc.args.get("tags") or []
-                                            limit = int(fc.args.get("limit", 5))
-                                            results = self.memory_engine.search(query=query, types=types_, tags=tags, limit=limit)
-                                            if not results:
-                                                result_str = "No memory entries found."
-                                            else:
-                                                lines = [f"- [{r['type']}] {r['content']} (id={r['id']})" for r in results]
-                                                result_str = "Memory results:\n" + "\n".join(lines)
-                                        except Exception as e:
-                                            result_str = f"Error searching memory: {e}"
+                                    # v3: Stanford retrieval (recency+importance+relevance)
+                                    # over monika.db instead of the legacy engine.
+                                    try:
+                                        from backend.core.runtimes.v2_runtime import get as _v2_get
+                                        from backend.soul.memory.retrieval import retrieve as _mem_retrieve
+
+                                        _v2rt = _v2_get()
+                                        _db = _v2rt._db_path if _v2rt else None
+                                        query = str(fc.args.get("query") or "")
+                                        limit = int(fc.args.get("limit", 5))
+                                        results = await _mem_retrieve(query, limit=limit, db_path=_db)
+                                        if not results:
+                                            result_str = "No memory entries found."
+                                        else:
+                                            lines = []
+                                            for r in results:
+                                                e = r.entry
+                                                when = e.created_at.strftime("%Y-%m-%d")
+                                                lines.append(f"- [{e.type}, {when}] {e.content}")
+                                            result_str = "Memory results:\n" + "\n".join(lines)
+                                    except Exception as e:
+                                        result_str = f"Error searching memory: {e}"
                                     function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
 
                                 elif fc.name == "memory_get_page":
