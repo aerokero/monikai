@@ -13,21 +13,34 @@ pip-log.txt
 pip-delete-this-directory.txt
 
 # MonikAI Specific - Runtime Data (User Generated, Should Not Be Committed)
-# All data files are stored in /data/ directory
-backend/data/                      # Any sync/cache copies of data in backend
-data/long_term_memory/             # Long-term memory snapshots
-data/user_memory/                  # User profile, personality, calendar, reminders, activity log
-data/memory/                       # Full-text search index and pages
-data/sessions/                     # Session history and conversation logs
-data/recaps/                       # Auto-generated daily recap files
-tmp/                               # Temporary files (pytest fixtures etc.)
-data/kg/                          # Knowledge graph database
-data/study/                        # Study materials and PDFs
-data/study/Genki 1 - Study Book.pdf
-data/settings.json                 # User-specific settings (contains local config)
-data/reference.jpg                 # Reference image
-data/spotify_tokens.json           # OAuth tokens (SECURITY: Never commit)
-data/spotify_oauth_state.json      # OAuth state (SECURITY: Never commit)
+# NOTE: gitignore does NOT support inline comments — keep comments on their own lines.
+# Any sync/cache copies of data in backend
+backend/data/
+# Long-term memory snapshots
+data/long_term_memory/
+# User profile, personality, calendar, reminders, activity log
+data/user_memory/
+# Memory store index and pages
+data/memory/
+# Session history and conversation logs
+data/sessions/
+# Auto-generated daily recap files
+data/recaps/
+# Soul runtime state (inner_state, user_state, evolution, state.json)
+data/soul/
+# Temporary files (pytest fixtures etc.)
+tmp/
+# Knowledge graph database
+data/kg/
+# Study materials and PDFs
+data/study/
+# User-specific settings (contains local config)
+data/settings.json
+# Reference image
+data/reference.jpg
+# OAuth tokens and state (SECURITY: never commit)
+data/spotify_tokens.json
+data/spotify_oauth_state.json
 
 # Monika After Story Directory (Large game files)
 Monika After Story/
