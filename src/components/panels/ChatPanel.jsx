@@ -5,14 +5,12 @@ import {
   Gamepad2,
   Gift,
   Heart,
-  Leaf,
   Maximize2,
   MessageSquare,
-  Mic,
-  Paperclip,
-  Send,
+  Plus,
   Settings,
   Terminal,
+  Upload,
   Utensils,
   X,
   Zap,
@@ -117,6 +115,12 @@ function renderMarkdown(text) {
       {index < lines.length - 1 ? <br /> : null}
     </span>
   ));
+}
+
+function cleanDialogueText(text) {
+  return String(text || '')
+    .replace(/<\/?internal>/gi, '')
+    .trim();
 }
 
 const ActivityTile = ({ icon: Icon, title, description, onClick, accentClass, active = false }) => (
@@ -236,20 +240,6 @@ const ChatPanel = ({
     const source = Array.isArray(agenticLogs) ? agenticLogs : [];
     return source.slice(-120);
   }, [agenticLogs]);
-  const latestVisibleMessage = visibleMessages.length ? visibleMessages[visibleMessages.length - 1] : null;
-  const latestAssistantMessage = useMemo(() => {
-    return [...visibleMessages].reverse().find((message) => {
-      const sender = String(message?.sender || '');
-      const lower = sender.toLowerCase();
-      return lower !== 'ty' && lower !== 'you' && !sender.includes('(Thought)');
-    }) || null;
-  }, [visibleMessages]);
-  const latestUserMessage = useMemo(() => {
-    return [...visibleMessages].reverse().find((message) => {
-      const lower = String(message?.sender || '').toLowerCase();
-      return lower === 'ty' || lower === 'you';
-    }) || null;
-  }, [visibleMessages]);
 
   const totalAttachBytes = useMemo(
     () => attachments.reduce((sum, item) => sum + (item?.file?.size || 0), 0),
@@ -257,21 +247,8 @@ const ChatPanel = ({
   );
   const canSend = Boolean((inputValue || '').trim()) || attachments.length > 0;
   const isEatTogetherActive = Boolean(eatTogetherActive || localEatTogetherActive);
-  const dialogueMessage = latestAssistantMessage;
-  const userLine = String(latestUserMessage?.text || '').trim();
-  const userLinePreview = userLine.length > 54 ? `${userLine.slice(0, 54)}...` : userLine;
-
-  const getMessageStyle = (index, total) => {
-    const distance = total - 1 - index;
-    const opacity = Math.max(0.12, 1 - distance * 0.38);
-    const scale = Math.max(0.78, 1 - distance * 0.08);
-    return {
-      opacity,
-      transform: `scale(${scale})`,
-      transformOrigin: 'left bottom',
-      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-    };
-  };
+  const dialogueMessages = visibleMessages.slice(-8);
+  const isUserMessage = (sender) => ['you', 'ty'].includes(String(sender || '').trim().toLowerCase());
 
   const handleAction = (action, arg) => {
     let text = '';
@@ -484,35 +461,40 @@ const ChatPanel = ({
               </div>
             ) : null}
 
-            {visibleMessages.length > 0 ? (
-              <div className="flex flex-col gap-5 pb-6">
-                {visibleMessages.map((message, index) => {
-                  const isUser = ['you', 'ty'].includes(String(message?.sender || '').toLowerCase());
-                  const style = getMessageStyle(index, visibleMessages.length);
+            {dialogueMessages.length > 0 ? (
+              <div className="mb-4 px-5">
+                <div className="max-h-[34vh] space-y-6 overflow-y-auto pr-2 custom-scrollbar">
+                  {dialogueMessages.map((message, index) => {
+                    const fromUser = isUserMessage(message.sender);
+                    const isLatest = index === dialogueMessages.length - 1;
+                    const text = cleanDialogueText(message.text);
+                    if (!text) return null;
+                    if (fromUser) {
+                      return (
+                        <div key={message.id || `dialogue-${index}`} className="flex justify-end">
+                          <div className={`max-w-[min(72%,38rem)] rounded-full bg-[rgba(18,18,18,0.68)] px-6 py-3 text-[clamp(0.95rem,1.05vw,1.08rem)] font-medium leading-snug text-[rgba(255,246,233,0.9)] shadow-[0_10px_24px_rgba(0,0,0,0.28)] backdrop-blur-sm ${
+                            isLatest ? '' : 'opacity-[0.66]'
+                          }`}>
+                            {renderMarkdown(text)}
+                          </div>
+                        </div>
+                      );
+                    }
 
-                  if (isUser) {
                     return (
-                      <div key={message.id || index} className="px-1" style={style}>
-                        <div className="flex items-baseline gap-2">
-                          <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-[rgba(232,178,102,0.72)] shrink-0 select-none">
-                            {t('chat.you') || 'You'} —
-                          </span>
-                          <span className="font-serif text-[clamp(1.05rem,1.3vw,1.25rem)] leading-[1.35] text-[rgba(255,240,218,0.75)] drop-shadow-[0_1px_5px_rgba(0,0,0,0.35)]">
-                            {renderMarkdown(message.text)}
-                          </span>
+                      <div
+                        key={message.id || `dialogue-${index}`}
+                        className="flex justify-start"
+                      >
+                        <div className={`max-w-[min(82%,52rem)] rounded-[26px] bg-[rgba(10,8,7,0.56)] px-6 py-4 font-sans text-[clamp(1rem,1.14vw,1.18rem)] font-medium leading-[1.42] text-[rgba(255,248,238,0.94)] shadow-[0_10px_24px_rgba(0,0,0,0.24)] backdrop-blur-sm ${
+                          isLatest ? '' : 'opacity-[0.68]'
+                        }`}>
+                          {renderMarkdown(text)}
                         </div>
                       </div>
                     );
-                  }
-
-                  return (
-                    <div key={message.id || index} className="px-1" style={style}>
-                      <div className="font-serif text-[clamp(1.15rem,1.5vw,1.45rem)] leading-[1.35] text-[rgba(255,246,233,0.96)] drop-shadow-[0_2px_10px_rgba(0,0,0,0.45)]">
-                        {renderMarkdown(message.text)}
-                      </div>
-                    </div>
-                  );
-                })}
+                  })}
+                </div>
               </div>
             ) : null}
             <div ref={messagesEndRef} />
@@ -598,67 +580,55 @@ const ChatPanel = ({
         )}
 
         {/* Unified Bottom Bar - All controls in one place */}
-        <div className="shrink-0 rounded-[18px] border border-[rgba(232,178,102,0.12)] bg-black/[0.74] px-3 py-2 text-sm shadow-[0_14px_34px_rgba(0,0,0,0.48)] backdrop-blur-xl">
-        {/* Input Row - Only shows in chat or activities */}
-        {(compactDock || viewMode === 'chat' || viewMode === 'activities') && (
-          <div className="flex flex-col gap-2">
-            <div className="flex min-h-[42px] items-center gap-2">
-              <Leaf size={18} className="shrink-0 text-[rgba(232,178,102,0.72)]" />
-              <textarea
-                ref={textareaRef}
-                value={inputValue}
-                onChange={(event) => setInputValue(event.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={t('chat.placeholder')}
-                rows={1}
-                className="max-h-20 min-h-[28px] flex-1 resize-none border-0 bg-transparent px-2 py-1.5 text-[15px] font-medium text-[rgba(255,246,233,0.9)] placeholder:text-[rgba(255,224,190,0.42)] outline-none"
-              />
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept="image/*,.txt,.md,.json,.csv,.log,.pdf"
-                onChange={(event) => addFiles(event.target.files)}
-                className="hidden"
-              />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                title={t('chat.attach_file_tab') || 'Attach file'}
-                className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[rgba(255,224,190,0.42)] transition hover:bg-[rgba(255,238,212,0.06)] hover:text-[rgba(255,240,218,0.74)]"
-              >
-                <Paperclip size={17} />
-                {attachments.length > 0 && (
-                  <span className="absolute right-0.5 top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[rgba(232,178,102,0.95)] text-[9px] font-bold text-[#20160f]">
-                    {attachments.length}
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                title={userSpeaking ? 'Listening' : 'Microphone'}
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition ${
-                  userSpeaking
-                    ? 'bg-[rgba(232,178,102,0.12)] text-[rgba(232,178,102,0.95)]'
-                    : 'text-[rgba(255,224,190,0.42)] hover:bg-[rgba(255,238,212,0.06)] hover:text-[rgba(255,240,218,0.74)]'
-                }`}
-              >
-                <Mic size={17} />
-              </button>
-              <button
-                type="button"
-                onClick={handleSendMessage}
-                disabled={!canSend}
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition ${
-                  canSend
-                    ? 'text-[rgba(232,178,102,0.95)] hover:bg-[rgba(232,178,102,0.1)] hover:text-[rgba(255,213,151,1)]'
-                    : 'text-[rgba(255,224,190,0.22)] cursor-not-allowed'
-                }`}
-                title="Send message"
-              >
-                <Send size={17} />
-              </button>
-            </div>
+        <div className="shrink-0 text-sm">
+          {/* Input Row - Only shows in chat or activities */}
+          {(compactDock || viewMode === 'chat' || viewMode === 'activities') && (
+            <div className="flex flex-col gap-2">
+              <div className="flex min-h-[64px] items-center gap-3 rounded-full border border-[rgba(232,178,102,0.16)] bg-[rgba(13,10,9,0.88)] px-4 py-2 shadow-[0_14px_34px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,234,198,0.05)] backdrop-blur-xl">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*,.txt,.md,.json,.csv,.log,.pdf"
+                  onChange={(event) => addFiles(event.target.files)}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  title={t('chat.attach_file_tab') || 'Attach file'}
+                  className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[rgba(255,240,218,0.78)] transition hover:bg-[rgba(255,238,212,0.08)] hover:text-[rgba(255,248,235,0.95)]"
+                >
+                  <Plus size={24} />
+                  {attachments.length > 0 && (
+                    <span className="absolute right-0 top-0 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[rgba(232,178,102,0.95)] text-[9px] font-bold text-[#20160f]">
+                      {attachments.length}
+                    </span>
+                  )}
+                </button>
+                <textarea
+                  ref={textareaRef}
+                  value={inputValue}
+                  onChange={(event) => setInputValue(event.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={t('chat.placeholder')}
+                  rows={1}
+                  className="max-h-24 min-h-[32px] flex-1 resize-none border-0 bg-transparent px-0 py-1 text-[16px] font-medium leading-7 text-[rgba(255,246,233,0.92)] placeholder:text-[rgba(255,224,190,0.52)] outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={handleSendMessage}
+                  disabled={!canSend}
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition ${
+                    canSend
+                      ? 'bg-[rgba(232,178,102,0.95)] text-[#20160f] shadow-[0_8px_18px_rgba(232,178,102,0.24)] hover:bg-[rgba(255,205,128,1)]'
+                      : 'cursor-not-allowed bg-[rgba(255,224,190,0.08)] text-[rgba(255,224,190,0.24)]'
+                  }`}
+                  title="Send message"
+                >
+                  <Upload size={19} />
+                </button>
+              </div>
 
             {attachments.length ? (
               <div className="flex flex-wrap gap-1">
@@ -695,7 +665,7 @@ const ChatPanel = ({
         )}
 
         {/* Menu Bar - Icon tabs */}
-        <div className="mt-1 flex items-center justify-center gap-1">
+        <div className="mt-2 flex items-center justify-center gap-1">
           {[
             { mode: 'chat', icon: MessageSquare, title: t('chat.chat_tab') || 'Chat' },
             { mode: 'activities', icon: Zap, title: t('chat.activities_tab') || 'Activities' },

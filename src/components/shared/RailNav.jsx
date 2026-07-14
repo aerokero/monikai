@@ -194,7 +194,7 @@ const RailNav = () => {
         {/* Microphone Button */}
         <button
           onClick={toggleMute}
-          className={`${railButtonBase} ${isMuted ? railButtonWarn : railButtonIdle}`}
+          className={`${railButtonBase} ${isMuted ? railButtonWarn : railButtonOn}`}
           aria-label="Microphone"
           title={isMuted ? t('tools.microphone_off') : t('tools.microphone_on')}
         >
