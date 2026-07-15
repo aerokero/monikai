@@ -120,6 +120,9 @@ function renderMarkdown(text) {
 function cleanDialogueText(text) {
   return String(text || '')
     .replace(/<\/?internal>/gi, '')
+    // A stream cut off mid-tag (reconnect glitch) can leave a dangling
+    // "<", "</" or "</intern" fragment at the very end — never real content.
+    .replace(/<\/?[a-zA-Z]{0,20}$/, '')
     .trim();
 }
 
@@ -248,7 +251,14 @@ const ChatPanel = ({
   const canSend = Boolean((inputValue || '').trim()) || attachments.length > 0;
   const isEatTogetherActive = Boolean(eatTogetherActive || localEatTogetherActive);
   const dialogueMessages = visibleMessages.slice(-8);
-  const isUserMessage = (sender) => ['you', 'ty'].includes(String(sender || '').trim().toLowerCase());
+  const userSenderAliases = useMemo(() => {
+    const aliases = new Set(['you', 'ty', 'user']);
+    const localizedYou = String(t('chat.you') || '').trim().toLowerCase();
+    if (localizedYou) aliases.add(localizedYou);
+    return aliases;
+  }, [t]);
+
+  const isUserMessage = (sender) => userSenderAliases.has(String(sender || '').trim().toLowerCase());
 
   const handleAction = (action, arg) => {
     let text = '';
@@ -463,7 +473,7 @@ const ChatPanel = ({
 
             {dialogueMessages.length > 0 ? (
               <div className="mb-4 px-5">
-                <div className="max-h-[34vh] space-y-6 overflow-y-auto pr-2 custom-scrollbar">
+                <div className="space-y-6 pr-2">
                   {dialogueMessages.map((message, index) => {
                     const fromUser = isUserMessage(message.sender);
                     const isLatest = index === dialogueMessages.length - 1;

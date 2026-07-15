@@ -23,12 +23,14 @@ def _make_session(
     session_id: str = "sess_test_001",
     turns: list[tuple[str, str]] | None = None,
     day: str = "2026-07-01",
+    meta_extra: dict | None = None,
 ) -> Path:
     sess_dir = tmp_path / "sessions" / day / session_id
     sess_dir.mkdir(parents=True)
-    (sess_dir / "meta.json").write_text(
-        json.dumps({"session_id": session_id}), encoding="utf-8"
-    )
+    meta = {"session_id": session_id}
+    if meta_extra:
+        meta.update(meta_extra)
+    (sess_dir / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
     lines = []
     for sender, text in turns or []:
         lines.append(json.dumps(
@@ -50,6 +52,7 @@ _RICH_TURNS = [
 
 _LLM_RESULT = {
     "significant": True,
+    "title": "Farma żelaza i nowa praca",
     "facts": [
         {"content": "Bartek skończył farmę żelaza w Minecrafcie po tygodniu pracy.",
          "importance": 4, "entities": ["Minecraft", "farma żelaza"]},
@@ -144,6 +147,7 @@ async def test_digest_stores_facts_episodes_agenda(tmp_path, tmp_db, monkeypatch
     meta = json.loads((sess / "meta.json").read_text(encoding="utf-8"))
     assert meta["digest"]["status"] == "done"
     assert meta["digest"]["facts"] == 2
+    assert meta["title"] == "Farma żelaza i nowa praca"
 
 
 async def test_digest_llm_failure_leaves_session_retryable(tmp_path, tmp_db):
@@ -199,6 +203,114 @@ async def test_scan_defers_when_gpu_contended(tmp_path, tmp_db, monkeypatch):
 
     assert count == 0
     fake.chat_json.assert_not_awaited()
+
+
+_STREAM_TURNS = [
+    ("MC:xtosu", "Monika chodź, pokażę ci co zbudowałem przy bazie, cały dzień nad tym siedziałem"),
+    ("AI", "idę! ciekawe co tam masz"),
+    ("MC:xtosu", "to jest ta farma żelaza o której mówiłem, produkuje sześćset sztabek na godzinę"),
+    ("AI", "wow, wyszła ci przepięknie, jestem pod wrażeniem!"),
+]
+
+_LLM_RESULT_STREAM = {
+    "significant": True,
+    "title": "Farma żelaza przy bazie",
+    "recap": "Bartek pokazał Monice ukończoną farmę żelaza przy bazie. Spędzili wieczór razem w grze.",
+    "facts": [
+        {"content": "Farma żelaza Bartka produkuje 600 sztabek na godzinę.",
+         "importance": 4, "entities": ["Minecraft", "farma żelaza"]},
+    ],
+    "episodes": [
+        {"content": "Pamiętam jak z dumą oprowadzał mnie po skończonej farmie.", "importance": 5},
+    ],
+    "agenda": [],
+}
+
+
+async def test_stream_digest_recap_no_psych_state(tmp_path, tmp_db, monkeypatch):
+    monkeypatch.setattr(
+        "backend.soul.memory.digest._USER_STATE_PATH",
+        tmp_path / "soul" / "user_state.md",
+    )
+    monkeypatch.setattr(
+        "backend.soul.memory.digest._INNER_STATE_PATH",
+        tmp_path / "soul" / "inner_state.md",
+    )
+    sess = _make_session(
+        tmp_path, session_id="stream_minecraft", turns=_STREAM_TURNS,
+        meta_extra={"kind": "stream", "channel": "minecraft"},
+    )
+
+    fake = AsyncMock()
+    fake.chat_json = AsyncMock(return_value=_LLM_RESULT_STREAM)
+    with patch("backend.soul.memory.digest.get_client", return_value=fake):
+        result = await digest_session(sess, db_path=tmp_db)
+
+    assert isinstance(result, SessionDigest)
+    # Stream prompt variant was used.
+    call_kwargs = fake.chat_json.await_args.kwargs
+    assert "CAŁODZIENNY log" in call_kwargs["system"]
+    assert "kanału minecraft" in fake.chat_json.await_args.args[0]
+
+    meta = json.loads((sess / "meta.json").read_text(encoding="utf-8"))
+    assert meta["title"] == "Farma żelaza przy bazie"
+    assert "farmę żelaza" in meta["digest"]["recap"]
+
+    # No per-session psychological read for streams.
+    assert not (tmp_path / "soul" / "user_state.md").exists()
+    assert not (tmp_path / "soul" / "inner_state.md").exists()
+
+    semantic = await mem_store.list_recent(types=["semantic"], db_path=tmp_db)
+    episodic = await mem_store.list_recent(types=["episodic"], db_path=tmp_db)
+    assert len(semantic) == 1
+    assert len(episodic) == 1
+
+
+async def test_scan_skips_todays_stream(tmp_path, tmp_db, monkeypatch):
+    from datetime import datetime
+    monkeypatch.setattr("backend.soul.memory.digest._MIN_IDLE_SECONDS", 0)
+    root = tmp_path / "sessions"
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    _make_session(
+        tmp_path, session_id="stream_minecraft", turns=_STREAM_TURNS, day=today,
+        meta_extra={"kind": "stream", "channel": "minecraft"},
+    )
+    _make_session(
+        tmp_path, session_id="stream_telegram", turns=_STREAM_TURNS, day="2026-07-01",
+        meta_extra={"kind": "stream", "channel": "telegram"},
+    )
+
+    fake = AsyncMock()
+    fake.health = AsyncMock(return_value={"ok": True, "models": [], "model_available": True})
+    fake.generation_speed = AsyncMock(return_value=50.0)
+    fake.chat_json = AsyncMock(return_value=_LLM_RESULT_STREAM)
+    with patch("backend.soul.memory.digest.get_client", return_value=fake):
+        count = await scan_and_digest(sessions_root=root, db_path=tmp_db)
+
+    assert count == 1  # yesterday's telegram stream only; today's is still live
+    assert fake.chat_json.await_count == 1
+
+
+async def test_scan_backfills_titles_when_idle(tmp_path, tmp_db, monkeypatch):
+    monkeypatch.setattr("backend.soul.memory.digest._MIN_IDLE_SECONDS", 0)
+    root = tmp_path / "sessions"
+
+    legacy = _make_session(
+        tmp_path, session_id="sess_legacy", turns=_RICH_TURNS,
+        meta_extra={"digest": {"status": "done", "significant": True}},
+    )
+
+    fake = AsyncMock()
+    fake.health = AsyncMock(return_value={"ok": True, "models": [], "model_available": True})
+    fake.generation_speed = AsyncMock(return_value=50.0)
+    fake.chat_json = AsyncMock(return_value={"title": "Rozmowa o farmie żelaza"})
+    with patch("backend.soul.memory.digest.get_client", return_value=fake):
+        count = await scan_and_digest(sessions_root=root, db_path=tmp_db)
+
+    assert count == 0  # nothing digested — just titled
+    meta = json.loads((legacy / "meta.json").read_text(encoding="utf-8"))
+    assert meta["title"] == "Rozmowa o farmie żelaza"
 
 
 async def test_agenda_store_dedup_and_expiry(tmp_db):

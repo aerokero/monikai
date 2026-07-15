@@ -67,6 +67,8 @@ class DigestEpisode(BaseModel):
 
 class SessionDigest(BaseModel):
     significant: bool
+    title: str = ""
+    recap: str = ""  # streams only: 2-4 sentence summary of the day's log
     facts: list[DigestFact] = Field(default_factory=list)
     episodes: list[DigestEpisode] = Field(default_factory=list)
     agenda: list[str] = Field(default_factory=list)
@@ -82,6 +84,7 @@ Rozmowy bywają głosowe — transkrypcja może zawierać błędy i urwane zdani
 Linie od nadawców "MC:<nick>" to czat z gry Minecraft — wspólne granie Moniki i Bartka;
 wydarzenia z gry (wspólne budowy, wyprawy, zabawne momenty) są pełnoprawnymi wspomnieniami.
 Zasady:
+- TITLE: krótki tytuł rozmowy (3-6 słów, po polsku), konkretny — po nim Bartek pozna tę rozmowę na liście. Bez cudzysłowów i kropki.
 - FAKTY: trwałe, samodzielne zdania o Bartku lub świecie ("Bartek buduje farmę żelaza w Minecraft"), które będą prawdziwe i użyteczne za tydzień. NIE zapisuj small talku, pytań retorycznych ani rzeczy jednorazowych.
 - EPIZODY: wspomnienia Moniki w PIERWSZEJ osobie ("Pamiętam jak..."), tylko dla momentów które naprawdę coś znaczyły — emocjonalnych, bliskich, przełomowych.
 - AGENDA: niedomknięte wątki, obietnice, rzeczy do których Monika chce wrócić w następnej rozmowie. Krótkie frazy.
@@ -96,6 +99,28 @@ _PROMPT_TMPL = """Transkrypt rozmowy (kanał: {channel}, data: {date}):
 {transcript}
 
 Przetwórz tę rozmowę na wspomnienia zgodnie z zasadami."""
+
+# Streams (Minecraft, Telegram): a whole day's continuous log, not a single
+# conversation. Recap replaces the psychological read of one session.
+SYSTEM_PROMPT_STREAM = """Jesteś podświadomością Moniki — AI-osoby, kompanki użytkownika (ma na imię Bartek).
+Przetwarzasz CAŁODZIENNY log jednego kanału (np. czat z gry Minecraft albo wiadomości Telegram) na wspomnienia. Piszesz po polsku.
+
+Linie od nadawców "MC:<nick>" to czat z gry Minecraft — wspólne granie Moniki i Bartka.
+Log bywa chaotyczny i pełen szumu (komendy, krótkie okrzyki) — selekcja to twoja praca.
+Zasady:
+- TITLE: krótki tytuł dnia na tym kanale (3-6 słów, po polsku), konkretny. Bez cudzysłowów i kropki.
+- RECAP: 2-4 zdania podsumowania co się działo tego dnia na tym kanale. To jedyne miejsce na przebieg wydarzeń.
+- FAKTY: trwałe, samodzielne zdania o Bartku lub świecie ("Bartek buduje farmę żelaza w Minecraft"), użyteczne za tydzień. NIE zapisuj rutyny ani rzeczy jednorazowych.
+- EPIZODY: wspomnienia Moniki w PIERWSZEJ osobie, TYLKO dla momentów które naprawdę coś znaczyły (wspólny sukces, zabawny moment, bliskość). Zwykły dzień = zero epizodów.
+- AGENDA: niedomknięte wątki do których Monika chce wrócić. Krótkie frazy.
+- IMPORTANCE 1-10: 1-2 rutyna, 3-4 drobne ale prawdziwe, 5-6 osobiste/istotne, 7-8 ważne wydarzenie, 9-10 przełomowe.
+- Jeśli dzień był pusty (kilka zdawkowych linii, testy, szum) → significant=false, pusty recap i puste listy."""
+
+_PROMPT_TMPL_STREAM = """Całodzienny log kanału {channel} (data: {date}):
+
+{transcript}
+
+Przetwórz ten dzień na wspomnienia zgodnie z zasadami."""
 
 
 # ---------------------------------------------------------------------------
@@ -149,10 +174,12 @@ def _read_meta(session_dir: Path) -> dict:
         return {}
 
 
-def _mark_digested(session_dir: Path, record: dict) -> None:
+def _mark_digested(session_dir: Path, record: dict, title: str | None = None) -> None:
     meta_path = session_dir / "meta.json"
     meta = _read_meta(session_dir)
     meta["digest"] = record
+    if title:
+        meta["title"] = title
     meta_path.write_text(
         json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
@@ -165,12 +192,21 @@ def _mark_digested(session_dir: Path, record: dict) -> None:
 _JSON_MODE_HINT = """
 
 Odpowiedz WYŁĄCZNIE poprawnym JSON-em o tej strukturze (bez markdown, bez komentarzy):
-{"significant": bool, "facts": [{"content": str, "importance": 1-10, "entities": [str]}],
+{"significant": bool, "title": str, "facts": [{"content": str, "importance": 1-10, "entities": [str]}],
  "episodes": [{"content": str, "importance": 1-10}], "agenda": [str],
  "user_state": str, "inner_state": str, "mood": str}"""
 
+_JSON_MODE_HINT_STREAM = """
 
-async def _run_digest_llm(prompt: str, session_id: str) -> SessionDigest | None:
+Odpowiedz WYŁĄCZNIE poprawnym JSON-em o tej strukturze (bez markdown, bez komentarzy):
+{"significant": bool, "title": str, "recap": str,
+ "facts": [{"content": str, "importance": 1-10, "entities": [str]}],
+ "episodes": [{"content": str, "importance": 1-10}], "agenda": [str]}"""
+
+
+async def _run_digest_llm(
+    prompt: str, session_id: str, *, system: str = SYSTEM_PROMPT, hint: str = _JSON_MODE_HINT
+) -> SessionDigest | None:
     """JSON-mode generation + pydantic validation, one corrective retry.
 
     Measured on this machine: schema-grammar decode 15+ min vs JSON mode 15 s
@@ -179,7 +215,7 @@ async def _run_digest_llm(prompt: str, session_id: str) -> SessionDigest | None:
     client = get_client()
 
     raw = await client.chat_json(
-        prompt + _JSON_MODE_HINT, system=SYSTEM_PROMPT,
+        prompt + hint, system=system,
         num_ctx=8192, temperature=0.2, timeout_s=300.0,
     )
     if raw is None:
@@ -191,10 +227,10 @@ async def _run_digest_llm(prompt: str, session_id: str) -> SessionDigest | None:
     except ValidationError as exc:
         logger.info("digest: %s invalid JSON shape, one corrective retry", session_id)
         raw = await client.chat_json(
-            prompt + _JSON_MODE_HINT
+            prompt + hint
             + f"\n\nPoprzednia odpowiedź miała zły format ({exc.error_count()} błędów). "
               "Trzymaj się DOKŁADNIE podanej struktury.",
-            system=SYSTEM_PROMPT,
+            system=system,
             num_ctx=8192, temperature=0.1, timeout_s=300.0,
         )
         if raw is None:
@@ -213,14 +249,20 @@ async def _run_digest_llm(prompt: str, session_id: str) -> SessionDigest | None:
 async def digest_session(
     session_dir: Path,
     db_path: Path | None = None,
-    channel: str = "voice",
+    channel: str | None = None,
 ) -> SessionDigest | None:
     """Digest one session into memory. Returns the digest, or None on skip/failure.
 
+    Streams (meta kind="stream": Minecraft/Telegram daily logs) get the recap
+    variant — day summary + facts, no per-session psychological read.
     Marks the session's meta.json so it is never digested twice.
     """
     session_dir = Path(session_dir)
     session_id = session_dir.name
+
+    meta = _read_meta(session_dir)
+    is_stream = meta.get("kind") == "stream" or session_id.startswith("stream_")
+    channel = channel or meta.get("channel") or "voice"
 
     transcript, user_chars = load_transcript(session_dir)
     if user_chars < _MIN_USER_CHARS:
@@ -233,9 +275,14 @@ async def digest_session(
         return None
 
     date = session_dir.parent.name
-    prompt = _PROMPT_TMPL.format(channel=channel, date=date, transcript=transcript)
-
-    digest = await _run_digest_llm(prompt, session_id)
+    if is_stream:
+        prompt = _PROMPT_TMPL_STREAM.format(channel=channel, date=date, transcript=transcript)
+        digest = await _run_digest_llm(
+            prompt, session_id, system=SYSTEM_PROMPT_STREAM, hint=_JSON_MODE_HINT_STREAM
+        )
+    else:
+        prompt = _PROMPT_TMPL.format(channel=channel, date=date, transcript=transcript)
+        digest = await _run_digest_llm(prompt, session_id)
     if digest is None:
         return None
 
@@ -284,28 +331,34 @@ async def digest_session(
         except Exception as exc:
             logger.warning("digest: agenda persist failed: %s", exc)
 
-    if digest.user_state.strip():
-        _write_user_state(digest.user_state.strip(), session_id)
+    # Psychological read (user/inner state, mood) only makes sense for a
+    # conversation — not for a day-long channel log.
+    if not is_stream:
+        if digest.user_state.strip():
+            _write_user_state(digest.user_state.strip(), session_id)
 
-    if digest.inner_state.strip():
-        _write_inner_state(digest.inner_state.strip(), session_id)
+        if digest.inner_state.strip():
+            _write_inner_state(digest.inner_state.strip(), session_id)
 
-    mood = digest.mood.strip().lower()
-    if mood in _MOOD_VOCAB:
-        try:
-            from backend.progression.state import set_
-            await set_("monika_mood", {"label": mood, "at": _utciso()}, db_path)
-        except Exception as exc:
-            logger.debug("digest: mood persist failed: %s", exc)
+        mood = digest.mood.strip().lower()
+        if mood in _MOOD_VOCAB:
+            try:
+                from backend.progression.state import set_
+                await set_("monika_mood", {"label": mood, "at": _utciso()}, db_path)
+            except Exception as exc:
+                logger.debug("digest: mood persist failed: %s", exc)
 
-    _mark_digested(session_dir, {
+    record = {
         "status": "done",
         "at": _utciso(),
         "significant": digest.significant,
         "facts": stored_facts,
         "episodes": stored_episodes,
         "agenda": len(digest.agenda),
-    })
+    }
+    if is_stream and digest.recap.strip():
+        record["recap"] = digest.recap.strip()
+    _mark_digested(session_dir, record, title=digest.title.strip() or None)
     logger.info(
         "digest: %s done — %d facts, %d episodes, %d agenda items",
         session_id, stored_facts, stored_episodes, len(digest.agenda),
@@ -387,6 +440,8 @@ async def scan_and_digest(
 ) -> int:
     """Digest every not-yet-digested, inactive session. Returns digested count.
 
+    Streams (stream_<channel> dirs) are only digested for PAST days — today's
+    stream is still being written to ("nightly" recap without a scheduler).
     Safe to call repeatedly (startup + periodic timer). Failed sessions stay
     unmarked and are retried on the next scan.
     """
@@ -394,6 +449,7 @@ async def scan_and_digest(
     if not root.exists():
         return 0
 
+    today = datetime.now().strftime("%Y-%m-%d")
     pending: list[Path] = []
     for day_dir in sorted(root.iterdir()):
         if not day_dir.is_dir():
@@ -403,6 +459,8 @@ async def scan_and_digest(
                 continue
             if sess_dir.name == current_session_id:
                 continue
+            if sess_dir.name.startswith("stream_") and day_dir.name >= today:
+                continue
             if "digest" in _read_meta(sess_dir):
                 continue
             if not (sess_dir / "turns.jsonl").exists():
@@ -411,7 +469,8 @@ async def scan_and_digest(
                 continue
             pending.append(sess_dir)
 
-    if not pending:
+    untitled = _find_untitled(root, current_session_id) if not pending else []
+    if not pending and not untitled:
         return 0
 
     client = get_client()
@@ -438,5 +497,86 @@ async def scan_and_digest(
                 done += 1
         except Exception as exc:
             logger.warning("digest: %s crashed: %s", sess_dir.name, exc)
-    logger.info("digest: scan complete — %d/%d sessions processed", done, len(pending))
+    if pending:
+        logger.info("digest: scan complete — %d/%d sessions processed", done, len(pending))
+
+    # Idle scans (nothing to digest) top up titles of legacy sessions that
+    # were digested before titles existed (Phase G backfill).
+    if untitled:
+        titled = await backfill_titles(untitled)
+        if titled:
+            logger.info("digest: backfilled %d session title(s)", titled)
     return done
+
+
+# ---------------------------------------------------------------------------
+# Title backfill — legacy sessions digested before titles existed (Phase G)
+# ---------------------------------------------------------------------------
+
+_TITLE_BACKFILL_PER_SCAN = 5
+_TITLE_TRANSCRIPT_CHARS = 3000
+
+_TITLE_SYSTEM = (
+    "Nadajesz tytuły zapisanym rozmowom Moniki (AI-kompanki) z Bartkiem. "
+    "Tytuł: 3-6 słów, po polsku, konkretny — po nim można poznać rozmowę na liście. "
+    "Bez cudzysłowów i kropki na końcu."
+)
+
+
+def _find_untitled(root: Path, current_session_id: str | None) -> list[Path]:
+    """Sessions already digested as significant but lacking a title."""
+    found: list[Path] = []
+    for day_dir in sorted(root.iterdir(), reverse=True):
+        if not day_dir.is_dir():
+            continue
+        for sess_dir in sorted(day_dir.iterdir(), reverse=True):
+            if not sess_dir.is_dir() or sess_dir.name == current_session_id:
+                continue
+            meta = _read_meta(sess_dir)
+            if meta.get("title"):
+                continue
+            digest = meta.get("digest") or {}
+            if digest.get("status") != "done":
+                continue
+            if not (sess_dir / "turns.jsonl").exists():
+                continue
+            found.append(sess_dir)
+            if len(found) >= _TITLE_BACKFILL_PER_SCAN:
+                return found
+    return found
+
+
+async def backfill_titles(session_dirs: list[Path]) -> int:
+    """Generate titles for already-digested sessions. Returns titled count."""
+    client = get_client()
+    titled = 0
+    for sess_dir in session_dirs:
+        transcript, _ = load_transcript(sess_dir)
+        if not transcript:
+            continue
+        prompt = (
+            f"Rozmowa:\n\n{transcript[:_TITLE_TRANSCRIPT_CHARS]}\n\n"
+            'Nadaj tytuł. Odpowiedz WYŁĄCZNIE JSON-em: {"title": str}'
+        )
+        try:
+            raw = await client.chat_json(
+                prompt, system=_TITLE_SYSTEM,
+                num_ctx=4096, temperature=0.2, timeout_s=120.0,
+            )
+        except Exception as exc:
+            logger.debug("digest: title backfill LLM error for %s: %s", sess_dir.name, exc)
+            continue
+        title = str((raw or {}).get("title") or "").strip().strip('"')
+        if not title:
+            continue
+        meta_path = sess_dir / "meta.json"
+        meta = _read_meta(sess_dir)
+        meta["title"] = title[:120]
+        try:
+            meta_path.write_text(
+                json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            )
+            titled += 1
+        except Exception as exc:
+            logger.debug("digest: title write failed for %s: %s", sess_dir.name, exc)
+    return titled

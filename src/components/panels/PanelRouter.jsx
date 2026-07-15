@@ -13,9 +13,11 @@ import NotesShellPanel from './NotesShellPanel';
 import CalendarShellPanel from './CalendarShellPanel';
 import ProfileShellPanel from './ProfileShellPanel';
 import SettingsPanel from './SettingsPanel';
+import ConversationsShellPanel from './ConversationsShellPanel';
 
 const PANEL_COMPONENTS = {
   chat: ChatPanel,
+  conversations: ConversationsShellPanel,
   study: StudyShellPanel,
   notes: NotesShellPanel,
   companion: CompanionWindow,
@@ -111,6 +113,12 @@ const PanelRouter = ({
           onSelectStudy,
           onRefreshCatalog,
           shareRef,
+        };
+      case 'conversations':
+        return {
+          socket,
+          // After "new"/"continue" jump back to the live chat.
+          onStarted: () => setActiveContext('chat'),
         };
       case 'notes':
         return {

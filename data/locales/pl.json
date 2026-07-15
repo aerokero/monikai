@@ -76,6 +76,24 @@
     "enable_thoughts": "Włącz, aby widzieć wewnętrzne myśli Moniki",
     "no_thoughts": "Brak nagranych myśli."
   },
+  "conversations": {
+    "title": "Rozmowy",
+    "new": "Nowa rozmowa",
+    "refresh": "Odśwież",
+    "empty": "Brak zapisanych rozmów.",
+    "current": "bieżąca",
+    "continued": "kontynuacja",
+    "turns": "wypowiedzi",
+    "continue": "Kontynuuj tę rozmowę",
+    "delete": "Usuń rozmowę",
+    "delete_sure": "Usunąć?",
+    "back": "Wróć do listy",
+    "untitled": "Rozmowa",
+    "no_recap": "Recap pojawi się po przetworzeniu dnia.",
+    "stream_minecraft": "Minecraft — dziennik dnia",
+    "stream_telegram": "Telegram — dziennik dnia",
+    "loading": "Wczytuję…"
+  },
   "schedule": {
     "title": "Harmonogram",
     "list_view": "Lista",
@@ -371,6 +389,7 @@
   },
   "panels": {
     "chat": "Rozmowa",
+    "conversations": "Rozmowy",
     "study": "Nauka",
     "notes": "Notatki",
     "daily_briefing": "Daily Briefing",
@@ -481,6 +500,7 @@
     "camera": "Udostępnij obraz z kamery",
     "share": "Udostępnij obraz z ekranu",
     "talk": "Rozmowa",
+    "conversations": "Rozmowy",
     "journal": "Notatnik",
     "briefing": "Przegląd",
     "relationship": "Relacja",

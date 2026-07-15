@@ -184,6 +184,12 @@ function AppContent() {
   const [isVideoOn, setIsVideoOn] = useState(false);
 
   const [messages, setMessages] = useState([]);
+  // Stable per-message ids (never re-derived from array index). Without
+  // these, React's list key falls back to index, which can make it patch an
+  // existing bubble's text in place across renders instead of mounting a
+  // fresh node — combined with backdrop-blur GPU compositing, that reuse can
+  // leave a visible ghost of the old text behind the new one.
+  const nextMessageIdRef = useRef(0);
   const [inputValue, setInputValue] = useState('');
   const lastTypingEmitRef = useRef(0);
   const studyShareRef = useRef(null);
@@ -763,8 +769,10 @@ function AppContent() {
           ];
         }
 
-        // Otherwise create new bubble
+        // Otherwise create new bubble with a stable id (see nextMessageIdRef).
+        nextMessageIdRef.current += 1;
         return [...list, {
+          id: `msg-${nextMessageIdRef.current}`,
           sender: data.sender,
           text: data.text,
           time: new Date().toLocaleTimeString()
@@ -1088,7 +1096,13 @@ function AppContent() {
       pushToast(text, "system");
       return;
     }
-    setMessages(prev => [...prev, { sender: s, text: String(text ?? ""), time: new Date().toLocaleTimeString() }]);
+    nextMessageIdRef.current += 1;
+    setMessages(prev => [...prev, {
+      id: `msg-${nextMessageIdRef.current}`,
+      sender: s,
+      text: String(text ?? ""),
+      time: new Date().toLocaleTimeString(),
+    }]);
   };
 
   useEffect(() => {

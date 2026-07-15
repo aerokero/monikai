@@ -98,7 +98,12 @@ def register_audio_lifecycle_handlers(
             schedule_emit_to_frontend("browser_frame", data)
 
         def on_transcription(data):
-            schedule_emit_to_frontend("transcription", data)
+            # Transcriptions are visible UI state, so deliver them to every
+            # connected frontend.  Routing through ACTIVE_FRONTEND_SID can
+            # silently send Monika's text to a stale/hidden Electron window
+            # when more than one frontend has connected to the shared audio
+            # loop.  Socket.IO broadcasts when no room is supplied.
+            asyncio.create_task(sio.emit("transcription", data))
 
             try:
                 sender = (data or {}).get("sender", "")

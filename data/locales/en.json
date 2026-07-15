@@ -76,6 +76,24 @@
     "enable_thoughts": "Enable to see Monika's inner thoughts",
     "no_thoughts": "No thoughts recorded yet."
   },
+  "conversations": {
+    "title": "Conversations",
+    "new": "New conversation",
+    "refresh": "Refresh",
+    "empty": "No saved conversations yet.",
+    "current": "current",
+    "continued": "continuation",
+    "turns": "messages",
+    "continue": "Continue this conversation",
+    "delete": "Delete conversation",
+    "delete_sure": "Delete?",
+    "back": "Back to list",
+    "untitled": "Conversation",
+    "no_recap": "Recap appears once the day is processed.",
+    "stream_minecraft": "Minecraft — daily log",
+    "stream_telegram": "Telegram — daily log",
+    "loading": "Loading…"
+  },
   "schedule": {
     "title": "Schedule",
     "list_view": "List",
@@ -372,6 +390,7 @@
   },
   "panels": {
     "chat": "Chat",
+    "conversations": "Conversations",
     "study": "Study",
     "notes": "Notes",
     "daily_briefing": "Briefing",
@@ -482,6 +501,7 @@
     "camera": "Camera",
     "share": "Share",
     "talk": "Talk",
+    "conversations": "Conversations",
     "journal": "Journal",
     "briefing": "Briefing",
     "relationship": "Relationship",

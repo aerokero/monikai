@@ -39,6 +39,7 @@ from .handlers.notes_journal_handlers import register_notes_journal_handlers
 from .handlers.openclaw_skill_handlers import register_openclaw_skill_handlers
 from .handlers.settings_profile_handlers import register_settings_profile_handlers
 from .handlers.session_mode_handlers import register_session_mode_handlers
+from .handlers.conversation_handlers import register_conversation_handlers
 from .handlers.shared_activity_handlers import register_shared_activity_handlers
 from .routers.frontend_router import (
     clear_active_frontend_sid,
@@ -546,6 +547,11 @@ register_session_mode_handlers(
     get_audio_loop=lambda: audio_loop,
     journal_today_path=lambda: journal_today_path(DATA_DIR),
     data_dir=DATA_DIR,
+)
+
+register_conversation_handlers(
+    sio,
+    get_audio_loop=lambda: audio_loop,
 )
 
 register_openclaw_skill_handlers(

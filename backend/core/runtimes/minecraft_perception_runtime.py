@@ -74,11 +74,11 @@ def register_minecraft_perception_callback(
                     print(f"[PERCEPTION] Sending to Monika: {msg}")
                     await audio_loop.session.send(input=msg, end_of_turn=False)
                     # v3: shared play becomes memory — in-game chat lands in the
-                    # session transcript, so the digest can remember it.
+                    # minecraft stream, digested into a daily recap (Phase G).
                     try:
                         sm = getattr(audio_loop, "session_manager", None)
                         if sm:
-                            sm.log_chat(f"MC:{username}", message)
+                            sm.log_stream("minecraft", f"MC:{username}", message)
                     except Exception:
                         pass
 
@@ -122,7 +122,7 @@ def register_minecraft_perception_callback(
                 try:
                     sm = getattr(audio_loop, "session_manager", None)
                     if sm:
-                        sm.log_chat("MC:system", f"Monika dołączyła do gry Minecraft jako '{bot_name}'.")
+                        sm.log_stream("minecraft", "MC:system", f"Monika dołączyła do gry Minecraft jako '{bot_name}'.")
                 except Exception:
                     pass
 

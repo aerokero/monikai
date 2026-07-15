@@ -60,6 +60,7 @@ const RailNav = () => {
   const panels = getAllPanels().filter((panel) => !panel.hiddenInRail);
   const railPanelLabels = {
     chat: t('navigation.talk'),
+    conversations: t('navigation.conversations'),
     notes: t('navigation.journal'),
     calendar: t('navigation.calendar'),
     profile: t('navigation.her_profile'),

@@ -226,6 +226,24 @@ memory_search_tool = {
     },
 }
 
+recall_conversation_tool = {
+    "name": "recall_conversation",
+    "description": (
+        "Finds a PAST conversation (or a day of Minecraft/Telegram) by topic, title or date "
+        "and returns its title, date, recap and matching transcript excerpts. Use when the user "
+        "refers to an earlier conversation ('pamiętasz jak rozmawialiśmy o...', 'co ustaliliśmy w poniedziałek') "
+        "or when you want to bring up something you talked about before. For single facts use memory_search instead."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "query": {"type": "STRING", "description": "Topic keywords, a title fragment, or a date (YYYY-MM-DD)."},
+            "limit": {"type": "INTEGER", "description": "Max conversations to return (default 3)."},
+        },
+        "required": ["query"],
+    },
+}
+
 memory_get_page_tool = {
     "name": "memory_get_page",
     "description": "Reads a memory markdown page (global).",
@@ -570,6 +588,7 @@ tools = [
             clear_work_memory_tool,
             memory_add_entry_tool,
             memory_search_tool,
+            recall_conversation_tool,
             memory_get_page_tool,
             memory_create_page_tool,
             memory_append_page_tool,

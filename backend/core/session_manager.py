@@ -4,11 +4,32 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Iterator
 
+# A new user/AI turn after this much silence starts a NEW conversation.
+# The digest pipeline treats 15 min idle as "safe to digest", so a split
+# conversation gets picked up naturally on the next scan.
+CONVERSATION_IDLE_SPLIT_SEC = 45 * 60
+
+# Channels that are continuous streams (no natural "end of conversation"):
+# one log per channel per day, digested as a daily recap — not a conversation.
+STREAM_DIR_PREFIX = "stream_"
+
 
 class SessionManager:
-    """Global session manager (no projects)."""
+    """Global session manager (no projects).
 
-    def __init__(self, workspace_root: Path, write_mode: str = "immediate"):
+    Two kinds of threads (v3 Phase G):
+    - conversation: app chat / voice session; has a beginning and an end,
+      lives in the sidebar, digested per session.
+    - stream: continuous channel (minecraft, telegram); one directory per
+      channel per day (``stream_<channel>``), digested as a daily recap.
+    """
+
+    def __init__(
+        self,
+        workspace_root: Path,
+        write_mode: str = "immediate",
+        stream_channel: Optional[str] = None,
+    ):
         self.workspace_root = Path(workspace_root)
         self.sessions_dir = self.workspace_root / "sessions"
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
@@ -16,9 +37,21 @@ class SessionManager:
         self.current_session_path: Optional[Path] = None
         self.write_mode = write_mode if write_mode in {"session_end", "immediate"} else "session_end"
         self._pending_turns: List[Dict] = []
-        self.start_new_session()
+        self._last_turn_ts: float = 0.0
+        self._session_has_turns: bool = False
+        # Stream mode: every log_chat() goes to the channel's continuous
+        # per-day log; no conversation session is ever created (Telegram).
+        self.stream_channel = stream_channel
+        if not stream_channel:
+            self.start_new_session()
 
-    def start_new_session(self, session_id: Optional[str] = None) -> str:
+    def start_new_session(
+        self,
+        session_id: Optional[str] = None,
+        *,
+        channel: str = "app",
+        extra_meta: Optional[Dict] = None,
+    ) -> str:
         self.flush_current_session()
 
         ts = datetime.now()
@@ -39,10 +72,18 @@ class SessionManager:
 
         self.current_session_id = session_id
         self.current_session_path = session_path
-        self._ensure_meta(ts)
+        self._session_has_turns = False
+        self._last_turn_ts = 0.0
+        self._ensure_meta(ts, channel=channel, extra_meta=extra_meta)
         return session_id
 
-    def _ensure_meta(self, ts: datetime) -> None:
+    def _ensure_meta(
+        self,
+        ts: datetime,
+        *,
+        channel: str = "app",
+        extra_meta: Optional[Dict] = None,
+    ) -> None:
         if not self.current_session_path:
             return
         meta_path = self.current_session_path / "meta.json"
@@ -50,8 +91,12 @@ class SessionManager:
             return
         payload = {
             "session_id": self.current_session_id,
+            "kind": "conversation",
+            "channel": channel,
             "started_at": ts.astimezone().isoformat(timespec="seconds"),
         }
+        if extra_meta:
+            payload.update(extra_meta)
         meta_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     def update_meta(self, **kwargs) -> None:
@@ -59,7 +104,12 @@ class SessionManager:
         ended_at, finalized). Creates the file if missing."""
         if not self.current_session_path:
             return
-        meta_path = self.current_session_path / "meta.json"
+        self.update_meta_for(self.current_session_path, **kwargs)
+
+    @staticmethod
+    def update_meta_for(session_path: Path, **kwargs) -> None:
+        """Merge keys into an arbitrary session's meta.json."""
+        meta_path = Path(session_path) / "meta.json"
         try:
             payload = (
                 json.loads(meta_path.read_text(encoding="utf-8"))
@@ -128,9 +178,25 @@ class SessionManager:
                     return sess_dir
         return None
 
+    # ------------------------------------------------------------------
+    # Conversations
+    # ------------------------------------------------------------------
+
+    def _should_autosplit(self) -> bool:
+        if not self._session_has_turns or self._last_turn_ts <= 0:
+            return False
+        return (time.time() - self._last_turn_ts) > CONVERSATION_IDLE_SPLIT_SEC
+
     def log_chat(self, sender: str, text: str) -> None:
+        if self.stream_channel:
+            self.log_stream(self.stream_channel, sender, text)
+            return
         if not self.current_session_path:
             return
+        # A turn after a long silence belongs to a fresh conversation.
+        if self._should_autosplit():
+            self.start_new_session()
+
         entry = {
             "timestamp": time.time(),
             "sender": sender,
@@ -138,6 +204,8 @@ class SessionManager:
             "session_id": self.current_session_id,
         }
         self._pending_turns.append(entry)
+        self._session_has_turns = True
+        self._last_turn_ts = entry["timestamp"]
 
         if self.write_mode == "immediate":
             self.flush_current_session()
@@ -159,7 +227,59 @@ class SessionManager:
         if not session_id or session_id == self.current_session_id:
             self.flush_current_session()
 
+    # ------------------------------------------------------------------
+    # Streams (minecraft, telegram, ...)
+    # ------------------------------------------------------------------
+
+    def get_stream_path(self, channel: str) -> Path:
+        """Directory of today's stream for ``channel`` — created on first use."""
+        day = datetime.now()
+        day_dir = self.sessions_dir / day.strftime("%Y-%m-%d")
+        stream_dir = day_dir / f"{STREAM_DIR_PREFIX}{channel}"
+        if not stream_dir.exists():
+            stream_dir.mkdir(parents=True, exist_ok=True)
+            meta = {
+                "session_id": f"{STREAM_DIR_PREFIX}{channel}_{day.strftime('%Y%m%d')}",
+                "kind": "stream",
+                "channel": channel,
+                "started_at": day.astimezone().isoformat(timespec="seconds"),
+            }
+            (stream_dir / "meta.json").write_text(
+                json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            )
+        return stream_dir
+
+    def log_stream(self, channel: str, sender: str, text: str) -> None:
+        """Append a turn to today's continuous log of ``channel``.
+
+        Streams write straight to disk (no buffering) — they are append-only
+        side channels and their volume is not latency-critical.
+        """
+        if not text:
+            return
+        try:
+            stream_dir = self.get_stream_path(channel)
+            entry = {
+                "timestamp": time.time(),
+                "sender": sender,
+                "text": text,
+                "session_id": stream_dir.name,
+            }
+            with open(stream_dir / "turns.jsonl", "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # History
+    # ------------------------------------------------------------------
+
     def get_recent_chat_history(self, limit: int = 10) -> List[Dict]:
+        """Most recent conversation turns across sessions, oldest first.
+
+        Streams (minecraft/telegram logs) are excluded — cross-session
+        context should be conversational, not in-game chat spam.
+        """
         if limit <= 0:
             return []
 
@@ -192,7 +312,7 @@ class SessionManager:
 
         return list(reversed(results))
 
-    def _iter_turns_files_desc(self) -> Iterator[Path]:
+    def _iter_turns_files_desc(self, include_streams: bool = False) -> Iterator[Path]:
         if not self.sessions_dir.exists():
             return
 
@@ -201,6 +321,8 @@ class SessionManager:
 
         for day_dir in day_dirs:
             sess_dirs = [d for d in day_dir.iterdir() if d.is_dir()]
+            if not include_streams:
+                sess_dirs = [d for d in sess_dirs if not d.name.startswith(STREAM_DIR_PREFIX)]
             sess_dirs.sort(reverse=True)
             for sess_dir in sess_dirs:
                 turns = sess_dir / "turns.jsonl"

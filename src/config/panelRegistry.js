@@ -23,6 +23,25 @@ export const PANELS = {
     ariaLabel: 'Chat with companion',
     keyboardShortcut: 'Alt+1'
   },
+  conversations: {
+    id: 'conversations',
+    name: 'Conversations',
+    displayName: 'Conversations',
+    description: 'Browse past conversations',
+    icon: 'Clock',
+    contextKey: 'conversations',
+    component: 'ConversationsShellPanel',
+    order: 2,
+    draggable: false,
+    collapsible: true,
+    dockPreference: {
+      desktop: 'main-panel',
+      tablet: 'drawer',
+      portrait: 'drawer'
+    },
+    ariaLabel: 'Conversation history',
+    keyboardShortcut: 'Alt+2'
+  },
   study: {
     id: 'study',
     name: 'Study',

@@ -414,6 +414,7 @@ class AudioLoop:
         on_program_shutdown=None,
         enable_audio_io=True,
         auto_allow_tools_without_confirmation=True,
+        session_stream_channel=None,
         **_ignored,
     ):
 
@@ -493,10 +494,13 @@ class AudioLoop:
         self._model_settings_reconnect_requested = False
         self._pending_session_opening = None
 
-        # SessionManager (global, no projects)
+        # SessionManager (global, no projects). A stream channel (e.g.
+        # Telegram) routes all turns to a continuous per-day log instead of
+        # creating conversation sessions (v3 Phase G).
         self.session_manager = SessionManager(
             DATA_DIR,
             write_mode=os.getenv("SESSION_WRITE_MODE", "session_end"),
+            stream_channel=session_stream_channel,
         )
 
         # Workspace for files written by tools
@@ -559,6 +563,7 @@ class AudioLoop:
                 "notes_append": False,
                 "memory_add_entry": False,
                 "memory_search": False,
+                "recall_conversation": False,
                 "memory_get_page": False,
                 "memory_create_page": False,
                 "memory_append_page": False,
@@ -2884,6 +2889,7 @@ class AudioLoop:
                                 "notes_append",
                                 "memory_add_entry",
                                 "memory_search",
+                                "recall_conversation",
                                 "memory_get_page",
                                 "memory_create_page",
                                 "memory_append_page",
@@ -3733,6 +3739,40 @@ class AudioLoop:
                                         result_str = f"Error searching memory: {e}"
                                     function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
 
+                                elif fc.name == "recall_conversation":
+                                    # v3 Phase G: find a past conversation/stream day
+                                    # by topic, title or date; return recap + excerpts.
+                                    try:
+                                        from backend.core import conversation_store as _conv
+
+                                        query = str(fc.args.get("query") or "")
+                                        limit = max(1, min(5, int(fc.args.get("limit", 3))))
+                                        hits = []
+                                        if self.session_manager:
+                                            self.session_manager.flush_current_session()
+                                            hits = _conv.search_conversations(
+                                                self.session_manager.sessions_dir, query, limit=limit
+                                            )
+                                        # Her CURRENT conversation is not a memory.
+                                        _cur = self.session_manager.get_current_session_id() if self.session_manager else None
+                                        hits = [h for h in hits if h.get("id") != _cur]
+                                        if not hits:
+                                            result_str = "No past conversation matched that query."
+                                        else:
+                                            blocks = []
+                                            for h in hits:
+                                                head = f"[{h['day']}] {h.get('title') or h['id']} (kanał: {h.get('channel')})"
+                                                body = []
+                                                if h.get("recap"):
+                                                    body.append(f"Podsumowanie: {h['recap']}")
+                                                if h.get("excerpt"):
+                                                    body.append("Fragmenty:\n" + h["excerpt"])
+                                                blocks.append(head + ("\n" + "\n".join(body) if body else ""))
+                                            result_str = "Past conversations found:\n\n" + "\n\n".join(blocks)
+                                    except Exception as e:
+                                        result_str = f"Error recalling conversation: {e}"
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+
                                 elif fc.name == "memory_get_page":
                                     result_str = "Memory engine not initialized."
                                     if getattr(self, "memory_engine", None):
@@ -4075,11 +4115,11 @@ class AudioLoop:
                                             if fc.name == "minecraft_chat_message":
                                                 params["message"] = fc.args.get("message", "")
                                                 # v3: her in-game words belong to the shared
-                                                # transcript too (memory of playing together).
+                                                # minecraft stream (memory of playing together).
                                                 try:
                                                     if params["message"] and getattr(self, "session_manager", None):
-                                                        self.session_manager.log_chat(
-                                                            "AI", f"[Minecraft] {params['message']}"
+                                                        self.session_manager.log_stream(
+                                                            "minecraft", "AI", params["message"]
                                                         )
                                                 except Exception:
                                                     pass
@@ -4665,7 +4705,10 @@ class AudioLoop:
                             print("[AI DEBUG] [SESSION] Exiting session mode (back to normal Monika).")
                             # Reconnect silently as her normal self; no announcement.
                         elif not self._session_resume_handle:
-                            history = self.session_manager.get_recent_chat_history(limit=10)
+                            # Phase G: recovery context comes from the CURRENT
+                            # conversation only — continuity across conversations
+                            # is memory's job (digest/agenda/inner state).
+                            history = self.session_manager.get_current_session_turns(limit=10)
 
                             context_msg = (
                                 "System Notification: I seemed to space out a bit, but I'm back now!"

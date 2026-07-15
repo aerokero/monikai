@@ -71,6 +71,9 @@ class TelegramChatSession:
             personality=self.personality,
             enable_audio_io=False,
             auto_allow_tools_without_confirmation=False,
+            # v3 Phase G: Telegram is a continuous stream, not conversations —
+            # turns land in sessions/<day>/stream_telegram/ (daily recap digest).
+            session_stream_channel="telegram",
         )
         self.audio_loop.update_permissions((self.settings_getter() or {}).get("tool_permissions") or {})
         self.run_task = asyncio.create_task(

@@ -8,7 +8,7 @@ import React, { createContext, useState, useCallback } from 'react';
 
 export const MonikaContext = createContext(null);
 
-const CONTEXTS = ['chat', 'study', 'notes', 'companion', 'calendar', 'profile', 'settings'];
+const CONTEXTS = ['chat', 'conversations', 'study', 'notes', 'companion', 'calendar', 'profile', 'settings'];
 
 /**
  * MonikaContextProvider
@@ -24,6 +24,7 @@ export const MonikaContextProvider = ({ children }) => {
   // Panel visibility state: { panelId: boolean }
   const [panelVisibility, setPanelVisibilityState] = useState({
     chat: true,
+    conversations: false,
     study: false,
     notes: false,
     companion: false,

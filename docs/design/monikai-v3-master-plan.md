@@ -129,6 +129,40 @@ Cel: rozmowa, która wciąga; sceny, które żyją.
 3. **Audyt narzędzi asystenckich**: kalendarz, przypomnienia, notatki, web agent, smart home — przetestować każde; naprawić lub usunąć z tool definitions (martwe narzędzie = kłamstwo w prompcie).
 4. **Progression (opcjonalnie, na końcu)**: discoveries/milestones z v2 podpiąć do prawdziwych eventów — tylko jeśli po Fazach A–E nadal tego chcemy.
 
+### FAZA G — Konwersacje jako obiekt pierwszej klasy (dodane 2026-07-15)
+
+Cel: rozmowy przestają być anonimowymi katalogami na dysku. Sidebar z listą konwersacji (jak ChatGPT/Claude), każda rozmowa to odrębna sesja z tytułem, Monika umie wracać do konkretnych rozmów i je cytować. Kanały „ciągłe" (Minecraft, Telegram) dostają własny model — strumień z recapem zamiast udawanej konwersacji.
+
+**Diagnoza:** backend ma już 70% fundamentu — `SessionManager` pisze `turns.jsonl` + `meta.json` per sesja, digest (Faza A) trawi każdą zakończoną sesję. Problemy: (1) sesja = uruchomienie aplikacji, nie rozmowa — głos, czat i Minecraft lecą do jednego worka przez cały dzień; (2) zero UI — sesje żyją tylko na dysku; (3) `get_recent_chat_history()` ignoruje granice sesji przy składaniu kontekstu.
+
+1. **Model danych — dwa rodzaje wątków.** `meta.json` dostaje pola: `kind` (`conversation` | `stream`), `channel` (`app` | `voice` | `telegram` | `minecraft`), `title` (z digestu).
+   - **Konwersacja**: czat pisany i sesje głosowe w aplikacji. Ma początek i koniec, pełny transkrypt, pozycję w sidebarze.
+   - **Strumień**: Minecraft i Telegram — kanały bez naturalnego „końca rozmowy". Jeden ciągły log per kanał per dzień (`data/sessions/<data>/stream_<kanał>/`), digestowany raz dziennie (nightly), w UI pokazywany jako karta z recapem + wyekstrahowanymi faktami, nie jako transkrypt.
+2. **Cykl życia konwersacji** (`session_manager.py` + lifecycle):
+   - Przycisk „nowa rozmowa" w UI → `start_new_session()` przez socket handler.
+   - Auto-split po bezczynności: nowa wypowiedź po >45 min ciszy w bieżącej konwersacji otwiera nową sesję (digest i tak używa 15 min idle jako progu „można trawić" — bieżąca zamyka się naturalnie).
+   - Routing per kanał: `log_chat()` z Minecrafta/Telegrama trafia do strumienia kanału, nie do aktywnej konwersacji aplikacji (dziś `minecraft_perception_runtime.py` pisze `MC:<nick>` do wspólnego worka).
+3. **Digest rozszerzony o tytuł.** `SessionDigest` dostaje pole `title` (3–6 słów, po polsku) — LLM i tak czyta cały transkrypt; tytuł zapisuje się do `meta.json`. Strumienie: prompt digestu dostaje wariant „recap dnia na kanale X" (fakty + 2–3 zdania podsumowania zamiast epizodów pierwszoosobowych, chyba że działo się coś znaczącego). Backfill: `scan_and_digest` dotytułowuje stare, już strawione sesje (osobny lekki pass — sam tytuł, tania generacja).
+4. **API konwersacji** — nowy `backend/core/handlers/conversation_handlers.py` (wzorzec istniejących handlerów socket):
+   - `conversations:list` → strona listy: id, tytuł, data, kanał, kind, liczba tur, status digestu.
+   - `conversations:get` → pełny transkrypt jednej sesji (paginowany).
+   - `conversations:new` → jawne otwarcie nowej konwersacji.
+   - `conversations:continue` → nowa sesja z wstrzykniętym digestem wskazanej starej rozmowy (patrz pkt 6).
+5. **Narzędzie `recall_conversation`** (Gemini tool, obok `recall`): szuka sesji po tytule/dacie/treści (FTS po `memory_entries.source_session` + tytuły z meta), zwraca digest lub fragment transkryptu do kontekstu. Monika realnie mówi „pamiętasz, jak we wtorek rozmawialiśmy o…" i cytuje.
+6. **Semantyka „otwórz starą rozmowę": read-only + kontynuacja.** Stara sesja jest już strawiona — nietykalna. „Kontynuuj" = nowa sesja, której kontekst startowy zawiera digest (i ostatnie ~10 tur) starej, z zapisem `continues: <id>` w meta. Żadnego wznawiania i ponownego trawienia — czysto współgra z pipeline'em pamięci i uczciwiej oddaje jej naturę: ona *pamięta* rozmowę, nie cofa się w czasie.
+7. **Kontekst szanuje granice.** `get_recent_chat_history()` w prompt buildingu ograniczyć do bieżącej konwersacji; ciągłość między rozmowami zapewnia pamięć (digesty, agenda, inner state) — tak jak u ludzi. Wyjątek: reconnect w ramach tej samej konwersacji (crash/restart w środku rozmowy) dolewa jej własne tury.
+8. **Frontend — sidebar konwersacji:**
+   - Lista w `ChatPanel.jsx` (kolumna po lewej, zwijana): tytuły grupowane po dniach, aktywna podświetlona, przycisk „+ nowa".
+   - Karty strumieni (Minecraft/Telegram) w tej samej liście, wizualnie odróżnione — pokazują recap dnia i fakty, rozwijalne do surowego logu.
+   - Widok starej konwersacji: transkrypt read-only + przycisk „kontynuuj tę rozmowę".
+9. **Kryterium ukończenia:** w sidebarze widać zatytułowaną historię rozmów; nowa rozmowa startuje czystą sesją; wieczorne granie w Minecrafta pojawia się nazajutrz jako karta z recapem, nie zaśmieca czatu; Monika zapytana „o czym rozmawialiśmy w poniedziałek" znajduje tamtą rozmowę narzędziem i odwołuje się do konkretów.
+
+**Proponowana kolejność implementacji (4 kroki, każdy kończy się działającą całością):**
+1. Backend lifecycle: pola meta (`kind`/`channel`/`title`), auto-split, routing strumieni, granice kontekstu.
+2. Digest: tytuły + wariant recap dla strumieni + backfill tytułów.
+3. API + narzędzie: `conversation_handlers.py`, `recall_conversation`, semantyka „kontynuuj".
+4. Frontend: sidebar + karty strumieni + widok read-only.
+
 ---
 
 ## 5. Kolejność i zależności
@@ -136,6 +170,9 @@ Cel: rozmowa, która wciąga; sceny, które żyją.
 ```
 A (pamięć) ──→ B (życie wewnętrzne) ──→ C (otoczenie) ──→ D (gry) ──→ E (sceny) ──→ F (UI)
      └── A jest warunkiem wszystkiego: B czyta digesty, C/D piszą do pamięci, E robi callbacki
+     └──→ G (konwersacje) — wymaga tylko A; niezależna od B–F, może iść równolegle.
+          Warto zrobić PRZED F: porządkuje granice sesji (lepsza jakość digestów —
+          koniec trawienia wielogodzinnych zlepków) i dostarcza główny element UI.
 ```
 
 Każda faza kończy się kryterium obserwowalnym w realnym użyciu (nie tylko testami). Strategia bez zmian: **buduj obok, przełączaj gdy gotowe** — aplikacja działa cały czas.
@@ -149,4 +186,6 @@ Każda faza kończy się kryterium obserwowalnym w realnym użyciu (nie tylko te
 | Screen awareness = prywatność | Opt-in, przetwarzanie lokalne (OCR+Ollama), vision API tylko za zgodą |
 | Digest pomija ważne rzeczy | Narzędzie `remember` w rozmowie jako ścieżka ręczna; przegląd tygodniowy wyłapuje pominięcia |
 | Powtórka z v2: moduły bez integracji | Każdy PR fazy MUSI kończyć się działającym hookiem w runtime — żadnych „podepniemy później" |
+| Auto-split tnie rozmowę w złym miejscu (Faza G) | Próg 45 min konserwatywny + jawny przycisk „nowa rozmowa"; źle sklejone sesje digest i tak strawi poprawnie |
+| Zawężenie kontekstu do bieżącej sesji osłabi ciągłość (Faza G) | Digest ostatniej rozmowy + agenda + inner state wchodzą do promptu przy starcie; `recall_conversation` jako ścieżka na żądanie |
 ```
