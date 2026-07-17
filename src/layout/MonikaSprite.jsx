@@ -7,7 +7,6 @@
 
 import React from 'react';
 import useMonikaState from '../hooks/useMonikaState';
-import '../styles/monika-layout.css';
 
 /**
  * MonikaSprite

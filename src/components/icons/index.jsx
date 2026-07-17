@@ -74,6 +74,7 @@ export const Calendar = pick('Calendar', 'Calendar');
 export const Newspaper = pick('Newspaper', 'Newspaper');
 export const Brain = pick('Brain', 'Brain');
 export const Maximize2 = pick('ArrowsOut', 'Maximize2');
+export const Minimize2 = pick('ArrowsIn', 'Minimize2');
 export const MessageSquare = pick('ChatCentered', 'MessageSquare');
 export const Paperclip = pick('Paperclip', 'Paperclip');
 export const Settings = pick('Gear', 'Settings');
@@ -165,6 +166,7 @@ export default {
   Newspaper,
   Brain,
   Maximize2,
+  Minimize2,
   MessageSquare,
   Paperclip,
   Settings,

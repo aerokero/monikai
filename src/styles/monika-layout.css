@@ -899,9 +899,13 @@
 
 .monika-rail--left-vertical .rail-buttons {
   flex-direction: column;
+  flex-wrap: nowrap;
   width: 100%;
   height: 100%;
   align-items: center;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
 }
 
 .monika-rail--expanded .rail-buttons {
@@ -938,7 +942,7 @@
 
 .monika-rail--left-vertical .rail-button {
   width: 100%;
-  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease, transform 200ms ease;
+  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease, transform 200ms ease, border-radius var(--monika-transition-normal), padding var(--monika-transition-normal);
 }
 
 .monika-rail--left-vertical .rail-button svg {
@@ -1035,6 +1039,7 @@
   height: 1px;
   margin: 6px 0;
   background: linear-gradient(90deg, transparent, rgba(232, 178, 102, 0.2), transparent);
+  transition: width var(--monika-transition-normal), background var(--monika-transition-normal);
 }
 
 .monika-rail--left-vertical .rail-divider {

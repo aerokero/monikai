@@ -16,7 +16,6 @@ import WindowTopBar from '../components/shared/WindowTopBar';
 import ContextBar from '../components/shared/ContextBar';
 import PanelRouter from '../components/panels/PanelRouter';
 import ChatPanel from '../components/panels/ChatPanel';
-import '../styles/monika-layout.css';
 
 /**
  * MonikaLayout

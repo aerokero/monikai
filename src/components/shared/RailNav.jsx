@@ -144,12 +144,12 @@ const RailNav = () => {
             aria-expanded={isExpanded}
             title={isExpanded ? t('navigation.collapse') : t('navigation.expand')}
           >
-            <Icons.Maximize2 size={20} />
+            {isExpanded ? <Icons.Minimize2 size={20} /> : <Icons.Maximize2 size={20} />}
             <span className="rail-toggle-copy">
               <span className="rail-toggle-title">{t('navigation.title')}</span>
               <span className="rail-toggle-subtitle">{t('navigation.collapse_to_icons')}</span>
             </span>
-            {renderTooltip(t('navigation.expand'))}
+            {renderTooltip(isExpanded ? t('navigation.collapse') : t('navigation.expand'))}
           </button>
         )}
 
