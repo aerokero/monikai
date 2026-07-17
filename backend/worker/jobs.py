@@ -122,30 +122,15 @@ class ImportanceJob(BaseJob):
 # Registry & dispatch
 # ---------------------------------------------------------------------------
 
-def _get_narrative_job_class() -> type[BaseJob]:
-    from backend.worker.narrative_job import NarrativeJob
-    return NarrativeJob
-
-
 _JOB_REGISTRY: dict[str, type[BaseJob]] = {
     "CompactionJob": CompactionJob,
     "ReflectionJob": ReflectionJob,
     "ImportanceJob": ImportanceJob,
 }
 
-# NarrativeJob is registered lazily to avoid circular imports at module load.
-_LAZY_JOB_REGISTRY: dict[str, object] = {
-    "NarrativeJob": _get_narrative_job_class,
-}
-
-
 def deserialise(kind: str, payload: str | dict) -> BaseJob:
     """Reconstruct a job from DB row data."""
     cls = _JOB_REGISTRY.get(kind)
-    if cls is None:
-        lazy = _LAZY_JOB_REGISTRY.get(kind)
-        if lazy is not None:
-            cls = lazy()  # type: ignore[assignment]
     if cls is None:
         raise ValueError(f"Unknown job kind: {kind!r}")
     p = json.loads(payload) if isinstance(payload, str) else payload

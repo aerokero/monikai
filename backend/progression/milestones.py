@@ -6,8 +6,8 @@ is auto-confirmed. 8-9 range is flagged for later review (Phase 5+).
 
 Emits RelationshipDeepened when a milestone is confirmed.
 
-Each milestone permanently changes what's possible — new stories unlock,
-her register shifts, her agenda may reference it. Those effects are
+Each milestone permanently changes what's possible — new stories unlock and
+her register may shift. Those effects are
 registered by other subsystems listening to RelationshipDeepened.
 """
 

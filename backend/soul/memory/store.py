@@ -216,6 +216,14 @@ async def get_stm(
     return [_row_to_entry(r) for r in rows]
 
 
+def _fts_query(query: str) -> str:
+    """Quote plain search terms for SQLite FTS syntax safety."""
+    import re
+
+    raw_tokens = re.findall(r"[\w\-]+", query or "", re.UNICODE)
+    return " OR ".join(f'"{token}"' for token in raw_tokens)
+
+
 async def search_fts(
     query: str,
     types: list[str] | None = None,
@@ -230,12 +238,9 @@ async def search_fts(
     if not query.strip():
         return []
 
-    # Sanitise: keep only word characters for FTS5 MATCH
-    import re
-    tokens = re.findall(r"[\w\-]+", query, re.UNICODE)
-    if not tokens:
+    fts_query = _fts_query(query)
+    if not fts_query:
         return []
-    fts_query = " OR ".join(tokens)
 
     sql = (
         "SELECT e.*, (-bm25(memory_fts)) AS bm25_abs "

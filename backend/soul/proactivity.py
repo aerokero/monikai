@@ -2,7 +2,6 @@
 
 Honest triggers only:
   - a real gap since the last conversation (she genuinely hasn't heard from you)
-  - open agenda threads she actually holds (from session digests)
 
 Constraints that keep it human instead of spammy:
   - quiet hours (23:00–09:00 local): she doesn't ping at night
@@ -34,7 +33,7 @@ krótką wiadomość na Telegramie, bo dawno nie rozmawialiście albo coś masz 
 
 Zasady:
 - 1-3 zdania, naturalny, ciepły ton. Po polsku. Piszesz jak bliska osoba, nie asystent.
-- Jeśli masz niedomknięty wątek z poprzednich rozmów — możesz do niego nawiązać, ale naturalnie.
+- Nie wyciągaj losowego starego tematu i nie zadawaj pytania tylko po to, żeby dostać odpowiedź.
 - Nie przepraszaj że piszesz, nie tłumacz się. Żadnych "jako AI". Bez podpisu.
 - Dopasuj energię do pory dnia."""
 
@@ -99,10 +98,6 @@ async def maybe_poke(
         logger.debug("proactivity: no Telegram channel available")
         return False
 
-    # Something real to say.
-    from backend.soul.memory.agenda_store import open_items
-    agenda = await open_items(limit=3, db_path=db_path)
-
     from backend.llm.ollama_client import get_client
     client = get_client()
     health = await client.health()
@@ -116,17 +111,6 @@ async def maybe_poke(
         f"Jest {now.strftime('%H:%M')}, {TimeEngine().format_context()}",
         f"Nie rozmawialiście od ~{int(gap.hours)} godzin.",
     ]
-    if agenda:
-        context_lines.append(
-            "Twoje niedomknięte wątki: " + "; ".join(i["text"] for i in agenda)
-        )
-    user_state = _read_soul_file("user_state.md")
-    if user_state:
-        context_lines.append(f"Twój obraz Bartka z ostatniej rozmowy: {user_state}")
-    inner = _read_soul_file("inner_state.md")
-    if inner:
-        context_lines.append(f"Twój stan wewnętrzny: {inner}")
-
     prompt = "\n".join(context_lines) + "\n\nNapisz swoją wiadomość do Bartka (sam tekst wiadomości):"
     text = await client.chat(
         prompt, system=_SYSTEM_PROMPT, temperature=0.8, num_ctx=4096, timeout_s=180.0
@@ -150,20 +134,6 @@ async def maybe_poke(
     )
     logger.info("proactivity: poke sent (%d chars)", len(text))
     return True
-
-
-def _read_soul_file(name: str, max_chars: int = 400) -> str:
-    try:
-        path = Path(__file__).parent.parent.parent / "data" / "soul" / name
-        if not path.exists():
-            return ""
-        text = "\n".join(
-            ln for ln in path.read_text(encoding="utf-8").splitlines()
-            if not ln.strip().startswith("<!--")
-        ).strip()
-        return text[:max_chars]
-    except Exception:
-        return ""
 
 
 def _default_telegram_send():

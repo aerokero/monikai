@@ -590,7 +590,7 @@ const ChatPanel = ({
         )}
 
         {/* Unified Bottom Bar - All controls in one place */}
-        <div className="shrink-0 text-sm">
+        <div className="shrink-0 text-sm px-6">
           {/* Input Row - Only shows in chat or activities */}
           {(compactDock || viewMode === 'chat' || viewMode === 'activities') && (
             <div className="flex flex-col gap-2">

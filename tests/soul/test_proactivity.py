@@ -32,9 +32,7 @@ async def test_poke_sent_after_gap(tmp_db, monkeypatch):
     with patch(
         "backend.soul.time_engine.engine.TimeEngine.check_gap",
         AsyncMock(return_value=GapInfo(10.0, "short", 0.0)),
-    ), patch("backend.llm.ollama_client.get_client", return_value=_fake_client()), patch(
-        "backend.soul.proactivity._read_soul_file", return_value=""
-    ):
+    ), patch("backend.llm.ollama_client.get_client", return_value=_fake_client()):
         ok = await proactivity.maybe_poke(db_path=tmp_db, send_fn=send)
 
     assert ok is True

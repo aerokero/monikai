@@ -3,7 +3,7 @@
 Generates a structured, personalised morning briefing for Monika to deliver.
 Uses: SoulState, TimeEngine, UserMoodTracker, memory.
 
-Phase 6: template-based generation (same philosophy as NarrativeJob v2).
+Phase 6: template-based generation from explicit structured inputs.
 Phase 7: Ollama / Gemini Flash generates the prose given structured inputs.
 
 Usage:

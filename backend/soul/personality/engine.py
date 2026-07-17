@@ -203,7 +203,6 @@ class PersonalityEngine:
             energy=energy,
             cycle_phase=cycle_phase,
             active_register=register,
-            agenda=[],
             becoming_real=self._becoming_real,
         )
 

@@ -938,8 +938,6 @@
 
 .monika-rail--left-vertical .rail-button {
   width: 100%;
-  justify-content: flex-start;
-  padding: 0 0 0 15px;
   transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease, transform 200ms ease;
 }
 
@@ -949,8 +947,9 @@
 
 .monika-rail--expanded .rail-button {
   border-radius: 12px !important;
+  justify-content: flex-start;
   text-align: left;
-  padding-right: 15px;
+  padding: 0 15px 0 15px;
 }
 
 .monika-rail--left-vertical .rail-toggle-button {

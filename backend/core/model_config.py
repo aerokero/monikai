@@ -65,7 +65,10 @@ if not GEMINI_EMIT_NATIVE_THOUGHT_EVENTS:
 
 # Affective dialog and proactive audio: supported on 2.5, not on 3.1.
 GEMINI_AFFECTIVE_DIALOG = _env_flag("GEMINI_AFFECTIVE_DIALOG", not _is_31)
-GEMINI_PROACTIVE_AUDIO = _env_flag("GEMINI_PROACTIVE_AUDIO", not _is_31)
+# Provider-native proactivity has no application-level novelty/deduplication
+# gate.  Keep it opt-in until we can prevent it from repeating the immediately
+# preceding response.  MonikAI's own rate-limited proactivity loop remains.
+GEMINI_PROACTIVE_AUDIO = _env_flag("GEMINI_PROACTIVE_AUDIO", False)
 
 GEMINI_CONTEXT_WINDOW_COMPRESSION = _env_flag("GEMINI_CONTEXT_WINDOW_COMPRESSION", True)
 
@@ -193,7 +196,7 @@ def apply_runtime_settings(preset: str | None = None, voice: str | None = None) 
         if "GEMINI_AFFECTIVE_DIALOG" not in os.environ:
             GEMINI_AFFECTIVE_DIALOG = not _is_31
         if "GEMINI_PROACTIVE_AUDIO" not in os.environ:
-            GEMINI_PROACTIVE_AUDIO = not _is_31
+            GEMINI_PROACTIVE_AUDIO = False
         BASE_PROACTIVITY_CONFIG = (
             types.ProactivityConfig(proactive_audio=True) if GEMINI_PROACTIVE_AUDIO else None
         )

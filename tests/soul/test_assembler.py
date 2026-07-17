@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.soul.assembler.context import ContextAssembler, _file_age_hours
+from backend.soul.assembler.context import ContextAssembler
 from backend.soul.memory import store
 from backend.soul.models import MemoryEntry
 
@@ -35,7 +35,7 @@ async def test_assembler_sections_ordered(tmp_db):
     assert char_pos < op_pos, "CHARACTER must come before OPERATIONAL"
 
 
-async def test_assembler_includes_memory_when_entries_exist(tmp_db):
+async def test_assembler_does_not_inject_memory_without_a_turn_query(tmp_db):
     entry = MemoryEntry(
         id="x", type="stm", content="Bartosz lubi ciemny chleb żytni", importance=6.0
     )
@@ -43,7 +43,7 @@ async def test_assembler_includes_memory_when_entries_exist(tmp_db):
 
     assembler = ContextAssembler()
     result = await assembler.assemble(_CHARACTER, _OPERATIONAL, db_path=tmp_db)
-    assert "ciemny chleb żytni" in result
+    assert "ciemny chleb żytni" not in result
 
 
 async def test_assembler_memory_block_empty_db(tmp_db):
@@ -54,9 +54,8 @@ async def test_assembler_memory_block_empty_db(tmp_db):
     assert len(result) > 0
 
 
-async def test_assembler_memory_mixes_recent_and_important(tmp_db):
-    """v3: fresh LTM appears regardless of importance (the digest already
-    filtered noise); all-time important memories appear alongside it."""
+async def test_assembler_does_not_treat_recency_as_relevance(tmp_db):
+    """LTM is retrieved per turn, not injected merely because it is recent."""
     ltm = MemoryEntry(
         id="x", type="episodic", content="Pamiętam nasz pierwszy wieczór przy filmie", importance=8.5
     )
@@ -68,8 +67,8 @@ async def test_assembler_memory_mixes_recent_and_important(tmp_db):
 
     assembler = ContextAssembler()
     result = await assembler.assemble(_CHARACTER, _OPERATIONAL, db_path=tmp_db)
-    assert "pierwszy wieczór" in result
-    assert "zwykłe codzienne zdanie" in result  # recent → included
+    assert "pierwszy wieczór" not in result
+    assert "zwykłe codzienne zdanie" not in result
 
 
 async def test_assemble_prompt_function(tmp_db):

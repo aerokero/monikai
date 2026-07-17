@@ -239,13 +239,18 @@ def register_chat_input_handlers(
                 except Exception:
                     pass
 
-            if text and (not asks_name) and audio_loop and getattr(audio_loop, "build_memory_context", None):
+            # Memory is not injected into ordinary turns.  Gemini can use the
+            # memory_search / recall_conversation tools when the conversation
+            # actually refers to something from the past.
+            if text:
                 try:
-                    mem_ctx = audio_loop.build_memory_context(text)
-                    if mem_ctx:
-                        await _send_with_reconnect_retry(mem_ctx, end_of_turn=False)
-                except Exception:
-                    pass
+                    from backend.core.runtimes.v2_runtime import get as _v2_get
+
+                    v2_runtime = _v2_get()
+                    if v2_runtime is not None:
+                        await v2_runtime.observe_turn()
+                except Exception as exc:
+                    print(f"[SERVER DEBUG] v2 turn observation failed: {exc}")
 
             if text and audio_loop and getattr(audio_loop, "memory_engine", None):
                 try:

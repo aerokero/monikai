@@ -12,7 +12,6 @@ def test_soul_state_defaults():
     state = SoulState()
     assert state.active_register == "casual"
     assert 0.0 <= state.energy <= 1.0
-    assert state.agenda == []
 
 
 def test_affect_fields():

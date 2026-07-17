@@ -17,6 +17,14 @@ except Exception:
     _SOUNDDEVICE_AVAILABLE = False
 import PIL.Image
 import mss
+try:
+    import win32gui
+    import win32ui
+    import win32con
+    import win32api
+    _WIN32_CURSOR_AVAILABLE = sys.platform.startswith("win")
+except Exception:
+    _WIN32_CURSOR_AVAILABLE = False
 import argparse
 import math
 import struct
@@ -328,14 +336,6 @@ class ProactivityWrapper:
             f"The user has been silent for {silence_min} minute{'s' if silence_min != 1 else ''}.",
         ]
 
-        from backend.core.runtimes.v2_runtime import get as _v2_get
-        _v2 = _v2_get()
-        if _v2:
-            agenda = _v2.open_agenda
-            if agenda:
-                items_str = "; ".join(agenda[:2])
-                lines.append(f"You have unresolved threads you wanted to return to: {items_str}. If the moment feels natural, bring one up.")
-
         motion = getattr(self.loop, "_latest_motion_score", 0.0)
         if getattr(self.loop, "video_mode", "none") == "screen" and motion > 1.5:
             lines.append("You can see the user's screen has been active recently.")
@@ -345,6 +345,8 @@ class ProactivityWrapper:
                 "Reflect on the current moment. "
                 "If you genuinely have something to say — a thought, a feeling, curiosity about what the user is doing — "
                 "speak naturally and briefly. "
+                "Do not repeat or paraphrase your most recent message. "
+                "Do not ask a question merely to keep the conversation going; ask only when the answer would materially change what you understand or say. "
                 "If nothing feels right to say, stay silent and think to yourself using <internal>...</internal>."
             )
         else:
@@ -1042,15 +1044,14 @@ class AudioLoop:
                 except Exception:
                     pass
 
-        # v2: inject cognition monologue
+        # Record interaction metadata. Memory stays tool-driven and is not
+        # injected into every ordinary message.
         if cleaned:
             from backend.core.runtimes.v2_runtime import get as _v2_get
             _v2 = _v2_get()
             if not _v2:
                 raise RuntimeError("MonikAI v2 runtime is not active")
-            cog_msg = await _v2.process_turn(cleaned)
-            if cog_msg:
-                await self.session.send(input=cog_msg, end_of_turn=False)
+            await _v2.observe_turn()
 
         future = asyncio.get_running_loop().create_future()
         self._pending_ai_turn_futures.append(future)
@@ -4471,6 +4472,56 @@ class AudioLoop:
             return {"mime_type": "image/jpeg", "data": buf.tobytes()}
         return None
 
+    @staticmethod
+    def _draw_cursor_overlay(img_bgra, monitor):
+        """Composite the real system cursor onto a BGRA screen capture.
+
+        mss's BitBlt-based grab includes the hardware cursor inconsistently
+        frame-to-frame (it's a separate hardware overlay on Windows), which is
+        what caused the cursor to visibly flicker in/out of the captured feed.
+        Drawing it ourselves from the actual cursor bitmap makes it appear in
+        every frame, in the right place, with correct anti-aliased edges.
+        """
+        if not _WIN32_CURSOR_AVAILABLE:
+            return
+        try:
+            flags, hcursor, (cx, cy) = win32gui.GetCursorInfo()
+            if flags != win32con.CURSOR_SHOWING:
+                return
+            _, xHotspot, yHotspot, hbmMask, hbmColor = win32gui.GetIconInfo(hcursor)
+            try:
+                if not hbmColor:
+                    return  # legacy monochrome (AND/XOR mask) cursor, not handled
+                bmp = win32ui.CreateBitmapFromHandle(hbmColor)
+                info = bmp.GetInfo()
+                cw, ch = info["bmWidth"], info["bmHeight"]
+                bits = bmp.GetBitmapBits(True)
+                cursor_img = np.frombuffer(bits, dtype=np.uint8).reshape((ch, cw, 4))
+            finally:
+                win32gui.DeleteObject(hbmMask)
+                win32gui.DeleteObject(hbmColor)
+
+            ox = cx - xHotspot - monitor.get("left", 0)
+            oy = cy - yHotspot - monitor.get("top", 0)
+            h, w = img_bgra.shape[:2]
+
+            src_x0, src_y0 = max(0, -ox), max(0, -oy)
+            dst_x0, dst_y0 = max(0, ox), max(0, oy)
+            draw_w = min(cw - src_x0, w - dst_x0)
+            draw_h = min(ch - src_y0, h - dst_y0)
+            if draw_w <= 0 or draw_h <= 0:
+                return
+
+            region = cursor_img[src_y0:src_y0 + draw_h, src_x0:src_x0 + draw_w].astype(np.float32)
+            alpha = region[:, :, 3:4] / 255.0
+            dst = img_bgra[dst_y0:dst_y0 + draw_h, dst_x0:dst_x0 + draw_w, :3].astype(np.float32)
+            # Cursor color channels are already premultiplied by alpha (standard ARGB cursor format).
+            blended = region[:, :, :3] + dst * (1.0 - alpha)
+            img_bgra[dst_y0:dst_y0 + draw_h, dst_x0:dst_x0 + draw_w, :3] = np.clip(blended, 0, 255).astype(np.uint8)
+        except Exception:
+            # Best-effort overlay; a cursor-drawing failure should never break capture.
+            pass
+
     def _grab_screen(self):
         try:
             # Use context manager to ensure thread safety with asyncio.to_thread
@@ -4493,6 +4544,7 @@ class AudioLoop:
 
                 shot = sct.grab(monitor)
                 img_np = np.array(shot)
+                self._draw_cursor_overlay(img_np, monitor)
 
                 max_size = self.screen_capture.get("max_size")
                 if max_size:
@@ -4707,7 +4759,7 @@ class AudioLoop:
                         elif not self._session_resume_handle:
                             # Phase G: recovery context comes from the CURRENT
                             # conversation only — continuity across conversations
-                            # is memory's job (digest/agenda/inner state).
+                            # is handled explicitly through memory/history tools.
                             history = self.session_manager.get_current_session_turns(limit=10)
 
                             context_msg = (

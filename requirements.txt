@@ -10,6 +10,7 @@ pyaudio
 sounddevice
 pillow
 mss
+pywin32; sys_platform == "win32"
 # OCR (PaddleOCR, local)
 paddlepaddle
 paddleocr
@@ -19,7 +20,10 @@ exceptiongroup
 playwright
 # Smart Home
 python-kasa
+# Discord bridge
+discord.py
 # Utilities
 python-dotenv
+aiosqlite
 # Face & Hand tracking
 mediapipe

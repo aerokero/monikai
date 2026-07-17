@@ -138,7 +138,7 @@ async def shutdown() -> None:
 # ---------------------------------------------------------------------------
 
 class V2Runtime:
-    """Lightweight soul layer: time context, memory, agenda, session buffer."""
+    """Lightweight runtime for prompt, time and background session digestion."""
 
     def __init__(
         self,
@@ -150,9 +150,6 @@ class V2Runtime:
         self._time_engine = time_engine
         self._cached_prompt = cached_prompt
         self._digest_task: asyncio.Task | None = None
-        # Open agenda items (from session digests), cached for sync callers
-        # like the proactivity reasoning prompt. Refreshed with the prompt.
-        self._agenda_cache: list[str] = []
 
     @classmethod
     async def _create(cls, db_path: Path) -> "V2Runtime":
@@ -188,12 +185,7 @@ class V2Runtime:
         await asyncio.sleep(90)  # let startup settle before touching Ollama
         while True:
             try:
-                from backend.soul.memory.digest import scan_and_digest, stm_maintenance
-
-                try:
-                    await stm_maintenance(db_path=self._db_path)
-                except Exception as exc:
-                    logger.debug("v2: stm maintenance failed: %s", exc)
+                from backend.soul.memory.digest import scan_and_digest
 
                 current_id = None
                 try:
@@ -231,36 +223,18 @@ class V2Runtime:
             self._cached_prompt = await assemble_prompt(db_path=self._db_path)
         except Exception as exc:
             logger.warning("v2: prompt assembly failed, keeping cached: %s", exc)
-        try:
-            from backend.soul.memory.agenda_store import open_items
-            self._agenda_cache = [i["text"] for i in await open_items(db_path=self._db_path)]
-        except Exception as exc:
-            logger.debug("v2: agenda cache refresh failed: %s", exc)
         return self._cached_prompt
-
-    @property
-    def open_agenda(self) -> list[str]:
-        return list(self._agenda_cache)
 
     @property
     def cached_prompt(self) -> str:
         return self._cached_prompt
 
     # ------------------------------------------------------------------
-    # Per-turn processing
+    # Per-turn bookkeeping
     # ------------------------------------------------------------------
 
-    # Only inject memories that actually match the turn — bm25_raw below this
-    # is keyword noise, and noise in context is worse than silence.
-    _RECALL_MIN_BM25 = 1.0
-
-    async def process_turn(self, user_text: str, monika_text: str = "") -> str:
-        """Per-turn hook: honest memory recall, no synthetic cognition.
-
-        Retrieves memories relevant to what the user just said (cheap FTS +
-        Stanford scoring, no LLM) and returns them as a context message for
-        Gemini. Returns "" when nothing genuinely matches.
-        """
+    async def observe_turn(self) -> None:
+        """Record interaction metadata without adding context to the model."""
         try:
             if self._time_engine is not None:
                 await self._time_engine.record_interaction(self._db_path)
@@ -272,27 +246,8 @@ class V2Runtime:
             except Exception as e:
                 logger.debug("v2: failed to emit personality_status: %s", e)
 
-            if not user_text.strip():
-                return ""
-
-            from backend.soul.memory.retrieval import retrieve
-            results = await retrieve(
-                user_text, limit=3,
-                types=["semantic", "episodic"],
-                db_path=self._db_path,
-            )
-            hits = [r for r in results if r.bm25_raw >= self._RECALL_MIN_BM25]
-            if not hits:
-                return ""
-
-            lines = ["(Pamięć — Twoje wspomnienia pasujące do tego, co właśnie powiedział. Użyj tylko jeśli naprawdę pasują:)"]
-            for r in hits:
-                when = r.entry.created_at.strftime("%Y-%m-%d")
-                lines.append(f"- [{when}] {r.entry.content}")
-            return "\n".join(lines)
         except Exception as exc:
-            logger.warning("v2: process_turn failed: %s", exc)
-            return ""
+            logger.warning("v2: observe_turn failed: %s", exc)
 
     # ------------------------------------------------------------------
     # State / status
@@ -309,8 +264,6 @@ class V2Runtime:
     async def get_status_payload(self) -> dict:
         """Honest status: only data the system actually has. No synthetic
         mood/needs numbers — absent is better than fake."""
-        from datetime import datetime, timezone
-
         weather = await get_cached_weather()
 
         memory_counts: dict[str, int] = {}
@@ -325,31 +278,6 @@ class V2Runtime:
         except Exception as exc:
             logger.debug("v2: memory counts failed: %s", exc)
 
-        inner_state_excerpt = ""
-        try:
-            path = _DATA_DIR / "soul" / "inner_state.md"
-            if path.exists():
-                text = "\n".join(
-                    ln for ln in path.read_text(encoding="utf-8").splitlines()
-                    if not ln.strip().startswith("<!--")
-                ).strip()
-                inner_state_excerpt = text[:280]
-        except Exception:
-            pass
-
-        # Real mood: classified by the digest from the last significant
-        # conversation (stale after 72h — absence beats staleness).
-        mood = None
-        try:
-            from backend.progression.state import get as _pget
-            mood_rec = await _pget("monika_mood", self._db_path)
-            if isinstance(mood_rec, dict) and mood_rec.get("label"):
-                at = datetime.fromisoformat(str(mood_rec["at"]).replace("Z", "+00:00"))
-                if (datetime.now(timezone.utc) - at).total_seconds() < 72 * 3600:
-                    mood = mood_rec["label"]
-        except Exception as exc:
-            logger.debug("v2: mood read failed: %s", exc)
-
         # Real energy: time-of-day hint from the TimeEngine (local clock).
         energy = None
         try:
@@ -360,7 +288,7 @@ class V2Runtime:
 
         return {
             "v2": True,
-            "mood": mood,
+            "mood": None,
             "energy": energy,
             "weather": weather,
             "memory": {
@@ -369,8 +297,6 @@ class V2Runtime:
                 "stm": memory_counts.get("stm", 0),
                 "total": sum(memory_counts.values()),
             },
-            "agenda_open": list(self._agenda_cache),
-            "inner_state": inner_state_excerpt,
         }
 
     # ------------------------------------------------------------------

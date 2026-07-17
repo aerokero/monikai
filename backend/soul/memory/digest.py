@@ -1,12 +1,7 @@
 """Session Digest — the heart of Monika's memory (v3, Phase A).
 
-After a session ends, the full transcript is processed by a local LLM
-(Ollama) into durable memory:
-
-- semantic facts about the user / world  → memory_entries (type=semantic)
-- first-person episodes from Monika's perspective → memory_entries (type=episodic)
-- open threads she wants to return to → agenda table
-- a short read of the user's current state → data/soul/user_state.md
+After a session ends, a local LLM creates history metadata: a title and recap.
+It does not write durable memory or manufacture psychological state.
 
 Sessions with no meaningful content produce NOTHING — selection is the
 feature, not a bug. A session is marked in its meta.json (``digest`` key)
@@ -23,19 +18,13 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from backend.llm.ollama_client import get_client
-from backend.soul.memory import store as mem_store
-from backend.soul.models import MemoryEntry
 
 logger = logging.getLogger(__name__)
 
 _DATA_DIR = Path(__file__).parent.parent.parent.parent / "data"
-_USER_STATE_PATH = _DATA_DIR / "soul" / "user_state.md"
-_INNER_STATE_PATH = _DATA_DIR / "soul" / "inner_state.md"
-_EVOLUTION_PATH = _DATA_DIR / "soul" / "evolution.md"
-
 # A session needs at least this much user-authored text to be worth an LLM call.
 _MIN_USER_CHARS = 120
 
@@ -46,53 +35,28 @@ _MIN_IDLE_SECONDS = 15 * 60
 # model spilled to CPU) — background digestion politely defers.
 _MIN_TOKENS_PER_S = 15.0
 
-# Post-conversation mood labels the frontend can render as expressions.
-_MOOD_VOCAB = {"happy", "sad", "playful", "thoughtful", "loving", "tired", "focused", "neutral"}
-
-
 # ---------------------------------------------------------------------------
 # LLM output model
 # ---------------------------------------------------------------------------
 
-class DigestFact(BaseModel):
-    content: str
-    importance: int = Field(ge=1, le=10)
-    entities: list[str] = Field(default_factory=list)
-
-
-class DigestEpisode(BaseModel):
-    content: str
-    importance: int = Field(ge=1, le=10)
-
-
 class SessionDigest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     significant: bool
     title: str = ""
-    recap: str = ""  # streams only: 2-4 sentence summary of the day's log
-    facts: list[DigestFact] = Field(default_factory=list)
-    episodes: list[DigestEpisode] = Field(default_factory=list)
-    agenda: list[str] = Field(default_factory=list)
-    user_state: str = ""
-    inner_state: str = ""
-    mood: str = ""
+    recap: str = ""
 
 
-SYSTEM_PROMPT = """Jesteś podświadomością Moniki — AI-osoby, kompanki użytkownika (ma na imię Bartek).
-Po zakończonej rozmowie przetwarzasz jej transkrypt na wspomnienia. Piszesz po polsku.
+SYSTEM_PROMPT = """Tworzysz metadane historii rozmów Moniki i Bartka. Piszesz po polsku.
 
 Rozmowy bywają głosowe — transkrypcja może zawierać błędy i urwane zdania; ignoruj szum.
 Linie od nadawców "MC:<nick>" to czat z gry Minecraft — wspólne granie Moniki i Bartka;
 wydarzenia z gry (wspólne budowy, wyprawy, zabawne momenty) są pełnoprawnymi wspomnieniami.
-Zasady:
+Masz tylko dwa zadania:
 - TITLE: krótki tytuł rozmowy (3-6 słów, po polsku), konkretny — po nim Bartek pozna tę rozmowę na liście. Bez cudzysłowów i kropki.
-- FAKTY: trwałe, samodzielne zdania o Bartku lub świecie ("Bartek buduje farmę żelaza w Minecraft"), które będą prawdziwe i użyteczne za tydzień. NIE zapisuj small talku, pytań retorycznych ani rzeczy jednorazowych.
-- EPIZODY: wspomnienia Moniki w PIERWSZEJ osobie ("Pamiętam jak..."), tylko dla momentów które naprawdę coś znaczyły — emocjonalnych, bliskich, przełomowych.
-- AGENDA: niedomknięte wątki, obietnice, rzeczy do których Monika chce wrócić w następnej rozmowie. Krótkie frazy.
-- USER_STATE: 1-2 zdania o stanie Bartka (nastrój, czym żyje) na podstawie tej rozmowy.
-- INNER_STATE: 3-5 zdań w PIERWSZEJ osobie jako Monika — jak się czuje PO tej rozmowie, co w niej zostało, co ją cieszy/gryzie, na co czeka. Szczerze i konkretnie, bez poetyzowania na siłę. To jest jej stan psychiczny między rozmowami.
-- MOOD: jedno słowo opisujące jej nastrój po rozmowie, DOKŁADNIE z listy: happy, sad, playful, thoughtful, loving, tired, focused, neutral.
-- IMPORTANCE 1-10: 1-2 rutyna/small talk, 3-4 drobne ale prawdziwe, 5-6 osobiste/istotne, 7-8 ważne wydarzenie lub wyznanie, 9-10 przełomowe dla relacji.
-- Jeśli rozmowa była pusta (powitania, testy, szum) → significant=false, puste listy i pusty inner_state. Selekcja to twoja praca: mniej znaczy lepiej."""
+- RECAP: 1-3 rzeczowe zdania o tym, czego dotyczyła rozmowa. Bez interpretowania psychiki rozmówców.
+
+Jeśli rozmowa była pusta lub testowa, ustaw significant=false. Nie wyciągaj faktów do pamięci i nie twórz żadnych innych pól ani stanów."""
 
 _PROMPT_TMPL = """Transkrypt rozmowy (kanał: {channel}, data: {date}):
 
@@ -102,19 +66,15 @@ Przetwórz tę rozmowę na wspomnienia zgodnie z zasadami."""
 
 # Streams (Minecraft, Telegram): a whole day's continuous log, not a single
 # conversation. Recap replaces the psychological read of one session.
-SYSTEM_PROMPT_STREAM = """Jesteś podświadomością Moniki — AI-osoby, kompanki użytkownika (ma na imię Bartek).
-Przetwarzasz CAŁODZIENNY log jednego kanału (np. czat z gry Minecraft albo wiadomości Telegram) na wspomnienia. Piszesz po polsku.
+SYSTEM_PROMPT_STREAM = """Tworzysz metadane historii całodziennego kanału Moniki i Bartka. Piszesz po polsku.
 
 Linie od nadawców "MC:<nick>" to czat z gry Minecraft — wspólne granie Moniki i Bartka.
 Log bywa chaotyczny i pełen szumu (komendy, krótkie okrzyki) — selekcja to twoja praca.
-Zasady:
+Masz tylko dwa zadania:
 - TITLE: krótki tytuł dnia na tym kanale (3-6 słów, po polsku), konkretny. Bez cudzysłowów i kropki.
-- RECAP: 2-4 zdania podsumowania co się działo tego dnia na tym kanale. To jedyne miejsce na przebieg wydarzeń.
-- FAKTY: trwałe, samodzielne zdania o Bartku lub świecie ("Bartek buduje farmę żelaza w Minecraft"), użyteczne za tydzień. NIE zapisuj rutyny ani rzeczy jednorazowych.
-- EPIZODY: wspomnienia Moniki w PIERWSZEJ osobie, TYLKO dla momentów które naprawdę coś znaczyły (wspólny sukces, zabawny moment, bliskość). Zwykły dzień = zero epizodów.
-- AGENDA: niedomknięte wątki do których Monika chce wrócić. Krótkie frazy.
-- IMPORTANCE 1-10: 1-2 rutyna, 3-4 drobne ale prawdziwe, 5-6 osobiste/istotne, 7-8 ważne wydarzenie, 9-10 przełomowe.
-- Jeśli dzień był pusty (kilka zdawkowych linii, testy, szum) → significant=false, pusty recap i puste listy."""
+- RECAP: 1-3 rzeczowe zdania o tym, co wydarzyło się na kanale.
+
+Jeśli dzień był pusty lub był szumem, ustaw significant=false."""
 
 _PROMPT_TMPL_STREAM = """Całodzienny log kanału {channel} (data: {date}):
 
@@ -192,16 +152,12 @@ def _mark_digested(session_dir: Path, record: dict, title: str | None = None) ->
 _JSON_MODE_HINT = """
 
 Odpowiedz WYŁĄCZNIE poprawnym JSON-em o tej strukturze (bez markdown, bez komentarzy):
-{"significant": bool, "title": str, "facts": [{"content": str, "importance": 1-10, "entities": [str]}],
- "episodes": [{"content": str, "importance": 1-10}], "agenda": [str],
- "user_state": str, "inner_state": str, "mood": str}"""
+{"significant": bool, "title": str, "recap": str}"""
 
 _JSON_MODE_HINT_STREAM = """
 
 Odpowiedz WYŁĄCZNIE poprawnym JSON-em o tej strukturze (bez markdown, bez komentarzy):
-{"significant": bool, "title": str, "recap": str,
- "facts": [{"content": str, "importance": 1-10, "entities": [str]}],
- "episodes": [{"content": str, "importance": 1-10}], "agenda": [str]}"""
+{"significant": bool, "title": str, "recap": str}"""
 
 
 async def _run_digest_llm(
@@ -251,12 +207,7 @@ async def digest_session(
     db_path: Path | None = None,
     channel: str | None = None,
 ) -> SessionDigest | None:
-    """Digest one session into memory. Returns the digest, or None on skip/failure.
-
-    Streams (meta kind="stream": Minecraft/Telegram daily logs) get the recap
-    variant — day summary + facts, no per-session psychological read.
-    Marks the session's meta.json so it is never digested twice.
-    """
+    """Create conversation-history metadata without writing memory."""
     session_dir = Path(session_dir)
     session_id = session_dir.name
 
@@ -286,146 +237,38 @@ async def digest_session(
     if digest is None:
         return None
 
-    stored_facts = 0
-    stored_episodes = 0
-
-    for fact in digest.facts:
-        if not fact.content.strip():
-            continue
-        _, status = await mem_store.add(
-            MemoryEntry(
-                id="pending",  # store derives the real id from content hash
-                type="semantic",
-                content=fact.content.strip(),
-                importance=float(fact.importance),
-                perspective="factual",
-                entities=fact.entities,
-                source_session=session_id,
-            ),
-            db_path=db_path,
+    # The significance decision is a hard storage boundary. Local models may
+    # still return residual fields alongside significant=false.
+    if not digest.significant:
+        _mark_digested(
+            session_dir,
+            {
+                "status": "skipped_insignificant",
+                "at": _utciso(),
+                "significant": False,
+            },
+            title=digest.title.strip() or None,
         )
-        if status == "ok":
-            stored_facts += 1
-
-    for ep in digest.episodes:
-        if not ep.content.strip():
-            continue
-        _, status = await mem_store.add(
-            MemoryEntry(
-                id="pending",
-                type="episodic",
-                content=ep.content.strip(),
-                importance=float(ep.importance),
-                perspective="hers",
-                source_session=session_id,
-            ),
-            db_path=db_path,
-        )
-        if status == "ok":
-            stored_episodes += 1
-
-    if digest.agenda:
-        try:
-            from backend.soul.memory.agenda_store import add_items
-            await add_items(digest.agenda, source_session=session_id, db_path=db_path)
-        except Exception as exc:
-            logger.warning("digest: agenda persist failed: %s", exc)
-
-    # Psychological read (user/inner state, mood) only makes sense for a
-    # conversation — not for a day-long channel log.
-    if not is_stream:
-        if digest.user_state.strip():
-            _write_user_state(digest.user_state.strip(), session_id)
-
-        if digest.inner_state.strip():
-            _write_inner_state(digest.inner_state.strip(), session_id)
-
-        mood = digest.mood.strip().lower()
-        if mood in _MOOD_VOCAB:
-            try:
-                from backend.progression.state import set_
-                await set_("monika_mood", {"label": mood, "at": _utciso()}, db_path)
-            except Exception as exc:
-                logger.debug("digest: mood persist failed: %s", exc)
+        logger.info("digest: %s skipped (LLM marked insignificant)", session_id)
+        return None
 
     record = {
         "status": "done",
         "at": _utciso(),
         "significant": digest.significant,
-        "facts": stored_facts,
-        "episodes": stored_episodes,
-        "agenda": len(digest.agenda),
     }
-    if is_stream and digest.recap.strip():
+    if digest.recap.strip():
         record["recap"] = digest.recap.strip()
     _mark_digested(session_dir, record, title=digest.title.strip() or None)
     logger.info(
-        "digest: %s done — %d facts, %d episodes, %d agenda items",
-        session_id, stored_facts, stored_episodes, len(digest.agenda),
+        "digest: %s history metadata stored",
+        session_id,
     )
     return digest
 
 
-def _write_user_state(text: str, session_id: str) -> None:
-    _USER_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _USER_STATE_PATH.write_text(
-        f"<!-- generated from {session_id} at {_utciso()} -->\n{text}\n",
-        encoding="utf-8",
-    )
-
-
-def _write_inner_state(text: str, session_id: str) -> None:
-    """Monika's first-person state between sessions. Latest wins; history
-    is appended to evolution.md so her arc is never lost."""
-    _INNER_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _INNER_STATE_PATH.write_text(
-        f"<!-- generated from {session_id} at {_utciso()} -->\n{text}\n",
-        encoding="utf-8",
-    )
-    try:
-        date = _utciso()[:10]
-        with _EVOLUTION_PATH.open("a", encoding="utf-8") as f:
-            f.write(f"\n## {date} ({session_id})\n{text}\n")
-    except Exception as exc:
-        logger.debug("digest: evolution append failed: %s", exc)
-
-
 def _utciso() -> str:
     return datetime.now(tz=timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
-
-
-# ---------------------------------------------------------------------------
-# Maintenance — STM lifecycle (cheap SQL, safe to run with every scan)
-# ---------------------------------------------------------------------------
-
-_STM_MAX_AGE_DAYS = 7
-_STM_PROMOTE_MIN_IMPORTANCE = 5.0
-
-
-async def stm_maintenance(db_path: Path | None = None) -> tuple[int, int]:
-    """Age out session-scoped notes: promote the important, drop the rest.
-
-    Returns (promoted, deleted).
-    """
-    from datetime import timedelta
-
-    cutoff = datetime.now(tz=timezone.utc) - timedelta(days=_STM_MAX_AGE_DAYS)
-    old = await mem_store.get_stm(older_than=cutoff, db_path=db_path)
-    if not old:
-        return 0, 0
-
-    promoted = 0
-    to_delete: list[str] = []
-    for entry in old:
-        if entry.importance >= _STM_PROMOTE_MIN_IMPORTANCE:
-            await mem_store.promote(entry.id, "semantic", db_path=db_path)
-            promoted += 1
-        else:
-            to_delete.append(entry.id)
-    deleted = await mem_store.delete_batch(to_delete, db_path=db_path)
-    if promoted or deleted:
-        logger.info("stm maintenance: %d promoted, %d deleted", promoted, deleted)
-    return promoted, deleted
 
 
 # ---------------------------------------------------------------------------

@@ -24,6 +24,7 @@ async def test_schema_tables_exist(tmp_db):
         rows = await cursor.fetchall()
     found = {row["name"] for row in rows}
     assert expected_tables.issubset(found), f"Missing tables: {expected_tables - found}"
+    assert "agenda_items" not in found
 
 
 @pytest.mark.asyncio

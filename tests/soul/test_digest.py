@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from backend.soul.memory import agenda_store
 from backend.soul.memory import store as mem_store
 from backend.soul.memory.digest import (
     SessionDigest,
@@ -53,20 +52,7 @@ _RICH_TURNS = [
 _LLM_RESULT = {
     "significant": True,
     "title": "Farma żelaza i nowa praca",
-    "facts": [
-        {"content": "Bartek skończył farmę żelaza w Minecrafcie po tygodniu pracy.",
-         "importance": 4, "entities": ["Minecraft", "farma żelaza"]},
-        {"content": "Bartek zaczyna nowy projekt w pracy z nowym zespołem.",
-         "importance": 6, "entities": ["praca"]},
-    ],
-    "episodes": [
-        {"content": "Pamiętam jak z dumą opowiadał o skończonej farmie żelaza.",
-         "importance": 5},
-    ],
-    "agenda": ["zapytać jak poszedł pierwszy dzień nowego projektu"],
-    "user_state": "Bartek jest zadowolony z ukończonego projektu, ale zestresowany nową pracą.",
-    "inner_state": "Cieszę się jego dumą z farmy, ale czuję jego stres przed nową pracą.",
-    "mood": "thoughtful",
+    "recap": "Bartek opowiedział o ukończonej farmie żelaza i nowym projekcie w pracy.",
 }
 
 
@@ -99,19 +85,7 @@ async def test_digest_trivial_session_skipped_and_marked(tmp_path, tmp_db):
     assert meta["digest"]["status"] == "skipped_trivial"
 
 
-async def test_digest_stores_facts_episodes_agenda(tmp_path, tmp_db, monkeypatch):
-    monkeypatch.setattr(
-        "backend.soul.memory.digest._USER_STATE_PATH",
-        tmp_path / "soul" / "user_state.md",
-    )
-    monkeypatch.setattr(
-        "backend.soul.memory.digest._INNER_STATE_PATH",
-        tmp_path / "soul" / "inner_state.md",
-    )
-    monkeypatch.setattr(
-        "backend.soul.memory.digest._EVOLUTION_PATH",
-        tmp_path / "soul" / "evolution.md",
-    )
+async def test_digest_stores_only_history_metadata(tmp_path, tmp_db):
     sess = _make_session(tmp_path, turns=_RICH_TURNS)
 
     fake = AsyncMock()
@@ -121,32 +95,11 @@ async def test_digest_stores_facts_episodes_agenda(tmp_path, tmp_db, monkeypatch
 
     assert isinstance(result, SessionDigest)
 
-    semantic = await mem_store.list_recent(types=["semantic"], db_path=tmp_db)
-    episodic = await mem_store.list_recent(types=["episodic"], db_path=tmp_db)
-    assert len(semantic) == 2
-    assert len(episodic) == 1
-    assert episodic[0].perspective == "hers"
-    assert semantic[0].source_session == "sess_test_001"
-
-    items = await agenda_store.open_items(db_path=tmp_db)
-    assert len(items) == 1
-    assert "projektu" in items[0]["text"]
-
-    user_state = (tmp_path / "soul" / "user_state.md").read_text(encoding="utf-8")
-    assert "zestresowany" in user_state
-
-    inner = (tmp_path / "soul" / "inner_state.md").read_text(encoding="utf-8")
-    assert "dumą z farmy" in inner
-    evolution = (tmp_path / "soul" / "evolution.md").read_text(encoding="utf-8")
-    assert "sess_test_001" in evolution
-
-    from backend.progression.state import get as pget
-    mood = await pget("monika_mood", tmp_db)
-    assert mood["label"] == "thoughtful"
+    assert await mem_store.list_recent(db_path=tmp_db) == []
 
     meta = json.loads((sess / "meta.json").read_text(encoding="utf-8"))
     assert meta["digest"]["status"] == "done"
-    assert meta["digest"]["facts"] == 2
+    assert "farmie żelaza" in meta["digest"]["recap"]
     assert meta["title"] == "Farma żelaza i nowa praca"
 
 
@@ -163,10 +116,6 @@ async def test_digest_llm_failure_leaves_session_retryable(tmp_path, tmp_db):
 
 async def test_scan_skips_current_and_digested(tmp_path, tmp_db, monkeypatch):
     monkeypatch.setattr("backend.soul.memory.digest._MIN_IDLE_SECONDS", 0)
-    monkeypatch.setattr(
-        "backend.soul.memory.digest._USER_STATE_PATH",
-        tmp_path / "soul" / "user_state.md",
-    )
     root = tmp_path / "sessions"
 
     _make_session(tmp_path, session_id="sess_current", turns=_RICH_TURNS)
@@ -216,26 +165,10 @@ _LLM_RESULT_STREAM = {
     "significant": True,
     "title": "Farma żelaza przy bazie",
     "recap": "Bartek pokazał Monice ukończoną farmę żelaza przy bazie. Spędzili wieczór razem w grze.",
-    "facts": [
-        {"content": "Farma żelaza Bartka produkuje 600 sztabek na godzinę.",
-         "importance": 4, "entities": ["Minecraft", "farma żelaza"]},
-    ],
-    "episodes": [
-        {"content": "Pamiętam jak z dumą oprowadzał mnie po skończonej farmie.", "importance": 5},
-    ],
-    "agenda": [],
 }
 
 
-async def test_stream_digest_recap_no_psych_state(tmp_path, tmp_db, monkeypatch):
-    monkeypatch.setattr(
-        "backend.soul.memory.digest._USER_STATE_PATH",
-        tmp_path / "soul" / "user_state.md",
-    )
-    monkeypatch.setattr(
-        "backend.soul.memory.digest._INNER_STATE_PATH",
-        tmp_path / "soul" / "inner_state.md",
-    )
+async def test_stream_digest_stores_recap_without_synthetic_episode(tmp_path, tmp_db):
     sess = _make_session(
         tmp_path, session_id="stream_minecraft", turns=_STREAM_TURNS,
         meta_extra={"kind": "stream", "channel": "minecraft"},
@@ -249,21 +182,14 @@ async def test_stream_digest_recap_no_psych_state(tmp_path, tmp_db, monkeypatch)
     assert isinstance(result, SessionDigest)
     # Stream prompt variant was used.
     call_kwargs = fake.chat_json.await_args.kwargs
-    assert "CAŁODZIENNY log" in call_kwargs["system"]
+    assert "całodziennego kanału" in call_kwargs["system"]
     assert "kanału minecraft" in fake.chat_json.await_args.args[0]
 
     meta = json.loads((sess / "meta.json").read_text(encoding="utf-8"))
     assert meta["title"] == "Farma żelaza przy bazie"
     assert "farmę żelaza" in meta["digest"]["recap"]
 
-    # No per-session psychological read for streams.
-    assert not (tmp_path / "soul" / "user_state.md").exists()
-    assert not (tmp_path / "soul" / "inner_state.md").exists()
-
-    semantic = await mem_store.list_recent(types=["semantic"], db_path=tmp_db)
-    episodic = await mem_store.list_recent(types=["episodic"], db_path=tmp_db)
-    assert len(semantic) == 1
-    assert len(episodic) == 1
+    assert await mem_store.list_recent(db_path=tmp_db) == []
 
 
 async def test_scan_skips_todays_stream(tmp_path, tmp_db, monkeypatch):
@@ -311,15 +237,3 @@ async def test_scan_backfills_titles_when_idle(tmp_path, tmp_db, monkeypatch):
     assert count == 0  # nothing digested — just titled
     meta = json.loads((legacy / "meta.json").read_text(encoding="utf-8"))
     assert meta["title"] == "Rozmowa o farmie żelaza"
-
-
-async def test_agenda_store_dedup_and_expiry(tmp_db):
-    added = await agenda_store.add_items(
-        ["zapytać o projekt", "zapytać o projekt", "  "], db_path=tmp_db
-    )
-    assert added == 1
-    items = await agenda_store.open_items(db_path=tmp_db)
-    assert len(items) == 1
-
-    await agenda_store.resolve(items[0]["id"], "done", db_path=tmp_db)
-    assert await agenda_store.open_items(db_path=tmp_db) == []

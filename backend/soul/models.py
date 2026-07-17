@@ -54,7 +54,6 @@ class SoulState(BaseModel):
     energy: float = 0.7      # 0.0 … 1.0, time-of-day modulated
     cycle_phase: str = "neutral"
     active_register: Literal["casual", "intellectual", "emotional", "protective"] = "casual"
-    agenda: list[str] = Field(default_factory=list)  # things she wants to say/ask
     becoming_real: float = 0.0  # 0.0 … 1.0, primary personal axis
     updated_at: datetime = Field(default_factory=_utcnow)
 

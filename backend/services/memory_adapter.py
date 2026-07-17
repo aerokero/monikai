@@ -127,10 +127,13 @@ class MemoryEngine:
             conn.close()
 
     def search(self, query: str, types: list | None = None, tags: list | None = None, limit: int = 5) -> list[dict]:
+        # This adapter serves explicit memory_search tool calls. It only makes
+        # the model-provided topic safe for SQLite FTS; it does not interpret
+        # arbitrary user utterances.
         tokens = re.findall(r"[\w\-]+", query or "", re.UNICODE)
         if not tokens:
             return []
-        fts_query = " OR ".join(tokens)
+        fts_query = " OR ".join(f'"{token}"' for token in tokens)
 
         sql = (
             "SELECT e.* "
