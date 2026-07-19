@@ -8,10 +8,13 @@ from ..tools import tools_list
 create_event_tool = {
     "name": "create_event",
     "description": (
-        "Creates a new event in the calendar. For all-day and multi-day events, set all_day=true "
+        "Creates a new event in the calendar. Summary must be descriptive, never a bare keyword: "
+        "'Wizyta u dentysty 12:00', 'Dzień pracy', 'Spotkanie z Markiem' — not 'dentysta', 'pracuję', "
+        "'spotkanie'. For all-day and multi-day events, set all_day=true "
         "and use an exclusive end date: an event advertised as 2026-05-15 to 2026-05-17 must use "
         "start_iso='2026-05-15T00:00:00' and end_iso='2026-05-18T00:00:00'. "
-        "For timed events, use exact start/end times."
+        "For timed events, use exact start/end times. After creating, verify with list_events "
+        "before telling the user the event is ready."
     ),
     "parameters": {
         "type": "OBJECT",
@@ -193,7 +196,14 @@ clear_work_memory_tool = {
 
 memory_add_entry_tool = {
     "name": "memory_add_entry",
-    "description": "Adds a structured memory entry (fact, preference, event, journal, reflection, roleplay, etc.) to global memory.",
+    "description": (
+        "Adds one memory entry. Save only concrete, verifiable facts — one short sentence in third "
+        "person, distilled, never a raw transcript fragment, no hedged claims ('chyba', 'może') and "
+        "no vague impressions ('był dzisiaj wesoły'). type='semantic': durable fact or preference "
+        "('Bartosz nie lubi oliwek.', 'Brat Bartosza ma na imię Marek.'); type='episodic': a specific "
+        "event worth remembering ('Bartosz i Monika grali razem w Minecrafta 2026-06-05.'); "
+        "type='stm': relevant only today (what the user is doing or dealing with right now)."
+    ),
     "parameters": {
         "type": "OBJECT",
         "properties": {
@@ -379,7 +389,10 @@ run_openclaw_agent = {
 
 manage_agent_job_tool = {
     "name": "manage_agent_job",
-    "description": "Manages long-running agent jobs (start/status/stop/resume/list).",
+    "description": (
+        "Manages long-running agent jobs. Prefer status/stop/resume/list of an existing job; "
+        "do not use action=start if run_openclaw_agent was just called for the same goal."
+    ),
     "parameters": {
         "type": "OBJECT",
         "properties": {
