@@ -21,7 +21,7 @@ oraz porządki w repo.
   rendererem głosu z thinking wyłączonym (2.5) lub minimalnym (3.1).
 - Codex może sam uruchomić wyciszoną sesję Live, wysyłać kolejne wypowiedzi,
   porównywać brief z finalnym głosem i zapisać raport bez ręcznego udziału.
-- Suita testów: **326 pass**.
+- Suita testów: **328 pass**.
 
 ## Punkt wyjścia
 
@@ -41,17 +41,18 @@ jako `(Internal Monologue)`, a model głosowy ma z czego mówić.
   oba pola w diagnostyce, ale do modelu audio wstrzykuje wyłącznie
   `<response_brief mode="verbatim"><reply_core>…</reply_core></response_brief>`.
   Renderer ma wypowiedzieć cały tekst, a nie ponownie interpretować turę.
-- **Ścieżka głosowa**: hook w handlerze transkrypcji wejściowej
-  (`monikai.py`); brief powstaje asynchronicznie w trakcie mówienia. Jeśli audio
-  zaczęło już odpowiadać, spóźniony brief jest porzucany — nigdy nie przecieka
-  do następnej tury.
+- **Ścieżka głosowa**: przy włączonym Myślicielu Live działa z ręcznymi
+  granicami aktywności. Lokalny VAD wysyła `activityStart`, zbiera kolejne
+  rewizje ASR bez generowania, po końcu mowy tworzy dokładnie jeden brief i
+  dopiero po jego dostarczeniu wysyła `activityEnd`. Model audio nie może więc
+  rozpocząć odpowiedzi przed Myślicielem.
 - **Ścieżka tekstowa i programistyczna**: `think_for_text()` w handlerze
   `user_input` oraz `submit_user_turn()`; brief powstaje synchronicznie (limit
   8 s) i jest wstrzykiwany PRZED tekstem użytkownika. Obejmuje to także
   integracje korzystające z programistycznej ścieżki wysyłania tur.
 - Bramki free-tier: flaga, regex potakiwań i kontroli łącza, min. 18 znaków,
-  1 s stabilizacji transkrypcji głosowej, 0 s odstępu, jeden strzał naraz,
-  retry po 503, cooldown po 429/503.
+  0 s odstępu, jeden strzał na zakończoną turę, retry po 503, cooldown po
+  429/503.
 - Diagnostyka: konsola `[THINKER] myśl: ...` + prefiks `[Myśliciel]` w
   `on_internal_thought`, żeby odróżnić myśl mózgu od natywnej myśli modelu
   głosowego („mózg vs usta").
@@ -67,7 +68,7 @@ jako `(Internal Monologue)`, a model głosowy ma z czego mówić.
 "thinker": { "enabled": true }
 // pełne defaults w settings_store.py:
 // min_chars 18, min_interval_sec 0, thinking_budget 0,
-// timeout_sec 8, voice_debounce_sec 1, cooldown_sec 60
+// timeout_sec 8, cooldown_sec 60
 ```
 
 ```dotenv
@@ -185,10 +186,11 @@ Rozwiązanie systemowe:
 4. Przy włączonym Myślicielu native thinking ma budżet `0` na Gemini 2.5;
    Gemini 3.1 dostaje najniższy dostępny poziom `minimal` i nie emituje thoughts.
 5. Brief spóźniony względem rozpoczętej odpowiedzi jest dropowany, zamiast po
-   staremu czekać na jej koniec i zatruwać kontekst następnej tury.
+   staremu czekać na jej koniec i zatruwać kontekst następnej tury. Test 9
+   zastępuje ten wyścig ręcznym handshake'em końca mowy.
 6. `min_interval_sec=0`: skoro audio nie jest warstwą reasoning, każda znacząca
-   tura musi mieć szansę dostać brief. Pozostają debounce, single-flight i
-   cooldown po błędach API.
+   tura musi mieć szansę dostać brief. Pozostają single-flight i cooldown po
+   błędach API.
 
 Instrukcja Myśliciela używa ogólnej hierarchii uziemienia: literalna treść i cel
 komunikacyjny → kontekst → wiedza/stanowisko → persona jako ton. To zastępuje
@@ -277,6 +279,38 @@ pytania (różniła się wyłącznie zapisem pauzy wokół myślnika), bez żadn
 zakazanych motywów autoreferencyjnych. Raport:
 `tmp/conversation_probe_renderer_fidelity.md`.
 
+### Test 9 (mikrofon): wiele finalnych briefów z jednej wypowiedzi
+
+Log rozmowy o projekcie Salesforce ujawnił właściwe źródło dalszego rozjazdu.
+W trakcie jednej długiej wypowiedzi, zawierającej naturalne pauzy i kolejne
+rewizje transkrypcji, Myśliciel wygenerował serię różnych odpowiedzi: najpierw
+ogólne pytania o projekt, potem kilka wariantów o dwugodzinnym downtime, a na
+końcu pytania o Excel i import. Każdy brief był poprawny dla swojego fragmentu,
+ale razem stanowiły konkurencyjne polecenia dla jednego renderera.
+
+Debounce nie mógł rozwiązać tego systemowo: zbyt krótki generował na pauzie,
+a zbyt długi przegrywał wyścig z automatycznym VAD modelu Live. Rozwiązaniem
+jest kontrola granicy tury:
+
+1. Gdy Myśliciel jest włączony, automatyczny VAD Gemini jest wyłączony.
+2. Lokalny VAD wysyła `activityStart` przed pierwszą próbką mowy.
+3. Przyrosty ASR tylko aktualizują bufor; nie uruchamiają modelu tekstowego.
+4. Po skonfigurowanym okresie ciszy powstaje jeden brief z pełnego bufora.
+5. `activityEnd` jest wysyłane dopiero po dostarczeniu briefu. Dopiero wtedy
+   renderer może rozpocząć odpowiedź.
+6. Jeśli rozmówca wznowi mowę podczas generowania, finalizacja jest anulowana,
+   aktywność pozostaje otwarta, a kolejna próba obejmuje pełniejszy tekst.
+7. Błąd lub timeout Thinkera zawsze zwalnia `activityEnd`, żeby rozmowa nie
+   mogła utknąć bez odpowiedzi.
+
+Brief i `activityEnd` są wysyłane kolejno tym samym kanałem realtime. Nie są
+już mieszane zwykłe wiadomości `session.send()` z audio realtime, ponieważ API
+nie gwarantuje ścisłej kolejności między tymi dwoma rodzajami wejścia.
+
+To świadomie zamienia część szybkości na spójność: opóźnienie obejmuje teraz
+czas końca mowy plus generowanie Thinkera, ale model głosowy nie prowadzi już
+równoległego, konkurencyjnego procesu odpowiedzi.
+
 ## Commity sesji
 
 | commit | zakres |
@@ -298,9 +332,9 @@ z `* text=auto eol=lf`.
    odpowiedzi”) bezpośrednio z wypowiedzią. Nie ma już pośredniej warstwy
    natywnej myśli. Jeśli znika pytanie lub zmienia się teza, problemem jest
    egzekwowanie kontraktu briefu przez model audio.
-2. **Spóźnione briefy.** Obserwować liczbę komunikatów `brief porzucony —
-   odpowiedź głosowa już się rozpoczęła`. Częste dropy oznaczają, że trzeba
-   skrócić debounce/model albo dłużej powstrzymać start odpowiedzi audio.
+2. **Ręczny VAD.** Obserwować fałszywe końce aktywności przy bardzo cichej mowie
+   oraz czas od końca zdania do odpowiedzi. Log powinien pokazywać dokładnie
+   jeden `brief` i jedno `finalizacja zakończona` na turę głosową.
 3. **Free tier jest kapryśny.** `min_interval_sec=0` zwiększa liczbę wywołań.
    Jest retry i fallback `gemini-3.1-flash-lite`; obserwować jego limity oraz
    jakość względem modelu podstawowego. Przy przeciążeniu obu pozostaje płatny
@@ -309,10 +343,10 @@ z `* text=auto eol=lf`.
    które jednak zasługują na myśl.
 5. **Integracje tekstowe.** `submit_user_turn()` korzysta teraz z Myśliciela;
    obserwować opóźnienie Telegrama/Discorda przy fallbacku i timeoutach.
-6. **Debounce głosu.** Domyślne 1 s mieści się w 4-sekundowym oknie VAD i wraz
-   z ~2.1 s generowania powinno zdążyć przed odpowiedzią. W live obserwować,
-   czy przy długich pauzach w środku wypowiedzi nie warto podnieść go do
-   1.25–1.5 s albo przejść na jawny sygnał końca wejścia.
+6. **Próg lokalnego VAD.** Obecne RMS 800 i czas ciszy z
+   `GEMINI_VAD_SILENCE_DURATION_MS` wyznaczają teraz faktyczną granicę tury.
+   W razie ucinania cichej końcówki stroić próg RMS; w razie zbyt długiego
+   oczekiwania — czas ciszy.
 
 ## Jak wyłączyć
 

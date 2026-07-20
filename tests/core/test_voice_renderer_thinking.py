@@ -1,8 +1,20 @@
+import asyncio
+
 from backend.core import model_config as model_config
 from backend.core.monikai import (
+    AudioLoop,
+    _build_voice_realtime_input_config,
     _build_voice_renderer_thinking_config,
     _streaming_transcript_update,
 )
+
+
+def test_thinker_renderer_uses_manual_activity_boundaries():
+    config = _build_voice_realtime_input_config(renderer_only=True)
+    assert config.automatic_activity_detection.disabled is True
+
+    ordinary = _build_voice_realtime_input_config(renderer_only=False)
+    assert ordinary.automatic_activity_detection.disabled is False
 
 
 def test_renderer_disables_native_thinking_on_gemini_25(monkeypatch):
@@ -31,3 +43,36 @@ def test_streaming_transcript_distinguishes_growth_revision_and_new_chunk():
         "Drugie zdanie.",
         False,
     )
+
+
+async def test_manual_voice_turn_delivers_brief_before_activity_end():
+    events = []
+
+    class FakeThinker:
+        async def prepare_voice_turn(self, text):
+            events.append(("prepare", text))
+            return '<response_brief mode="verbatim"><reply_core>Gotowe.</reply_core></response_brief>'
+
+        def mark_voice_delivered(self):
+            events.append(("marked", True))
+
+    class FakeSession:
+        async def send_realtime_input(self, **kwargs):
+            events.append((next(iter(kwargs)), kwargs))
+
+    loop = AudioLoop.__new__(AudioLoop)
+    loop.chat_buffer = {"sender": "Ty", "text": "pełna wypowiedź użytkownika"}
+    loop._last_input_transcription = ""
+    loop.thinker = FakeThinker()
+    loop.session = FakeSession()
+    loop.out_queue = None
+    loop._is_speaking = False
+    loop._manual_voice_activity_open = True
+    loop._voice_finalize_task = asyncio.current_task()
+
+    await loop._finalize_manual_voice_turn()
+
+    assert [kind for kind, _ in events] == ["prepare", "text", "activity_end", "marked"]
+    assert "text" in events[1][1]
+    assert "activity_end" in events[2][1]
+    assert loop._manual_voice_activity_open is False

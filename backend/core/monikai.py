@@ -227,6 +227,17 @@ def _build_voice_renderer_thinking_config() -> types.ThinkingConfig:
     return _build_thinking_config("minimal", 0, include_thoughts=False)
 
 
+def _build_voice_realtime_input_config(renderer_only: bool) -> types.RealtimeInputConfig:
+    """Hold a voice turn open until the Thinker delivers its final script."""
+    if not renderer_only:
+        return BASE_REALTIME_INPUT_CONFIG
+    return types.RealtimeInputConfig(
+        automatic_activity_detection=types.AutomaticActivityDetection(disabled=True),
+        activity_handling=types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
+        turn_coverage=types.TurnCoverage.TURN_INCLUDES_ONLY_ACTIVITY,
+    )
+
+
 def _build_base_live_config() -> types.LiveConnectConfig:
     """Build the module-level LiveConnectConfig template from current _mc state."""
     kwargs: dict = dict(
@@ -513,6 +524,9 @@ class AudioLoop:
         self._go_away_requested = False
         self._pause_started_ts = None
         self._audio_stream_end_sent = False
+        self._manual_voice_turn_control = False
+        self._manual_voice_activity_open = False
+        self._voice_finalize_task: Optional[asyncio.Task] = None
         self._session_ready = asyncio.Event()
         self._pending_ai_turn_futures = deque()
 
@@ -1322,6 +1336,7 @@ class AudioLoop:
 
     def _build_live_connect_config(self, personality_context: Optional[str] = None):
         renderer_only = bool((APP_SETTINGS.get("thinker") or {}).get("enabled", False))
+        self._manual_voice_turn_control = renderer_only
         if self.session_mode:
             # Genuine identity swap: she reconnects as an expert clinician,
             # still herself, knowing this person, with the safety floor on top.
@@ -1385,7 +1400,7 @@ class AudioLoop:
             input_audio_transcription=config.input_audio_transcription,
             thinking_config=thinking_config,
             context_window_compression=config.context_window_compression,
-            realtime_input_config=config.realtime_input_config,
+            realtime_input_config=_build_voice_realtime_input_config(renderer_only),
             session_resumption=session_resumption,
             system_instruction=system_instruction,
             tools=filtered_tools,
@@ -1405,10 +1420,67 @@ class AudioLoop:
         if not self.session or self._audio_stream_end_sent:
             return
         try:
+            if self._manual_voice_turn_control:
+                if self._manual_voice_activity_open:
+                    await self.session.send_realtime_input(activity_end=types.ActivityEnd())
+                    self._manual_voice_activity_open = False
+                self._audio_stream_end_sent = True
+                return
             await self.session.send_realtime_input(audio_stream_end=True)
             self._audio_stream_end_sent = True
         except Exception as e:
             print(f"[AI DEBUG] [AUDIO] Failed to send audioStreamEnd: {e}")
+
+    def _cancel_voice_finalize(self) -> None:
+        task = self._voice_finalize_task
+        if task and not task.done():
+            task.cancel()
+        self._voice_finalize_task = None
+
+    def _schedule_voice_finalize(self) -> None:
+        self._cancel_voice_finalize()
+        self._voice_finalize_task = asyncio.create_task(self._finalize_manual_voice_turn())
+
+    async def _finalize_manual_voice_turn(self) -> None:
+        """Think once, inject once, then release Gemini's held voice turn."""
+        current_task = asyncio.current_task()
+        try:
+            # Let the last server-side ASR revision arrive after local silence.
+            await asyncio.sleep(0.2)
+            text = (
+                self.chat_buffer.get("text", "")
+                if self.chat_buffer.get("sender") == "Ty"
+                else self._last_input_transcription
+            )
+            injection = await self.thinker.prepare_voice_turn(text)
+            if self._is_speaking or not self._manual_voice_activity_open or not self.session:
+                return
+            if self.out_queue:
+                if injection:
+                    await self.out_queue.put({"realtime_text": injection})
+                await self.out_queue.put({"activity_end": True})
+            else:
+                if injection:
+                    await self.session.send_realtime_input(text=injection)
+                await self.session.send_realtime_input(activity_end=types.ActivityEnd())
+            if injection:
+                self.thinker.mark_voice_delivered()
+            self._manual_voice_activity_open = False
+            print("[THINKER] finalizacja zakończona — zwalniam odpowiedź głosową.")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"[THINKER] finalizacja tury głosowej nie powiodła się: {exc}")
+            # Nie blokuj rozmowy na zawsze, gdy Thinker lub API zawiedzie.
+            if self._manual_voice_activity_open and not self._is_speaking and self.session:
+                try:
+                    await self.session.send_realtime_input(activity_end=types.ActivityEnd())
+                    self._manual_voice_activity_open = False
+                except Exception:
+                    pass
+        finally:
+            if self._voice_finalize_task is current_task:
+                self._voice_finalize_task = None
 
     def set_session_mode(self, active: bool, kind: str = "auto"):
         """Toggle session mode and request a reconnect so the swap takes effect.
@@ -1439,6 +1511,8 @@ class AudioLoop:
         print(f"[AI DEBUG] [RECONNECT] Reconnect requested: {reason}")
 
     def stop(self):
+        self._cancel_voice_finalize()
+        self._manual_voice_activity_open = False
         try:
             self.flush_chat()
         except Exception:
@@ -1759,6 +1833,15 @@ class AudioLoop:
             msg = await self.out_queue.get()
             try:
                 if isinstance(msg, dict):
+                    if msg.get("activity_start"):
+                        await self.session.send_realtime_input(activity_start=types.ActivityStart())
+                        continue
+                    if msg.get("activity_end"):
+                        await self.session.send_realtime_input(activity_end=types.ActivityEnd())
+                        continue
+                    if msg.get("realtime_text"):
+                        await self.session.send_realtime_input(text=str(msg["realtime_text"]))
+                        continue
                     mime_type = str(msg.get("mime_type") or "").lower()
                     data = msg.get("data")
                     if isinstance(data, str):
@@ -1891,7 +1974,11 @@ class AudioLoop:
         kwargs = {"exception_on_overflow": False} if __debug__ else {}
 
         VAD_THRESHOLD = 800
-        SILENCE_DURATION = 3.0
+        SILENCE_DURATION = (
+            max(0.5, GEMINI_VAD_SILENCE_DURATION_MS / 1000.0)
+            if self._manual_voice_turn_control
+            else 3.0
+        )
 
         while True:
             if self.paused:
@@ -1912,9 +1999,6 @@ class AudioLoop:
                 # Resample to 16kHz for the API
                 data = self._resample_audio(raw_data, native_rate, SEND_SAMPLE_RATE)
 
-                if self.out_queue:
-                    await self.out_queue.put({"data": data, "mime_type": "audio/pcm"})
-
                 count = len(data) // 2
                 if count > 0:
                     shorts = struct.unpack(f"<{count}h", data)
@@ -1927,7 +2011,14 @@ class AudioLoop:
                     self.mark_user_activity()
                     self._silence_start_time = None
                     if not self._is_speaking:
+                        self._cancel_voice_finalize()
                         self._is_speaking = True
+                        if self._manual_voice_turn_control and not self._manual_voice_activity_open:
+                            if self.out_queue:
+                                await self.out_queue.put({"activity_start": True})
+                            elif self.session:
+                                await self.session.send_realtime_input(activity_start=types.ActivityStart())
+                            self._manual_voice_activity_open = True
                         print(f"[AI DEBUG] [VAD] Speech Detected (RMS: {rms}). Sending Video Frame.")
                         if self._latest_image_payload and self.out_queue:
                             await self.out_queue.put(self._latest_image_payload)
@@ -1941,6 +2032,11 @@ class AudioLoop:
                             print("[AI DEBUG] [VAD] Silence detected. Resetting speech state.")
                             self._is_speaking = False
                             self._silence_start_time = None
+                            if self._manual_voice_turn_control and self._manual_voice_activity_open:
+                                self._schedule_voice_finalize()
+
+                if self.out_queue:
+                    await self.out_queue.put({"data": data, "mime_type": "audio/pcm"})
 
             except Exception as e:
                 print(f"Error reading audio: {e}")
@@ -2836,10 +2932,11 @@ class AudioLoop:
                                         else:
                                             self.chat_buffer["text"] += delta
 
-                                    # Transkrypcja spływa live: Thinker buduje brief,
-                                    # zanim renderer głosowy rozpocznie odpowiedź.
+                                    # Zbieraj wyłącznie najnowszą rewizję ASR.
+                                    # Jeden brief powstanie dopiero na ręcznie
+                                    # kontrolowanym końcu aktywności głosowej.
                                     try:
-                                        self.thinker.notice_user_text(self.chat_buffer["text"])
+                                        self.thinker.update_voice_transcript(self.chat_buffer["text"])
                                     except Exception:
                                         pass
 
@@ -4923,6 +5020,8 @@ class AudioLoop:
 
             finally:
                 self._session_ready.clear()
+                self._cancel_voice_finalize()
+                self._manual_voice_activity_open = False
                 self.session = None
                 while self._pending_ai_turn_futures:
                     future = self._pending_ai_turn_futures.popleft()

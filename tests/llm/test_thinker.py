@@ -33,7 +33,6 @@ def make_thinker(**overrides):
         on_thought=lambda t: calls["thoughts"].append(t),
         get_settings=lambda: settings,
     )
-    thinker.voice_debounce_sec = 0.01
     thinker.fallback_model = None
 
     async def fake_generate(user_text):
@@ -44,22 +43,20 @@ def make_thinker(**overrides):
     return thinker, calls, settings, state
 
 
-async def wait_for_task(thinker):
-    if thinker._task:
-        await thinker._task
+async def run_voice_turn(thinker, text):
+    thinker.update_voice_transcript(text)
+    return await thinker.finalize_voice_turn()
 
 
-async def test_disabled_means_no_task():
+async def test_disabled_means_no_generation():
     thinker, calls, settings, _ = make_thinker(settings={"enabled": False})
-    thinker.notice_user_text("to jest dłuższa wypowiedź o czymś ważnym")
-    assert thinker._task is None
+    assert await run_voice_turn(thinker, "to jest dłuższa wypowiedź o czymś ważnym") is False
     assert calls["generated"] == []
 
 
 async def test_happy_path_delivers_response_brief():
     thinker, calls, _, _ = make_thinker()
-    thinker.notice_user_text("moim zdaniem interstellar jest lepszy niż hail mary")
-    await wait_for_task(thinker)
+    await run_voice_turn(thinker, "moim zdaniem interstellar jest lepszy niż hail mary")
     assert len(calls["delivered"]) == 1
     assert calls["delivered"][0].startswith('<response_brief mode="verbatim">')
     assert "<reply_core>To jest konkretny rdzeń odpowiedzi.</reply_core>" in calls["delivered"][0]
@@ -76,41 +73,25 @@ async def test_backchannels_and_short_text_are_skipped():
         "mhm", "no dobra", "okej", "tak tak", "za krótkie",
         "Halo słyszymy się?", "halo halo", "słyszysz mnie?", "jesteś tam?",
     ]:
-        thinker.notice_user_text(text)
-    assert thinker._task is None
+        assert await run_voice_turn(thinker, text) is False
     assert calls["generated"] == []
 
 
 async def test_min_interval_between_shots():
     thinker, calls, _, _ = make_thinker()
-    thinker.notice_user_text("pierwsza dłuższa wypowiedź o czymś konkretnym")
-    await wait_for_task(thinker)
-    thinker.notice_user_text("druga dłuższa wypowiedź o czymś zupełnie innym")
-    await wait_for_task(thinker)
+    await run_voice_turn(thinker, "pierwsza dłuższa wypowiedź o czymś konkretnym")
+    await run_voice_turn(thinker, "druga dłuższa wypowiedź o czymś zupełnie innym")
     assert len(calls["generated"]) == 1
 
 
-async def test_single_task_in_flight():
-    thinker, calls, _, state = make_thinker(settings={"min_interval_sec": 0.0})
-    state["ai_turn_open"] = True  # trzymaj task przy życiu w pętli czekania
-    thinker.notice_user_text("pierwsza dłuższa wypowiedź o czymś konkretnym")
-    await asyncio.sleep(0.05)
-    thinker.notice_user_text("druga dłuższa wypowiedź o czymś zupełnie innym")
-    assert len(calls["generated"]) == 1
-    state["ai_turn_open"] = False
-    await wait_for_task(thinker)
-
-
-async def test_voice_transcription_debounce_uses_latest_complete_text():
+async def test_voice_boundary_uses_latest_complete_text():
     thinker, calls, _, _ = make_thinker(settings={"min_interval_sec": 0.0})
-    thinker.voice_debounce_sec = 0.04
 
-    thinker.notice_user_text("wczoraj zacząłem opowiadać o filmie, ale nie chcia")
-    await asyncio.sleep(0.01)
-    thinker.notice_user_text(
+    thinker.update_voice_transcript("wczoraj zacząłem opowiadać o filmie, ale nie chcia")
+    thinker.update_voice_transcript(
         "wczoraj oglądałem ciekawy film, a potem zamówiłem leżak na balkon"
     )
-    await wait_for_task(thinker)
+    await thinker.finalize_voice_turn()
 
     assert calls["generated"] == [
         "wczoraj oglądałem ciekawy film, a potem zamówiłem leżak na balkon"
@@ -118,22 +99,36 @@ async def test_voice_transcription_debounce_uses_latest_complete_text():
     assert len(calls["delivered"]) == 1
 
 
+async def test_manual_voice_boundary_generates_once_from_latest_transcript():
+    thinker, calls, _, _ = make_thinker(settings={"min_interval_sec": 0.0})
+    thinker.update_voice_transcript("zaczynam opowiadać o projekcie")
+    thinker.update_voice_transcript("projekt wymaga dwóch godzin downtime'u")
+    thinker.update_voice_transcript(
+        "projekt wymaga dwóch godzin downtime'u i późniejszego importu z Excela"
+    )
+
+    assert calls["generated"] == []
+    delivered = await thinker.finalize_voice_turn()
+
+    assert delivered is True
+    assert calls["generated"] == [
+        "projekt wymaga dwóch godzin downtime'u i późniejszego importu z Excela"
+    ]
+    assert len(calls["delivered"]) == 1
+    assert thinker.last_trace["status"] == "delivered"
+
+
 async def test_late_brief_is_dropped_instead_of_leaking_into_next_turn():
     thinker, calls, _, state = make_thinker()
     state["ai_turn_open"] = True
-    thinker.notice_user_text("dłuższa wypowiedź w trakcie jej mówienia")
-    await asyncio.sleep(0.05)
-    assert calls["delivered"] == []
-    state["ai_turn_open"] = False
-    await wait_for_task(thinker)
+    await run_voice_turn(thinker, "dłuższa wypowiedź w trakcie jej mówienia")
     assert calls["delivered"] == []
 
 
 async def test_late_brief_still_reaches_diagnostics():
     thinker, calls, _, state = make_thinker()
     state["ai_turn_open"] = True
-    thinker.notice_user_text("dłuższa wypowiedź w trakcie jej mówienia")
-    await wait_for_task(thinker)
+    await run_voice_turn(thinker, "dłuższa wypowiedź w trakcie jej mówienia")
     assert calls["delivered"] == []
     assert calls["thoughts"]  # brief trafił do diagnostyki mimo porzucenia
 
@@ -145,8 +140,7 @@ async def test_429_sets_silent_cooldown():
         raise RuntimeError("429 RESOURCE_EXHAUSTED: quota")
 
     thinker._generate = broken_generate
-    thinker.notice_user_text("dłuższa wypowiedź o czymś konkretnym")
-    await wait_for_task(thinker)
+    await run_voice_turn(thinker, "dłuższa wypowiedź o czymś konkretnym")
     assert calls["delivered"] == []
     assert thinker._next_allowed_ts > time.monotonic() + 30
 
@@ -210,8 +204,7 @@ async def test_503_overload_retries_once_then_cools_down():
         raise RuntimeError("503 UNAVAILABLE: model experiencing high demand")
 
     thinker._generate = broken_generate
-    thinker.notice_user_text("dłuższa wypowiedź o czymś konkretnym")
-    await wait_for_task(thinker)
+    await run_voice_turn(thinker, "dłuższa wypowiedź o czymś konkretnym")
     assert len(attempts) == 2  # jedna szybka ponowna próba
     assert calls["delivered"] == []
     assert thinker._next_allowed_ts > time.monotonic() + 30
@@ -229,8 +222,7 @@ async def test_503_retry_saves_the_thought():
         return brief("Druga próba rozumie temat.", "Druga próba się udała.")
 
     thinker._generate = flaky_generate
-    thinker.notice_user_text("dłuższa wypowiedź o czymś konkretnym")
-    await wait_for_task(thinker)
+    await run_voice_turn(thinker, "dłuższa wypowiedź o czymś konkretnym")
     assert len(calls["delivered"]) == 1
     assert "<reply_core>Druga próba się udała.</reply_core>" in calls["delivered"][0]
 
@@ -252,8 +244,7 @@ async def test_503_uses_fallback_model_after_primary_retry():
 
     thinker._generate = unavailable
     thinker._generate_on_model = fallback
-    thinker.notice_user_text("dłuższa wypowiedź wymagająca briefu")
-    await wait_for_task(thinker)
+    await run_voice_turn(thinker, "dłuższa wypowiedź wymagająca briefu")
 
     assert len(primary_attempts) == 2
     assert fallback_models == ["gemini-3.1-flash-lite"]
@@ -276,8 +267,7 @@ async def test_429_goes_directly_to_fallback_model():
 
     thinker._generate = rate_limited
     thinker._generate_on_model = fallback
-    thinker.notice_user_text("dłuższa wypowiedź przy limicie primary")
-    await wait_for_task(thinker)
+    await run_voice_turn(thinker, "dłuższa wypowiedź przy limicie primary")
 
     assert len(primary_attempts) == 1
     assert fallback_models == ["gemini-3.1-flash-lite"]
@@ -286,8 +276,7 @@ async def test_429_goes_directly_to_fallback_model():
 
 async def test_pass_from_model_means_no_injection():
     thinker, calls, _, _ = make_thinker(thought="PASS.")
-    thinker.notice_user_text("dłuższa wypowiedź będąca zwykłym small talkiem")
-    await wait_for_task(thinker)
+    await run_voice_turn(thinker, "dłuższa wypowiedź będąca zwykłym small talkiem")
     assert calls["delivered"] == []
     assert calls["thoughts"] == []
 

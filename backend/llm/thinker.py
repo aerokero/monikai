@@ -170,21 +170,15 @@ class Thinker:
         self._is_ai_turn_open = is_ai_turn_open
         self._on_thought = on_thought
         self._get_settings = get_settings or (lambda: {})
-        self._task: Optional[asyncio.Task] = None
         self._next_allowed_ts = 0.0
         self._client = None
         self.fallback_model = THINKER_FALLBACK_MODEL
         self.last_trace: Dict = {}
-        # Transkrypcja Live przychodzi przyrostowo. Bez krótkiego debounce'u
-        # pierwszy fragment >= min_chars palił cały strzał (np. "widziałem
-        # wczoraj film, ale nie chcia...") i późniejsze wątki tej samej
-        # wypowiedzi nigdy nie trafiały do Myśliciela.
-        self.voice_debounce_sec = 1.0
-        self._voice_debouncing = False
         # 120 s wyciszało mózg na kilka tur w środku żywej rozmowy; 60 s
         # wystarcza, a settings["thinker"]["cooldown_sec"] pozwala stroić.
         self.rate_limit_cooldown_sec = 60.0
         self.overload_retry_delay_sec = 2.0
+        self._pending_voice_text = ""
 
     def _config(self) -> Dict:
         try:
@@ -212,8 +206,6 @@ class Thinker:
         """Wspólna bramka obu ścieżek: flaga, jeden strzał naraz, odstęp,
         minimalna długość, potakiwania. Zwraca oczyszczony tekst albo None."""
         if not self.enabled:
-            return None
-        if self._task and not self._task.done():
             return None
         if time.monotonic() < self._next_allowed_ts:
             return None
@@ -266,45 +258,36 @@ class Thinker:
             print(f"[THINKER] primary niedostępny — fallback: {self.fallback_model}")
             return await self._generate_on_model(user_text, self.fallback_model)
 
-    def notice_user_text(self, text: str) -> None:
-        """Hook z handlera transkrypcji wejściowej (głos). Sync i tani —
-        pełna praca dzieje się w tasku. Przyrosty tej samej transkrypcji
-        resetują krótki debounce, żeby model dostał możliwie pełną wypowiedź,
-        a nie pierwszy fragment, który przekroczył min_chars."""
-        # Aktywny task w fazie generowania/dostarczania nadal oznacza jeden
-        # strzał naraz. Tylko tanią fazę debounce wolno zastąpić pełniejszą
-        # wersją tej samej wypowiedzi.
-        active = self._task and not self._task.done()
-        if active and not self._voice_debouncing:
-            return
+    def update_voice_transcript(self, text: str) -> None:
+        """Store the latest ASR revision without generating a partial brief."""
+        self._pending_voice_text = re.sub(r"\s+", " ", text or "").strip()
 
-        if active and self._voice_debouncing:
-            self._task.cancel()
-            self._task = None
+    async def prepare_voice_turn(self, text: str = "") -> Optional[str]:
+        """Generate exactly one brief at the real end of speech."""
+        final_text = re.sub(r"\s+", " ", text or self._pending_voice_text).strip()
+        self._pending_voice_text = ""
+        injection = await self.think_for_text(final_text)
+        if not injection:
+            return None
+        if self._is_ai_turn_open():
+            self.last_trace = {**self.last_trace, "status": "late"}
+            print("[THINKER] brief porzucony — odpowiedź głosowa już się rozpoczęła.")
+            return None
+        self.last_trace = {**self.last_trace, "status": "prepared"}
+        return injection
 
-        cleaned = self._gate(text)
-        if cleaned is None:
-            return
-        self._voice_debouncing = True
-        self._task = asyncio.create_task(self._think_after_voice_debounce(cleaned))
+    async def finalize_voice_turn(self, text: str = "") -> bool:
+        """Compatibility helper; runtime uses prepare + ordered realtime send."""
+        injection = await self.prepare_voice_turn(text)
+        if not injection:
+            return False
+        await self._deliver(injection)
+        self.last_trace = {**self.last_trace, "status": "delivered"}
+        return True
 
-    async def _think_after_voice_debounce(self, user_text: str) -> None:
-        try:
-            debounce = float(
-                self._config().get("voice_debounce_sec", self.voice_debounce_sec) or 0.0
-            )
-            if debounce > 0:
-                await asyncio.sleep(debounce)
-            self._voice_debouncing = False
-            self._mark_shot()
-            await self._think(user_text)
-        except asyncio.CancelledError:
-            raise
-        finally:
-            # Nie nadpisuj stanu nowego taska, który zastąpił ten w trakcie
-            # debounce'u.
-            if asyncio.current_task() is self._task:
-                self._voice_debouncing = False
+    def mark_voice_delivered(self) -> None:
+        if self.last_trace.get("status") == "prepared":
+            self.last_trace = {**self.last_trace, "status": "delivered"}
 
     async def think_for_text(self, text: str, timeout_sec: Optional[float] = None) -> Optional[str]:
         """Ścieżka czatu tekstowego: buduje brief synchronicznie. CALLER
@@ -351,48 +334,7 @@ class Thinker:
         return injection
 
     def close(self) -> None:
-        if self._task and not self._task.done():
-            self._task.cancel()
-        self._task = None
-        self._voice_debouncing = False
-
-    async def _think(self, user_text: str) -> None:
-        try:
-            brief = _parse_response_brief(await self._generate_with_retry(user_text))
-            if not brief:
-                return
-            diagnostic = brief.diagnostic_text()
-            print(f"[THINKER] brief: {diagnostic}")
-            if self._on_thought:
-                try:
-                    self._on_thought(diagnostic)
-                except Exception:
-                    pass
-            # Brief ma sens wyłącznie PRZED odpowiedzią na swoją turę. Dawny
-            # kod czekał na koniec rozpoczętej odpowiedzi i wstrzykiwał wtedy
-            # spóźniony materiał do następnej tury — źródło rozjazdów kontekstu.
-            if self._is_ai_turn_open():
-                self.last_trace = {
-                    "source": user_text,
-                    "status": "late",
-                    "analysis": brief.analysis,
-                    "reply_core": brief.reply,
-                }
-                print("[THINKER] brief porzucony — odpowiedź głosowa już się rozpoczęła.")
-                return
-            injection = brief.to_injection(user_text)
-            await self._deliver(injection)
-            self.last_trace = {
-                "source": user_text,
-                "status": "delivered",
-                "analysis": brief.analysis,
-                "reply_core": brief.reply,
-                "injection": injection,
-            }
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            self._note_generate_failure(exc)
+        self._pending_voice_text = ""
 
     async def _generate(self, user_text: str) -> str:
         return await self._generate_on_model(user_text, THINKER_MODEL)

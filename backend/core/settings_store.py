@@ -130,9 +130,6 @@ DEFAULT_SETTINGS = {
         # ukrytej warstwy thinking, która nie mieściła się w timeout_sec.
         "thinking_budget": 0,
         "timeout_sec": 8.0,
-        # Poczekaj na ustabilizowanie przyrostowej transkrypcji głosowej,
-        # zanim pierwszy fragment wypowiedzi zużyje strzał Myśliciela.
-        "voice_debounce_sec": 1.0,
         # Przerwa po 429/503 — 120 s wyciszało mózg na kilka tur rozmowy.
         "cooldown_sec": 60.0,
     },
