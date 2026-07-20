@@ -124,6 +124,10 @@ DEFAULT_SETTINGS = {
         "enabled": False,
         "min_chars": 18,
         "min_interval_sec": 20.0,
+        # 0 = flash nie myśli nad myślą (inaczej ścieżka tekstowa nie wyrabia
+        # się w timeout_sec i myśl jest porzucana).
+        "thinking_budget": 0,
+        "timeout_sec": 8.0,
     },
     "minecraft_autonomy": {
         "enabled": True,

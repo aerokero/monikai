@@ -153,7 +153,7 @@ class Thinker:
         self._mark_shot()
         self._task = asyncio.create_task(self._think(cleaned))
 
-    async def think_for_text(self, text: str, timeout_sec: float = 8.0) -> Optional[str]:
+    async def think_for_text(self, text: str, timeout_sec: Optional[float] = None) -> Optional[str]:
         """Ścieżka czatu tekstowego: tu nie ma przewagi czasowej z live
         transkrypcji, więc myśl powstaje synchronicznie, a CALLER wstrzykuje
         ją do sesji zanim wyśle tekst użytkownika (właściciel akceptuje
@@ -161,6 +161,8 @@ class Thinker:
         cleaned = self._gate(text)
         if cleaned is None:
             return None
+        if timeout_sec is None:
+            timeout_sec = float(self._config().get("timeout_sec", 8.0) or 8.0)
         self._mark_shot()
         try:
             thought = _sanitize_thought(
@@ -229,11 +231,16 @@ class Thinker:
             self._client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
         prompt = self._build_prompt(user_text)
+        # Bez thinking_budget=0 flash najpierw MYŚLI nad myślą (5-15 s) i
+        # ścieżka tekstowa nie wyrabia się w limicie. Cała myśl ma być
+        # outputem — wewnętrzne rozumowanie modelu jest tu zbędne.
+        thinking_budget = int(self._config().get("thinking_budget", 0) or 0)
         response = await self._client.aio.models.generate_content(
             model=THINKER_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=f"{_load_card()}\n\n{_TASK_INSTRUCTION}",
+                thinking_config=types.ThinkingConfig(thinking_budget=thinking_budget),
             ),
         )
         return response.text or ""
