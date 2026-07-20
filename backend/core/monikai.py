@@ -515,7 +515,9 @@ class AudioLoop:
             get_history=lambda limit: self.session_manager.get_recent_chat_history(limit=limit),
             deliver=lambda text: self.send_system_message(text, end_of_turn=False),
             is_ai_turn_open=lambda: self._ai_turn_open,
-            on_thought=lambda thought: self.on_internal_thought(thought) if self.on_internal_thought else None,
+            # Prefiks odróżnia w konsoli/UI myśl drugiego mózgu od natywnych
+            # myśli modelu głosowego — bez niego obie wyglądają identycznie.
+            on_thought=lambda thought: self.on_internal_thought(f"[Myśliciel] {thought}") if self.on_internal_thought else None,
             get_settings=lambda: APP_SETTINGS.get("thinker") or {},
         )
 

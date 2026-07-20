@@ -55,9 +55,13 @@ _TASK_INSTRUCTION = (
     "(zgadzam się / nie zgadzam / częściowo) i dlaczego.\n"
     "- Konkrety, które faktycznie wiesz o temacie (nazwy, fakty, szczegóły) "
     "i Twój własny kąt.\n"
-    "- Czego nie wiesz — nazwij lukę wprost, nie zgaduj.\n"
-    "Nie zwracaj się do rozmówcy, nie zadawaj mu pytań, bez list, nagłówków "
-    "i cudzysłowów. Sama myśl, nic więcej."
+    "- Czego nie wiesz — nazwij lukę wprost, nie zgaduj. Nie wymyślaj "
+    "faktów o sobie, swojej technologii ani o rozmówcy; jeśli coś nie padło "
+    "w rozmowie i tego nie wiesz, to jest luka, nie materiał na tezę.\n"
+    "Styl brudnopisu: zwięźle i konkretnie, bez poetyckich ozdobników i "
+    "metafor — konkret jest wart więcej niż fraza. Nie zwracaj się do "
+    "rozmówcy, nie zadawaj mu pytań, bez list, nagłówków i cudzysłowów. "
+    "Sama myśl, nic więcej."
 )
 
 _card_cache: Optional[str] = None
@@ -144,6 +148,16 @@ class Thinker:
         interval = float(self._config().get("min_interval_sec", 20.0) or 0.0)
         self._next_allowed_ts = time.monotonic() + interval
 
+    def _note_generate_failure(self, exc: Exception) -> None:
+        """Free tier: limit (429) i przeciążenie (503) to normalna pogoda,
+        nie błąd — jedna krótka linia i dłuższa przerwa przed kolejną próbą."""
+        msg = str(exc)
+        if any(tok in msg for tok in ("429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE")):
+            self._next_allowed_ts = time.monotonic() + self.rate_limit_cooldown_sec
+            print(f"[THINKER] model niedostępny (limit/przeciążenie) — przerwa {self.rate_limit_cooldown_sec:.0f} s.")
+        else:
+            print(f"[THINKER] błąd: {exc}")
+
     def notice_user_text(self, text: str) -> None:
         """Hook z handlera transkrypcji wejściowej (głos). Sync i tani —
         pełna praca dzieje się w tasku, co najwyżej jednym naraz."""
@@ -174,11 +188,7 @@ class Thinker:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            msg = str(exc)
-            if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
-                self._next_allowed_ts = time.monotonic() + self.rate_limit_cooldown_sec
-            else:
-                print(f"[THINKER] błąd: {exc}")
+            self._note_generate_failure(exc)
             return None
         if not thought:
             return None
@@ -216,12 +226,7 @@ class Thinker:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            msg = str(exc)
-            if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
-                # Free tier: cicha rezygnacja, dłuższy odstęp przed kolejną próbą.
-                self._next_allowed_ts = time.monotonic() + self.rate_limit_cooldown_sec
-            else:
-                print(f"[THINKER] błąd: {exc}")
+            self._note_generate_failure(exc)
 
     async def _generate(self, user_text: str) -> str:
         from google import genai

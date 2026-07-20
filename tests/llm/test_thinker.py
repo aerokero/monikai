@@ -158,6 +158,19 @@ async def test_think_for_text_429_sets_cooldown():
     assert thinker._next_allowed_ts > time.monotonic() + 60
 
 
+async def test_503_overload_sets_cooldown_like_429():
+    thinker, calls, _, _ = make_thinker(settings={"min_interval_sec": 0.0})
+
+    async def broken_generate(user_text):
+        raise RuntimeError("503 UNAVAILABLE: model experiencing high demand")
+
+    thinker._generate = broken_generate
+    thinker.notice_user_text("dłuższa wypowiedź o czymś konkretnym")
+    await wait_for_task(thinker)
+    assert calls["delivered"] == []
+    assert thinker._next_allowed_ts > time.monotonic() + 60
+
+
 def test_sanitize_strips_labels_quotes_and_caps_length():
     assert _sanitize_thought('  Myśl: "to jest myśl"  ') == "to jest myśl"
     assert _sanitize_thought("(Internal Monologue) coś tam") == "coś tam"
