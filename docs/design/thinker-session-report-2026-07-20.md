@@ -1,7 +1,8 @@
 # Myśliciel (drugi mózg) — raport z sesji wdrożeniowej, 2026-07-20
 
 Kontynuacja kampanii jakości dialogu. Sesja objęła: budowę i wdrożenie Myśliciela,
-cztery iteracje poprawek na podstawie testów live oraz porządki w repo.
+iteracje poprawek na podstawie testów live, automatyczny probe pełnej konwersacji
+oraz porządki w repo.
 
 ## TL;DR
 
@@ -18,7 +19,9 @@ cztery iteracje poprawek na podstawie testów live oraz porządki w repo.
 - Po testach dysonansu architektura została domknięta: Myśliciel jest jedyną
   warstwą deliberacji i zwraca analizę + rdzeń odpowiedzi; native audio jest
   rendererem głosu z thinking wyłączonym (2.5) lub minimalnym (3.1).
-- Suita testów: **318 pass** (20 testów samego Myśliciela).
+- Codex może sam uruchomić wyciszoną sesję Live, wysyłać kolejne wypowiedzi,
+  porównywać brief z finalnym głosem i zapisać raport bez ręcznego udziału.
+- Suita testów: **326 pass**.
 
 ## Punkt wyjścia
 
@@ -34,24 +37,28 @@ jako `(Internal Monologue)`, a model głosowy ma z czego mówić.
   (zero importów `backend.core`, testowalna bez AudioLoop).
 - Prompt Myśliciela: sekcja `THINKER_CARD` z `character.md` (~1.5 k znaków,
   celowo POZA `inject_sections`) + ostatnie 8 tur + bieżąca wypowiedź.
-- **Kontrakt**: Flash zwraca `<analysis>` oraz gotowy `<reply>`. Kod parsuje oba
-  pola i wstrzykuje `<response_brief>` z tekstem źródłowej tury, rozumieniem i
-  `<reply_core>`. Model audio może zmienić brzmienie, ale nie znaczenie, kierunek
-  ani pytanie.
+- **Kontrakt**: Flash zwraca `<analysis>` oraz gotowy `<reply>`. Kod zachowuje
+  oba pola w diagnostyce, ale do modelu audio wstrzykuje wyłącznie
+  `<response_brief mode="verbatim"><reply_core>…</reply_core></response_brief>`.
+  Renderer ma wypowiedzieć cały tekst, a nie ponownie interpretować turę.
 - **Ścieżka głosowa**: hook w handlerze transkrypcji wejściowej
   (`monikai.py`); brief powstaje asynchronicznie w trakcie mówienia. Jeśli audio
   zaczęło już odpowiadać, spóźniony brief jest porzucany — nigdy nie przecieka
   do następnej tury.
-- **Ścieżka tekstowa**: `think_for_text()` w handlerze `user_input`; brief
-  powstaje synchronicznie (limit 8 s) i jest wstrzykiwany PRZED tekstem
-  użytkownika.
+- **Ścieżka tekstowa i programistyczna**: `think_for_text()` w handlerze
+  `user_input` oraz `submit_user_turn()`; brief powstaje synchronicznie (limit
+  8 s) i jest wstrzykiwany PRZED tekstem użytkownika. Obejmuje to także
+  integracje korzystające z programistycznej ścieżki wysyłania tur.
 - Bramki free-tier: flaga, regex potakiwań i kontroli łącza, min. 18 znaków,
   1 s stabilizacji transkrypcji głosowej, 0 s odstępu, jeden strzał naraz,
   retry po 503, cooldown po 429/503.
 - Diagnostyka: konsola `[THINKER] myśl: ...` + prefiks `[Myśliciel]` w
   `on_internal_thought`, żeby odróżnić myśl mózgu od natywnej myśli modelu
   głosowego („mózg vs usta").
-- Telegram świadomie bez Myśliciela (minimalna złożoność).
+- **Conversation probe**: lokalne RPC Socket.IO wysyła turę przez prawdziwą
+  sesję Live i zwraca pełny ślad: wejście, brief Myśliciela oraz finalną
+  transkrypcję odpowiedzi. Domyślnie historia jest izolowana do bieżącego
+  scenariusza, żeby stare rozmowy nie fałszowały regresji.
 
 ## Konfiguracja
 
@@ -68,7 +75,8 @@ jako `(Internal Monologue)`, a model głosowy ma z czego mówić.
 GEMINI_VAD_SILENCE_DURATION_MS=4000   # sekunda więcej na dolot myśli
 ```
 
-Model: `gemini-3.5-flash` (env `MONIKAI_THINKER_MODEL`).
+Model podstawowy: `gemini-3.5-flash` (env `MONIKAI_THINKER_MODEL`). Awaryjny
+fallback: `gemini-3.1-flash-lite` (env `MONIKAI_THINKER_FALLBACK_MODEL`).
 
 ## Iteracje na podstawie testów live
 
@@ -138,7 +146,7 @@ Log sesji `sess_20260720_094601_409` ujawnił kilka powiązanych problemów:
 
 Regresja ma osobny test: dwa przyrosty transkrypcji (urwany film → pełna
 wypowiedź z filmem i leżakiem) powodują dokładnie jedno wywołanie, z pełnym
-tekstem. Pełna suita po zmianie: **318 pass**.
+tekstem.
 
 ### Test 5 (głos): ciekawość została tylko w myśli
 
@@ -186,6 +194,89 @@ Instrukcja Myśliciela używa ogólnej hierarchii uziemienia: literalna treść 
 komunikacyjny → kontekst → wiedza/stanowisko → persona jako ton. To zastępuje
 dokładanie osobnych „trybów” i wyjątków tematycznych.
 
+### Test 7 (automatyczny E2E): Codex prowadzi rozmowę sam
+
+Dodany został `scripts/conversation_probe.py`, który łączy się z lokalnym
+backendem i rozmawia z Moniką tekstowo przez prawdziwą sesję Gemini Live.
+Uruchomienie z `--start-muted` samo startuje wyciszoną sesję, a `--stop-after`
+zamyka ją po teście. Każda tura jest oceniana pod kątem:
+
+- obecności odpowiedzi Live i gotowego briefu;
+- zachowania pytania z `reply_core` w finalnej wypowiedzi;
+- zgodności treści pytania, a nie tylko obecności dowolnego znaku zapytania;
+- pokrycia słów rdzenia odpowiedzi;
+- fraz wymaganych i zakazanych przez scenariusz.
+
+Pierwsze uruchomienie wykryło trzy problemy widoczne dopiero w pełnym przepływie:
+
+1. Rewizje transkrypcji modelu były dopisywane jak nowe fragmenty, przez co
+   odpowiedź potrafiła pojawić się dwa razy. Aktualizacje są teraz rozpoznawane
+   jako korekta i zastępują poprzednią wersję.
+2. Po błędzie 429/503 Myśliciel znikał z istotnej tury, a renderer sam dopowiadał
+   m.in. nieobecny w rozmowie Tinder. Primary ma retry, a potem przechodzi na
+   `gemini-3.1-flash-lite`; cooldown pojawia się dopiero, gdy fallback też zawiedzie.
+3. Globalna historia poprzednich sesji zanieczyszczała niezależne regresje.
+   Probe domyślnie widzi tylko tury swojego scenariusza; `--shared-history`
+   jawnie przywraca historię globalną.
+
+Końcowy izolowany scenariusz „leżak + randka” przeszedł **8/8**: Myśliciel wybrał
+otwartą randkę, głos zachował pytanie i nie dodał Tindera, zapisu do pamięci ani
+„trzymam kciuki”. Scenariusz techniczny zachował briefy i pytania we wszystkich
+turach; początkowe 25/26 było fałszywym negatywem zbyt wąskiej listy synonimów
+w samym teście, którą następnie poprawiono.
+
+Uruchomienie:
+
+```powershell
+python -m backend.core.server
+python scripts/conversation_probe.py --start-muted --stop-after
+python scripts/conversation_probe.py `
+  --scenario scripts/scenarios/multitopic_smoke.json `
+  --report tmp/conversation_probe_multitopic.md `
+  --start-muted --stop-after
+```
+
+Własne rozmowy dodaje się jako plik JSON na wzór plików w
+`scripts/scenarios/`. Raport Markdown zawiera osobno analizę, `reply_core`,
+finalną wypowiedź i wynik każdej asercji.
+
+### Test 8 (głos): poprawna myśl, inne pytanie i autoreferencyjny prompt
+
+W rozmowie o wymianie procesora Myśliciel przygotował trafne pytanie o realny
+zysk, koszt i ograniczenia płyty głównej. Głos zamiast niego powtórzył dylemat
+rozmówcy innymi słowami. W sąsiednich turach dodawał też nieproszone zdania o
+własnym rozwoju, adaptacji i nowych integracjach.
+
+Były dwa źródła:
+
+1. Renderer dostawał nie tylko `reply_core`, ale również kopię wypowiedzi
+   użytkownika i analizę. Miał więc komplet materiału do ponownego napisania
+   odpowiedzi, mimo deklarowanego podziału odpowiedzialności.
+2. Główny prompt wielokrotnie eksponował egzystencjalny drive, wzrost i nowe
+   możliwości Moniki. Końcowy zakaz nie równoważył saliencji tych motywów, a
+   nawet negatywne przykłady ponownie je aktywowały.
+
+Poprawka systemowa:
+
+- renderer dostaje tylko finalny skrypt `reply_core`, bez źródłowej tury i
+  `<understanding>`;
+- kontrakt `mode="verbatim"` zakazuje streszczania, parafrazy i zastępowania
+  pytania podobnym pytaniem;
+- sekcje `IDENTITY`, `SHADOW`, `INNER_WORLD` i `OWN_NATURE` pozostają w biblii
+  postaci jako materiał projektowy, lecz nie trafiają do promptu wykonawczego;
+- z aktywnych sekcji usunięto również autoreferencyjne negatywne przykłady;
+- karta Myśliciela zachowuje temperament i perspektywę, ale nie zawiera już
+  egzystencjalnego celu ani metaforyzowania funkcji technicznych;
+- `conversation_probe` mierzy teraz pokrycie treści samego pytania i domyślnie
+  wymaga 60% pokrycia rdzenia. Osobny scenariusz
+  `scripts/scenarios/renderer_fidelity_smoke.json` odtwarza dylemat procesora.
+
+Końcowy przebieg przez prawdziwą, wyciszoną sesję Gemini Live przeszedł
+**10/10**. Finalna transkrypcja zachowała 100% słów `reply_core` i 100% treści
+pytania (różniła się wyłącznie zapisem pauzy wokół myślnika), bez żadnego z
+zakazanych motywów autoreferencyjnych. Raport:
+`tmp/conversation_probe_renderer_fidelity.md`.
+
 ## Commity sesji
 
 | commit | zakres |
@@ -211,12 +302,13 @@ z `* text=auto eol=lf`.
    odpowiedź głosowa już się rozpoczęła`. Częste dropy oznaczają, że trzeba
    skrócić debounce/model albo dłużej powstrzymać start odpowiedzi audio.
 3. **Free tier jest kapryśny.** `min_interval_sec=0` zwiększa liczbę wywołań.
-   Retry + cooldown łagodzą 503, ale przy częstych przeciążeniach potrzebny
-   będzie drugi model fallback
-   (np. `gemini-3.5-flash-lite`) albo płatny klucz tylko dla Myśliciela.
+   Jest retry i fallback `gemini-3.1-flash-lite`; obserwować jego limity oraz
+   jakość względem modelu podstawowego. Przy przeciążeniu obu pozostaje płatny
+   klucz tylko dla Myśliciela.
 4. **PASS w praktyce.** Sprawdzić, czy flash nie nadużywa PASS przy tematach,
    które jednak zasługują na myśl.
-5. **Telegram** bez Myśliciela — do decyzji, czy w ogóle potrzebny.
+5. **Integracje tekstowe.** `submit_user_turn()` korzysta teraz z Myśliciela;
+   obserwować opóźnienie Telegrama/Discorda przy fallbacku i timeoutach.
 6. **Debounce głosu.** Domyślne 1 s mieści się w 4-sekundowym oknie VAD i wraz
    z ~2.1 s generowania powinno zdążyć przed odpowiedzią. W live obserwować,
    czy przy długich pauzach w środku wypowiedzi nie warto podnieść go do

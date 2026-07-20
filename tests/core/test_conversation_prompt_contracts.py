@@ -4,9 +4,9 @@ from backend.core.tool_definitions import create_event_tool, memory_add_entry_to
 
 def test_voice_model_is_a_renderer_of_the_response_brief():
     assert "Nie twórz własnego wewnętrznego monologu" in OPERATIONAL_PROMPT
-    assert "semantycznym kontraktem odpowiedzi" in OPERATIONAL_PROMPT
-    assert "nie interpretuj wypowiedzi ponownie" in OPERATIONAL_PROMPT
-    assert "zachowaj stanowisko, konkrety, kierunek oraz każde pytanie" in OPERATIONAL_PROMPT
+    assert "ukończonym tekstem Twojej następnej wypowiedzi" in OPERATIONAL_PROMPT
+    assert "wypowiedz CAŁY `<reply_core>`" in OPERATIONAL_PROMPT
+    assert "nie zastępuj pytania podobnym pytaniem" in OPERATIONAL_PROMPT
 
 
 def test_uncertain_social_plans_are_not_memories_or_calendar_events():

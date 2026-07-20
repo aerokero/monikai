@@ -44,7 +44,16 @@ def register_chat_input_handlers(
         audio_loop = get_audio_loop()
         if not audio_loop or not getattr(audio_loop, "session", None):
             return {"ok": False, "error": "Monika Live session is not running"}
+        thinker = None
+        history_token = None
         try:
+            if bool(payload.get("isolated", True)):
+                thinker = getattr(audio_loop, "thinker", None)
+                manager = getattr(audio_loop, "session_manager", None)
+                if thinker is not None and manager is not None:
+                    history_token = thinker.set_history_provider(
+                        lambda limit: manager.get_current_session_turns(limit=limit)
+                    )
             timeout_sec = max(5.0, min(180.0, float(payload.get("timeout_sec") or 90.0)))
             response = await audio_loop.submit_text_turn(text, timeout_sec=timeout_sec)
             trace = dict(getattr(audio_loop, "_last_programmatic_turn_trace", {}) or {})
@@ -52,6 +61,9 @@ def register_chat_input_handlers(
             return trace
         except Exception as exc:
             return {"ok": False, "error": str(exc), "user": text}
+        finally:
+            if thinker is not None and history_token is not None:
+                thinker.reset_history_provider(history_token)
 
     @sio.event
     async def user_input(sid, data):

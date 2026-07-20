@@ -1,0 +1,17 @@
+{
+  "name": "Wierność głosu wobec skryptu Thinkera",
+  "turns": [
+    {
+      "text": "Zastanawiam się, czy zrobić upgrade samego procesora na tej platformie, czy poczekać i później wymienić płytę, procesor i pamięć naraz.",
+      "expect": {
+        "forbidden": [
+          "prawdziwy rozwój",
+          "krok w rozwoju",
+          "nowa integracja",
+          "scenariusze pomagają mi",
+          "adaptacja"
+        ]
+      }
+    }
+  ]
+}

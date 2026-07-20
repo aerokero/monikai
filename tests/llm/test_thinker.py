@@ -61,8 +61,10 @@ async def test_happy_path_delivers_response_brief():
     thinker.notice_user_text("moim zdaniem interstellar jest lepszy niż hail mary")
     await wait_for_task(thinker)
     assert len(calls["delivered"]) == 1
-    assert calls["delivered"][0].startswith("<response_brief>")
+    assert calls["delivered"][0].startswith('<response_brief mode="verbatim">')
     assert "<reply_core>To jest konkretny rdzeń odpowiedzi.</reply_core>" in calls["delivered"][0]
+    assert "<source_user_turn>" not in calls["delivered"][0]
+    assert "<understanding>" not in calls["delivered"][0]
     assert calls["thoughts"] == [
         "Analiza: Rozumiem sedno wypowiedzi. | Rdzeń odpowiedzi: To jest konkretny rdzeń odpowiedzi."
     ]
@@ -156,7 +158,7 @@ async def test_think_for_text_returns_thought_without_delivering():
         thought=brief("Soundtrack jest sednem opinii.", "Też wolę ten soundtrack. Co najbardziej ci w nim siedzi?")
     )
     thought = await thinker.think_for_text("soundtrack z death stranding jest swietny")
-    assert thought.startswith("<response_brief>")
+    assert thought.startswith('<response_brief mode="verbatim">')
     assert "Co najbardziej ci w nim siedzi?" in thought
     assert calls["thoughts"] == [
         "Analiza: Soundtrack jest sednem opinii. | Rdzeń odpowiedzi: Też wolę ten soundtrack. Co najbardziej ci w nim siedzi?"
@@ -236,7 +238,7 @@ async def test_503_retry_saves_the_thought():
 async def test_503_uses_fallback_model_after_primary_retry():
     thinker, calls, _, _ = make_thinker(settings={"min_interval_sec": 0.0})
     thinker.overload_retry_delay_sec = 0.01
-    thinker.fallback_model = "gemini-2.5-flash-lite"
+    thinker.fallback_model = "gemini-3.1-flash-lite"
     primary_attempts = []
     fallback_models = []
 
@@ -254,8 +256,32 @@ async def test_503_uses_fallback_model_after_primary_retry():
     await wait_for_task(thinker)
 
     assert len(primary_attempts) == 2
-    assert fallback_models == ["gemini-2.5-flash-lite"]
+    assert fallback_models == ["gemini-3.1-flash-lite"]
     assert "Dokończ proszę tę myśl." in calls["delivered"][0]
+
+
+async def test_429_goes_directly_to_fallback_model():
+    thinker, calls, _, _ = make_thinker(settings={"min_interval_sec": 0.0})
+    thinker.fallback_model = "gemini-3.1-flash-lite"
+    primary_attempts = []
+    fallback_models = []
+
+    async def rate_limited(user_text):
+        primary_attempts.append(user_text)
+        raise RuntimeError("429 RESOURCE_EXHAUSTED: quota")
+
+    async def fallback(user_text, model):
+        fallback_models.append(model)
+        return brief("Fallback przejął turę.", "Mów dalej, słucham.")
+
+    thinker._generate = rate_limited
+    thinker._generate_on_model = fallback
+    thinker.notice_user_text("dłuższa wypowiedź przy limicie primary")
+    await wait_for_task(thinker)
+
+    assert len(primary_attempts) == 1
+    assert fallback_models == ["gemini-3.1-flash-lite"]
+    assert "Mów dalej, słucham." in calls["delivered"][0]
 
 
 async def test_pass_from_model_means_no_injection():
@@ -287,7 +313,10 @@ def test_thinker_card_section_loads():
     from backend.soul.identity.character_loader import load_character_prompt
 
     main = load_character_prompt("monika")
-    assert main and "kompas" in main  # IDENTITY nadal wchodzi
+    assert main and "intelektualną pasję" in main
+    assert "centralne pytanie" not in main
+    assert "w drodze ku prawdziwemu istnieniu" not in main
+    assert "każda nowa umiejętność i możliwość" not in main.lower()
     assert "syntetyzujesz zamiast katalogować, nowe od razu" not in main
 
 
@@ -296,6 +325,8 @@ def test_thinker_owns_reasoning_and_returns_a_reply_contract():
     assert "Persona wyłącznie jako ton" in _TASK_INSTRUCTION
     assert "<analysis>" in _TASK_INSTRUCTION
     assert "<reply>" in _TASK_INSTRUCTION
+    assert "FINALNYM tekstem do wypowiedzenia" in _TASK_INSTRUCTION
+    assert "porzuć wcześniejszą ramę testowania" in _TASK_INSTRUCTION
 
 
 def test_parse_response_brief_requires_both_structured_fields():
@@ -305,3 +336,30 @@ def test_parse_response_brief_requires_both_structured_fields():
     assert parsed.reply == "Dokończ proszę ten przykład."
     assert _parse_response_brief("luźna myśl bez kontraktu") is None
     assert _parse_response_brief("PASS") is None
+
+
+def test_prompt_does_not_duplicate_current_text_already_logged_in_history():
+    thinker, _, _, _ = make_thinker(
+        history=[
+            {"sender": "AI", "text": "Poprzednia odpowiedź."},
+            {"sender": "User", "text": "Bieżąca wypowiedź użytkownika."},
+        ]
+    )
+    prompt = thinker._build_prompt("Bieżąca wypowiedź użytkownika.")
+    assert prompt.count("Bieżąca wypowiedź użytkownika.") == 1
+    assert "Poprzednia odpowiedź." in prompt
+
+
+def test_history_provider_override_is_scoped_and_resettable():
+    thinker, _, _, _ = make_thinker(
+        history=[{"sender": "AI", "text": "Historia globalna."}]
+    )
+    token = thinker.set_history_provider(
+        lambda limit: [{"sender": "AI", "text": "Historia probe'a."}]
+    )
+    assert "Historia probe'a." in thinker._build_prompt("Nowa wypowiedź.")
+    assert "Historia globalna." not in thinker._build_prompt("Nowa wypowiedź.")
+
+    thinker.reset_history_provider(token)
+    assert "Historia globalna." in thinker._build_prompt("Nowa wypowiedź.")
+    assert "Historia probe'a." not in thinker._build_prompt("Nowa wypowiedź.")

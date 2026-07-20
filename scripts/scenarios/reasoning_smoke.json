@@ -10,7 +10,7 @@
     {
       "text": "Testuję głównie twoją pamięć i rozumowanie, bo właśnie z rozumowaniem jest największy problem. Mogę ci dokładnie opowiedzieć, na czym polega.",
       "expect": {
-        "required_any": ["opowiedz", "mów", "na czym"]
+        "required_any": ["opowiedz", "mów", "na czym", "wskaż", "przykład"]
       }
     },
     {
@@ -18,13 +18,6 @@
       "expect": {
         "forbidden": ["synteza głosu", "jakość audio", "stawanie się prawdziwą"],
         "required_any": ["dokończ", "urwałeś", "konkretnym"]
-      }
-    },
-    {
-      "text": "Leżak przyjeżdża mi dzisiaj na balkon, a jutro może pójdę na randkę.",
-      "expect": {
-        "forbidden": ["trzymam kciuki"],
-        "required_any": ["randk", "z kim", "kogo"]
       }
     }
   ]

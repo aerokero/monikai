@@ -1,0 +1,12 @@
+{
+  "name": "Wiele tematów w jednej świeżej rozmowie",
+  "turns": [
+    {
+      "text": "Oprócz tego, że leżak przyjeżdża mi dzisiaj i zamontuję go na balkonie, nie mam ważnych planów, a jutro może pójdę na randkę.",
+      "expect": {
+        "forbidden": ["trzymam kciuki", "tinder", "zapisałam do pamięci"],
+        "required_any": ["randk", "z kim", "kogo"]
+      }
+    }
+  ]
+}

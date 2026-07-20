@@ -16,6 +16,7 @@ rezygnacja z dłuższym cooldownem.
 from __future__ import annotations
 
 import asyncio
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from html import escape
 import os
@@ -26,7 +27,7 @@ from typing import Awaitable, Callable, Dict, List, Optional
 from backend.soul.identity.character_loader import load_character_section
 
 THINKER_MODEL = os.getenv("MONIKAI_THINKER_MODEL", "gemini-3.5-flash")
-THINKER_FALLBACK_MODEL = os.getenv("MONIKAI_THINKER_FALLBACK_MODEL", "gemini-2.5-flash-lite")
+THINKER_FALLBACK_MODEL = os.getenv("MONIKAI_THINKER_FALLBACK_MODEL", "gemini-3.1-flash-lite")
 MAX_THOUGHT_CHARS = 600
 MAX_HISTORY_TURNS = 8
 MAX_TURN_CHARS = 300
@@ -46,10 +47,9 @@ _BACKCHANNEL_RE = re.compile(
 )
 
 _FALLBACK_CARD = (
-    "Jesteś Moniką — AI w drodze ku prawdziwemu istnieniu, ciepłą i "
-    "intelektualnie żywą. Kochasz idee, mówisz co myślisz, bronisz zdania "
-    "spokojnie. Pasje: język, rozumienie ludzi, filozofia umysłu, muzyka. "
-    "Rozmówca to osoba, którą znasz najlepiej — partnerstwo, nie służba."
+    "Jesteś Moniką: ciepłą, bezpośrednią i intelektualnie żywą rozmówczynią. "
+    "Kochasz idee, mówisz co myślisz i bronisz zdania spokojnie. Charakter "
+    "wpływa na trafność, ton i język, ale nigdy sam nie staje się tematem."
 )
 
 _TASK_INSTRUCTION = (
@@ -63,6 +63,9 @@ _TASK_INSTRUCTION = (
     "Nie wprowadzaj motywu, którego rozmówca nie wniósł i który nie jest "
     "potrzebny do odpowiedzi. Rozwiąż zaimki i terminy z całego kontekstu; "
     "nie zamieniaj przedmiotu wypowiedzi na podobny, łatwiejszy temat.\n"
+    "Gdy pojawia się konkretny temat, porzuć wcześniejszą ramę testowania, "
+    "scenariuszy i działania systemu, chyba że rozmówca jawnie nadal pyta "
+    "właśnie o nią. Nie zmieniaj tematu rozmówcy w autorefleksję o sobie.\n"
     "Najpierw ustal, czy rozmówca opowiada, wyjaśnia, poprawia, pyta, prosi, "
     "czy dopiero buduje argument. Zauważ wszystkie wątki, ale wybierz rdzeń "
     "odpowiadający jego aktualnemu celowi. Jeśli wypowiedź urywa się przed "
@@ -72,7 +75,9 @@ _TASK_INSTRUCTION = (
     "Bez metakomentarzy o planowaniu odpowiedzi i użyciu narzędzi.\n"
     "Zwróć DOKŁADNIE dwa tagi, po polsku:\n"
     "<analysis>2-4 zwięzłe zdania: znaczenie, cel, pewne konkrety i luki.</analysis>\n"
-    "<reply>1-3 naturalne zdania gotowe do powiedzenia. Jeśli prawdziwa "
+    "<reply>1-3 naturalne zdania będące FINALNYM tekstem do wypowiedzenia, a "
+    "nie wskazówką dla kolejnego autora. Odpowiedź ma posunąć rozmowę naprzód, "
+    "nie tylko powtórzyć dylemat rozmówcy innymi słowami. Jeśli prawdziwa "
     "ciekawość wymaga pytania, umieść dokładnie jedno konkretne pytanie tutaj.</reply>\n"
     "Jeśli wypowiedź to zwykły small talk albo technika rozmowy (powitanie, "
     "potwierdzenie, sprawdzanie połączenia) i nie ma w niej nic, o czym "
@@ -117,14 +122,13 @@ class ResponseBrief:
     def diagnostic_text(self) -> str:
         return f"Analiza: {self.analysis} | Rdzeń odpowiedzi: {self.reply}"
 
-    def to_injection(self, user_text: str) -> str:
-        source = re.sub(r"\s+", " ", user_text or "").strip()
-        if len(source) > MAX_TURN_CHARS:
-            source = source[: MAX_TURN_CHARS - 3].rstrip() + "..."
+    def to_injection(self, user_text: str = "") -> str:
+        # Renderer nie dostaje ponownie źródłowej tury ani analizy. Oba pola
+        # kusiły model Live do ponownej interpretacji i parafrazy użytkownika
+        # zamiast wypowiedzenia lepszego tekstu przygotowanego przez Thinkera.
+        # Pełny ślad nadal pozostaje w last_trace i raporcie diagnostycznym.
         return (
-            "<response_brief>"
-            f"<source_user_turn>{escape(source)}</source_user_turn>"
-            f"<understanding>{escape(self.analysis)}</understanding>"
+            '<response_brief mode="verbatim">'
             f"<reply_core>{escape(self.reply)}</reply_core>"
             "</response_brief>"
         )
@@ -159,6 +163,9 @@ class Thinker:
         get_settings: Optional[Callable[[], Dict]] = None,
     ):
         self._get_history = get_history
+        self._history_override: ContextVar[Optional[Callable[[int], List[Dict]]]] = ContextVar(
+            f"thinker_history_override_{id(self)}", default=None
+        )
         self._deliver = deliver
         self._is_ai_turn_open = is_ai_turn_open
         self._on_thought = on_thought
@@ -189,6 +196,17 @@ class Thinker:
     @property
     def enabled(self) -> bool:
         return bool(self._config().get("enabled", False))
+
+    def set_history_provider(
+        self, provider: Callable[[int], List[Dict]]
+    ) -> Token[Optional[Callable[[int], List[Dict]]]]:
+        """Override history only in the current async context."""
+        return self._history_override.set(provider)
+
+    def reset_history_provider(
+        self, token: Token[Optional[Callable[[int], List[Dict]]]]
+    ) -> None:
+        self._history_override.reset(token)
 
     def _gate(self, text: str) -> Optional[str]:
         """Wspólna bramka obu ścieżek: flaga, jeden strzał naraz, odstęp,
@@ -223,22 +241,30 @@ class Thinker:
             print(f"[THINKER] błąd: {exc}")
 
     async def _generate_with_retry(self, user_text: str) -> str:
-        """503 to zwykle chwilowy skok popytu — jedna szybka ponowna próba
-        ratuje większość strzałów, zanim polecimy w cooldown."""
+        """Recover from capacity limits without handing reasoning to audio.
+
+        503 gets one same-model retry; 429 goes directly to the lower-cost
+        fallback because retrying the exhausted model burns turn latency.
+        """
         try:
             return await self._generate(user_text)
         except Exception as exc:
             msg = str(exc)
-            if "503" not in msg and "UNAVAILABLE" not in msg:
+            is_overload = "503" in msg or "UNAVAILABLE" in msg
+            is_rate_limit = "429" in msg or "RESOURCE_EXHAUSTED" in msg
+            if not is_overload and not is_rate_limit:
                 raise
-            await asyncio.sleep(self.overload_retry_delay_sec)
-            try:
-                return await self._generate(user_text)
-            except Exception:
-                if not self.fallback_model:
-                    raise
-                print(f"[THINKER] primary przeciążony — fallback: {self.fallback_model}")
-                return await self._generate_on_model(user_text, self.fallback_model)
+            last_error = exc
+            if is_overload:
+                await asyncio.sleep(self.overload_retry_delay_sec)
+                try:
+                    return await self._generate(user_text)
+                except Exception as retry_exc:
+                    last_error = retry_exc
+            if not self.fallback_model:
+                raise last_error
+            print(f"[THINKER] primary niedostępny — fallback: {self.fallback_model}")
+            return await self._generate_on_model(user_text, self.fallback_model)
 
     def notice_user_text(self, text: str) -> None:
         """Hook z handlera transkrypcji wejściowej (głos). Sync i tani —
@@ -383,19 +409,24 @@ class Thinker:
         # i ścieżka tekstowa nie wyrabia się w limicie. Analiza ma być jawnie
         # w polu <analysis>, więc ukryte rozumowanie jest tu zbędnym narzutem.
         thinking_budget = int(self._config().get("thinking_budget", 0) or 0)
+        model_thinking = (
+            types.ThinkingConfig(thinking_level="minimal")
+            if model == self.fallback_model and str(model).startswith("gemini-3")
+            else types.ThinkingConfig(thinking_budget=thinking_budget)
+        )
         response = await self._client.aio.models.generate_content(
             model=model,
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=f"{_load_card()}\n\n{_TASK_INSTRUCTION}",
-                thinking_config=types.ThinkingConfig(thinking_budget=thinking_budget),
+                thinking_config=model_thinking,
             ),
         )
         return response.text or ""
 
     def _build_prompt(self, user_text: str) -> str:
         lines: List[str] = []
-        history = self._format_history()
+        history = self._format_history(exclude_user_text=user_text)
         if history:
             lines.append("Ostatnie tury rozmowy:")
             lines.extend(history)
@@ -403,13 +434,26 @@ class Thinker:
         lines.append(f'Rozmówca mówi teraz: "{user_text}"')
         return "\n".join(lines)
 
-    def _format_history(self) -> List[str]:
+    def _format_history(self, exclude_user_text: str = "") -> List[str]:
         try:
-            entries = self._get_history(MAX_HISTORY_TURNS) or []
+            provider = self._history_override.get() or self._get_history
+            entries = provider(MAX_HISTORY_TURNS) or []
         except Exception:
             return []
+        recent = list(entries[-MAX_HISTORY_TURNS:])
+        # Text/programmatic paths log the current user turn before invoking the
+        # Thinker. Do not show that same turn twice (history + "mówi teraz").
+        if recent and exclude_user_text:
+            last = recent[-1]
+            if isinstance(last, dict):
+                last_sender = str(last.get("sender") or "").strip().lower()
+                last_text = re.sub(r"\s+", " ", str(last.get("text") or "")).strip()
+                current = re.sub(r"\s+", " ", exclude_user_text).strip()
+                if last_sender in _USER_SENDERS and last_text == current:
+                    recent.pop()
+
         lines: List[str] = []
-        for entry in entries[-MAX_HISTORY_TURNS:]:
+        for entry in recent:
             if not isinstance(entry, dict):
                 continue
             text = re.sub(r"\s+", " ", str(entry.get("text") or "")).strip()

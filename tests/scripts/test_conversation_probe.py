@@ -24,8 +24,28 @@ def test_evaluator_detects_preserved_question_and_forbidden_phrases():
     failed = evaluate_turn(turn, _trace("O, randka? Z kim się umówiłeś?", "Trzymam kciuki za jutro."))
     by_name = {check["name"]: check["passed"] for check in failed}
     assert by_name["question_preserved"] is False
+    assert by_name["question_core_overlap"] is False
     assert by_name["forbidden:trzymam kciuki"] is False
     assert by_name["required_any"] is False
+
+
+def test_evaluator_rejects_a_different_question_about_the_same_user_turn():
+    core = (
+        "Ile zyskasz na tej przesiadce w porównaniu do kosztów i "
+        "ewentualnych ograniczeń płyty głównej?"
+    )
+    paraphrase_of_user = (
+        "Zastanawiasz się, czy upgrade procesora w ramach tej samej architektury "
+        "da wystarczający wzrost wydajności, czy warto wymienić wszystko naraz?"
+    )
+    checks = evaluate_turn(
+        {"text": "Rozważam upgrade procesora.", "expect": {}},
+        _trace(core, paraphrase_of_user),
+    )
+    by_name = {check["name"]: check["passed"] for check in checks}
+    assert by_name["question_preserved"] is True
+    assert by_name["question_core_overlap"] is False
+    assert by_name["core_overlap"] is False
 
 
 def test_report_contains_brief_response_and_check_result():

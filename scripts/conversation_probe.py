@@ -52,6 +52,11 @@ def _question_survived(core: str, response: str) -> bool:
     return any(re.search(rf"\b{re.escape(word)}\b", lowered) for word in _QUESTION_WORDS)
 
 
+def _question_tokens(text: str) -> set[str]:
+    sentences = re.split(r"(?<=[.!?])\s+", text or "")
+    return _tokens(" ".join(sentence for sentence in sentences if "?" in sentence))
+
+
 def evaluate_turn(turn: dict[str, Any], trace: dict[str, Any]) -> list[dict[str, Any]]:
     checks: list[dict[str, Any]] = []
     thinker = trace.get("thinker") if isinstance(trace.get("thinker"), dict) else {}
@@ -66,9 +71,20 @@ def evaluate_turn(turn: dict[str, Any], trace: dict[str, Any]) -> list[dict[str,
     add("brief_ready", thinker.get("status") == "ready", f"status={thinker.get('status', 'missing')}")
     add("question_preserved", _question_survived(core, response), "pytanie z reply_core musi przejść do głosu")
 
+    core_question_tokens = _question_tokens(core)
+    if core_question_tokens:
+        spoken_question_tokens = _question_tokens(response)
+        question_overlap = len(core_question_tokens & spoken_question_tokens) / len(core_question_tokens)
+        question_threshold = float(expected.get("min_question_token_overlap", 0.45))
+        add(
+            "question_core_overlap",
+            question_overlap >= question_threshold,
+            f"{question_overlap:.0%} (minimum {question_threshold:.0%})",
+        )
+
     core_tokens = _tokens(core)
     overlap = len(core_tokens & _tokens(response)) / max(1, len(core_tokens))
-    threshold = float(expected.get("min_core_token_overlap", 0.20))
+    threshold = float(expected.get("min_core_token_overlap", 0.60))
     add("core_overlap", overlap >= threshold, f"{overlap:.0%} (minimum {threshold:.0%})")
 
     lowered = response.lower()
@@ -150,7 +166,11 @@ async def run(args: argparse.Namespace) -> int:
             print(f"[{index}/{len(turns)}] Ty: {text}")
             trace = await client.call(
                 "conversation_probe_turn",
-                {"text": text, "timeout_sec": args.timeout},
+                {
+                    "text": text,
+                    "timeout_sec": args.timeout,
+                    "isolated": not args.shared_history,
+                },
                 timeout=args.timeout + 10,
             )
             if not isinstance(trace, dict):
@@ -185,6 +205,11 @@ def main() -> int:
     parser.add_argument("--start-muted", action="store_true", help="start a muted Live session when none is active")
     parser.add_argument("--stop-after", action="store_true", help="stop only the session started by this probe")
     parser.add_argument("--start-timeout", type=float, default=30.0)
+    parser.add_argument(
+        "--shared-history",
+        action="store_true",
+        help="include recent turns from older sessions (for memory/continuity tests)",
+    )
     args = parser.parse_args()
     try:
         return asyncio.run(run(args))
