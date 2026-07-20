@@ -1,5 +1,0 @@
-id: locked
-title: Locked
-unlock: 'turn_count >= 100'
-opening:
-  context: y

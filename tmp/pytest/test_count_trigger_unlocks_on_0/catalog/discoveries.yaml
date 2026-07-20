@@ -1,5 +1,0 @@
-
-- id: first_convo
-  title: "First Words"
-  trigger: "count:1"
-  hidden: false

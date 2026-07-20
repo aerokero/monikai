@@ -1,5 +1,0 @@
-
-- id: worth_keeping
-  title: "Worth Keeping"
-  trigger: "MemoryStored[importance>=9]"
-  hidden: true

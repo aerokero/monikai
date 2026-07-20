@@ -1,5 +1,0 @@
-
-- id: first_story
-  title: "Evening Together"
-  trigger: "StoryEnded"
-  hidden: true

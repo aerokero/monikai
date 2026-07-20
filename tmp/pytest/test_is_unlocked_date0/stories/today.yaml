@@ -1,5 +1,0 @@
-id: today
-title: Today
-unlock: 'date[06-05]'
-opening:
-  context: x

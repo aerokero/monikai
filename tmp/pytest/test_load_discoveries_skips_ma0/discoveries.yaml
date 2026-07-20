@@ -1,8 +1,0 @@
-
-- id: good
-  title: Good Entry
-  trigger: "TurnCompleted"
-- title: Missing ID
-  trigger: "X"
-- id: no_title
-  trigger: "Y"

@@ -1,7 +1,0 @@
-
-id: timed_story
-title: "Timed"
-unlock: always
-preferred_time: [evening, night]
-opening:
-  context: "Evening vibes."
