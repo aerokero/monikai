@@ -266,6 +266,22 @@ def register_chat_input_handlers(
                 except Exception:
                     pass
 
+            # Myśliciel (ścieżka tekstowa): wygeneruj głębszą myśl i wstrzyknij
+            # ją PRZED tekstem użytkownika, żeby model widział ją, zanim
+            # odpowie. Sam gate'uje (flaga, potakiwania, odstęp); brak myśli
+            # albo błąd = wysyłka idzie dalej bez zmian.
+            if text:
+                try:
+                    thinker = getattr(audio_loop, "thinker", None)
+                    if thinker is not None:
+                        thought = await thinker.think_for_text(text)
+                        if thought:
+                            await _send_with_reconnect_retry(
+                                f"(Internal Monologue) {thought}", end_of_turn=False
+                            )
+                except Exception as e:
+                    print(f"[SERVER DEBUG] Thinker (text path) failed: {e}")
+
             if text:
                 try:
                     if piggyback_payload and hasattr(audio_loop.session, "send_client_content"):

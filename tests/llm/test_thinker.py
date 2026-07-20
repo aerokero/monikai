@@ -116,6 +116,48 @@ async def test_429_sets_silent_cooldown():
     assert thinker._next_allowed_ts > time.monotonic() + 60
 
 
+async def test_think_for_text_returns_thought_without_delivering():
+    # Ścieżka tekstowa: myśl wraca do callera (on wstrzykuje ją przed
+    # tekstem użytkownika), deliver z Thinkera nie jest używany.
+    thinker, calls, _, _ = make_thinker(thought="Moje zdanie o tym soundtracku.")
+    thought = await thinker.think_for_text("soundtrack z death stranding jest swietny")
+    assert thought == "Moje zdanie o tym soundtracku."
+    assert calls["thoughts"] == ["Moje zdanie o tym soundtracku."]
+    assert calls["delivered"] == []
+
+
+async def test_think_for_text_respects_gates():
+    thinker, calls, settings, _ = make_thinker(settings={"enabled": False})
+    assert await thinker.think_for_text("dłuższa wypowiedź o czymś ważnym") is None
+    settings["enabled"] = True
+    assert await thinker.think_for_text("mhm") is None
+    assert calls["generated"] == []
+
+
+async def test_think_for_text_timeout_returns_none():
+    thinker, calls, _, _ = make_thinker()
+
+    async def slow_generate(user_text):
+        await asyncio.sleep(5)
+        return "za późno"
+
+    thinker._generate = slow_generate
+    thought = await thinker.think_for_text("dłuższa wypowiedź o czymś ważnym", timeout_sec=0.05)
+    assert thought is None
+    assert calls["delivered"] == []
+
+
+async def test_think_for_text_429_sets_cooldown():
+    thinker, _, _, _ = make_thinker(settings={"min_interval_sec": 0.0})
+
+    async def broken_generate(user_text):
+        raise RuntimeError("429 RESOURCE_EXHAUSTED: quota")
+
+    thinker._generate = broken_generate
+    assert await thinker.think_for_text("dłuższa wypowiedź o czymś konkretnym") is None
+    assert thinker._next_allowed_ts > time.monotonic() + 60
+
+
 def test_sanitize_strips_labels_quotes_and_caps_length():
     assert _sanitize_thought('  Myśl: "to jest myśl"  ') == "to jest myśl"
     assert _sanitize_thought("(Internal Monologue) coś tam") == "coś tam"

@@ -123,25 +123,70 @@ class Thinker:
     def enabled(self) -> bool:
         return bool(self._config().get("enabled", False))
 
-    def notice_user_text(self, text: str) -> None:
-        """Hook z handlera transkrypcji wejściowej. Sync i tani — pełna
-        praca dzieje się w tasku, co najwyżej jednym naraz."""
+    def _gate(self, text: str) -> Optional[str]:
+        """Wspólna bramka obu ścieżek: flaga, jeden strzał naraz, odstęp,
+        minimalna długość, potakiwania. Zwraca oczyszczony tekst albo None."""
         if not self.enabled:
-            return
+            return None
         if self._task and not self._task.done():
-            return
-        now = time.monotonic()
-        if now < self._next_allowed_ts:
-            return
+            return None
+        if time.monotonic() < self._next_allowed_ts:
+            return None
         cleaned = (text or "").strip()
         min_chars = int(self._config().get("min_chars", 18) or 0)
         if len(cleaned) < min_chars:
-            return
+            return None
         if _BACKCHANNEL_RE.match(cleaned):
-            return
+            return None
+        return cleaned
+
+    def _mark_shot(self) -> None:
         interval = float(self._config().get("min_interval_sec", 20.0) or 0.0)
-        self._next_allowed_ts = now + interval
+        self._next_allowed_ts = time.monotonic() + interval
+
+    def notice_user_text(self, text: str) -> None:
+        """Hook z handlera transkrypcji wejściowej (głos). Sync i tani —
+        pełna praca dzieje się w tasku, co najwyżej jednym naraz."""
+        cleaned = self._gate(text)
+        if cleaned is None:
+            return
+        self._mark_shot()
         self._task = asyncio.create_task(self._think(cleaned))
+
+    async def think_for_text(self, text: str, timeout_sec: float = 8.0) -> Optional[str]:
+        """Ścieżka czatu tekstowego: tu nie ma przewagi czasowej z live
+        transkrypcji, więc myśl powstaje synchronicznie, a CALLER wstrzykuje
+        ją do sesji zanim wyśle tekst użytkownika (właściciel akceptuje
+        latencję odpowiedzi). Zwraca samą myśl albo None."""
+        cleaned = self._gate(text)
+        if cleaned is None:
+            return None
+        self._mark_shot()
+        try:
+            thought = _sanitize_thought(
+                await asyncio.wait_for(self._generate(cleaned), timeout_sec)
+            )
+        except asyncio.TimeoutError:
+            print("[THINKER] myśl porzucona — model tekstowy nie zdążył w limicie.")
+            return None
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            msg = str(exc)
+            if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
+                self._next_allowed_ts = time.monotonic() + self.rate_limit_cooldown_sec
+            else:
+                print(f"[THINKER] błąd: {exc}")
+            return None
+        if not thought:
+            return None
+        print(f"[THINKER] myśl: {thought}")
+        if self._on_thought:
+            try:
+                self._on_thought(thought)
+            except Exception:
+                pass
+        return thought
 
     def close(self) -> None:
         if self._task and not self._task.done():
