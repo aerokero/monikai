@@ -56,7 +56,10 @@ async def test_happy_path_delivers_internal_monologue():
 
 async def test_backchannels_and_short_text_are_skipped():
     thinker, calls, _, _ = make_thinker()
-    for text in ["mhm", "no dobra", "okej", "tak tak", "za krótkie"]:
+    for text in [
+        "mhm", "no dobra", "okej", "tak tak", "za krótkie",
+        "Halo słyszymy się?", "halo halo", "słyszysz mnie?", "jesteś tam?",
+    ]:
         thinker.notice_user_text(text)
     assert thinker._task is None
     assert calls["generated"] == []
@@ -113,7 +116,7 @@ async def test_429_sets_silent_cooldown():
     thinker.notice_user_text("dłuższa wypowiedź o czymś konkretnym")
     await wait_for_task(thinker)
     assert calls["delivered"] == []
-    assert thinker._next_allowed_ts > time.monotonic() + 60
+    assert thinker._next_allowed_ts > time.monotonic() + 30
 
 
 async def test_think_for_text_returns_thought_without_delivering():
@@ -155,20 +158,49 @@ async def test_think_for_text_429_sets_cooldown():
 
     thinker._generate = broken_generate
     assert await thinker.think_for_text("dłuższa wypowiedź o czymś konkretnym") is None
-    assert thinker._next_allowed_ts > time.monotonic() + 60
+    assert thinker._next_allowed_ts > time.monotonic() + 30
 
 
-async def test_503_overload_sets_cooldown_like_429():
+async def test_503_overload_retries_once_then_cools_down():
     thinker, calls, _, _ = make_thinker(settings={"min_interval_sec": 0.0})
+    thinker.overload_retry_delay_sec = 0.01
+    attempts = []
 
     async def broken_generate(user_text):
+        attempts.append(user_text)
         raise RuntimeError("503 UNAVAILABLE: model experiencing high demand")
 
     thinker._generate = broken_generate
     thinker.notice_user_text("dłuższa wypowiedź o czymś konkretnym")
     await wait_for_task(thinker)
+    assert len(attempts) == 2  # jedna szybka ponowna próba
     assert calls["delivered"] == []
-    assert thinker._next_allowed_ts > time.monotonic() + 60
+    assert thinker._next_allowed_ts > time.monotonic() + 30
+
+
+async def test_503_retry_saves_the_thought():
+    thinker, calls, _, _ = make_thinker(settings={"min_interval_sec": 0.0})
+    thinker.overload_retry_delay_sec = 0.01
+    attempts = []
+
+    async def flaky_generate(user_text):
+        attempts.append(user_text)
+        if len(attempts) == 1:
+            raise RuntimeError("503 UNAVAILABLE: high demand")
+        return "Druga próba się udała."
+
+    thinker._generate = flaky_generate
+    thinker.notice_user_text("dłuższa wypowiedź o czymś konkretnym")
+    await wait_for_task(thinker)
+    assert calls["delivered"] == ["(Internal Monologue) Druga próba się udała."]
+
+
+async def test_pass_from_model_means_no_injection():
+    thinker, calls, _, _ = make_thinker(thought="PASS.")
+    thinker.notice_user_text("dłuższa wypowiedź będąca zwykłym small talkiem")
+    await wait_for_task(thinker)
+    assert calls["delivered"] == []
+    assert calls["thoughts"] == []
 
 
 def test_sanitize_strips_labels_quotes_and_caps_length():

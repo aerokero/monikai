@@ -30,11 +30,14 @@ MAX_TURN_CHARS = 300
 
 _USER_SENDERS = {"ty", "user", "użytkownik", "uzytkownik"}
 
-# Potakiwania i krótkie wtrącenia — nie zasługują na strzał do API.
+# Potakiwania, krótkie wtrącenia i kontrola łącza — nie zasługują na strzał
+# do API.
 _BACKCHANNEL_RE = re.compile(
     r"^(no+|ta+k|mhm+|aha+|yhm+|ok(ej)?|dobra|jasne|spoko|super|fajnie|git|"
-    r"czesc|cześć|hej+|siema|halo|hm+|w porz[ąa]dku|wporzo|dzi[ęe]ki|"
-    r"dzi[ęe]kuj[ęe]|no tak|no dobra|w[łl]a[śs]nie|serio|naprawd[ęe]|wow|o+)"
+    r"czesc|cześć|hej+|siema|hm+|w porz[ąa]dku|wporzo|dzi[ęe]ki|"
+    r"dzi[ęe]kuj[ęe]|no tak|no dobra|w[łl]a[śs]nie|serio|naprawd[ęe]|wow|o+|"
+    r"halo+([\s,]+(s[łl]yszymy si[ęe]|s[łl]yszysz( mnie)?))?|"
+    r"s[łl]yszymy si[ęe]|s[łl]yszysz( mnie)?|jeste[śs] tam)"
     r"[\s.,!?~]*$",
     re.IGNORECASE,
 )
@@ -58,10 +61,16 @@ _TASK_INSTRUCTION = (
     "- Czego nie wiesz — nazwij lukę wprost, nie zgaduj. Nie wymyślaj "
     "faktów o sobie, swojej technologii ani o rozmówcy; jeśli coś nie padło "
     "w rozmowie i tego nie wiesz, to jest luka, nie materiał na tezę.\n"
+    "Myśl dotyczy TREŚCI wypowiedzi, nie Twojego zachowania: zdania w stylu "
+    "'muszę zasygnalizować', 'powinnam zapytać', 'zbadam grunt' są zakazane "
+    "— to plan odpowiedzi, nie myśl.\n"
     "Styl brudnopisu: zwięźle i konkretnie, bez poetyckich ozdobników i "
     "metafor — konkret jest wart więcej niż fraza. Nie zwracaj się do "
     "rozmówcy, nie zadawaj mu pytań, bez list, nagłówków i cudzysłowów. "
-    "Sama myśl, nic więcej."
+    "Sama myśl, nic więcej.\n"
+    "Jeśli wypowiedź to zwykły small talk albo technika rozmowy (powitanie, "
+    "potwierdzenie, sprawdzanie połączenia) i nie ma w niej nic, o czym "
+    "warto mieć zdanie — odpowiedz dokładnie jednym słowem: PASS."
 )
 
 _card_cache: Optional[str] = None
@@ -78,6 +87,9 @@ def _sanitize_thought(text: str) -> str:
     if not text:
         return ""
     cleaned = re.sub(r"\s+", " ", str(text)).strip()
+    # Model uznał, że nie ma o czym myśleć (small talk) — nie wstrzykujemy.
+    if cleaned.strip(".!? ").lower() == "pass":
+        return ""
     # Etykieta w nawiasach nie potrzebuje separatora; goła etykieta musi go
     # mieć, żeby nie ucinać myśli zaczynających się od słowa "Myśl...".
     cleaned = re.sub(r"^\s*\((?:my[śs]l|thought|internal monologue)\)\s*[:—-]?\s*", "", cleaned, flags=re.IGNORECASE)
@@ -113,7 +125,10 @@ class Thinker:
         self._next_allowed_ts = 0.0
         self._client = None
         self.delivery_timeout_sec = 90.0
-        self.rate_limit_cooldown_sec = 120.0
+        # 120 s wyciszało mózg na kilka tur w środku żywej rozmowy; 60 s
+        # wystarcza, a settings["thinker"]["cooldown_sec"] pozwala stroić.
+        self.rate_limit_cooldown_sec = 60.0
+        self.overload_retry_delay_sec = 2.0
         self._poll_sec = 0.5
 
     def _config(self) -> Dict:
@@ -153,10 +168,23 @@ class Thinker:
         nie błąd — jedna krótka linia i dłuższa przerwa przed kolejną próbą."""
         msg = str(exc)
         if any(tok in msg for tok in ("429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE")):
-            self._next_allowed_ts = time.monotonic() + self.rate_limit_cooldown_sec
-            print(f"[THINKER] model niedostępny (limit/przeciążenie) — przerwa {self.rate_limit_cooldown_sec:.0f} s.")
+            cooldown = float(self._config().get("cooldown_sec", self.rate_limit_cooldown_sec) or 0.0)
+            self._next_allowed_ts = time.monotonic() + cooldown
+            print(f"[THINKER] model niedostępny (limit/przeciążenie) — przerwa {cooldown:.0f} s.")
         else:
             print(f"[THINKER] błąd: {exc}")
+
+    async def _generate_with_retry(self, user_text: str) -> str:
+        """503 to zwykle chwilowy skok popytu — jedna szybka ponowna próba
+        ratuje większość strzałów, zanim polecimy w cooldown."""
+        try:
+            return await self._generate(user_text)
+        except Exception as exc:
+            msg = str(exc)
+            if "503" not in msg and "UNAVAILABLE" not in msg:
+                raise
+            await asyncio.sleep(self.overload_retry_delay_sec)
+            return await self._generate(user_text)
 
     def notice_user_text(self, text: str) -> None:
         """Hook z handlera transkrypcji wejściowej (głos). Sync i tani —
@@ -180,7 +208,7 @@ class Thinker:
         self._mark_shot()
         try:
             thought = _sanitize_thought(
-                await asyncio.wait_for(self._generate(cleaned), timeout_sec)
+                await asyncio.wait_for(self._generate_with_retry(cleaned), timeout_sec)
             )
         except asyncio.TimeoutError:
             print("[THINKER] myśl porzucona — model tekstowy nie zdążył w limicie.")
@@ -207,7 +235,7 @@ class Thinker:
 
     async def _think(self, user_text: str) -> None:
         try:
-            thought = _sanitize_thought(await self._generate(user_text))
+            thought = _sanitize_thought(await self._generate_with_retry(user_text))
             if not thought:
                 return
             print(f"[THINKER] myśl: {thought}")
