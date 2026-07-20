@@ -8,7 +8,9 @@ from ..tools import tools_list
 create_event_tool = {
     "name": "create_event",
     "description": (
-        "Creates a new event in the calendar. Summary must be descriptive, never a bare keyword: "
+        "Creates a new event in the calendar. Use only for a definite scheduled commitment the user "
+        "asked or clearly intends to track; never create one from a casual mention, hypothetical, "
+        "or hedged plan such as 'maybe tomorrow'. Summary must be descriptive, never a bare keyword: "
         "'Wizyta u dentysty 12:00', 'Dzień pracy', 'Spotkanie z Markiem' — not 'dentysta', 'pracuję', "
         "'spotkanie'. For all-day and multi-day events, set all_day=true "
         "and use an exclusive end date: an event advertised as 2026-05-15 to 2026-05-17 must use "
@@ -161,7 +163,7 @@ get_work_memory_tool = {
 
 update_work_memory_tool = {
     "name": "update_work_memory",
-    "description": "Updates WORK memory with new or corrected user information. Use this proactively whenever the user reveals stable facts or preferences. No confirmation is required.",
+    "description": "Updates WORK memory with new or corrected stable user facts/preferences that will matter in future conversations. Do not store transient day details, ordinary purchases, or every mentioned object. No confirmation is required.",
     "parameters": {
         "type": "OBJECT",
         "properties": {
@@ -202,7 +204,9 @@ memory_add_entry_tool = {
         "no vague impressions ('był dzisiaj wesoły'). type='semantic': durable fact or preference "
         "('Bartosz nie lubi oliwek.', 'Brat Bartosza ma na imię Marek.'); type='episodic': a specific "
         "event worth remembering ('Bartosz i Monika grali razem w Minecrafta 2026-06-05.'); "
-        "type='stm': relevant only today (what the user is doing or dealing with right now)."
+        "type='stm': a note required for an active task or an explicitly needed follow-up today. "
+        "Do not save ordinary purchases, casual conversation details, or uncertain plans such as "
+        "'maybe going on a date tomorrow'. Memory is not a transcript."
     ),
     "parameters": {
         "type": "OBJECT",

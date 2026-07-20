@@ -39,6 +39,7 @@ from typing import Optional, Dict, Any, Callable, List, Tuple
 from collections import deque
 from contextlib import suppress
 import re
+from difflib import SequenceMatcher
 
 from google import genai
 from google.genai import types
@@ -177,15 +178,53 @@ def parse_model_response(text):
     
     return spoken_text, internal_messages
 
+
+def _streaming_transcript_update(previous: str, current: str) -> tuple[str, bool]:
+    """Return ``(delta, replace)`` for provider transcription revisions.
+
+    Live normally sends a growing full transcript, but it can resend the same
+    sentence with punctuation/ASR corrections. Treating that revision as a new
+    chunk duplicated whole responses in programmatic conversation tests.
+    """
+    previous = str(previous or "")
+    current = str(current or "")
+    if not previous:
+        return current, False
+    if current.startswith(previous):
+        return current[len(previous):], False
+    if previous.startswith(current):
+        return current, True
+    prev_norm = re.sub(r"\W+", " ", previous.lower(), flags=re.UNICODE).strip()
+    curr_norm = re.sub(r"\W+", " ", current.lower(), flags=re.UNICODE).strip()
+    similarity = SequenceMatcher(None, prev_norm, curr_norm).ratio()
+    if min(len(prev_norm), len(curr_norm)) >= 24 and similarity >= 0.78:
+        return current, True
+    return current, False
+
 # --------------------------------------------------------------------------------------
 # LiveConnect Config
 # --------------------------------------------------------------------------------------
 
-def _build_thinking_config(level: str, budget: int) -> types.ThinkingConfig:
+def _build_thinking_config(
+    level: str,
+    budget: int,
+    *,
+    include_thoughts: Optional[bool] = None,
+) -> types.ThinkingConfig:
     """Build ThinkingConfig using current _mc state (hot-swap safe)."""
+    include = _mc.GEMINI_INCLUDE_THOUGHTS if include_thoughts is None else include_thoughts
     if _mc._is_31:
-        return types.ThinkingConfig(thinking_level=level, include_thoughts=_mc.GEMINI_INCLUDE_THOUGHTS)
-    return types.ThinkingConfig(thinking_budget=budget, include_thoughts=_mc.GEMINI_INCLUDE_THOUGHTS)
+        return types.ThinkingConfig(thinking_level=level, include_thoughts=include)
+    return types.ThinkingConfig(thinking_budget=budget, include_thoughts=include)
+
+
+def _build_voice_renderer_thinking_config() -> types.ThinkingConfig:
+    """Lowest possible native reasoning for the audio renderer.
+
+    Gemini 2.5 supports a true zero budget. Gemini 3.1 cannot fully disable
+    thinking, so ``minimal`` is its renderer-equivalent floor.
+    """
+    return _build_thinking_config("minimal", 0, include_thoughts=False)
 
 
 def _build_base_live_config() -> types.LiveConnectConfig:
@@ -507,16 +546,15 @@ class AudioLoop:
             stream_channel=session_stream_channel,
         )
 
-        # Myśliciel (drugi mózg): głębsza myśl z modelu tekstowego,
-        # wstrzykiwana jako "(Internal Monologue)" zanim Monika odpowie.
+        # Myśliciel (drugi mózg): analiza + semantyczny rdzeń odpowiedzi,
+        # wstrzykiwane jako <response_brief> zanim renderer głosowy odpowie.
         # Flaga settings["thinker"]["enabled"] czytana per wypowiedź — off
         # oznacza dokładnie zero zmian w zachowaniu.
         self.thinker = Thinker(
             get_history=lambda limit: self.session_manager.get_recent_chat_history(limit=limit),
             deliver=lambda text: self.send_system_message(text, end_of_turn=False),
             is_ai_turn_open=lambda: self._ai_turn_open,
-            # Prefiks odróżnia w konsoli/UI myśl drugiego mózgu od natywnych
-            # myśli modelu głosowego — bez niego obie wyglądają identycznie.
+            # Prefiks pokazuje w konsoli/UI analizę i rdzeń odpowiedzi Thinkera.
             on_thought=lambda thought: self.on_internal_thought(f"[Myśliciel] {thought}") if self.on_internal_thought else None,
             get_settings=lambda: APP_SETTINGS.get("thinker") or {},
         )
@@ -1069,6 +1107,18 @@ class AudioLoop:
                 raise RuntimeError("MonikAI v2 runtime is not active")
             await _v2.observe_turn()
 
+        # Programmatic/bridge path (Telegram, Discord, conversation probe)
+        # uses the same Thinker → response_brief → audio renderer contract as
+        # the UI text handler. This makes it suitable for repeatable live tests.
+        thinker_brief = None
+        if cleaned and getattr(self, "thinker", None) is not None:
+            try:
+                thinker_brief = await self.thinker.think_for_text(cleaned)
+                if thinker_brief:
+                    await self.session.send(input=thinker_brief, end_of_turn=False)
+            except Exception as exc:
+                print(f"[THINKER] programmatic path failed: {exc}")
+
         future = asyncio.get_running_loop().create_future()
         self._pending_ai_turn_futures.append(future)
         try:
@@ -1080,6 +1130,11 @@ class AudioLoop:
                     end_of_turn=True,
                 )
             result = await asyncio.wait_for(future, timeout=max(5.0, float(timeout_sec or 90.0)))
+            self._last_programmatic_turn_trace = {
+                "user": cleaned,
+                "thinker": dict(getattr(self.thinker, "last_trace", {}) or {}),
+                "response": str(result or "").strip(),
+            }
             return str(result or "").strip()
         except Exception:
             with suppress(ValueError):
@@ -1266,6 +1321,7 @@ class AudioLoop:
         self.paused = paused
 
     def _build_live_connect_config(self, personality_context: Optional[str] = None):
+        renderer_only = bool((APP_SETTINGS.get("thinker") or {}).get("enabled", False))
         if self.session_mode:
             # Genuine identity swap: she reconnects as an expert clinician,
             # still herself, knowing this person, with the safety floor on top.
@@ -1273,8 +1329,13 @@ class AudioLoop:
                 relationship_context=self._session_relationship_context,
                 base_persona=config.system_instruction,
             )
-            thinking_config = _build_thinking_config(
-                _mc.GEMINI_THERAPY_THINKING_LEVEL, _mc.GEMINI_THERAPY_THINKING_BUDGET
+            thinking_config = (
+                _build_voice_renderer_thinking_config()
+                if renderer_only
+                else _build_thinking_config(
+                    _mc.GEMINI_THERAPY_THINKING_LEVEL,
+                    _mc.GEMINI_THERAPY_THINKING_BUDGET,
+                )
             )
         else:
             # v2: use assembled prompt (CHARACTER + PSYCHOLOGICAL + MEMORY + OPERATIONAL)
@@ -1283,8 +1344,13 @@ class AudioLoop:
             if not _v2:
                 raise RuntimeError("MonikAI v2 runtime is not active")
             system_instruction = _v2.cached_prompt
-            thinking_config = _build_thinking_config(
-                _mc.GEMINI_THINKING_LEVEL, _mc.GEMINI_THINKING_BUDGET
+            thinking_config = (
+                _build_voice_renderer_thinking_config()
+                if renderer_only
+                else _build_thinking_config(
+                    _mc.GEMINI_THINKING_LEVEL,
+                    _mc.GEMINI_THINKING_BUDGET,
+                )
             )
 
         session_resumption = None
@@ -2770,10 +2836,8 @@ class AudioLoop:
                                         else:
                                             self.chat_buffer["text"] += delta
 
-                                    # Myśliciel: transkrypcja spływa live w trakcie
-                                    # mówienia — daj drugiemu mózgowi szansę pomyśleć
-                                    # zanim Monika odpowie. Sam gate'uje (flaga,
-                                    # potakiwania, odstęp, jeden task naraz).
+                                    # Transkrypcja spływa live: Thinker buduje brief,
+                                    # zanim renderer głosowy rozpocznie odpowiedź.
                                     try:
                                         self.thinker.notice_user_text(self.chat_buffer["text"])
                                     except Exception:
@@ -2797,14 +2861,9 @@ class AudioLoop:
                                     self._emitted_thoughts_count = len(thoughts_full)
 
                                 # 3. Handle Spoken Delta
-                                delta = ""
-                                if spoken_full.startswith(self._last_spoken_transcription):
-                                    delta = spoken_full[len(self._last_spoken_transcription):]
-                                elif self._last_spoken_transcription and spoken_full.startswith(self._last_spoken_transcription + " "):
-                                    # Handle post-sanitization space insertion after punctuation.
-                                    delta = spoken_full[len(self._last_spoken_transcription):]
-                                else:
-                                    delta = spoken_full
+                                delta, is_output_correction = _streaming_transcript_update(
+                                    self._last_spoken_transcription, spoken_full
+                                )
                                 
                                 # Heuristic: Fix missing spaces between chunks
                                 if delta and self._last_spoken_transcription:
@@ -2848,16 +2907,27 @@ class AudioLoop:
                                                 self._fallback_web_agent_triggered_for_turn = True
                                     
                                     if self.on_transcription:
-                                        self.on_transcription({"sender": "AI", "text": delta, "is_new": self._is_new_turn})
+                                        self.on_transcription({
+                                            "sender": "AI",
+                                            "text": spoken_full if is_output_correction else delta,
+                                            "is_new": self._is_new_turn,
+                                            "is_correction": is_output_correction,
+                                        })
 
                                     self._is_new_turn = False
 
                                     if self.chat_buffer["sender"] != "AI":
                                         if self.chat_buffer["sender"] and self.chat_buffer["text"].strip():
                                             self.session_manager.log_chat(self.chat_buffer["sender"], self.chat_buffer["text"])
-                                        self.chat_buffer = {"sender": "AI", "text": delta}
+                                        self.chat_buffer = {
+                                            "sender": "AI",
+                                            "text": spoken_full if is_output_correction else delta,
+                                        }
                                     else:
-                                        self.chat_buffer["text"] += delta
+                                        if is_output_correction:
+                                            self.chat_buffer["text"] = spoken_full
+                                        else:
+                                            self.chat_buffer["text"] += delta
 
                         if response.server_content.turn_complete:
                             self._ai_turn_open = False

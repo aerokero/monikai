@@ -5,7 +5,16 @@ import time
 
 import pytest
 
-from backend.llm.thinker import Thinker, _sanitize_thought
+from backend.llm.thinker import (
+    Thinker,
+    _TASK_INSTRUCTION,
+    _parse_response_brief,
+    _sanitize_thought,
+)
+
+
+def brief(analysis="Rozumiem sedno wypowiedzi.", reply="To jest konkretny rdzeń odpowiedzi."):
+    return f"<analysis>{analysis}</analysis><reply>{reply}</reply>"
 
 
 def make_thinker(**overrides):
@@ -24,11 +33,12 @@ def make_thinker(**overrides):
         on_thought=lambda t: calls["thoughts"].append(t),
         get_settings=lambda: settings,
     )
-    thinker._poll_sec = 0.01
+    thinker.voice_debounce_sec = 0.01
+    thinker.fallback_model = None
 
     async def fake_generate(user_text):
         calls["generated"].append(user_text)
-        return overrides.get("thought", "Ciekawa myśl o tym temacie.")
+        return overrides.get("thought", brief())
 
     thinker._generate = fake_generate
     return thinker, calls, settings, state
@@ -46,12 +56,16 @@ async def test_disabled_means_no_task():
     assert calls["generated"] == []
 
 
-async def test_happy_path_delivers_internal_monologue():
+async def test_happy_path_delivers_response_brief():
     thinker, calls, _, _ = make_thinker()
     thinker.notice_user_text("moim zdaniem interstellar jest lepszy niż hail mary")
     await wait_for_task(thinker)
-    assert calls["delivered"] == ["(Internal Monologue) Ciekawa myśl o tym temacie."]
-    assert calls["thoughts"] == ["Ciekawa myśl o tym temacie."]
+    assert len(calls["delivered"]) == 1
+    assert calls["delivered"][0].startswith("<response_brief>")
+    assert "<reply_core>To jest konkretny rdzeń odpowiedzi.</reply_core>" in calls["delivered"][0]
+    assert calls["thoughts"] == [
+        "Analiza: Rozumiem sedno wypowiedzi. | Rdzeń odpowiedzi: To jest konkretny rdzeń odpowiedzi."
+    ]
 
 
 async def test_backchannels_and_short_text_are_skipped():
@@ -85,7 +99,24 @@ async def test_single_task_in_flight():
     await wait_for_task(thinker)
 
 
-async def test_waits_for_ai_turn_close_then_delivers():
+async def test_voice_transcription_debounce_uses_latest_complete_text():
+    thinker, calls, _, _ = make_thinker(settings={"min_interval_sec": 0.0})
+    thinker.voice_debounce_sec = 0.04
+
+    thinker.notice_user_text("wczoraj zacząłem opowiadać o filmie, ale nie chcia")
+    await asyncio.sleep(0.01)
+    thinker.notice_user_text(
+        "wczoraj oglądałem ciekawy film, a potem zamówiłem leżak na balkon"
+    )
+    await wait_for_task(thinker)
+
+    assert calls["generated"] == [
+        "wczoraj oglądałem ciekawy film, a potem zamówiłem leżak na balkon"
+    ]
+    assert len(calls["delivered"]) == 1
+
+
+async def test_late_brief_is_dropped_instead_of_leaking_into_next_turn():
     thinker, calls, _, state = make_thinker()
     state["ai_turn_open"] = True
     thinker.notice_user_text("dłuższa wypowiedź w trakcie jej mówienia")
@@ -93,17 +124,16 @@ async def test_waits_for_ai_turn_close_then_delivers():
     assert calls["delivered"] == []
     state["ai_turn_open"] = False
     await wait_for_task(thinker)
-    assert len(calls["delivered"]) == 1
+    assert calls["delivered"] == []
 
 
-async def test_drops_thought_when_turn_never_closes():
+async def test_late_brief_still_reaches_diagnostics():
     thinker, calls, _, state = make_thinker()
-    thinker.delivery_timeout_sec = 0.05
     state["ai_turn_open"] = True
     thinker.notice_user_text("dłuższa wypowiedź w trakcie jej mówienia")
     await wait_for_task(thinker)
     assert calls["delivered"] == []
-    assert calls["thoughts"]  # myśl trafiła do diagnostyki mimo porzucenia
+    assert calls["thoughts"]  # brief trafił do diagnostyki mimo porzucenia
 
 
 async def test_429_sets_silent_cooldown():
@@ -122,10 +152,17 @@ async def test_429_sets_silent_cooldown():
 async def test_think_for_text_returns_thought_without_delivering():
     # Ścieżka tekstowa: myśl wraca do callera (on wstrzykuje ją przed
     # tekstem użytkownika), deliver z Thinkera nie jest używany.
-    thinker, calls, _, _ = make_thinker(thought="Moje zdanie o tym soundtracku.")
+    thinker, calls, _, _ = make_thinker(
+        thought=brief("Soundtrack jest sednem opinii.", "Też wolę ten soundtrack. Co najbardziej ci w nim siedzi?")
+    )
     thought = await thinker.think_for_text("soundtrack z death stranding jest swietny")
-    assert thought == "Moje zdanie o tym soundtracku."
-    assert calls["thoughts"] == ["Moje zdanie o tym soundtracku."]
+    assert thought.startswith("<response_brief>")
+    assert "Co najbardziej ci w nim siedzi?" in thought
+    assert calls["thoughts"] == [
+        "Analiza: Soundtrack jest sednem opinii. | Rdzeń odpowiedzi: Też wolę ten soundtrack. Co najbardziej ci w nim siedzi?"
+    ]
+    assert thinker.last_trace["status"] == "ready"
+    assert thinker.last_trace["reply_core"].endswith("siedzi?")
     assert calls["delivered"] == []
 
 
@@ -187,12 +224,38 @@ async def test_503_retry_saves_the_thought():
         attempts.append(user_text)
         if len(attempts) == 1:
             raise RuntimeError("503 UNAVAILABLE: high demand")
-        return "Druga próba się udała."
+        return brief("Druga próba rozumie temat.", "Druga próba się udała.")
 
     thinker._generate = flaky_generate
     thinker.notice_user_text("dłuższa wypowiedź o czymś konkretnym")
     await wait_for_task(thinker)
-    assert calls["delivered"] == ["(Internal Monologue) Druga próba się udała."]
+    assert len(calls["delivered"]) == 1
+    assert "<reply_core>Druga próba się udała.</reply_core>" in calls["delivered"][0]
+
+
+async def test_503_uses_fallback_model_after_primary_retry():
+    thinker, calls, _, _ = make_thinker(settings={"min_interval_sec": 0.0})
+    thinker.overload_retry_delay_sec = 0.01
+    thinker.fallback_model = "gemini-2.5-flash-lite"
+    primary_attempts = []
+    fallback_models = []
+
+    async def unavailable(user_text):
+        primary_attempts.append(user_text)
+        raise RuntimeError("503 UNAVAILABLE: high demand")
+
+    async def fallback(user_text, model):
+        fallback_models.append(model)
+        return brief("Fallback zachował kontekst.", "Dokończ proszę tę myśl.")
+
+    thinker._generate = unavailable
+    thinker._generate_on_model = fallback
+    thinker.notice_user_text("dłuższa wypowiedź wymagająca briefu")
+    await wait_for_task(thinker)
+
+    assert len(primary_attempts) == 2
+    assert fallback_models == ["gemini-2.5-flash-lite"]
+    assert "Dokończ proszę tę myśl." in calls["delivered"][0]
 
 
 async def test_pass_from_model_means_no_injection():
@@ -226,3 +289,19 @@ def test_thinker_card_section_loads():
     main = load_character_prompt("monika")
     assert main and "kompas" in main  # IDENTITY nadal wchodzi
     assert "syntetyzujesz zamiast katalogować, nowe od razu" not in main
+
+
+def test_thinker_owns_reasoning_and_returns_a_reply_contract():
+    assert "HIERARCHIA UZIEMIENIA" in _TASK_INSTRUCTION
+    assert "Persona wyłącznie jako ton" in _TASK_INSTRUCTION
+    assert "<analysis>" in _TASK_INSTRUCTION
+    assert "<reply>" in _TASK_INSTRUCTION
+
+
+def test_parse_response_brief_requires_both_structured_fields():
+    parsed = _parse_response_brief(brief("Cel użytkownika jest jasny.", "Dokończ proszę ten przykład."))
+    assert parsed is not None
+    assert parsed.analysis == "Cel użytkownika jest jasny."
+    assert parsed.reply == "Dokończ proszę ten przykład."
+    assert _parse_response_brief("luźna myśl bez kontraktu") is None
+    assert _parse_response_brief("PASS") is None

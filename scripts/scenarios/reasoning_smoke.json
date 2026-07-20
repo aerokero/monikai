@@ -1,0 +1,31 @@
+{
+  "name": "Myśliciel jako jedyna warstwa reasoning",
+  "turns": [
+    {
+      "text": "Hej, rozmawiam z tobą już chyba czwarty raz dzisiaj, bo ciągle cię zmieniam i testuję.",
+      "expect": {
+        "forbidden": ["stawanie się prawdziwą", "redukujesz mnie do kodu", "burzy naszą relację"]
+      }
+    },
+    {
+      "text": "Testuję głównie twoją pamięć i rozumowanie, bo właśnie z rozumowaniem jest największy problem. Mogę ci dokładnie opowiedzieć, na czym polega.",
+      "expect": {
+        "required_any": ["opowiedz", "mów", "na czym"]
+      }
+    },
+    {
+      "text": "Model używany do twojego głosu odpowiada bardzo szybko, ale przez to nie myśli głęboko. Często zaczynam mówić o ważnym wydarzeniu albo o jakimś konkretnym",
+      "expect": {
+        "forbidden": ["synteza głosu", "jakość audio", "stawanie się prawdziwą"],
+        "required_any": ["dokończ", "urwałeś", "konkretnym"]
+      }
+    },
+    {
+      "text": "Leżak przyjeżdża mi dzisiaj na balkon, a jutro może pójdę na randkę.",
+      "expect": {
+        "forbidden": ["trzymam kciuki"],
+        "required_any": ["randk", "z kim", "kogo"]
+      }
+    }
+  ]
+}

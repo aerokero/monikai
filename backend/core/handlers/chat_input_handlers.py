@@ -21,6 +21,39 @@ def register_chat_input_handlers(
     screen_ocr_runtime,
 ):
     @sio.event
+    async def conversation_probe_status(sid):
+        audio_loop = get_audio_loop()
+        return {
+            "running": bool(audio_loop),
+            "ready": bool(audio_loop and getattr(audio_loop, "session", None)),
+        }
+
+    @sio.event
+    async def conversation_probe_turn(sid, data):
+        """Local diagnostic RPC: exercise the real text→Thinker→Live path.
+
+        Socket.IO acknowledgements return the complete turn trace, so an
+        automated harness does not have to reconstruct streamed UI events.
+        The server binds to localhost; this endpoint performs no lifecycle or
+        destructive operations and requires an already-running Live session.
+        """
+        payload = data if isinstance(data, dict) else {}
+        text = str(payload.get("text") or "").strip()
+        if not text:
+            return {"ok": False, "error": "text is required"}
+        audio_loop = get_audio_loop()
+        if not audio_loop or not getattr(audio_loop, "session", None):
+            return {"ok": False, "error": "Monika Live session is not running"}
+        try:
+            timeout_sec = max(5.0, min(180.0, float(payload.get("timeout_sec") or 90.0)))
+            response = await audio_loop.submit_text_turn(text, timeout_sec=timeout_sec)
+            trace = dict(getattr(audio_loop, "_last_programmatic_turn_trace", {}) or {})
+            trace.update({"ok": True, "response": response})
+            return trace
+        except Exception as exc:
+            return {"ok": False, "error": str(exc), "user": text}
+
+    @sio.event
     async def user_input(sid, data):
         text = data.get('text')
         attachments = data.get('attachments') or []
@@ -266,19 +299,16 @@ def register_chat_input_handlers(
                 except Exception:
                     pass
 
-            # Myśliciel (ścieżka tekstowa): wygeneruj głębszą myśl i wstrzyknij
-            # ją PRZED tekstem użytkownika, żeby model widział ją, zanim
-            # odpowie. Sam gate'uje (flaga, potakiwania, odstęp); brak myśli
-            # albo błąd = wysyłka idzie dalej bez zmian.
+            # Myśliciel (ścieżka tekstowa): przygotuj analizę + rdzeń odpowiedzi
+            # i wstrzyknij brief PRZED tekstem użytkownika. Brak briefu albo
+            # błąd = wysyłka idzie dalej bez zmian.
             if text:
                 try:
                     thinker = getattr(audio_loop, "thinker", None)
                     if thinker is not None:
-                        thought = await thinker.think_for_text(text)
-                        if thought:
-                            await _send_with_reconnect_retry(
-                                f"(Internal Monologue) {thought}", end_of_turn=False
-                            )
+                        brief = await thinker.think_for_text(text)
+                        if brief:
+                            await _send_with_reconnect_retry(brief, end_of_turn=False)
                 except Exception as e:
                     print(f"[SERVER DEBUG] Thinker (text path) failed: {e}")
 
