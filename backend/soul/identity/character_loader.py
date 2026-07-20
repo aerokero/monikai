@@ -54,6 +54,24 @@ def list_characters() -> list[str]:
     return [p.parent.name for p in _CHARACTERS_DIR.glob("*/character.md")]
 
 
+def load_character_section(character_id: str, section: str) -> str | None:
+    """Return a single named section of the character bible, whether or not
+    it is listed in inject_sections (e.g. THINKER_CARD for the thinker)."""
+    path = _CHARACTERS_DIR / character_id / "character.md"
+    if not path.exists():
+        return None
+    try:
+        raw = path.read_text(encoding="utf-8")
+        _, body = _parse_frontmatter(raw)
+        for m in _SECTION_RE.finditer(body):
+            if m.group(1) == section:
+                return _clean(m.group(2)) or None
+        return None
+    except Exception as exc:
+        logger.error("Failed to load section %s of '%s': %s", section, character_id, exc)
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------

@@ -66,6 +66,8 @@ from .model_config import (
     MAX_INTERNAL_THOUGHT_CHARS, _sanitize_internal_thought, client,
 )
 from .session_context import load_settings_safe, get_time_context, HOLIDAYS, get_holiday_context
+from .settings_store import SETTINGS as APP_SETTINGS
+from backend.llm.thinker import Thinker
 from .tool_definitions import tools
 from .system_prompt import SYSTEM_PROMPT
 from backend.services.calendar_manager import CalendarEvent, CalendarManager
@@ -503,6 +505,18 @@ class AudioLoop:
             DATA_DIR,
             write_mode=os.getenv("SESSION_WRITE_MODE", "session_end"),
             stream_channel=session_stream_channel,
+        )
+
+        # Myśliciel (drugi mózg): głębsza myśl z modelu tekstowego,
+        # wstrzykiwana jako "(Internal Monologue)" zanim Monika odpowie.
+        # Flaga settings["thinker"]["enabled"] czytana per wypowiedź — off
+        # oznacza dokładnie zero zmian w zachowaniu.
+        self.thinker = Thinker(
+            get_history=lambda limit: self.session_manager.get_recent_chat_history(limit=limit),
+            deliver=lambda text: self.send_system_message(text, end_of_turn=False),
+            is_ai_turn_open=lambda: self._ai_turn_open,
+            on_thought=lambda thought: self.on_internal_thought(thought) if self.on_internal_thought else None,
+            get_settings=lambda: APP_SETTINGS.get("thinker") or {},
         )
 
         # Workspace for files written by tools
@@ -1359,6 +1373,10 @@ class AudioLoop:
     def stop(self):
         try:
             self.flush_chat()
+        except Exception:
+            pass
+        try:
+            self.thinker.close()
         except Exception:
             pass
         try:
@@ -2749,6 +2767,15 @@ class AudioLoop:
                                             self.chat_buffer["text"] = transcript
                                         else:
                                             self.chat_buffer["text"] += delta
+
+                                    # Myśliciel: transkrypcja spływa live w trakcie
+                                    # mówienia — daj drugiemu mózgowi szansę pomyśleć
+                                    # zanim Monika odpowie. Sam gate'uje (flaga,
+                                    # potakiwania, odstęp, jeden task naraz).
+                                    try:
+                                        self.thinker.notice_user_text(self.chat_buffer["text"])
+                                    except Exception:
+                                        pass
 
                         if response.server_content.output_transcription:
                             transcript = response.server_content.output_transcription.text

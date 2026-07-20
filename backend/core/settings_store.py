@@ -117,6 +117,14 @@ DEFAULT_SETTINGS = {
     "vn": {
         "branch_selection_mode": "heuristic",
     },
+    # Myśliciel (drugi mózg): gemini-3.5-flash dopisuje Monice głębszą myśl,
+    # wstrzykiwaną do sesji Live jako "(Internal Monologue) ...".
+    # Off = zachowanie bez zmian.
+    "thinker": {
+        "enabled": False,
+        "min_chars": 18,
+        "min_interval_sec": 20.0,
+    },
     "minecraft_autonomy": {
         "enabled": True,
         "auto_game_mode_on_connect": True,
