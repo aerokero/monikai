@@ -234,6 +234,12 @@ app.whenReady().then(() => {
         }
     });
 
+    if (process.env.MONIKAI_CLIENT_ONLY === 'true') {
+        console.log('[ELECTRON] Client-only mode: skipping local Python backend.');
+        createWindow();
+        return;
+    }
+
     checkBackendPort(8000).then((isTaken) => {
         if (isTaken) {
             console.log('Port 8000 is taken. Assuming backend is already running manually.');
@@ -310,7 +316,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('will-quit', () => {
-    console.log('App closing... Killing Python backend.');
+    console.log('App closing...');
     if (pythonProcess) {
         if (process.platform === 'win32') {
             // Windows: Force kill the process tree synchronously

@@ -3,6 +3,8 @@ import base64
 import re
 import time
 
+from backend.core.routers.frontend_router import is_active_frontend_sid
+
 
 def register_chat_input_handlers(
     sio,
@@ -67,6 +69,8 @@ def register_chat_input_handlers(
 
     @sio.event
     async def user_input(sid, data):
+        if not is_active_frontend_sid(sid):
+            return
         text = data.get('text')
         attachments = data.get('attachments') or []
         print(f"[SERVER DEBUG] User input received: '{text}'")

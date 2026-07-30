@@ -41,6 +41,25 @@ echo "GEMINI_API_KEY=your_key_here" > .env
 npm run dev
 ```
 
+### Experimental client–server mode
+
+The desktop client can send microphone, camera, and screen frames to a
+separate local backend. This is opt-in; without these variables the existing
+local mode remains active:
+
+```env
+# backend .env
+MONIKAI_SOCKET_TOKEN=use-a-long-random-local-token
+
+# frontend build environment
+VITE_MONIKAI_SERVER_URL=http://192.168.1.10:8000
+VITE_MONIKAI_SOCKET_TOKEN=use-a-long-random-local-token
+VITE_MONIKAI_CLIENT_CAPTURE=true
+```
+
+This mode is intended for a trusted LAN or VPN connection. It does not yet
+provide TLS, multi-client session routing, or public Internet hardening.
+
 ## Project Layout
 
 - `backend/core/` - runtime, socket handlers, lifecycle, and HTTP routers

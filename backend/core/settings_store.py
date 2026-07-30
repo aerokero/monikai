@@ -57,6 +57,8 @@ DEFAULT_SETTINGS = {
     "gemini_voice": "Leda",
     "camera_flipped": False,
     "camera_source": "frontend",
+    "audio_source": "backend",
+    "screen_source": "backend",
     "video_mode": "none",
     "camera_capture": {
         "fps": 2.0,

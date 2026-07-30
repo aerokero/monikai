@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from dataclasses import asdict
 
+from backend.core.routers.frontend_router import is_active_frontend_sid
+
 
 def register_system_frontend_handlers(
     sio,
@@ -44,10 +46,31 @@ def register_system_frontend_handlers(
 
     @sio.event
     async def video_frame(sid, data):
+        if not is_active_frontend_sid(sid):
+            return
         image_data = data.get("image")
         audio_loop = get_audio_loop()
         if image_data and audio_loop:
             asyncio.create_task(audio_loop.send_frame(image_data))
+
+    @sio.on("screen_frame")
+    async def screen_frame(sid, data):
+        if not is_active_frontend_sid(sid):
+            return
+        audio_loop = get_audio_loop()
+        if audio_loop and isinstance(data, dict):
+            asyncio.create_task(audio_loop.send_screen_frame(data.get("image")))
+
+    @sio.on("client_audio_chunk")
+    async def client_audio_chunk(sid, data):
+        if not is_active_frontend_sid(sid):
+            return
+        audio_loop = get_audio_loop()
+        if audio_loop and isinstance(data, dict):
+            await audio_loop.send_client_audio(
+                data.get("data"),
+                data.get("sample_rate", 16000),
+            )
 
     @sio.event
     async def user_activity(sid, data):

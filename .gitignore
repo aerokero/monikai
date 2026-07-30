@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 .env
+.env.local
 venv/
 .venv/
 env/

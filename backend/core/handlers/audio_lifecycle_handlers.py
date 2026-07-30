@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
+import os
 import re
 from datetime import datetime
 
-from backend.integrations.media.authenticator import FaceAuthenticator
 from backend.services.personality_notifications import to_frontend_personality_event
+from backend.core.routers.frontend_router import get_active_frontend_sid
 
 
 def register_audio_lifecycle_handlers(
@@ -43,7 +45,6 @@ def register_audio_lifecycle_handlers(
     async def _start_audio_impl(sid, data=None):
         nonlocal last_start_params
         audio_loop = get_audio_loop()
-        set_active_frontend_sid(sid)
         last_start_params = {"sid": sid, "data": data}
 
         if get_settings().get("face_auth_enabled", False):
@@ -67,6 +68,9 @@ def register_audio_lifecycle_handlers(
 
         loop_task = get_loop_task()
         if loop_task and not loop_task.done():
+            if get_active_frontend_sid() != sid:
+                await sio.emit("error", {"msg": "Another desktop client owns the active voice session"}, room=sid)
+                return
             print("[SYSTEM NOTIFICATION] Audio loop already running. Re-connecting client to session.")
             await sio.emit("status", {"msg": "MonikAI Already Running"}, room=sid)
             return
@@ -77,12 +81,17 @@ def register_audio_lifecycle_handlers(
                 set_audio_loop(None)
                 set_loop_task(None)
             else:
+                if get_active_frontend_sid() != sid:
+                    await sio.emit("error", {"msg": "Another desktop client owns the active voice session"}, room=sid)
+                    return
                 print("[SYSTEM NOTIFICATION] Audio loop already running. Re-connecting client to session.")
                 await sio.emit("status", {"msg": "MonikAI Already Running"}, room=sid)
                 return
 
         def on_audio_data(data_bytes):
-            schedule_emit_to_frontend("audio_data", {"data": list(data_bytes)})
+            # Keep PCM binary on the wire. JSON-encoding every sample adds
+            # substantial CPU, bandwidth and latency to remote clients.
+            schedule_emit_to_frontend("audio_data", {"data": data_bytes})
 
         def on_web_data(data):
             log_text = str((data or {}).get("log") or "")
@@ -98,12 +107,9 @@ def register_audio_lifecycle_handlers(
             schedule_emit_to_frontend("browser_frame", data)
 
         def on_transcription(data):
-            # Transcriptions are visible UI state, so deliver them to every
-            # connected frontend.  Routing through ACTIVE_FRONTEND_SID can
-            # silently send Monika's text to a stale/hidden Electron window
-            # when more than one frontend has connected to the shared audio
-            # loop.  Socket.IO broadcasts when no room is supplied.
-            asyncio.create_task(sio.emit("transcription", data))
+            # Conversation content belongs to the desktop client that owns
+            # the active Live session, not to every connected frontend.
+            asyncio.create_task(sio.emit("transcription", data, room=sid))
 
             try:
                 sender = (data or {}).get("sender", "")
@@ -249,6 +255,18 @@ def register_audio_lifecycle_handlers(
             else:
                 video_mode = str(get_settings().get("video_mode", "none")).lower()
 
+            audio_source = str(
+                (data or {}).get("audio_source")
+                or get_settings().get("audio_source", "backend")
+            ).lower()
+            play_audio_locally = bool(
+                (data or {}).get("play_audio_locally", audio_source == "backend")
+            )
+            screen_source = str(
+                (data or {}).get("screen_source")
+                or get_settings().get("screen_source", "backend")
+            ).lower()
+
             print(f"[SYSTEM NOTIFICATION] Initializing AudioLoop with device_index={device_index}, video_mode={video_mode}")
             audio_loop = monikai_module.AudioLoop(
                 video_mode=video_mode,
@@ -279,9 +297,13 @@ def register_audio_lifecycle_handlers(
                 reminder_manager=get_reminder_manager(),
                 spotify_manager=get_spotify_manager(),
                 personality=get_personality_system(),
+                audio_source=audio_source,
+                screen_source=screen_source,
+                play_audio_locally=play_audio_locally,
             )
             print("[SYSTEM NOTIFICATION] AudioLoop initialized successfully.")
 
+            set_active_frontend_sid(sid)
             set_audio_loop(audio_loop)
 
             audio_loop.hue_agent = get_hue_agent()
@@ -332,8 +354,13 @@ def register_audio_lifecycle_handlers(
             set_audio_loop(None)
 
     @sio.event
-    async def connect(sid, environ):
-        set_active_frontend_sid(sid)
+    async def connect(sid, environ, auth=None):
+        expected_token = str(os.getenv("MONIKAI_SOCKET_TOKEN") or "").strip()
+        if expected_token:
+            supplied_token = str((auth or {}).get("token") or "").strip()
+            if not hmac.compare_digest(supplied_token, expected_token):
+                print(f"[SECURITY] Rejected unauthenticated Socket.IO client: {sid}")
+                return False
         print(f"[SYSTEM NOTIFICATION] Client connected: {sid}")
         await sio.emit("status", {"msg": "Connected to MonikAI Backend"}, room=sid)
 
@@ -347,14 +374,16 @@ def register_audio_lifecycle_handlers(
             await emit_to_frontend("auth_frame", {"image": frame_b64})
 
         if authenticator is None:
-            authenticator = FaceAuthenticator(
-                reference_image_path=str(data_dir / "reference.jpg"),
-                on_status_change=on_auth_status,
-                on_frame=on_auth_frame,
-            )
-            set_authenticator(authenticator)
+            if get_settings().get("face_auth_enabled", False):
+                from backend.integrations.media.authenticator import FaceAuthenticator
+                authenticator = FaceAuthenticator(
+                    reference_image_path=str(data_dir / "reference.jpg"),
+                    on_status_change=on_auth_status,
+                    on_frame=on_auth_frame,
+                )
+                set_authenticator(authenticator)
 
-        if authenticator.authenticated:
+        if authenticator and authenticator.authenticated:
             await sio.emit("auth_status", {"authenticated": True}, room=sid)
         else:
             if get_settings().get("face_auth_enabled", False):
@@ -366,7 +395,22 @@ def register_audio_lifecycle_handlers(
 
     @sio.event
     async def disconnect(sid):
+        was_active = get_active_frontend_sid() == sid
         clear_active_frontend_sid(sid)
+        if was_active:
+            audio_loop = get_audio_loop()
+            if audio_loop:
+                audio_loop.stop()
+            loop_task = get_loop_task()
+            if loop_task and not loop_task.done():
+                loop_task.cancel()
+                try:
+                    await loop_task
+                except BaseException:
+                    pass
+            set_audio_loop(None)
+            set_loop_task(None)
+            print("[SYSTEM NOTIFICATION] Active desktop session stopped after client disconnect.")
         print(f"Client disconnected: {sid}")
 
         pass

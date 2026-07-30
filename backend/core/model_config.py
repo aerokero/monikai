@@ -2,7 +2,10 @@ import os
 import re
 import sys
 
-import pyaudio
+try:
+    import pyaudio
+except ImportError:  # Optional in headless client-server deployments.
+    pyaudio = None
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -20,7 +23,7 @@ def _env_flag(name: str, default: bool = False) -> bool:
 # ---------------------------------------------------------------------------
 # Audio constants
 # ---------------------------------------------------------------------------
-FORMAT = pyaudio.paInt16
+FORMAT = pyaudio.paInt16 if pyaudio is not None else 8  # PyAudio paInt16
 CHANNELS = 1
 SEND_SAMPLE_RATE = 16000
 RECEIVE_SAMPLE_RATE = 24000

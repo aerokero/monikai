@@ -49,11 +49,30 @@ import { useRandomPose } from './features/outfit/hooks/useRandomPose';
 import { useHeadpat } from './features/outfit/hooks/useHeadpat';
 import { useToasts } from './features/toasts/useToasts';
 
-const SOCKET_URL = 'http://localhost:8000';
+const SOCKET_URL =
+  localStorage.getItem('monikai_server_url') ||
+  import.meta.env.VITE_MONIKAI_SERVER_URL ||
+  'http://127.0.0.1:8000';
+const SOCKET_TOKEN =
+  localStorage.getItem('monikai_socket_token') ||
+  import.meta.env.VITE_MONIKAI_SOCKET_TOKEN ||
+  '';
+const CLIENT_CAPTURE_ENABLED =
+  localStorage.getItem('monikai_client_capture') === 'true' ||
+  import.meta.env.VITE_MONIKAI_CLIENT_CAPTURE === 'true';
+const DEVICE_ID = (() => {
+  const existing = localStorage.getItem('monikai_device_id');
+  if (existing) return existing;
+  const created = globalThis.crypto?.randomUUID?.() || `desktop-${Date.now()}`;
+  localStorage.setItem('monikai_device_id', created);
+  return created;
+})();
 const socket = (() => {
   const existing = globalThis.__monikaiSocket;
   if (existing) return existing;
-  const created = io(SOCKET_URL);
+  const created = io(SOCKET_URL, {
+    auth: { token: SOCKET_TOKEN, deviceId: DEVICE_ID },
+  });
   globalThis.__monikaiSocket = created;
   return created;
 })();
@@ -338,8 +357,80 @@ function AppContent() {
 
   // Web Audio Context for Mic Visualization
   const audioContextRef = useRef(null);
+  const playbackContextRef = useRef(null);
+  const playbackNextTimeRef = useRef(0);
   const analyserRef = useRef(null);
   const sourceRef = useRef(null);
+  const micStreamRef = useRef(null);
+  const micProcessorRef = useRef(null);
+  const micSilentGainRef = useRef(null);
+  const micWorkletUrlRef = useRef(null);
+  const screenStreamRef = useRef(null);
+  const screenTimerRef = useRef(null);
+  const isConnectedRef = useRef(isConnected);
+  const isMutedRef = useRef(isMuted);
+
+  useEffect(() => {
+    isConnectedRef.current = isConnected;
+    isMutedRef.current = isMuted;
+  }, [isConnected, isMuted]);
+
+  // Chromium may suspend microphone/playback AudioContexts until a user
+  // gesture. Resume both on the first click so the remote mic stream does
+  // not sit buffered while text continues to work normally.
+  useEffect(() => {
+    const unlockAudio = () => {
+      if (audioContextRef.current?.state === 'suspended') {
+        audioContextRef.current.resume().catch(() => {});
+      }
+      if (playbackContextRef.current?.state === 'suspended') {
+        playbackContextRef.current.resume().catch(() => {});
+      }
+    };
+    window.addEventListener('pointerdown', unlockAudio);
+    return () => window.removeEventListener('pointerdown', unlockAudio);
+  }, []);
+
+  const ensurePlaybackContext = async () => {
+    if (!playbackContextRef.current) {
+      playbackContextRef.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+      if (selectedSpeakerId && typeof playbackContextRef.current.setSinkId === 'function') {
+        try {
+          await playbackContextRef.current.setSinkId(selectedSpeakerId);
+        } catch (err) {
+          console.warn('[Audio] Could not select speaker:', err);
+        }
+      }
+    }
+    if (playbackContextRef.current.state === 'suspended') {
+      await playbackContextRef.current.resume();
+    }
+    return playbackContextRef.current;
+  };
+
+  const playAudioChunk = async (payload) => {
+    const raw = payload?.data;
+    if (!raw) return;
+    const bytes = raw instanceof ArrayBuffer
+      ? new Uint8Array(raw)
+      : raw instanceof Uint8Array
+        ? raw
+        : Uint8Array.from(Array.isArray(raw) ? raw : []);
+    if (bytes.byteLength < 2) return;
+
+    const context = await ensurePlaybackContext();
+    const samples = new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 2));
+    const audioBuffer = context.createBuffer(1, samples.length, 24000);
+    const channel = audioBuffer.getChannelData(0);
+    for (let i = 0; i < samples.length; i++) channel[i] = samples[i] / 32768;
+
+    const source = context.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(context.destination);
+    const startAt = Math.max(context.currentTime + 0.02, playbackNextTimeRef.current);
+    source.start(startAt);
+    playbackNextTimeRef.current = startAt + audioBuffer.duration;
+  };
   const animationFrameRef = useRef(null);
 
   // Video Refs
@@ -571,7 +662,8 @@ function AppContent() {
 
   // Auto-Connect Model on Start (Only after Auth and devices loaded)
   useEffect(() => {
-    if (isConnected && isAuthenticated && socketConnected && settingsLoaded && micDevices.length > 0 && !hasAutoConnectedRef.current) {
+    const hasClientCapturePermission = CLIENT_CAPTURE_ENABLED || micDevices.length > 0;
+    if (isConnected && isAuthenticated && socketConnected && settingsLoaded && hasClientCapturePermission && !hasAutoConnectedRef.current) {
       hasAutoConnectedRef.current = true;
 
       setTimeout(() => {
@@ -582,11 +674,15 @@ function AppContent() {
         console.log("Auto-connecting to model with device:", deviceName, "Index:", index);
 
         setStatus(tRef.current('system.connecting'));
+        if (CLIENT_CAPTURE_ENABLED) setIsMuted(false);
         socket.emit('start_audio', {
           device_index: index >= 0 ? index : null,
           device_name: deviceName,
-          muted: isMuted,
-          video_mode: visionMode || 'none'
+          muted: CLIENT_CAPTURE_ENABLED ? false : isMuted,
+          video_mode: visionMode || 'none',
+          audio_source: CLIENT_CAPTURE_ENABLED ? 'frontend' : 'backend',
+          screen_source: CLIENT_CAPTURE_ENABLED ? 'frontend' : 'backend',
+          play_audio_locally: !CLIENT_CAPTURE_ENABLED,
         });
       }, 500);
     }
@@ -594,10 +690,28 @@ function AppContent() {
 
   useEffect(() => {
     socket.on('connect', () => {
+      hasAutoConnectedRef.current = false;
       setStatus(tRef.current('system.connected'));
       setSocketConnected(true);
       socket.emit('get_settings');
       socket.emit('get_personality_status');
+      if (CLIENT_CAPTURE_ENABLED) {
+        hasAutoConnectedRef.current = true;
+        setIsConnected(true);
+        setIsMuted(false);
+        setTimeout(() => {
+          if (!socket.connected) return;
+          const savedVisionMode = localStorage.getItem('video_mode') || 'none';
+          socket.emit('start_audio', {
+            device_index: null,
+            video_mode: savedVisionMode,
+            muted: false,
+            audio_source: 'frontend',
+            screen_source: 'frontend',
+            play_audio_locally: false,
+          });
+        }, 700);
+      }
     });
 
     socket.on('personality_status', (data) => {
@@ -606,6 +720,7 @@ function AppContent() {
     });
 
     socket.on('disconnect', () => {
+      hasAutoConnectedRef.current = false;
       setStatus(tRef.current('system.disconnected'));
       setSocketConnected(false);
       setConfirmationQueue([]);
@@ -628,6 +743,7 @@ function AppContent() {
 
     socket.on('audio_data', (data) => {
       setAiAudioData(data.data);
+      if (CLIENT_CAPTURE_ENABLED) playAudioChunk(data);
     });
 
     socket.on('vision_frame', (data) => {
@@ -944,6 +1060,90 @@ function AppContent() {
 
       sourceRef.current = audioContextRef.current.createMediaStreamSource(stream);
       sourceRef.current.connect(analyserRef.current);
+      micStreamRef.current = stream;
+
+      // ScriptProcessor can produce zero-filled buffers in Electron even while
+      // the analyser receives microphone data. Capture on the audio rendering
+      // thread instead and batch ~43 ms of 48 kHz input per socket message.
+      const workletSource = `
+        class MonikaiPcmCaptureProcessor extends AudioWorkletProcessor {
+          constructor() {
+            super();
+            this.buffer = new Float32Array(2048);
+            this.offset = 0;
+          }
+
+          process(inputs) {
+            const input = inputs[0];
+            const channel = input && input[0];
+            if (!channel) return true;
+
+            let position = 0;
+            while (position < channel.length) {
+              const count = Math.min(
+                channel.length - position,
+                this.buffer.length - this.offset
+              );
+              this.buffer.set(channel.subarray(position, position + count), this.offset);
+              this.offset += count;
+              position += count;
+
+              if (this.offset === this.buffer.length) {
+                this.port.postMessage(this.buffer, [this.buffer.buffer]);
+                this.buffer = new Float32Array(2048);
+                this.offset = 0;
+              }
+            }
+            return true;
+          }
+        }
+
+        registerProcessor('monikai-pcm-capture', MonikaiPcmCaptureProcessor);
+      `;
+      const workletUrl = URL.createObjectURL(
+        new Blob([workletSource], { type: 'application/javascript' })
+      );
+      micWorkletUrlRef.current = workletUrl;
+      await audioContextRef.current.audioWorklet.addModule(workletUrl);
+
+      const processor = new AudioWorkletNode(
+        audioContextRef.current,
+        'monikai-pcm-capture',
+        {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [1],
+        }
+      );
+      const inputSampleRate = audioContextRef.current.sampleRate;
+      processor.port.onmessage = (event) => {
+        if (!CLIENT_CAPTURE_ENABLED || !isConnectedRef.current || isMutedRef.current || !socket.connected) return;
+        const input = event.data instanceof Float32Array
+          ? event.data
+          : new Float32Array(event.data);
+        const ratio = inputSampleRate / 16000;
+        const outputLength = Math.max(1, Math.floor(input.length / ratio));
+        const pcm = new Int16Array(outputLength);
+        for (let i = 0; i < outputLength; i++) {
+          const sample = input[Math.min(input.length - 1, Math.floor(i * ratio))] || 0;
+          pcm[i] = Math.max(-1, Math.min(1, sample)) * 0x7fff;
+        }
+        socket.emit('client_audio_chunk', {
+          sample_rate: 16000,
+          format: 'pcm_s16le',
+          data: pcm.buffer,
+        });
+      };
+
+      // A Web Audio processing node must remain connected to an output. Route
+      // it through zero gain so microphone audio is never played locally.
+      const silentGain = audioContextRef.current.createGain();
+      silentGain.gain.value = 0;
+      sourceRef.current.connect(processor);
+      processor.connect(silentGain);
+      silentGain.connect(audioContextRef.current.destination);
+      micProcessorRef.current = processor;
+      micSilentGainRef.current = silentGain;
 
       const updateMicData = () => {
         if (!analyserRef.current) return;
@@ -961,8 +1161,28 @@ function AppContent() {
 
   const stopMicVisualizer = () => {
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    if (micProcessorRef.current) {
+      micProcessorRef.current.disconnect();
+      micProcessorRef.current.port.onmessage = null;
+      micProcessorRef.current = null;
+    }
+    if (micSilentGainRef.current) {
+      micSilentGainRef.current.disconnect();
+      micSilentGainRef.current = null;
+    }
+    if (micWorkletUrlRef.current) {
+      URL.revokeObjectURL(micWorkletUrlRef.current);
+      micWorkletUrlRef.current = null;
+    }
     if (sourceRef.current) sourceRef.current.disconnect();
+    if (micStreamRef.current) {
+      micStreamRef.current.getTracks().forEach(track => track.stop());
+      micStreamRef.current = null;
+    }
     if (audioContextRef.current) audioContextRef.current.close();
+    sourceRef.current = null;
+    analyserRef.current = null;
+    audioContextRef.current = null;
   };
 
   const startVideo = async () => {
@@ -1083,10 +1303,57 @@ function AppContent() {
 
   const toggleScreenCapture = () => {
     if (visionMode === 'screen') {
+      stopScreenCapture();
       setVisionModeAndPersist('none', { screen_capture: { stream_to_ai: false } });
     } else {
       if (isVideoOn) stopVideo();
+      if (CLIENT_CAPTURE_ENABLED) startScreenCapture();
       setVisionModeAndPersist('screen', { screen_capture: { stream_to_ai: true } });
+    }
+  };
+
+  const stopScreenCapture = () => {
+    if (screenTimerRef.current) {
+      clearInterval(screenTimerRef.current);
+      screenTimerRef.current = null;
+    }
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach(track => track.stop());
+      screenStreamRef.current = null;
+    }
+  };
+
+  const startScreenCapture = async () => {
+    try {
+      stopScreenCapture();
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      screenStreamRef.current = stream;
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.muted = true;
+      await video.play();
+      const canvas = document.createElement('canvas');
+      canvas.width = 1280;
+      canvas.height = 720;
+      const ctx = canvas.getContext('2d');
+      const sendFrame = () => {
+        if (!screenStreamRef.current || !socket.connected || video.videoWidth === 0) return;
+        const ratio = Math.min(canvas.width / video.videoWidth, canvas.height / video.videoHeight);
+        const width = Math.max(1, Math.round(video.videoWidth * ratio));
+        const height = Math.max(1, Math.round(video.videoHeight * ratio));
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(video, 0, 0, width, height);
+        canvas.toBlob(blob => {
+          if (blob) socket.emit('screen_frame', { image: blob });
+        }, 'image/jpeg', 0.7);
+      };
+      screenTimerRef.current = setInterval(sendFrame, 1000);
+      sendFrame();
+      stream.getVideoTracks()[0]?.addEventListener('ended', stopScreenCapture, { once: true });
+    } catch (err) {
+      console.error('Error accessing screen:', err);
+      setVisionModeAndPersist('none', { screen_capture: { stream_to_ai: false } });
     }
   };
 
@@ -1115,6 +1382,10 @@ function AppContent() {
   }, [inputValue, socket]);
 
   const togglePower = () => {
+    if (audioContextRef.current?.state === 'suspended') {
+      audioContextRef.current.resume().catch(() => {});
+    }
+    ensurePlaybackContext().catch(() => {});
     if (isConnected) {
       socket.emit('stop_audio');
       setIsConnected(false);
@@ -1123,7 +1394,10 @@ function AppContent() {
       const index = micDevices.findIndex(d => d.deviceId === selectedMicId);
       socket.emit('start_audio', {
         device_index: index >= 0 ? index : null,
-        video_mode: visionMode || 'none'
+        video_mode: visionMode || 'none',
+        audio_source: CLIENT_CAPTURE_ENABLED ? 'frontend' : 'backend',
+        screen_source: CLIENT_CAPTURE_ENABLED ? 'frontend' : 'backend',
+        play_audio_locally: !CLIENT_CAPTURE_ENABLED,
       });
       setIsConnected(true);
       setIsMuted(false);

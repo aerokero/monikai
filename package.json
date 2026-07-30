@@ -5,6 +5,7 @@
   "main": "electron/main.js",
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env NODE_OPTIONS=--no-deprecation node electron/run-electron.js\"",
+    "dev:client": "concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env NODE_OPTIONS=--no-deprecation MONIKAI_CLIENT_ONLY=true node electron/run-electron.js\"",
     "build": "vite build",
     "start": "node electron/run-electron.js",
     "dist": "npm run build && electron-builder"

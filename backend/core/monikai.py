@@ -8,7 +8,10 @@ import shlex
 import subprocess
 import cv2
 import numpy as np
-import pyaudio
+try:
+    import pyaudio
+except ImportError:  # Optional when audio is captured by the desktop client.
+    pyaudio = None
 try:
     import sounddevice as sd
     _SOUNDDEVICE_AVAILABLE = True
@@ -264,7 +267,7 @@ def _build_base_live_config() -> types.LiveConnectConfig:
 
 config = _build_base_live_config()
 
-pya = pyaudio.PyAudio()
+pya = pyaudio.PyAudio() if pyaudio is not None else None
 
 from ..agents.web_agent import WebAgent
 from ..agents.kasa_agent import KasaAgent
@@ -467,6 +470,9 @@ class AudioLoop:
         on_study_page=None,
         on_program_shutdown=None,
         enable_audio_io=True,
+        audio_source="backend",
+        screen_source=None,
+        play_audio_locally=True,
         auto_allow_tools_without_confirmation=True,
         session_stream_channel=None,
         **_ignored,
@@ -493,6 +499,11 @@ class AudioLoop:
         self.on_study_page = on_study_page
         self.on_program_shutdown = on_program_shutdown
         self.enable_audio_io = bool(enable_audio_io)
+        self.audio_source = str(audio_source or "backend").lower()
+        if self.audio_source not in ("backend", "frontend"):
+            self.audio_source = "backend"
+        self.play_audio_locally = bool(play_audio_locally)
+        self.requested_screen_source = screen_source
         self.auto_allow_tools_without_confirmation = bool(auto_allow_tools_without_confirmation)
 
         self.input_device_index = input_device_index
@@ -501,6 +512,9 @@ class AudioLoop:
 
         self.audio_in_queue = None
         self.out_queue = None
+        self._client_audio_chunks = 0
+        self._client_audio_bytes = 0
+        self._client_audio_abs_sum = 0
         self.paused = False
 
         self.chat_buffer = {"sender": None, "text": ""}
@@ -816,6 +830,8 @@ class AudioLoop:
         self._video_queue_max = 6  # legacy: kept for compatibility
         self._camera_backend_id = None
         self._load_capture_settings()
+        if self.requested_screen_source in ("frontend", "backend"):
+            self.screen_source = self.requested_screen_source
         self.video_queue = None
         self._screen_fail_count = 0
         self._last_screen_error_ts = 0.0
@@ -1199,6 +1215,9 @@ class AudioLoop:
         camera_source = (settings.get("camera_source") or "frontend").lower()
         if camera_source not in ("frontend", "backend"):
             camera_source = "frontend"
+        screen_source = (settings.get("screen_source") or "backend").lower()
+        if screen_source not in ("frontend", "backend"):
+            screen_source = "backend"
 
         camera_fps = self._clamp_float(cam.get("fps", 2.0), 0.2, 30.0, 2.0)
         camera_max = self._clamp_int(cam.get("max_size", 1024), 320, 4096, 1024)
@@ -1242,6 +1261,7 @@ class AudioLoop:
         }
         self.screen_stream_to_ai = screen_stream_to_ai
         self.camera_source = camera_source
+        self.screen_source = screen_source
 
         self._camera_interval = 1.0 / max(self.camera_capture["fps"], 0.01)
         self._screen_interval = 1.0 / max(self.screen_capture["fps"], 0.01)
@@ -1828,6 +1848,116 @@ class AudioLoop:
         self._latest_image_payload = {"mime_type": "image/jpeg", "data": b64}
         self._latest_image_ts = time.time()
 
+    async def send_screen_frame(self, frame_data):
+        """Accept a screen frame captured by a remote desktop client."""
+        if self.video_mode != "screen":
+            return
+        if isinstance(frame_data, dict):
+            mime_type = str(frame_data.get("mime_type") or "image/jpeg")
+            frame_data = frame_data.get("data")
+        else:
+            mime_type = "image/jpeg"
+        if isinstance(frame_data, str):
+            b64 = frame_data
+        elif isinstance(frame_data, (bytes, bytearray, memoryview)):
+            b64 = base64.b64encode(bytes(frame_data)).decode("ascii")
+        else:
+            return
+        self._latest_image_payload = {"mime_type": mime_type, "data": b64}
+        self._latest_image_ts = time.time()
+
+    async def _process_input_vad(self, audio_data, source="microphone"):
+        """Apply the same turn detection to backend and remote-client PCM."""
+        try:
+            samples = np.frombuffer(audio_data, dtype="<i2")
+            if not samples.size:
+                return 0
+            float_samples = samples.astype(np.float64)
+            rms = int(np.sqrt(np.mean(float_samples * float_samples)))
+        except (TypeError, ValueError):
+            return 0
+
+        vad_threshold = 800
+        silence_duration = (
+            max(0.5, GEMINI_VAD_SILENCE_DURATION_MS / 1000.0)
+            if self._manual_voice_turn_control
+            else 3.0
+        )
+
+        if rms > vad_threshold:
+            self.mark_user_activity()
+            self._silence_start_time = None
+            if not self._is_speaking:
+                self._cancel_voice_finalize()
+                self._is_speaking = True
+                if self._manual_voice_turn_control and not self._manual_voice_activity_open:
+                    if self.out_queue:
+                        await self.out_queue.put({"activity_start": True})
+                    elif self.session:
+                        await self.session.send_realtime_input(
+                            activity_start=types.ActivityStart()
+                        )
+                    self._manual_voice_activity_open = True
+                print(
+                    f"[AI DEBUG] [VAD] Speech detected from {source} "
+                    f"(RMS: {rms}). Sending video frame."
+                )
+                if self._latest_image_payload and self.out_queue:
+                    await self.out_queue.put(self._latest_image_payload)
+                else:
+                    print("[AI DEBUG] [VAD] No video frame available to send.")
+        elif self._is_speaking:
+            if self._silence_start_time is None:
+                self._silence_start_time = time.time()
+            elif time.time() - self._silence_start_time > silence_duration:
+                print(
+                    f"[AI DEBUG] [VAD] Silence detected after {source}; "
+                    "resetting speech state."
+                )
+                self._is_speaking = False
+                self._silence_start_time = None
+                if self._manual_voice_turn_control and self._manual_voice_activity_open:
+                    self._schedule_voice_finalize()
+
+        return rms
+
+    async def send_client_audio(self, audio_data, sample_rate=SEND_SAMPLE_RATE):
+        """Queue PCM audio captured by a remote desktop client."""
+        if not self.out_queue or not audio_data:
+            return False
+        if isinstance(audio_data, str):
+            try:
+                audio_data = base64.b64decode(audio_data, validate=False)
+            except Exception:
+                return False
+        if not isinstance(audio_data, (bytes, bytearray, memoryview)):
+            return False
+        payload = {
+            "mime_type": f"audio/pcm;rate={int(sample_rate or SEND_SAMPLE_RATE)}",
+            "data": bytes(audio_data),
+        }
+        await self._process_input_vad(payload["data"], source="desktop client")
+        self._client_audio_chunks += 1
+        self._client_audio_bytes += len(payload["data"])
+        try:
+            samples = np.frombuffer(payload["data"], dtype=np.int16)
+            self._client_audio_abs_sum += int(np.abs(samples).mean()) if samples.size else 0
+        except Exception:
+            pass
+        if self._client_audio_chunks % 100 == 0:
+            avg_rms_proxy = self._client_audio_abs_sum / 100.0
+            print(
+                f"[AI DEBUG] [CLIENT AUDIO] chunks={self._client_audio_chunks} "
+                f"bytes={self._client_audio_bytes} queue={self.out_queue.qsize()} "
+                f"avg_abs_100={avg_rms_proxy:.1f}"
+            )
+            self._client_audio_abs_sum = 0
+        try:
+            self.out_queue.put_nowait(payload)
+            return True
+        except asyncio.QueueFull:
+            return False
+
     async def send_realtime(self):
         while True:
             msg = await self.out_queue.get()
@@ -1913,6 +2043,10 @@ class AudioLoop:
         return resampled.tobytes()
 
     async def listen_audio(self):
+        if pya is None:
+            if self.on_error:
+                self.on_error("Backend microphone is unavailable; use frontend audio capture.")
+            return
         mic_info = pya.get_default_input_device_info()
         resolved_input_device_index = None
 
@@ -1973,13 +2107,6 @@ class AudioLoop:
 
         kwargs = {"exception_on_overflow": False} if __debug__ else {}
 
-        VAD_THRESHOLD = 800
-        SILENCE_DURATION = (
-            max(0.5, GEMINI_VAD_SILENCE_DURATION_MS / 1000.0)
-            if self._manual_voice_turn_control
-            else 3.0
-        )
-
         while True:
             if self.paused:
                 if self._pause_started_ts is None:
@@ -1999,41 +2126,7 @@ class AudioLoop:
                 # Resample to 16kHz for the API
                 data = self._resample_audio(raw_data, native_rate, SEND_SAMPLE_RATE)
 
-                count = len(data) // 2
-                if count > 0:
-                    shorts = struct.unpack(f"<{count}h", data)
-                    sum_squares = sum(s**2 for s in shorts)
-                    rms = int(math.sqrt(sum_squares / count))
-                else:
-                    rms = 0
-
-                if rms > VAD_THRESHOLD:
-                    self.mark_user_activity()
-                    self._silence_start_time = None
-                    if not self._is_speaking:
-                        self._cancel_voice_finalize()
-                        self._is_speaking = True
-                        if self._manual_voice_turn_control and not self._manual_voice_activity_open:
-                            if self.out_queue:
-                                await self.out_queue.put({"activity_start": True})
-                            elif self.session:
-                                await self.session.send_realtime_input(activity_start=types.ActivityStart())
-                            self._manual_voice_activity_open = True
-                        print(f"[AI DEBUG] [VAD] Speech Detected (RMS: {rms}). Sending Video Frame.")
-                        if self._latest_image_payload and self.out_queue:
-                            await self.out_queue.put(self._latest_image_payload)
-                        else:
-                            print(f"[AI DEBUG] [VAD] No video frame available to send.")
-                else:
-                    if self._is_speaking:
-                        if self._silence_start_time is None:
-                            self._silence_start_time = time.time()
-                        elif time.time() - self._silence_start_time > SILENCE_DURATION:
-                            print("[AI DEBUG] [VAD] Silence detected. Resetting speech state.")
-                            self._is_speaking = False
-                            self._silence_start_time = None
-                            if self._manual_voice_turn_control and self._manual_voice_activity_open:
-                                self._schedule_voice_finalize()
+                await self._process_input_vad(data, source="backend microphone")
 
                 if self.out_queue:
                     await self.out_queue.put({"data": data, "mime_type": "audio/pcm"})
@@ -4532,6 +4625,14 @@ class AudioLoop:
             traceback.print_exc()
             raise e
 
+    async def forward_audio(self):
+        """Forward Gemini PCM to a remote client without using server audio."""
+        while True:
+            bytestream = await self.audio_in_queue.get()
+            if self.on_audio_data:
+                self.on_audio_data(bytestream)
+            self.mark_ai_activity()
+
     async def play_audio(self):
         async def _play_with_sounddevice():
             if not _SOUNDDEVICE_AVAILABLE:
@@ -4786,7 +4887,7 @@ class AudioLoop:
         current_interval = self._screen_interval
 
         while True:
-            if self.paused or self.video_mode != "screen":
+            if self.paused or self.video_mode != "screen" or self.screen_source != "backend":
                 await asyncio.sleep(0.2)
                 continue
 
@@ -4854,7 +4955,8 @@ class AudioLoop:
 
                     if self.enable_audio_io:
                         tg.create_task(self.send_realtime())
-                        tg.create_task(self.listen_audio())
+                        if self.audio_source == "backend":
+                            tg.create_task(self.listen_audio())
 
                     tg.create_task(self.get_frames())
                     tg.create_task(self.get_screen())
@@ -4862,8 +4964,10 @@ class AudioLoop:
                     tg.create_task(self.receive_audio())
                     tg.create_task(self.idle_nudge_loop())
                     tg.create_task(self.reasoning_loop())
-                    if self.enable_audio_io:
+                    if self.enable_audio_io and self.play_audio_locally:
                         tg.create_task(self.play_audio())
+                    elif self.enable_audio_io:
+                        tg.create_task(self.forward_audio())
                     tg.create_task(self.weather_loop())
 
                     if not is_reconnect:
@@ -5045,6 +5149,8 @@ class AudioLoop:
 
 
 def get_input_devices():
+    if pyaudio is None:
+        return []
     p = pyaudio.PyAudio()
     info = p.get_host_api_info_by_index(0)
     numdevices = info.get("deviceCount")
@@ -5057,6 +5163,8 @@ def get_input_devices():
 
 
 def get_output_devices():
+    if pyaudio is None:
+        return []
     p = pyaudio.PyAudio()
     info = p.get_host_api_info_by_index(0)
     numdevices = info.get("deviceCount")

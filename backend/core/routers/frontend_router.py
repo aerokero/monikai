@@ -29,6 +29,10 @@ def get_active_frontend_sid():
     return ACTIVE_FRONTEND_SID
 
 
+def is_active_frontend_sid(sid):
+    return bool(sid and sid == ACTIVE_FRONTEND_SID)
+
+
 async def emit_to_frontend(event: str, payload, room: str = None):
     if SIO is None:
         return
