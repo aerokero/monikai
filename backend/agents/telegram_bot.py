@@ -649,10 +649,38 @@ class TelegramBotService:
             for chat_id in stale_ids:
                 await self._drop_session(chat_id)
 
+    async def _ask_with_retry(self, chat_id: int, session, ask) -> str:
+        """Pusta odpowiedź silnika to nie jest treść do wysłania.
+
+        Zamiast niemego "..." (które wyglądało jak zawieszenie bota) próbujemy
+        jeszcze raz, a gdy i to nie wyjdzie — mówimy wprost, co się stało."""
+        try:
+            reply = str(await ask() or "").strip()
+        except Exception as exc:
+            print(f"[TELEGRAM] tura nieudana: {exc}")
+            reply = ""
+
+        if reply:
+            return reply
+
+        print("[TELEGRAM] pusta odpowiedź — ponawiam turę.")
+        await self._send_typing(chat_id)
+        try:
+            reply = str(await ask() or "").strip()
+        except Exception as exc:
+            print(f"[TELEGRAM] ponowiona tura nieudana: {exc}")
+            reply = ""
+
+        if reply:
+            return reply
+
+        print("[TELEGRAM] druga pusta odpowiedź — wysyłam komunikat zastępczy.")
+        return "(nie udało mi się teraz odpowiedzieć — napisz jeszcze raz)"
+
     async def _handle_text(self, chat_id: int, user_label: str, text: str):
         session = await self._get_session(chat_id, user_label)
         await self._send_typing(chat_id)
-        reply = await session.ask(text)
+        reply = await self._ask_with_retry(chat_id, session, lambda: session.ask(text))
         await self._send_message(chat_id, reply)
 
     async def _handle_turn(
@@ -665,9 +693,10 @@ class TelegramBotService:
         session = await self._get_session(chat_id, user_label)
         await self._send_typing(chat_id)
         if attachments:
-            reply = await session.ask_with_attachments(text, attachments)
+            ask = lambda: session.ask_with_attachments(text, attachments)
         else:
-            reply = await session.ask(str(text or ""))
+            ask = lambda: session.ask(str(text or ""))
+        reply = await self._ask_with_retry(chat_id, session, ask)
         await self._send_message(chat_id, reply)
 
     async def _handle_message(self, message: Dict[str, Any]):

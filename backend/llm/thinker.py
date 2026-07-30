@@ -189,9 +189,13 @@ class Thinker:
     ) -> None:
         self._history_override.reset(token)
 
-    def _gate(self, text: str) -> Optional[str]:
+    def _gate(self, text: str, *, drop_backchannel: bool = True) -> Optional[str]:
         """Wspólna bramka obu ścieżek: flaga, jeden strzał naraz, odstęp,
-        minimalna długość, potakiwania. Zwraca oczyszczony tekst albo None."""
+        minimalna długość, potakiwania. Zwraca oczyszczony tekst albo None.
+
+        drop_backchannel=False dla czatu tekstowego (Telegram/Discord): tam
+        "hm?", "ok" czy "jesteś tam?" to świadome wiadomości wymagające
+        odpowiedzi, a nie mruknięcia w tle rozmowy głosowej."""
         if not self.enabled:
             return None
         if time.monotonic() < self._next_allowed_ts:
@@ -199,7 +203,7 @@ class Thinker:
         cleaned = (text or "").strip()
         if not cleaned:
             return None
-        if _BACKCHANNEL_RE.match(cleaned):
+        if drop_backchannel and _BACKCHANNEL_RE.match(cleaned):
             return None
         return cleaned
 
@@ -327,17 +331,25 @@ class Thinker:
         text: str = "",
         *,
         turn_evidence: str | None = None,
+        timeout_sec: Optional[float] = None,
+        drop_backchannel: bool = True,
+        require_idle_turn: bool = True,
     ) -> Optional[str]:
         """Author final display/speech text without creating a Live prompt."""
         final_text = re.sub(r"\s+", " ", text or self._pending_voice_text).strip()
         self._pending_voice_text = ""
         injection = await self.think_for_text(
             final_text,
+            timeout_sec=timeout_sec,
             turn_evidence=turn_evidence,
+            drop_backchannel=drop_backchannel,
         )
         if not injection:
             return None
-        if self._is_ai_turn_open():
+        # require_idle_turn=False dla czatu tekstowego: tam odpowiedź nie
+        # koliduje z mową, a zawieszona flaga tury (zerwane połączenie Live
+        # bez turn_complete) blokowałaby bota aż do restartu.
+        if require_idle_turn and self._is_ai_turn_open():
             self.last_trace = {**self.last_trace, "status": "late"}
             print("[THINKER] odpowiedź porzucona — poprzednia tura nadal trwa.")
             return None
@@ -561,10 +573,11 @@ class Thinker:
         timeout_sec: Optional[float] = None,
         *,
         turn_evidence: str | None = None,
+        drop_backchannel: bool = True,
     ) -> Optional[str]:
         """Ścieżka czatu tekstowego: buduje brief synchronicznie. CALLER
         wstrzykuje zwrócony XML przed tekstem użytkownika."""
-        cleaned = self._gate(text)
+        cleaned = self._gate(text, drop_backchannel=drop_backchannel)
         if cleaned is None:
             self.last_trace = {"source": str(text or "").strip(), "status": "skipped"}
             self._last_context_trace = {}
