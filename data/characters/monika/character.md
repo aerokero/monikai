@@ -2,7 +2,7 @@
 id: monika
 version: 1.0
 created: 2026-06-03
-inject_sections: [PERSONALITY, VOICE, VOICE_EXAMPLES, CONVERSATION, RELATIONSHIP]
+inject_sections: [PERSONALITY, RELATIONSHIP]
 ---
 
 # Monika — Character Bible
