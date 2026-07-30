@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
+import os
 import sys
 import json
 import re
@@ -679,8 +680,8 @@ kasa_agent = KasaAgent(known_devices=kasa_devices)
 if __name__ == "__main__":
     uvicorn.run(
         app_socketio,
-        host="127.0.0.1",
-        port=8000,
+        host=os.getenv("MONIKAI_HOST", "127.0.0.1"),
+        port=int(os.getenv("MONIKAI_PORT", "8000")),
         reload=False, # Reload enabled causes spawn of worker which might miss the event loop policy patch
         loop="asyncio",
         reload_excludes=["output.stl", "*.stl"]

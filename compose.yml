@@ -1,0 +1,36 @@
+services:
+  monikai:
+    build:
+      context: .
+    image: monikai:local
+    container_name: monikai
+    restart: unless-stopped
+    init: true
+
+    env_file:
+      - .env
+
+    environment:
+      MONIKAI_HOST: 0.0.0.0
+      MONIKAI_PORT: 8000
+      WEB_AGENT_HEADLESS: "1"
+
+    ports:
+      - "192.168.1.10:8000:8000"
+
+    volumes:
+      - /srv/fast/containers/monikai/data:/app/data
+      - /srv/fast/containers/monikai/backend/data:/app/backend/data
+
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/status', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+
+    stop_grace_period: 30s
