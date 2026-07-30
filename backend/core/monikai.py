@@ -71,6 +71,22 @@ from .model_config import (
 )
 from .session_context import load_settings_safe, get_time_context, HOLIDAYS, get_holiday_context
 from .settings_store import SETTINGS as APP_SETTINGS
+from backend.conversation.speech import (
+    DEFAULT_SPEECH_MODEL,
+    GeminiSpeechSynthesizer,
+    SpeechSynthesisRequest,
+)
+from backend.conversation.routing import requires_capability_runtime
+from backend.conversation.tools import (
+    CONVERSATION_TOOL_DEFINITIONS,
+    ConversationToolRequest,
+    ConversationToolResult,
+    ToolTurnOutcome,
+    plan_read_only_tool,
+    validate_planned_tool_request,
+)
+from .conversation_tool_executor import CoreConversationToolExecutor
+from .smart_home_tool_executor import SmartHomeToolExecutor
 from backend.llm.thinker import Thinker
 from .tool_definitions import tools
 from .system_prompt import SYSTEM_PROMPT
@@ -475,6 +491,7 @@ class AudioLoop:
         play_audio_locally=True,
         auto_allow_tools_without_confirmation=True,
         session_stream_channel=None,
+        speech_synthesizer=None,
         **_ignored,
     ):
 
@@ -543,6 +560,11 @@ class AudioLoop:
         self._voice_finalize_task: Optional[asyncio.Task] = None
         self._session_ready = asyncio.Event()
         self._pending_ai_turn_futures = deque()
+        self.speech_synthesizer = speech_synthesizer or GeminiSpeechSynthesizer(
+            api_key=os.getenv("GEMINI_API_KEY")
+        )
+        self._last_speech_trace: Dict[str, Any] = {}
+        self._last_tool_trace: Dict[str, Any] = {}
 
         self.session = None
 
@@ -574,17 +596,22 @@ class AudioLoop:
             stream_channel=session_stream_channel,
         )
 
-        # Myśliciel (drugi mózg): analiza + semantyczny rdzeń odpowiedzi,
-        # wstrzykiwane jako <response_brief> zanim renderer głosowy odpowie.
-        # Flaga settings["thinker"]["enabled"] czytana per wypowiedź — off
-        # oznacza dokładnie zero zmian w zachowaniu.
+        # Text model owns the final answer. A separate speech-only provider may
+        # render it, but no audio dialogue model is allowed to rewrite it.
         self.thinker = Thinker(
-            get_history=lambda limit: self.session_manager.get_recent_chat_history(limit=limit),
+            # The response author sees only the active conversation. Past
+            # threads remain available through explicit memory/recall tools.
+            get_history=lambda limit: self.session_manager.get_current_session_turns(limit=limit),
             deliver=lambda text: self.send_system_message(text, end_of_turn=False),
             is_ai_turn_open=lambda: self._ai_turn_open,
             # Prefiks pokazuje w konsoli/UI analizę i rdzeń odpowiedzi Thinkera.
             on_thought=lambda thought: self.on_internal_thought(f"[Myśliciel] {thought}") if self.on_internal_thought else None,
             get_settings=lambda: APP_SETTINGS.get("thinker") or {},
+            get_conversation_id=lambda: self.session_manager.get_current_session_id(),
+            get_world_snapshot=lambda: __import__(
+                "backend.soul.world_snapshot",
+                fromlist=["build_snapshot"],
+            ).build_snapshot(),
         )
 
         # Workspace for files written by tools
@@ -1138,8 +1165,27 @@ class AudioLoop:
             await _v2.observe_turn()
 
         # Programmatic/bridge path (Telegram, Discord, conversation probe)
-        # uses the same Thinker → response_brief → audio renderer contract as
-        # the UI text handler. This makes it suitable for repeatable live tests.
+        # returns the text author's answer directly in dedicated-speech mode.
+        if cleaned and not normalized_attachments and self._dedicated_speech_enabled():
+            tool_outcome = await self.author_tool_turn(cleaned)
+            reply = (
+                tool_outcome.reply
+                if tool_outcome.handled
+                else await self.thinker.prepare_spoken_reply(cleaned)
+            )
+            if reply:
+                await self.deliver_authored_reply(reply, speak=False)
+                self.thinker.mark_voice_delivered()
+            self._last_programmatic_turn_trace = {
+                "user": cleaned,
+                "thinker": dict(getattr(self.thinker, "last_trace", {}) or {}),
+                "speech": dict(self._last_speech_trace or {}),
+                "tool": dict(self._last_tool_trace or {}),
+                "response": str(reply or "").strip(),
+            }
+            return str(reply or "").strip()
+
+        # Explicit compatibility mode keeps the old Live renderer.
         thinker_brief = None
         if cleaned and getattr(self, "thinker", None) is not None:
             try:
@@ -1173,6 +1219,275 @@ class AudioLoop:
 
     async def submit_text_turn(self, text: str, timeout_sec: float = 90.0) -> str:
         return await self.submit_user_turn(text=text, attachments=None, timeout_sec=timeout_sec)
+
+    def _dedicated_speech_enabled(self) -> bool:
+        speech = APP_SETTINGS.get("speech") or {}
+        thinker = APP_SETTINGS.get("thinker") or {}
+        return bool(thinker.get("enabled", False)) and (
+            str(speech.get("delivery_mode") or "dedicated_tts").strip().lower()
+            == "dedicated_tts"
+        )
+
+    def _get_conversation_tool_executor(self) -> CoreConversationToolExecutor:
+        executor = getattr(self, "_conversation_tool_executor", None)
+        if executor is None:
+            def _memory_db_path():
+                try:
+                    from backend.core.runtimes.v2_runtime import get as get_v2
+
+                    runtime = get_v2()
+                    return runtime._db_path if runtime else None
+                except Exception:
+                    return None
+
+            executor = CoreConversationToolExecutor(
+                reminder_manager=getattr(self, "reminder_manager", None),
+                calendar_manager=getattr(self, "calendar_manager", None),
+                notes_path=getattr(self, "notes_path", None),
+                memory_engine=getattr(self, "memory_engine", None),
+                session_manager=getattr(self, "session_manager", None),
+                spotify_manager=getattr(self, "spotify_manager", None),
+                smart_home_executor=SmartHomeToolExecutor(
+                    agents=[
+                        getattr(self, "kasa_agent", None),
+                        getattr(self, "hue_agent", None),
+                        getattr(self, "home_assistant_agent", None),
+                    ],
+                    on_device_update=getattr(self, "on_device_update", None),
+                    on_error=getattr(self, "on_error", None),
+                ),
+                get_memory_db_path=_memory_db_path,
+                get_time_context_fn=get_time_context,
+                get_personality=lambda: getattr(self, "personality", None),
+                on_calendar_update=getattr(self, "on_calendar_update", None),
+            )
+            self._conversation_tool_executor = executor
+        return executor
+
+    async def _authorize_conversation_tool(
+        self,
+        request: ConversationToolRequest,
+    ) -> bool:
+        if not self.permissions.get(request.name, True):
+            return True
+        on_confirmation = getattr(self, "on_tool_confirmation", None)
+        if not on_confirmation:
+            return bool(
+                getattr(self, "auto_allow_tools_without_confirmation", False)
+            )
+
+        request_id = str(uuid.uuid4())
+        future = asyncio.get_running_loop().create_future()
+        pending = getattr(self, "_pending_confirmations", None)
+        if pending is None:
+            pending = {}
+            self._pending_confirmations = pending
+        pending[request_id] = future
+        try:
+            maybe = on_confirmation(
+                {
+                    "id": request_id,
+                    "tool": request.name,
+                    "args": dict(request.arguments),
+                }
+            )
+            if asyncio.iscoroutine(maybe):
+                await maybe
+            return bool(await future)
+        finally:
+            pending.pop(request_id, None)
+
+    async def _plan_conversation_tool(
+        self,
+        text: str,
+    ) -> ConversationToolRequest | None:
+        request = plan_read_only_tool(text)
+        if request is not None:
+            return request
+        if not requires_capability_runtime(text):
+            return None
+        try:
+            ctx = get_time_context()
+            runtime_context = (
+                f"local_iso={ctx.get('iso')}; timezone={ctx.get('timezone')}; "
+                f"utc_offset={ctx.get('offset')}"
+            )
+            timeout_sec = max(
+                0.5,
+                float(
+                    (APP_SETTINGS.get("thinker") or {}).get(
+                        "tool_planning_timeout_sec",
+                        4.0,
+                    )
+                    or 4.0
+                ),
+            )
+            calls = await asyncio.wait_for(
+                self.thinker.plan_tool_calls(
+                    text,
+                    tools=CONVERSATION_TOOL_DEFINITIONS,
+                    runtime_context=runtime_context,
+                ),
+                timeout=timeout_sec,
+            )
+            allowed = {item.name for item in CONVERSATION_TOOL_DEFINITIONS}
+            return next(
+                (
+                    call
+                    for call in calls
+                    if call.name in allowed
+                    and validate_planned_tool_request(text, call)
+                ),
+                None,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self._last_tool_trace = {
+                "status": "planning_failed",
+                "error": str(exc),
+            }
+            return None
+
+    async def author_tool_turn(self, text: str) -> ToolTurnOutcome:
+        """Plan, authorize, execute once, then return evidence to the author."""
+        request = await self._plan_conversation_tool(text)
+        if request is None:
+            self._last_tool_trace = {"status": "not_applicable"}
+            return ToolTurnOutcome(handled=False)
+
+        try:
+            authorized = await self._authorize_conversation_tool(request)
+            if authorized:
+                result = await self._get_conversation_tool_executor().execute(
+                    request
+                )
+            else:
+                result = ConversationToolResult(
+                    name=request.name,
+                    result="User denied the request to use this tool.",
+                    ok=False,
+                )
+
+            reply = await self.thinker.prepare_spoken_reply(
+                text,
+                turn_evidence=result.as_evidence(),
+            )
+            self._last_tool_trace = {
+                "status": "authored" if reply else "author_failed",
+                "tool": request.name,
+                "result_ok": result.ok,
+                "authorized": authorized,
+            }
+            return ToolTurnOutcome(
+                handled=True,
+                reply=str(reply or ""),
+                tool_name=request.name,
+                error=None if result.ok else result.result,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self._last_tool_trace = {
+                "status": "execution_failed",
+                "tool": request.name,
+                "error": str(exc),
+            }
+            return ToolTurnOutcome(
+                handled=True,
+                tool_name=request.name,
+                error=str(exc),
+            )
+
+    async def author_read_only_tool_turn(self, text: str) -> ToolTurnOutcome:
+        """Compatibility name for callers introduced by the first tool slice."""
+        return await self.author_tool_turn(text)
+
+    async def deliver_authored_reply(self, reply: str, *, speak: bool) -> bool:
+        """Publish immutable author text and optionally render it through TTS.
+
+        The display transcript is emitted from ``reply`` itself. It is never
+        reconstructed from an audio-model transcript.
+        """
+        text = re.sub(r"\s+", " ", str(reply or "")).strip()
+        if not text:
+            return False
+
+        if self.chat_buffer.get("sender") and self.chat_buffer.get("text", "").strip():
+            self.flush_chat()
+        self._ai_turn_open = True
+        self.mark_ai_activity(text)
+        if self.on_transcription:
+            self.on_transcription(
+                {
+                    "sender": "AI",
+                    "text": text,
+                    "is_new": True,
+                    "is_correction": False,
+                    "authored": True,
+                }
+            )
+        self.chat_buffer = {"sender": "AI", "text": text}
+        self.flush_chat()
+        self._ai_turn_open = False
+
+        self._last_speech_trace = {
+            "status": "text_delivered",
+            "text": text,
+            "audio": False,
+        }
+        if not speak or not self.enable_audio_io:
+            return True
+
+        speech = APP_SETTINGS.get("speech") or {}
+        model = str(
+            os.getenv("MONIKAI_SPEECH_MODEL")
+            or speech.get("model")
+            or DEFAULT_SPEECH_MODEL
+        ).strip()
+        voice = str(speech.get("voice") or _mc.GEMINI_VOICE).strip()
+        timeout_sec = max(1.0, float(speech.get("timeout_sec", 20.0) or 20.0))
+        try:
+            rendered = await asyncio.wait_for(
+                self.speech_synthesizer.synthesize(
+                    SpeechSynthesisRequest(text=text, voice=voice, model=model)
+                ),
+                timeout=timeout_sec,
+            )
+            # Live output and dedicated TTS share raw PCM transport. Keep
+            # chunks reasonably small for Socket.IO and local playback.
+            for offset in range(0, len(rendered.audio), 64 * 1024):
+                chunk = rendered.audio[offset : offset + 64 * 1024]
+                if self.audio_in_queue is not None:
+                    self.audio_in_queue.put_nowait(chunk)
+                elif self.on_audio_data:
+                    self.on_audio_data(chunk)
+            self._last_speech_trace = {
+                "status": "audio_delivered",
+                "text": text,
+                "audio": True,
+                "model": model,
+                "voice": voice,
+                "mime_type": rendered.mime_type,
+                "sample_rate": rendered.sample_rate,
+                "bytes": len(rendered.audio),
+            }
+            return True
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # The authored text remains visible. We intentionally do not hand
+            # it back to Live, because that would restore a second author.
+            self._last_speech_trace = {
+                "status": "audio_failed",
+                "text": text,
+                "audio": False,
+                "model": model,
+                "voice": voice,
+                "error": str(exc),
+            }
+            print(f"[SPEECH] synteza nie powiodła się; tekst zachowany: {exc}")
+            return True
 
     def build_memory_context(self, user_text: str) -> Optional[str]:
         if not user_text or not getattr(self, "memory_engine", None):
@@ -1462,7 +1777,7 @@ class AudioLoop:
         self._voice_finalize_task = asyncio.create_task(self._finalize_manual_voice_turn())
 
     async def _finalize_manual_voice_turn(self) -> None:
-        """Think once, inject once, then release Gemini's held voice turn."""
+        """Author once, close ASR activity, then use speech-only delivery."""
         current_task = asyncio.current_task()
         try:
             # Let the last server-side ASR revision arrive after local silence.
@@ -1472,9 +1787,34 @@ class AudioLoop:
                 if self.chat_buffer.get("sender") == "Ty"
                 else self._last_input_transcription
             )
-            injection = await self.thinker.prepare_voice_turn(text)
+            tool_outcome = (
+                await self.author_tool_turn(text)
+                if self._dedicated_speech_enabled()
+                else ToolTurnOutcome(handled=False)
+            )
+            dedicated_speech = bool(
+                self._dedicated_speech_enabled()
+                and (
+                    tool_outcome.handled
+                    or not requires_capability_runtime(text)
+                )
+            )
+            if dedicated_speech:
+                reply = (
+                    tool_outcome.reply
+                    if tool_outcome.handled
+                    else await self.thinker.prepare_spoken_reply(text)
+                )
+                injection = None
+            else:
+                reply = None
+                injection = await self.thinker.prepare_voice_turn(text)
             if self._is_speaking or not self._manual_voice_activity_open or not self.session:
                 return
+            if dedicated_speech:
+                # The Live session remains ASR transport for now. Ignore the
+                # dialogue response it produces after the activity boundary.
+                self._suppress_spoken_output = True
             if self.out_queue:
                 if injection:
                     await self.out_queue.put({"realtime_text": injection})
@@ -1486,7 +1826,11 @@ class AudioLoop:
             if injection:
                 self.thinker.mark_voice_delivered()
             self._manual_voice_activity_open = False
-            print("[THINKER] finalizacja zakończona — zwalniam odpowiedź głosową.")
+            if reply:
+                await self.deliver_authored_reply(reply, speak=True)
+                self.thinker.mark_voice_delivered()
+            mode = "speech-only" if dedicated_speech else "renderer Live"
+            print(f"[THINKER] finalizacja zakończona — tryb: {mode}.")
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -2248,16 +2592,6 @@ class AudioLoop:
             return raw
         return raw[: max(0, lim - 3)] + "..."
 
-    async def _spotify_status(self) -> Dict[str, Any]:
-        mgr = getattr(self, "spotify_manager", None)
-        if not mgr:
-            return {"ok": False, "error": "spotify manager unavailable"}
-        try:
-            data = await asyncio.to_thread(mgr.status)
-            return {"ok": True, "status": data}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-
     async def _spotify_get_auth_url(self) -> Dict[str, Any]:
         mgr = getattr(self, "spotify_manager", None)
         if not mgr:
@@ -2265,46 +2599,6 @@ class AudioLoop:
         try:
             url = await asyncio.to_thread(mgr.build_auth_url)
             return {"ok": True, "url": url}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-
-    async def _spotify_now_playing(self) -> Dict[str, Any]:
-        mgr = getattr(self, "spotify_manager", None)
-        if not mgr:
-            return {"ok": False, "error": "spotify manager unavailable"}
-        try:
-            data = await asyncio.to_thread(mgr.get_now_playing)
-            return {"ok": True, "now_playing": data}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-
-    async def _spotify_playlists(self, limit: Optional[int] = None) -> Dict[str, Any]:
-        mgr = getattr(self, "spotify_manager", None)
-        if not mgr:
-            return {"ok": False, "error": "spotify manager unavailable"}
-        try:
-            lim = int(limit or 20)
-        except Exception:
-            lim = 20
-        lim = max(1, min(lim, 50))
-        try:
-            data = await asyncio.to_thread(mgr.list_playlists, lim)
-            return {"ok": True, "playlists": data}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-
-    async def _spotify_recent(self, limit: Optional[int] = None) -> Dict[str, Any]:
-        mgr = getattr(self, "spotify_manager", None)
-        if not mgr:
-            return {"ok": False, "error": "spotify manager unavailable"}
-        try:
-            lim = int(limit or 20)
-        except Exception:
-            lim = 20
-        lim = max(1, min(lim, 50))
-        try:
-            data = await asyncio.to_thread(mgr.recently_played, lim)
-            return {"ok": True, "recently_played": data}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -2891,59 +3185,6 @@ class AudioLoop:
         except Exception as e:
             print(f"[AI DEBUG] [ERR] Failed to send OpenClaw fork result to model: {e}")
 
-    async def _execute_device_action(self, agent, target: str, action: str, 
-                                     brightness: int = None, color: str = None) -> dict:
-        """
-        Execute a device action on a given smart home agent.
-        
-        Returns:
-            {"success": bool, "msg": str} - Execution result with message
-        """
-        result = {"success": False, "msg": ""}
-        
-        try:
-            if action == "turn_on":
-                success = await agent.turn_on(target)
-                if success:
-                    result["msg"] = f"Turned ON '{target}'."
-                    result["success"] = True
-                else:
-                    result["msg"] = f"Failed to turn ON '{target}'."
-                    
-            elif action == "turn_off":
-                success = await agent.turn_off(target)
-                if success:
-                    result["msg"] = f"Turned OFF '{target}'."
-                    result["success"] = True
-                else:
-                    result["msg"] = f"Failed to turn OFF '{target}'."
-                    
-            elif action == "set":
-                result["msg"] = f"Updated '{target}':"
-                result["success"] = True
-                
-                if brightness is not None:
-                    sb = await agent.set_brightness(target, brightness)
-                    if sb:
-                        result["msg"] += f" Set brightness to {brightness}%."
-                    else:
-                        result["msg"] += f" Brightness control not supported."
-                        
-                if color is not None:
-                    sc = await agent.set_color(target, color)
-                    if sc:
-                        result["msg"] += f" Set color to {color}."
-                    else:
-                        result["msg"] += f" Color control not supported."
-            else:
-                result["msg"] = f"Unknown action: {action}"
-                
-        except Exception as e:
-            result["msg"] = f"Error executing {action} on '{target}': {str(e)}"
-            result["success"] = False
-        
-        return result
-
     async def receive_audio(self):
         try:
             while True:
@@ -3474,14 +3715,18 @@ class AudioLoop:
                                     )
 
                                 elif fc.name == "get_time_context":
-                                    ctx = get_time_context()
-                                    result_str = (
-                                        f"Local time: {ctx['iso']}\n"
-                                        f"Time zone: {ctx['timezone']} ({ctx['mode']})\n"
-                                        f"UTC offset: {ctx['offset']}\n"
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(
+                                            name=fc.name,
+                                            arguments=dict(fc.args or {}),
+                                        )
                                     )
                                     function_responses.append(
-                                        types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str, "context": ctx})
+                                        types.FunctionResponse(
+                                            id=fc.id,
+                                            name=fc.name,
+                                            response={"result": result.result},
+                                        )
                                     )
 
                                 elif fc.name == "set_scene":
@@ -3608,51 +3853,31 @@ class AudioLoop:
                                     function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
 
                                 elif fc.name == "create_reminder":
-                                    message = (fc.args.get("message") or "").strip()
-                                    at = fc.args.get("at")
-                                    in_minutes = fc.args.get("in_minutes")
-                                    in_seconds = fc.args.get("in_seconds")
-                                    speak = fc.args.get("speak", True)
-                                    alert = fc.args.get("alert", True)
-
-                                    try:
-                                        rem = self.reminder_manager.create(
-                                            message=message,
-                                            at=at,
-                                            in_minutes=in_minutes,
-                                            in_seconds=in_seconds,
-                                            speak=speak,
-                                            alert=alert,
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(
+                                            name=fc.name,
+                                            arguments=dict(fc.args or {}),
                                         )
-                                        result_str = (
-                                            f"Reminder created. ID: {rem.id}\n"
-                                            f"When: {rem.when_iso}\n"
-                                            f"Speak: {rem.speak}\n"
-                                            f"Alert: {getattr(rem, 'alert', True)}\n"
-                                            f"Message: {rem.message}"
-                                        )
-                                    except Exception as e:
-                                        result_str = f"Failed to create reminder: {e}"
-
-                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+                                    )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
 
                                 elif fc.name == "list_reminders":
-                                    items = self.reminder_manager.list()
-                                    if not items:
-                                        result_str = "No reminders scheduled."
-                                    else:
-                                        lines = [
-                                            f"{r.id} | {r.when_iso} | speak={r.speak} | alert={getattr(r, 'alert', True)} | {r.message}"
-                                            for r in items
-                                        ]
-                                        result_str = "Scheduled reminders:\n" + "\n".join(lines)
-                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(
+                                            name=fc.name,
+                                            arguments=dict(fc.args or {}),
+                                        )
+                                    )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
 
                                 elif fc.name == "cancel_reminder":
-                                    rid = fc.args.get("id")
-                                    ok = self.reminder_manager.cancel(rid)
-                                    result_str = "Reminder cancelled." if ok else "Reminder not found."
-                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(
+                                            name=fc.name,
+                                            arguments=dict(fc.args or {}),
+                                        )
+                                    )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
 
                                 elif fc.name == "spotify_get_auth_url":
                                     result_obj = await self._spotify_get_auth_url()
@@ -3665,43 +3890,28 @@ class AudioLoop:
                                     )
 
                                 elif fc.name == "spotify_get_status":
-                                    result_obj = await self._spotify_status()
-                                    result_str = json.dumps(result_obj, ensure_ascii=False)
-                                    function_responses.append(
-                                        types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str, **result_obj})
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(fc.name, dict(fc.args or {}))
                                     )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
 
                                 elif fc.name == "spotify_get_now_playing":
-                                    result_obj = await self._spotify_now_playing()
-                                    if result_obj.get("ok"):
-                                        result_str = json.dumps(result_obj.get("now_playing"), ensure_ascii=False)
-                                    else:
-                                        result_str = f"Spotify now playing error: {result_obj.get('error')}"
-                                    function_responses.append(
-                                        types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str, **result_obj})
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(fc.name, dict(fc.args or {}))
                                     )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
 
                                 elif fc.name == "spotify_list_playlists":
-                                    limit = fc.args.get("limit")
-                                    result_obj = await self._spotify_playlists(limit=limit)
-                                    if result_obj.get("ok"):
-                                        result_str = json.dumps(result_obj.get("playlists"), ensure_ascii=False)
-                                    else:
-                                        result_str = f"Spotify playlists error: {result_obj.get('error')}"
-                                    function_responses.append(
-                                        types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str, **result_obj})
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(fc.name, dict(fc.args or {}))
                                     )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
 
                                 elif fc.name == "spotify_recently_played":
-                                    limit = fc.args.get("limit")
-                                    result_obj = await self._spotify_recent(limit=limit)
-                                    if result_obj.get("ok"):
-                                        result_str = json.dumps(result_obj.get("recently_played"), ensure_ascii=False)
-                                    else:
-                                        result_str = f"Spotify recent error: {result_obj.get('error')}"
-                                    function_responses.append(
-                                        types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str, **result_obj})
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(fc.name, dict(fc.args or {}))
                                     )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
 
                                 elif fc.name == "write_file":
                                     path = fc.args["path"]
@@ -3720,125 +3930,16 @@ class AudioLoop:
                                     function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": "Reading file..."}))
 
                                 elif fc.name == "list_smart_devices":
-                                    dev_summaries = []
-                                    frontend_list = []
-                                    for ip, d in self.kasa_agent.devices.items():
-                                        dev_type = "unknown"
-                                        if d.is_bulb:
-                                            dev_type = "bulb"
-                                        elif d.is_plug:
-                                            dev_type = "plug"
-                                        elif d.is_strip:
-                                            dev_type = "strip"
-                                        elif d.is_dimmer:
-                                            dev_type = "dimmer"
-
-                                        info = f"{d.alias} (IP: {ip}, Type: {dev_type})"
-                                        info += " [ON]" if d.is_on else " [OFF]"
-                                        dev_summaries.append(info)
-
-                                        frontend_list.append(
-                                            {
-                                                "ip": ip,
-                                                "alias": d.alias,
-                                                "model": d.model,
-                                                "type": dev_type,
-                                                "is_on": d.is_on,
-                                                "brightness": d.brightness if d.is_bulb or d.is_dimmer else None,
-                                                "hsv": d.hsv if d.is_bulb and d.is_color else None,
-                                                "has_color": d.is_color if d.is_bulb else False,
-                                                "has_brightness": d.is_dimmable if d.is_bulb or d.is_dimmer else False,
-                                            }
-                                        )
-
-                                    result_str = "No devices found in cache." if not dev_summaries else "Found Devices (Cached):\n" + "\n".join(dev_summaries)
-                                    if self.on_device_update:
-                                        self.on_device_update(frontend_list)
-
-                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(fc.name, dict(fc.args or {}))
+                                    )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
 
                                 elif fc.name == "control_light":
-                                    target = fc.args["target"]
-                                    action = fc.args["action"]
-                                    brightness = fc.args.get("brightness")
-                                    color = fc.args.get("color")
-
-                                    result_msg = f"Action '{action}' on '{target}' failed."
-                                    success = False
-
-                                    # Multi-platform device control with fallback resolution
-                                    # Try Kasa first, then Hue, then Home Assistant
-                                    
-                                    async def execute_on_platforms():
-                                        """Execute action on available platforms and return result"""
-                                        results = []
-                                        
-                                        # Try Kasa
-                                        if self.kasa_agent:
-                                            try:
-                                                exec_result = await self._execute_device_action(
-                                                    self.kasa_agent, target, action, brightness, color
-                                                )
-                                                if exec_result["success"]:
-                                                    results.append(("kasa", exec_result))
-                                            except Exception as e:
-                                                print(f"[control_light] Kasa error: {e}")
-                                        
-                                        # Try Hue
-                                        if hasattr(self, 'hue_agent') and self.hue_agent:
-                                            try:
-                                                exec_result = await self._execute_device_action(
-                                                    self.hue_agent, target, action, brightness, color
-                                                )
-                                                if exec_result["success"]:
-                                                    results.append(("hue", exec_result))
-                                            except Exception as e:
-                                                print(f"[control_light] Hue error: {e}")
-                                        
-                                        # Try Home Assistant
-                                        if hasattr(self, 'home_assistant_agent') and self.home_assistant_agent:
-                                            try:
-                                                exec_result = await self._execute_device_action(
-                                                    self.home_assistant_agent, target, action, brightness, color
-                                                )
-                                                if exec_result["success"]:
-                                                    results.append(("home_assistant", exec_result))
-                                            except Exception as e:
-                                                print(f"[control_light] Home Assistant error: {e}")
-                                        
-                                        return results
-                                    
-                                    results = await execute_on_platforms()
-                                    
-                                    if results:
-                                        success = True
-                                        # Build result message
-                                        if len(results) == 1:
-                                            platform, exec_result = results[0]
-                                            result_msg = exec_result["msg"]
-                                        else:
-                                            # Multiple platforms matched (rare but possible with same name)
-                                            targets = [f"{msg} ({platform})" for platform, exec_result in results 
-                                                      for msg in [exec_result["msg"]]]
-                                            result_msg = "Updated: " + "; ".join(targets)
-                                    else:
-                                        result_msg = f"Device '{target}' not found on any platform (Kasa, Hue, Home Assistant)."
-                                        success = False
-
-                                    if success and self.on_device_update:
-                                        # Collect and emit updated device list from all platforms
-                                        updated_list = []
-                                        if self.kasa_agent:
-                                            updated_list.extend(self.kasa_agent.serialize_devices())
-                                        if hasattr(self, 'hue_agent') and self.hue_agent:
-                                            updated_list.extend(self.hue_agent.serialize_devices())
-                                        if hasattr(self, 'home_assistant_agent') and self.home_assistant_agent:
-                                            updated_list.extend(self.home_assistant_agent.serialize_devices())
-                                        self.on_device_update(updated_list)
-                                    elif not success and self.on_error:
-                                        self.on_error(result_msg)
-
-                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_msg}))
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(fc.name, dict(fc.args or {}))
+                                    )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
 
                                 elif fc.name == "get_random_fact":
                                     import random
@@ -3885,11 +3986,13 @@ class AudioLoop:
                                         function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": f"Error: {e}"}))
 
                                 elif fc.name == "get_weather":
-                                    result_str = "Weather system not active."
-                                    if getattr(self, "personality", None):
-                                        await asyncio.to_thread(self.personality.update_weather, force=True)
-                                        result_str = f"Current weather: {self.personality.state.weather}"
-                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(
+                                            name=fc.name,
+                                            arguments=dict(fc.args or {}),
+                                        )
+                                    )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
 
                                 elif fc.name == "request_program_shutdown":
                                     reason = str(fc.args.get("reason") or "").strip()
@@ -3898,206 +4001,58 @@ class AudioLoop:
                                 
                                 # --- Notes Tools ---
                                 elif fc.name == "notes_get":
-                                    notes_path = self.notes_path
-                                    result_str = f"Checking for notes at: {notes_path}"
-                                    try:
-                                        if notes_path.exists():
-                                            content = notes_path.read_text(encoding="utf-8")
-                                            if content.strip():
-                                                result_str = content
-                                            else:
-                                                result_str = "(The notes file is currently empty.)"
-                                        else:
-                                            notes_path.write_text("", encoding="utf-8")
-                                            result_str = "(A new empty notes file was created.)"
-                                    except Exception as e:
-                                        result_str = f"Error reading notes: {e}"
-                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(fc.name, dict(fc.args or {}))
+                                    )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
 
                                 elif fc.name == "notes_set":
-                                    content = fc.args.get("content", "")
-                                    notes_path = self.notes_path
-                                    result_str = "Notes have been overwritten (global)."
-                                    try:
-                                        notes_path.write_text(content, encoding="utf-8")
-                                    except Exception as e:
-                                        result_str = f"Error writing notes: {e}"
-                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(fc.name, dict(fc.args or {}))
+                                    )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
 
                                 elif fc.name == "notes_append":
-                                    content_to_append = fc.args.get("content", "")
-                                    notes_path = self.notes_path
-                                    result_str = "Text appended to notes."
-                                    try:
-                                        with notes_path.open("a", encoding="utf-8") as f:
-                                            f.write("\n" + content_to_append)
-                                    except Exception as e:
-                                        result_str = f"Error appending to notes: {e}"
-                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(fc.name, dict(fc.args or {}))
+                                    )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
 
                                 elif fc.name == "memory_add_entry":
-                                    # v3: distilled facts go to monika.db (same store
-                                    # the session digest writes to), not entries.jsonl.
-                                    try:
-                                        from backend.core.runtimes.v2_runtime import get as _v2_get
-                                        from backend.soul.memory import store as _mem_store
-                                        from backend.soul.models import MemoryEntry as _MemEntry
-
-                                        _v2rt = _v2_get()
-                                        _db = _v2rt._db_path if _v2rt else None
-                                        _raw_type = str(fc.args.get("type") or "fact")
-                                        _content = str(fc.args.get("content") or "").strip()
-                                        if not _content:
-                                            raise ValueError("empty content")
-
-                                        # Map tool types → memory tiers. Monika's own
-                                        # experiences are episodic; knowledge is semantic;
-                                        # stm = session-scoped notes cleaned up by compaction.
-                                        if _raw_type in ("reflection", "roleplay_scene", "roleplay_insight"):
-                                            _mtype, _persp = "episodic", "hers"
-                                        elif _raw_type in ("episodic", "event"):
-                                            _mtype, _persp = "episodic", "factual"
-                                        elif _raw_type == "stm":
-                                            _mtype, _persp = "stm", "factual"
-                                        else:  # semantic, fact, preference, memory_note, ...
-                                            _mtype, _persp = "semantic", "factual"
-                                        _stability = str(fc.args.get("stability") or "medium")
-                                        _importance = {"low": 3.0, "medium": 5.0, "high": 7.0}.get(_stability, 5.0)
-                                        if _mtype == "stm":
-                                            _importance = min(_importance, 3.0)
-                                        _tags = [t for t in (fc.args.get("tags") or []) if isinstance(t, str)]
-                                        if _raw_type not in ("fact",):
-                                            _tags.append(_raw_type)
-
-                                        _sess_id = None
-                                        if getattr(self, "session_manager", None):
-                                            _sess_id = self.session_manager.get_current_session_id()
-
-                                        entry_id, status = await _mem_store.add(
-                                            _MemEntry(
-                                                id="pending",
-                                                type=_mtype,
-                                                content=_content,
-                                                importance=_importance,
-                                                perspective=_persp,
-                                                tags=_tags,
-                                                entities=[e for e in (fc.args.get("entities") or []) if isinstance(e, str)],
-                                                source_session=_sess_id,
-                                            ),
-                                            db_path=_db,
-                                        )
-                                        result_str = f"{status}: {entry_id}"
-                                    except Exception as e:
-                                        result_str = f"Error adding memory entry: {e}"
-                                    # Sync birthday to calendar if applicable
-                                    try:
-                                        if self.calendar_manager:
-                                            data = fc.args.get("data") or {}
-                                            dob = data.get("date_of_birth") or data.get("birthday")
-                                            if isinstance(dob, str):
-                                                parts = dob.replace("/", "-").split("-")
-                                                if len(parts) == 3:
-                                                    self.calendar_manager.set_user_birthday(int(parts[1]), int(parts[2]))
-                                                elif len(parts) == 2:
-                                                    self.calendar_manager.set_user_birthday(int(parts[0]), int(parts[1]))
-                                    except Exception:
-                                        pass
-                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(fc.name, dict(fc.args or {}))
+                                    )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
 
                                 elif fc.name == "memory_search":
-                                    # v3: Stanford retrieval (recency+importance+relevance)
-                                    # over monika.db instead of the legacy engine.
-                                    try:
-                                        from backend.core.runtimes.v2_runtime import get as _v2_get
-                                        from backend.soul.memory.retrieval import retrieve as _mem_retrieve
-
-                                        _v2rt = _v2_get()
-                                        _db = _v2rt._db_path if _v2rt else None
-                                        query = str(fc.args.get("query") or "")
-                                        limit = int(fc.args.get("limit", 5))
-                                        results = await _mem_retrieve(query, limit=limit, db_path=_db)
-                                        if not results:
-                                            result_str = "No memory entries found."
-                                        else:
-                                            lines = []
-                                            for r in results:
-                                                e = r.entry
-                                                when = e.created_at.strftime("%Y-%m-%d")
-                                                lines.append(f"- [{e.type}, {when}] {e.content}")
-                                            result_str = "Memory results:\n" + "\n".join(lines)
-                                    except Exception as e:
-                                        result_str = f"Error searching memory: {e}"
-                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(fc.name, dict(fc.args or {}))
+                                    )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
 
                                 elif fc.name == "recall_conversation":
-                                    # v3 Phase G: find a past conversation/stream day
-                                    # by topic, title or date; return recap + excerpts.
-                                    try:
-                                        from backend.core import conversation_store as _conv
-
-                                        query = str(fc.args.get("query") or "")
-                                        limit = max(1, min(5, int(fc.args.get("limit", 3))))
-                                        hits = []
-                                        if self.session_manager:
-                                            self.session_manager.flush_current_session()
-                                            hits = _conv.search_conversations(
-                                                self.session_manager.sessions_dir, query, limit=limit
-                                            )
-                                        # Her CURRENT conversation is not a memory.
-                                        _cur = self.session_manager.get_current_session_id() if self.session_manager else None
-                                        hits = [h for h in hits if h.get("id") != _cur]
-                                        if not hits:
-                                            result_str = "No past conversation matched that query."
-                                        else:
-                                            blocks = []
-                                            for h in hits:
-                                                head = f"[{h['day']}] {h.get('title') or h['id']} (kanał: {h.get('channel')})"
-                                                body = []
-                                                if h.get("recap"):
-                                                    body.append(f"Podsumowanie: {h['recap']}")
-                                                if h.get("excerpt"):
-                                                    body.append("Fragmenty:\n" + h["excerpt"])
-                                                blocks.append(head + ("\n" + "\n".join(body) if body else ""))
-                                            result_str = "Past conversations found:\n\n" + "\n\n".join(blocks)
-                                    except Exception as e:
-                                        result_str = f"Error recalling conversation: {e}"
-                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(fc.name, dict(fc.args or {}))
+                                    )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
 
                                 elif fc.name == "memory_get_page":
-                                    result_str = "Memory engine not initialized."
-                                    if getattr(self, "memory_engine", None):
-                                        try:
-                                            path = fc.args.get("path") or ""
-                                            text = self.memory_engine.get_page(path)
-                                            result_str = text if text else "(empty)"
-                                        except Exception as e:
-                                            result_str = f"Error reading page: {e}"
-                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(fc.name, dict(fc.args or {}))
+                                    )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
 
                                 elif fc.name == "memory_create_page":
-                                    result_str = "Memory engine not initialized."
-                                    if getattr(self, "memory_engine", None):
-                                        try:
-                                            title = fc.args.get("title") or "Page"
-                                            folder = fc.args.get("folder") or "topics"
-                                            tags = fc.args.get("tags") or []
-                                            path = self.memory_engine.create_page(title=title, folder=folder, tags=tags)
-                                            result_str = f"Created page: {path}"
-                                        except Exception as e:
-                                            result_str = f"Error creating page: {e}"
-                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(fc.name, dict(fc.args or {}))
+                                    )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
 
                                 elif fc.name == "memory_append_page":
-                                    result_str = "Memory engine not initialized."
-                                    if getattr(self, "memory_engine", None):
-                                        try:
-                                            path = fc.args.get("path") or ""
-                                            content = fc.args.get("content") or ""
-                                            final_path = self.memory_engine.append_page(path=path, content=content)
-                                            result_str = f"Appended to: {final_path}"
-                                        except Exception as e:
-                                            result_str = f"Error appending page: {e}"
-                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(fc.name, dict(fc.args or {}))
+                                    )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
 
                                 elif fc.name == "journal_add_entry":
                                     result_str = "Memory engine not initialized."
@@ -4266,91 +4221,28 @@ class AudioLoop:
 
                                 # --- Calendar Tools ---
                                 elif fc.name == "create_event":
-                                    try:
-                                        summary = fc.args.get("summary")
-                                        start_iso = fc.args.get("start_iso")
-                                        end_iso = fc.args.get("end_iso")
-                                        
-                                        print(f"[DEBUG] [CALENDAR] create_event called: summary={summary}, start={start_iso}, end={end_iso}")
-                                        
-                                        if not summary or not start_iso or not end_iso:
-                                            raise ValueError("Missing required arguments (summary, start_iso, end_iso)")
-                                        
-                                        if not self.calendar_manager:
-                                            raise ValueError("Calendar manager not available")
-
-                                        # Check if this should be an all-day event
-                                        all_day = fc.args.get("all_day", False)
-                                        event = self.calendar_manager.create_event(
-                                            summary=summary,
-                                            start_iso=start_iso,
-                                            end_iso=end_iso,
-                                            description=fc.args.get("description"),
-                                            all_day=all_day
-                                        )
-                                        print(f"[DEBUG] [CALENDAR] Event created successfully: {event.id}")
-                                        result_str = f"Event '{event.summary}' created with ID {event.id}."
-                                    except Exception as e:
-                                        print(f"[DEBUG] [CALENDAR] Error creating event: {e}")
-                                        result_str = f"Error creating event: {e}"
-                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(fc.name, dict(fc.args or {}))
+                                    )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
 
                                 elif fc.name == "list_events":
-                                    try:
-                                        start_range = fc.args.get("start_range_iso", "")
-                                        end_range = fc.args.get("end_range_iso", "")
-                                        print(f"[DEBUG] [CALENDAR] list_events called: start={start_range}, end={end_range}")
-                                        
-                                        events = self.calendar_manager.list_events(
-                                            start_range_iso=start_range,
-                                            end_range_iso=end_range
-                                        )
-                                        if not events:
-                                            result_str = "No events found in that time range."
-                                        else:
-                                            result_str = "Found events:\n" + "\n".join([f"- ID: {e.id}, Start: {e.start_iso}, Summary: {e.summary}" for e in events])
-                                        print(f"[DEBUG] [CALENDAR] list_events returning {len(events)} events")
-                                        # Also send structured data to UI
-                                        if self.on_calendar_update:
-                                            self.on_calendar_update([e.__dict__ for e in events])
-                                    except Exception as e:
-                                        print(f"[DEBUG] [CALENDAR] Error listing events: {e}")
-                                        result_str = f"Error listing events: {str(e)[:100]}"
-                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(fc.name, dict(fc.args or {}))
+                                    )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
 
                                 elif fc.name == "delete_event":
-                                    try:
-                                        event_id = fc.args.get("event_id", "")
-                                        print(f"[DEBUG] [CALENDAR] delete_event called: event_id={event_id}")
-                                        deleted = self.calendar_manager.delete_event(event_id)
-                                        result_str = "Event deleted successfully." if deleted else "Event not found with that ID."
-                                        print(f"[DEBUG] [CALENDAR] delete_event result: {result_str}")
-                                    except Exception as e:
-                                        print(f"[DEBUG] [CALENDAR] Error deleting event: {e}")
-                                        result_str = f"Error deleting event: {str(e)[:100]}"
-                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(fc.name, dict(fc.args or {}))
+                                    )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
 
                                 elif fc.name == "update_event":
-                                    try:
-                                        event_id = fc.args.get("event_id", "")
-                                        summary = fc.args.get("summary", "")
-                                        print(f"[DEBUG] [CALENDAR] update_event called: event_id={event_id}, summary={summary}")
-                                        
-                                        if not event_id or not summary:
-                                            raise ValueError("Missing event_id or summary")
-                                        
-                                        updated = self.calendar_manager.update_event(event_id, summary=summary)
-                                        result_str = "Event updated successfully." if updated else "Event not found with that ID."
-                                        print(f"[DEBUG] [CALENDAR] update_event result: {result_str}")
-                                        
-                                        # Emit updated calendar
-                                        if self.on_calendar_update and updated:
-                                            events = [e.__dict__ for e in self.calendar_manager.events.values()]
-                                            self.on_calendar_update(events)
-                                    except Exception as e:
-                                        print(f"[DEBUG] [CALENDAR] Error updating event: {e}")
-                                        result_str = f"Error updating event: {str(e)[:100]}"
-                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+                                    result = await self._get_conversation_tool_executor().execute(
+                                        ConversationToolRequest(fc.name, dict(fc.args or {}))
+                                    )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
 
                                 # --- Minecraft Bot Tools ---
                                 elif fc.name.startswith("minecraft_"):

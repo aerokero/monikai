@@ -4,6 +4,7 @@ import re
 import time
 
 from backend.core.routers.frontend_router import is_active_frontend_sid
+from backend.conversation.routing import requires_capability_runtime
 
 
 def register_chat_input_handlers(
@@ -315,18 +316,59 @@ def register_chat_input_handlers(
                 except Exception:
                     pass
 
-            # Myśliciel (ścieżka tekstowa): przygotuj analizę + rdzeń odpowiedzi
-            # i wstrzyknij brief PRZED tekstem użytkownika. Brak briefu albo
-            # błąd = wysyłka idzie dalej bez zmian.
+            # Ordinary conversation is authored and delivered directly. Live
+            # remains temporarily available only for turns that need its tool
+            # or multimodal capability loop.
+            direct_author_attempted = False
             if text:
                 try:
                     thinker = getattr(audio_loop, "thinker", None)
-                    if thinker is not None:
+                    has_external_context = bool(
+                        attachments
+                        or sent_visual
+                        or sent_screen_ocr
+                        or page_request
+                        or private_web_task_request
+                    )
+                    tool_outcome = (
+                        await audio_loop.author_tool_turn(text)
+                        if thinker is not None
+                        and audio_loop._dedicated_speech_enabled()
+                        and not has_external_context
+                        else None
+                    )
+                    direct_author_attempted = bool(
+                        thinker is not None
+                        and audio_loop._dedicated_speech_enabled()
+                        and (
+                            bool(tool_outcome and tool_outcome.handled)
+                            or not requires_capability_runtime(
+                                text,
+                                has_external_context=has_external_context,
+                            )
+                        )
+                    )
+                    if direct_author_attempted:
+                        reply = (
+                            tool_outcome.reply
+                            if tool_outcome and tool_outcome.handled
+                            else await thinker.prepare_spoken_reply(text)
+                        )
+                        if reply:
+                            await audio_loop.deliver_authored_reply(reply, speak=True)
+                            thinker.mark_voice_delivered()
+                        print("[SERVER DEBUG] Conversational turn delivered by text author.")
+                    elif thinker is not None:
                         brief = await thinker.think_for_text(text)
                         if brief:
                             await _send_with_reconnect_retry(brief, end_of_turn=False)
                 except Exception as e:
                     print(f"[SERVER DEBUG] Thinker (text path) failed: {e}")
+
+            if direct_author_attempted:
+                # Never ask Live to create a second version when the text
+                # author returned an empty/failed result.
+                return
 
             if text:
                 try:

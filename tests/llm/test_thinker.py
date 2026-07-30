@@ -67,14 +67,15 @@ async def test_happy_path_delivers_response_brief():
     ]
 
 
-async def test_backchannels_and_short_text_are_skipped():
+async def test_backchannels_are_skipped_but_short_meaningful_text_is_authored():
     thinker, calls, _, _ = make_thinker()
     for text in [
-        "mhm", "no dobra", "okej", "tak tak", "za krótkie",
+        "mhm", "no dobra", "okej", "tak tak",
         "Halo słyszymy się?", "halo halo", "słyszysz mnie?", "jesteś tam?",
     ]:
         assert await run_voice_turn(thinker, text) is False
-    assert calls["generated"] == []
+    assert await run_voice_turn(thinker, "za krótkie") is True
+    assert calls["generated"] == ["za krótkie"]
 
 
 async def test_min_interval_between_shots():
@@ -225,6 +226,132 @@ async def test_503_retry_saves_the_thought():
     await run_voice_turn(thinker, "dłuższa wypowiedź o czymś konkretnym")
     assert len(calls["delivered"]) == 1
     assert "<reply_core>Druga próba się udała.</reply_core>" in calls["delivered"][0]
+
+
+async def test_context_is_compiled_once_and_reused_for_retry():
+    thinker, calls, _, _ = make_thinker(settings={"min_interval_sec": 0.0})
+    thinker.overload_retry_delay_sec = 0.01
+    compile_calls = []
+    attempts = []
+
+    class FakeCompiled:
+        conversation_id = "sess"
+        turn_id = "turn"
+        reality_mode = "grounded"
+        activated_lore = []
+        system_instruction = "SYSTEM"
+        user_prompt = "PROMPT"
+
+    class FakeCompiler:
+        async def compile(self, **kwargs):
+            compile_calls.append(kwargs)
+            return FakeCompiled()
+
+    async def flaky_generate(user_text):
+        attempts.append(user_text)
+        if len(attempts) == 1:
+            raise RuntimeError("503 UNAVAILABLE: high demand")
+        return brief("Retry uses the same context.", "Gotowe po drugiej próbie.")
+
+    thinker._context_compiler = FakeCompiler()
+    thinker._get_conversation_id = lambda: "sess"
+    thinker._generate = flaky_generate
+
+    result = await thinker.think_for_text("dłuższa wypowiedź wymagająca retry")
+
+    assert result and "Gotowe po drugiej próbie." in result
+    assert len(compile_calls) == 1
+    assert len(attempts) == 2
+    assert thinker.last_trace["context"]["conversation_id"] == "sess"
+
+
+async def test_failed_quality_gate_gets_one_controlled_revision():
+    thinker, _, _, _ = make_thinker(settings={"min_interval_sec": 0.0})
+
+    class FakeCompiled:
+        conversation_id = "sess"
+        turn_id = "turn"
+        reality_mode = "grounded"
+        activated_lore = []
+        system_instruction = "SYSTEM"
+        user_prompt = "<current_user_turn>Nie wiem.</current_user_turn>"
+
+    class FakeCompiler:
+        async def compile(self, **kwargs):
+            return FakeCompiled()
+
+    class FakeProvider:
+        def __init__(self):
+            self.requests = []
+
+        async def generate(self, request):
+            self.requests.append(request)
+            return brief(
+                "Korekta pozostaje przy literalnej treści.",
+                "Czyli nie potrzebujesz specjalnego rozruchu — po prostu siadasz i robisz.",
+            )
+
+    async def bad_initial_candidate(user_text):
+        return brief(
+            "Model nadinterpretuje wypowiedź.",
+            "Masz w sobie naturalną zdolność, to cenna cecha. Zapiszę to. Co cię rozprasza?",
+        )
+
+    provider = FakeProvider()
+    thinker._context_compiler = FakeCompiler()
+    thinker._get_conversation_id = lambda: "sess"
+    thinker._generate = bad_initial_candidate
+    thinker._text_provider = provider
+
+    result = await thinker.think_for_text(
+        "W sumie nie wiem, po prostu zawsze jestem skupiony sam z siebie"
+    )
+
+    assert result and "nie potrzebujesz specjalnego rozruchu" in result
+    assert "Zapiszę to" not in result
+    assert len(provider.requests) == 1
+    assert "unsolicited_memory_claim" in provider.requests[0].prompt
+    assert thinker.last_trace["validation"]["status"] == "corrected"
+
+
+async def test_revision_timeout_preserves_initial_authored_response():
+    thinker, _, _, _ = make_thinker(
+        settings={"min_interval_sec": 0.0, "revision_timeout_sec": 0.01}
+    )
+
+    class FakeCompiled:
+        conversation_id = "sess"
+        turn_id = "turn"
+        reality_mode = "grounded"
+        activated_lore = []
+        system_instruction = "SYSTEM"
+        user_prompt = "PROMPT"
+
+    class FakeCompiler:
+        async def compile(self, **kwargs):
+            return FakeCompiled()
+
+    class SlowProvider:
+        async def generate(self, request):
+            await asyncio.sleep(1)
+            return brief("late", "late")
+
+    bad_reply = "Zapiszę to. Co cię wtedy rozprasza?"
+
+    async def initial_candidate(user_text):
+        return brief("Pierwszy kandydat.", bad_reply)
+
+    thinker._context_compiler = FakeCompiler()
+    thinker._get_conversation_id = lambda: "sess"
+    thinker._generate = initial_candidate
+    thinker._text_provider = SlowProvider()
+
+    result = await thinker.think_for_text(
+        "W sumie nie wiem, po prostu jestem skupiony"
+    )
+
+    assert result and bad_reply in result
+    assert thinker.last_trace["validation"]["status"] == "revision_failed"
 
 
 async def test_503_uses_fallback_model_after_primary_retry():

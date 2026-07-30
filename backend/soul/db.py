@@ -132,6 +132,114 @@ CREATE TABLE IF NOT EXISTS flashcards (
 );
 
 CREATE INDEX IF NOT EXISTS idx_flashcards_review ON flashcards (next_review);
+
+-- Lorebooks are world-scoped knowledge sources. They intentionally remain
+-- separate from personal and episodic memory.
+CREATE TABLE IF NOT EXISTS lorebooks (
+    id            TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    description   TEXT NOT NULL DEFAULT '',
+    kind          TEXT NOT NULL
+                      CHECK (kind IN ('reality', 'imported_fiction', 'custom', 'scenario')),
+    trusted       INTEGER NOT NULL DEFAULT 0 CHECK (trusted IN (0, 1)),
+    editable      INTEGER NOT NULL DEFAULT 1 CHECK (editable IN (0, 1)),
+    enabled       INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+    default_mode  TEXT NOT NULL DEFAULT 'grounded'
+                      CHECK (default_mode IN ('grounded', 'crossover', 'roleplay', 'ambiguous')),
+    token_budget  INTEGER NOT NULL DEFAULT 1800 CHECK (token_budget > 0),
+    priority      INTEGER NOT NULL DEFAULT 50,
+    metadata      TEXT NOT NULL DEFAULT '{}', -- JSON object
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS lore_entries (
+    uid             TEXT PRIMARY KEY,
+    lorebook_id     TEXT NOT NULL REFERENCES lorebooks(id) ON DELETE CASCADE,
+    entry_id        TEXT NOT NULL,
+    title           TEXT NOT NULL,
+    content         TEXT NOT NULL,
+    entry_type      TEXT NOT NULL DEFAULT 'knowledge'
+                         CHECK (entry_type IN ('knowledge', 'scene', 'dialogue_example', 'behavior_instruction')),
+    keys            TEXT NOT NULL DEFAULT '[]', -- JSON array
+    secondary_keys  TEXT NOT NULL DEFAULT '[]', -- JSON array
+    entities        TEXT NOT NULL DEFAULT '[]', -- JSON array
+    relations       TEXT NOT NULL DEFAULT '[]', -- JSON array
+    match_mode      TEXT NOT NULL DEFAULT 'any'
+                         CHECK (match_mode IN ('any', 'all', 'primary_and_secondary')),
+    priority        INTEGER NOT NULL DEFAULT 50,
+    constant        INTEGER NOT NULL DEFAULT 0 CHECK (constant IN (0, 1)),
+    enabled         INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+    sticky_turns    INTEGER NOT NULL DEFAULT 0 CHECK (sticky_turns >= 0),
+    canon_status    TEXT NOT NULL DEFAULT 'canonical'
+                         CHECK (canon_status IN ('canonical', 'learned', 'proposed', 'superseded')),
+    source          TEXT NOT NULL DEFAULT 'manual',
+    confidence      REAL NOT NULL DEFAULT 1.0 CHECK (confidence BETWEEN 0 AND 1),
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    UNIQUE (lorebook_id, entry_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_lore_entries_book
+    ON lore_entries (lorebook_id, enabled, priority DESC);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS lore_fts
+    USING fts5(title, content, keys, content='lore_entries', content_rowid='rowid');
+
+CREATE TRIGGER IF NOT EXISTS lore_fts_insert
+    AFTER INSERT ON lore_entries BEGIN
+        INSERT INTO lore_fts(rowid, title, content, keys)
+        VALUES (new.rowid, new.title, new.content, new.keys);
+    END;
+
+CREATE TRIGGER IF NOT EXISTS lore_fts_delete
+    AFTER DELETE ON lore_entries BEGIN
+        INSERT INTO lore_fts(lore_fts, rowid, title, content, keys)
+        VALUES ('delete', old.rowid, old.title, old.content, old.keys);
+    END;
+
+CREATE TRIGGER IF NOT EXISTS lore_fts_update
+    AFTER UPDATE ON lore_entries BEGIN
+        INSERT INTO lore_fts(lore_fts, rowid, title, content, keys)
+        VALUES ('delete', old.rowid, old.title, old.content, old.keys);
+        INSERT INTO lore_fts(rowid, title, content, keys)
+        VALUES (new.rowid, new.title, new.content, new.keys);
+    END;
+
+CREATE TABLE IF NOT EXISTS conversation_world_stacks (
+    conversation_id  TEXT PRIMARY KEY,
+    reality_mode     TEXT NOT NULL DEFAULT 'grounded'
+                         CHECK (reality_mode IN ('grounded', 'crossover', 'roleplay', 'ambiguous')),
+    lorebook_ids     TEXT NOT NULL DEFAULT '[]', -- ordered JSON array
+    pinned_entries   TEXT NOT NULL DEFAULT '[]', -- "lorebook_id:entry_id"
+    token_budget     INTEGER,
+    updated_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS lore_sticky_activations (
+    conversation_id  TEXT NOT NULL,
+    lorebook_id      TEXT NOT NULL,
+    entry_id         TEXT NOT NULL,
+    remaining_turns  INTEGER NOT NULL CHECK (remaining_turns >= 0),
+    PRIMARY KEY (conversation_id, lorebook_id, entry_id),
+    FOREIGN KEY (lorebook_id, entry_id)
+        REFERENCES lore_entries(lorebook_id, entry_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS lore_activation_log (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id  TEXT NOT NULL,
+    turn_id          TEXT,
+    lorebook_id      TEXT NOT NULL,
+    entry_id         TEXT NOT NULL,
+    reason           TEXT NOT NULL,
+    score            REAL NOT NULL,
+    included         INTEGER NOT NULL DEFAULT 1 CHECK (included IN (0, 1)),
+    created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_lore_activation_turn
+    ON lore_activation_log (conversation_id, turn_id, created_at);
 """
 
 

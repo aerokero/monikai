@@ -202,14 +202,30 @@ class MemoryEngine:
             conn.close()
 
     # Markdown pages
+    def _resolve_page_path(self, path: str | Path) -> Path:
+        base = self.pages_dir.resolve()
+        raw = Path(path)
+        candidate = raw.resolve() if raw.is_absolute() else (base / raw).resolve()
+        try:
+            candidate.relative_to(base)
+        except ValueError as exc:
+            raise ValueError("Memory page path escapes memory/pages.") from exc
+        return candidate
+
     def create_page(self, title: str, folder: str = "topics", tags: list | None = None) -> str:
         folder = (folder or "topics").strip().lower()
-        slug = re.sub(r"[^a-z0-9\-_\s]+", "", title.strip().lower())
-        slug = re.sub(r"\s+", "_", slug)[:64]
+        safe_title = re.sub(r"\s+", " ", str(title or "")).strip()[:120] or "Page"
+        safe_tags = [
+            re.sub(r"[\r\n,\[\]]+", "", str(tag)).strip()[:40]
+            for tag in (tags or [])
+        ]
+        safe_tags = [tag for tag in safe_tags if tag]
+        slug = re.sub(r"[^a-z0-9\-_\s]+", "", safe_title.lower())
+        slug = re.sub(r"\s+", "_", slug)[:64] or "page"
 
-        page_dir = self.pages_dir / folder
+        page_dir = self._resolve_page_path(folder)
         page_dir.mkdir(parents=True, exist_ok=True)
-        path = page_dir / f"{slug}.md"
+        path = self._resolve_page_path(page_dir / f"{slug}.md")
 
         if not path.exists():
             now = datetime.now().isoformat()
@@ -217,31 +233,27 @@ class MemoryEngine:
                 "---",
                 f"id: page_{slug}",
                 "type: topic_page",
-                f"title: {title}",
-                f"tags: [{', '.join(tags or [])}]",
+                f"title: {safe_title}",
+                f"tags: [{', '.join(safe_tags)}]",
                 f"created_at: {now}",
                 f"updated_at: {now}",
                 "---",
                 "",
-                f"# {title}",
+                f"# {safe_title}",
                 "",
             ]
             path.write_text("\n".join(frontmatter), encoding="utf-8")
         return str(path)
 
     def append_page(self, path: str, content: str) -> str:
-        p = Path(path)
-        if not p.is_absolute():
-            p = (self.pages_dir / path).resolve()
+        p = self._resolve_page_path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         with p.open("a", encoding="utf-8") as f:
             f.write("\n" + content + "\n")
         return str(p)
 
     def get_page(self, path: str) -> str:
-        p = Path(path)
-        if not p.is_absolute():
-            p = (self.pages_dir / path).resolve()
+        p = self._resolve_page_path(path)
         if not p.exists():
             return ""
         return p.read_text(encoding="utf-8", errors="ignore")

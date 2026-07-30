@@ -34,6 +34,7 @@ export const ChevronDown = pick('CaretDown', 'ChevronDown');
 export const ChevronUp = pick('CaretUp', 'ChevronUp');
 export const Upload = pick('ArrowUp', 'Upload');
 export const Mic = pick('Microphone', 'Mic');
+export const MicOff = pick('MicrophoneSlash', 'MicOff');
 export const Speaker = pick('SpeakerHigh', 'Speaker');
 export const Cpu = pick('Cpu', 'Cpu');
 export const Globe = pick('Globe', 'Globe');
@@ -126,6 +127,7 @@ export default {
   ChevronUp,
   Upload,
   Mic,
+  MicOff,
   Speaker,
   Cpu,
   Globe,

@@ -7,6 +7,8 @@ import {
   Heart,
   Maximize2,
   MessageSquare,
+  Mic,
+  MicOff,
   Plus,
   Settings,
   Terminal,
@@ -16,6 +18,7 @@ import {
   Zap,
 } from '../icons';
 import AudioBar from '../AudioBar';
+import { useAudioVideo } from '../../contexts/AudioVideoContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 
 const MAX_FILES = 6;
@@ -175,6 +178,7 @@ const ChatPanel = ({
   compactDock = false,
 }) => {
   const { t } = useLanguage();
+  const { isMuted, toggleMute } = useAudioVideo();
   const rootRef = useRef(null);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
@@ -625,6 +629,20 @@ const ChatPanel = ({
                   rows={1}
                   className="max-h-24 min-h-[32px] flex-1 resize-none border-0 bg-transparent px-0 py-1 text-[16px] font-medium leading-7 text-[rgba(255,246,233,0.92)] placeholder:text-[rgba(255,224,190,0.52)] outline-none"
                 />
+                <button
+                  type="button"
+                  onClick={toggleMute}
+                  aria-label={isMuted ? t('tools.microphone_off') : t('tools.microphone_on')}
+                  aria-pressed={!isMuted}
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition ${
+                    isMuted
+                      ? 'bg-[rgba(166,72,58,0.14)] text-[#df8978] hover:bg-[rgba(166,72,58,0.22)] hover:text-[#f0ad9d]'
+                      : 'bg-[rgba(88,118,73,0.14)] text-[#9fbd8f] hover:bg-[rgba(88,118,73,0.22)] hover:text-[#c0d4ad]'
+                  }`}
+                  title={isMuted ? t('tools.microphone_off') : t('tools.microphone_on')}
+                >
+                  {isMuted ? <MicOff size={19} /> : <Mic size={19} />}
+                </button>
                 <button
                   type="button"
                   onClick={handleSendMessage}

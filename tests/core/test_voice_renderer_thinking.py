@@ -1,12 +1,14 @@
 import asyncio
 
 from backend.core import model_config as model_config
+from backend.core import monikai
 from backend.core.monikai import (
     AudioLoop,
     _build_voice_realtime_input_config,
     _build_voice_renderer_thinking_config,
     _streaming_transcript_update,
 )
+from backend.conversation.speech import SynthesizedSpeech
 
 
 def test_thinker_renderer_uses_manual_activity_boundaries():
@@ -49,9 +51,9 @@ async def test_manual_voice_turn_delivers_brief_before_activity_end():
     events = []
 
     class FakeThinker:
-        async def prepare_voice_turn(self, text):
+        async def prepare_spoken_reply(self, text):
             events.append(("prepare", text))
-            return '<response_brief mode="verbatim"><reply_core>Gotowe.</reply_core></response_brief>'
+            return "Gotowe."
 
         def mark_voice_delivered(self):
             events.append(("marked", True))
@@ -69,10 +71,61 @@ async def test_manual_voice_turn_delivers_brief_before_activity_end():
     loop._is_speaking = False
     loop._manual_voice_activity_open = True
     loop._voice_finalize_task = asyncio.current_task()
+    loop._suppress_spoken_output = False
+    loop._dedicated_speech_enabled = lambda: True
+
+    async def deliver(reply, *, speak):
+        events.append(("deliver", (reply, speak)))
+        return True
+
+    loop.deliver_authored_reply = deliver
 
     await loop._finalize_manual_voice_turn()
 
-    assert [kind for kind, _ in events] == ["prepare", "text", "activity_end", "marked"]
-    assert "text" in events[1][1]
-    assert "activity_end" in events[2][1]
+    assert [kind for kind, _ in events] == ["prepare", "activity_end", "deliver", "marked"]
+    assert events[2][1] == ("Gotowe.", True)
+    assert not any(kind == "text" for kind, _ in events)
+    assert loop._suppress_spoken_output is True
     assert loop._manual_voice_activity_open is False
+
+
+async def test_authored_reply_is_displayed_and_synthesized_without_rewrite(monkeypatch):
+    authored = "Po prostu siadasz i robisz."
+    transcripts = []
+    requests = []
+
+    class FakeSynthesizer:
+        async def synthesize(self, request):
+            requests.append(request)
+            return SynthesizedSpeech(audio=b"\x00\x01" * 8)
+
+    monkeypatch.setitem(
+        monikai.APP_SETTINGS,
+        "speech",
+        {
+            "delivery_mode": "dedicated_tts",
+            "model": "test-tts",
+            "voice": "Sulafat",
+            "timeout_sec": 2.0,
+        },
+    )
+    loop = AudioLoop.__new__(AudioLoop)
+    loop.chat_buffer = {"sender": None, "text": ""}
+    loop._ai_turn_open = False
+    loop.mark_ai_activity = lambda text: None
+    loop.on_transcription = transcripts.append
+    loop.flush_chat = lambda: None
+    loop._last_speech_trace = {}
+    loop.enable_audio_io = True
+    loop.audio_in_queue = asyncio.Queue()
+    loop.on_audio_data = None
+    loop.speech_synthesizer = FakeSynthesizer()
+
+    assert await loop.deliver_authored_reply(authored, speak=True) is True
+
+    assert transcripts[0]["text"] == authored
+    assert transcripts[0]["authored"] is True
+    assert requests[0].text == authored
+    assert requests[0].model == "test-tts"
+    assert await loop.audio_in_queue.get() == b"\x00\x01" * 8
+    assert loop._last_speech_trace["status"] == "audio_delivered"

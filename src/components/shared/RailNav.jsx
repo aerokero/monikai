@@ -16,7 +16,7 @@ import * as Icons from '../icons';
 const RailNav = () => {
   const { activeContext, setActiveContext } = useMonika();
   const { openSettings } = useSettings();
-  const { isMuted, toggleMute, isVideoOn, toggleVideo, visionMode, toggleScreenCapture, isConnected, togglePower, onLogout, onMonikaTemporaryMood } = useAudioVideo();
+  const { isVideoOn, toggleVideo, visionMode, toggleScreenCapture, isConnected, togglePower, onLogout, onMonikaTemporaryMood } = useAudioVideo();
   const { layoutMode } = useLayoutMode();
   const { t } = useLanguage();
   const canExpandRail = ['desktop', 'desktop-wide'].includes(layoutMode);
@@ -190,19 +190,6 @@ const RailNav = () => {
           {renderLabel(isConnected ? t('navigation.connected') : t('navigation.disconnected'))}
           
           {renderTooltip(isConnected ? t('tools.ai_on') : t('tools.ai_off'))}
-        </button>
-        
-        {/* Microphone Button */}
-        <button
-          onClick={toggleMute}
-          className={`${railButtonBase} ${isMuted ? railButtonWarn : railButtonOn}`}
-          aria-label="Microphone"
-          title={isMuted ? t('tools.microphone_off') : t('tools.microphone_on')}
-        >
-          <Icons.Mic size={20} />
-          {renderLabel(isMuted ? t('navigation.mic_muted') : t('navigation.mic'))}
-          
-          {renderTooltip(isMuted ? t('tools.microphone_off') : t('tools.microphone_on'))}
         </button>
         
         {/* Camera Button */}

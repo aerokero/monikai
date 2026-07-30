@@ -16,6 +16,11 @@ async def test_schema_tables_exist(tmp_db):
         "progression_state",
         "events",
         "jobs",
+        "lorebooks",
+        "lore_entries",
+        "conversation_world_stacks",
+        "lore_sticky_activations",
+        "lore_activation_log",
     }
     async with get_db(path=tmp_db) as conn:
         cursor = await conn.execute(

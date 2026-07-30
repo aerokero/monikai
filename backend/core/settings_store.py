@@ -119,11 +119,9 @@ DEFAULT_SETTINGS = {
     "vn": {
         "branch_selection_mode": "heuristic",
     },
-    # Myśliciel (drugi mózg): gemini-3.5-flash przygotowuje analizę i rdzeń
-    # odpowiedzi, wstrzykiwane do sesji Live jako <response_brief>.
-    # Off = zachowanie bez zmian.
+    # The text model owns the final conversational response.
     "thinker": {
-        "enabled": False,
+        "enabled": True,
         "min_chars": 18,
         # Model głosowy jest rendererem; każda znacząca tura powinna dostać
         # brief, zamiast polegać na jego płytkim natywnym rozumowaniu.
@@ -132,8 +130,21 @@ DEFAULT_SETTINGS = {
         # ukrytej warstwy thinking, która nie mieściła się w timeout_sec.
         "thinking_budget": 0,
         "timeout_sec": 8.0,
+        # A failed quality gate gets one short rewrite pass. If it misses this
+        # budget, the original authored response is preserved.
+        "revision_timeout_sec": 2.5,
+        # Structured function-call planning is separate from final authorship.
+        "tool_planning_timeout_sec": 4.0,
         # Przerwa po 429/503 — 120 s wyciszało mózg na kilka tur rozmowy.
         "cooldown_sec": 60.0,
+    },
+    # Dedicated TTS receives the final immutable text. Set delivery_mode to
+    # "live_renderer" only as an explicit compatibility rollback.
+    "speech": {
+        "delivery_mode": "dedicated_tts",
+        "model": "gemini-3.1-flash-tts-preview",
+        "voice": None,
+        "timeout_sec": 20.0,
     },
     "minecraft_autonomy": {
         "enabled": True,
