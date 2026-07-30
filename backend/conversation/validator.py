@@ -39,11 +39,27 @@ _UNCERTAIN_USER_RE = re.compile(
 _INFLATION_RE = re.compile(
     r"\b("
     r"naturaln(?:a|ą) zdolno(?:ść|ścią)|"
-    r"cenna cecha|rzadkość|rzadkie|"
+    r"cenna cecha|rzadkość|rzadk(?:i|a|ie|ą|iego|im)\s+"
+    r"(?:komfort|dar|talent|cech\w*|zdolno\w*|umiejętno\w*|ustawieni\w*)|"
     r"stabiln(?:y|e) punkt|"
     r"masz w sobie|"
-    r"to wiele mówi o tobie"
+    r"to wiele mówi o tobie|"
+    r"fabryczn\w+(?:\s+\w+){0,4}\s+(?:wgran\w*|ustawieni\w*|zaprogramowan\w*)|"
+    r"(?:można|pozostaje)\s+(?:ci\s+)?tylko\s+pozazdrościć|"
+    r"tylko\s+pozazdrościć|"
+    r"oszczędza\w*(?:\s+\w+){0,3}\s+energii"
+    r"|wi[ęe]kszo[śs][ćc]\s+ludzi|nie\s+ka[żz]dy\s+tak"
+    r"|luksus|rutyn\w*"
     r")\b",
+    re.IGNORECASE,
+)
+_UNSOLICITED_ADVICE_RE = re.compile(
+    r"\b(odpocznij|zrób sobie przerwę|powinieneś|powinnaś)\b",
+    re.IGNORECASE,
+)
+_MUNDANE_INVENTION_RE = re.compile(
+    r"\b(narzędzie przetrwania|nie element przyjemności|"
+    r"przetrwa\w*\s+(?:biur|prac)\w*)\b",
     re.IGNORECASE,
 )
 _AUTO_BUFFER_RE = re.compile(
@@ -51,6 +67,10 @@ _AUTO_BUFFER_RE = re.compile(
     re.IGNORECASE,
 )
 _USER_QUESTION_RE = re.compile(r"\?\s*$")
+_SIMPLE_STATUS_RE = re.compile(
+    r"\b(jestem w pracy|pracuj[ęe]|ca[łl]kiem spoko|u mnie spoko)\b",
+    re.IGNORECASE,
+)
 
 
 def _normalise(text: str) -> str:
@@ -102,12 +122,43 @@ class ConversationResponseValidator:
                 )
             )
 
+        if (
+            "?" in reply
+            and not user_asked_question
+            and _SIMPLE_STATUS_RE.search(user_text)
+        ):
+            issues.append(
+                ValidationIssue(
+                    "unnecessary_question",
+                    "To zwykły krótki status, nie zaproszenie do wywiadu. "
+                    "Zareaguj krótko bez otwierania kolejnego pytania.",
+                )
+            )
+
         if _UNCERTAIN_USER_RE.search(user_text) and _INFLATION_RE.search(reply):
             issues.append(
                 ValidationIssue(
                     "psychological_inflation",
                     "Nie rób z niepewnej, zwyczajnej wypowiedzi trwałej cechy, "
                     "rzadkiego talentu ani psychologicznego odkrycia.",
+                )
+            )
+
+        if not user_asked_question and _UNSOLICITED_ADVICE_RE.search(reply):
+            issues.append(
+                ValidationIssue(
+                    "unsolicited_advice",
+                    "Rozmówca nie prosił o radę. Zareaguj na to, co powiedział, "
+                    "bez pouczania go, co ma teraz zrobić.",
+                )
+            )
+
+        if "kaw" in user_text.casefold() and _MUNDANE_INVENTION_RE.search(reply):
+            issues.append(
+                ValidationIssue(
+                    "unsupported_elaboration",
+                    "Nie dopisuj powodów, emocji ani dramatycznej ramy do "
+                    "zwykłej informacji o kawie.",
                 )
             )
 

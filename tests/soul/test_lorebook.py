@@ -8,6 +8,7 @@ from backend.soul.lorebook import (
     Lorebook,
     WorldStack,
     activate_lore,
+    list_activation_diagnostics,
     render_lore_context,
 )
 from backend.soul.lorebook import store
@@ -256,3 +257,193 @@ async def test_rendered_context_preserves_world_namespaces(tmp_db):
     assert 'world="reality"' in rendered
     assert 'world="ddlc"' in rendered
     assert "Do not merge facts across world namespaces." in rendered
+
+
+async def test_semantic_retrieval_uses_entry_content_without_explicit_keys(tmp_db):
+    await _book(tmp_db, "reality", kind="reality")
+    await _entry(
+        tmp_db,
+        "reality",
+        "office",
+        content="Biuro mieści się w Warszawie przy ulicy Marszałkowskiej.",
+    )
+    stack = WorldStack(conversation_id="conv", lorebook_ids=["reality"])
+
+    result = await activate_lore(
+        conversation_id="conv",
+        turn_id="semantic_turn",
+        recent_messages=["Przy jakiej ulicy znajduje się nasze biuro?"],
+        world_stack=stack,
+        db_path=tmp_db,
+    )
+
+    assert [item.entry.uid for item in result] == ["reality:office"]
+    assert result[0].reason == "semantic"
+
+
+async def test_semantic_retrieval_never_reads_an_inactive_world(tmp_db):
+    await _book(tmp_db, "reality", kind="reality")
+    await _book(tmp_db, "fiction", kind="imported_fiction")
+    await _entry(
+        tmp_db,
+        "reality",
+        "office",
+        content="Biuro mieści się w Warszawie przy ulicy Marszałkowskiej.",
+    )
+    await _entry(
+        tmp_db,
+        "fiction",
+        "office",
+        content="Biuro mieści się w Night City przy ulicy Jig-Jig.",
+    )
+    stack = WorldStack(conversation_id="conv", lorebook_ids=["reality"])
+
+    result = await activate_lore(
+        conversation_id="conv",
+        recent_messages=["Przy jakiej ulicy znajduje się biuro?"],
+        world_stack=stack,
+        db_path=tmp_db,
+    )
+
+    assert [item.entry.uid for item in result] == ["reality:office"]
+
+
+async def test_relation_expansion_is_one_hop_and_world_scoped(tmp_db):
+    await _book(tmp_db, "night_city", kind="imported_fiction")
+    await _book(tmp_db, "middle_earth", kind="imported_fiction")
+    await _entry(
+        tmp_db,
+        "night_city",
+        "arasaka",
+        keys=["Arasaka"],
+        relations=["mikoshi", "middle_earth:mordor"],
+    )
+    await _entry(
+        tmp_db,
+        "night_city",
+        "mikoshi",
+        content="Mikoshi stores digital personalities.",
+        relations=["alt"],
+    )
+    await _entry(
+        tmp_db,
+        "night_city",
+        "alt",
+        content="Alt exists beyond the Blackwall.",
+    )
+    await _entry(
+        tmp_db,
+        "middle_earth",
+        "mordor",
+        content="Mordor lies east of Gondor.",
+    )
+    stack = WorldStack(conversation_id="conv", lorebook_ids=["night_city"])
+
+    result = await activate_lore(
+        conversation_id="conv",
+        recent_messages=["Co kontroluje Arasaka?"],
+        world_stack=stack,
+        db_path=tmp_db,
+    )
+
+    assert {item.entry.uid for item in result} == {
+        "night_city:arasaka",
+        "night_city:mikoshi",
+    }
+    assert next(
+        item for item in result if item.entry.id == "mikoshi"
+    ).reason == "relation"
+
+
+async def test_grounded_mode_prioritizes_reality_and_explains_policy(tmp_db):
+    reality = await _book(tmp_db, "reality", kind="reality")
+    fiction = await _book(tmp_db, "fiction", kind="imported_fiction")
+    real_entry = await _entry(
+        tmp_db,
+        "reality",
+        "monika",
+        content="Monika is an AI companion in the real application.",
+    )
+    fictional_entry = await _entry(
+        tmp_db,
+        "fiction",
+        "monika",
+        content="Monika is the president of a fictional literature club.",
+    )
+
+    from backend.soul.lorebook.activation import ActivatedLore
+
+    rendered = render_lore_context(
+        [
+            ActivatedLore(real_entry, reality, "semantic", 50.0, 10),
+            ActivatedLore(fictional_entry, fiction, "semantic", 50.0, 10),
+        ],
+        reality_mode="grounded",
+    )
+
+    assert "reality lore has precedence" in rendered
+    assert 'world_kind="reality"' in rendered
+    assert 'world_kind="imported_fiction"' in rendered
+
+
+async def test_grounded_retrieval_ranks_reality_above_conflicting_fiction(tmp_db):
+    await _book(tmp_db, "fiction", kind="imported_fiction")
+    await _book(tmp_db, "reality", kind="reality")
+    await _entry(
+        tmp_db,
+        "fiction",
+        "office",
+        content="Biuro Moniki mieści się przy ulicy Marszałkowskiej.",
+    )
+    await _entry(
+        tmp_db,
+        "reality",
+        "office",
+        content="Biuro Moniki mieści się przy ulicy Puławskiej.",
+    )
+    stack = WorldStack(
+        conversation_id="conv",
+        reality_mode="grounded",
+        lorebook_ids=["fiction", "reality"],
+    )
+
+    result = await activate_lore(
+        conversation_id="conv",
+        recent_messages=["Przy jakiej ulicy mieści się biuro Moniki?"],
+        world_stack=stack,
+        db_path=tmp_db,
+    )
+
+    assert [item.entry.uid for item in result] == [
+        "reality:office",
+        "fiction:office",
+    ]
+
+
+async def test_activation_diagnostics_expose_reason_score_and_inclusion(tmp_db):
+    await _book(tmp_db, "reality", kind="reality")
+    await _entry(
+        tmp_db,
+        "reality",
+        "office",
+        content="Biuro mieści się przy ulicy Marszałkowskiej.",
+    )
+    stack = WorldStack(conversation_id="conv", lorebook_ids=["reality"])
+    await activate_lore(
+        conversation_id="conv",
+        turn_id="turn_diag",
+        recent_messages=["Przy jakiej ulicy mieści się biuro?"],
+        world_stack=stack,
+        db_path=tmp_db,
+    )
+
+    diagnostics = await list_activation_diagnostics(
+        "conv",
+        turn_id="turn_diag",
+        db_path=tmp_db,
+    )
+
+    assert diagnostics[0]["entry_uid"] == "reality:office"
+    assert diagnostics[0]["reason"] == "semantic"
+    assert diagnostics[0]["included"] is True
+    assert diagnostics[0]["score"] > 0

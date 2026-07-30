@@ -265,6 +265,53 @@ async def test_context_is_compiled_once_and_reused_for_retry():
     assert thinker.last_trace["context"]["conversation_id"] == "sess"
 
 
+async def test_response_candidates_share_one_compiled_context_and_stay_uncommitted():
+    thinker, calls, _, _ = make_thinker(settings={"min_interval_sec": 0.0})
+    compile_calls = []
+    generated = iter(
+        [
+            brief("Pierwszy kierunek.", "Brzmi jak spokojny poranek."),
+            brief("Drugi kierunek.", "Czyli rano po prostu łapiesz rytm."),
+            brief("Trzeci kierunek.", "Nie potrzebujesz specjalnego rozruchu."),
+        ]
+    )
+
+    class FakeCompiled:
+        conversation_id = "sess"
+        turn_id = "turn-candidates"
+        reality_mode = "grounded"
+        activated_lore = []
+        system_instruction = "SYSTEM"
+        user_prompt = "IMMUTABLE PROMPT"
+
+    class FakeCompiler:
+        async def compile(self, **kwargs):
+            compile_calls.append(kwargs)
+            return FakeCompiled()
+
+    async def generate(_user_text):
+        return next(generated)
+
+    thinker._context_compiler = FakeCompiler()
+    thinker._get_conversation_id = lambda: "sess"
+    thinker._generate = generate
+
+    candidates = await thinker.prepare_reply_candidates(
+        "Rano zwykle od razu jestem skupiony.",
+        count=3,
+    )
+
+    assert candidates == (
+        "Brzmi jak spokojny poranek.",
+        "Czyli rano po prostu łapiesz rytm.",
+        "Nie potrzebujesz specjalnego rozruchu.",
+    )
+    assert len(compile_calls) == 1
+    assert thinker.last_trace["context"]["user_prompt_sha256"]
+    assert thinker.last_trace["status"] == "candidates_ready"
+    assert calls["delivered"] == []
+
+
 async def test_failed_quality_gate_gets_one_controlled_revision():
     thinker, _, _, _ = make_thinker(settings={"min_interval_sec": 0.0})
 
@@ -314,7 +361,7 @@ async def test_failed_quality_gate_gets_one_controlled_revision():
     assert thinker.last_trace["validation"]["status"] == "corrected"
 
 
-async def test_revision_timeout_preserves_initial_authored_response():
+async def test_revision_timeout_rejects_known_unsafe_response():
     thinker, _, _, _ = make_thinker(
         settings={"min_interval_sec": 0.0, "revision_timeout_sec": 0.01}
     )
@@ -350,8 +397,27 @@ async def test_revision_timeout_preserves_initial_authored_response():
         "W sumie nie wiem, po prostu jestem skupiony"
     )
 
-    assert result and bad_reply in result
+    assert result is None
     assert thinker.last_trace["validation"]["status"] == "revision_failed"
+
+
+async def test_configured_context_compiler_failure_stops_generation():
+    thinker, calls, _, _ = make_thinker(settings={"min_interval_sec": 0.0})
+
+    class BrokenCompiler:
+        async def compile(self, **kwargs):
+            raise RuntimeError("lore database unavailable")
+
+    thinker._context_compiler = BrokenCompiler()
+    thinker._get_conversation_id = lambda: "sess"
+
+    result = await thinker.think_for_text("To jest pełna wiadomość do Moniki.")
+
+    assert result is None
+    assert calls["generated"] == []
+    assert thinker.last_trace["status"] == "error"
+    assert thinker.last_trace["context"]["status"] == "error"
+    assert "lore database unavailable" in thinker.last_trace["context"]["error"]
 
 
 async def test_503_uses_fallback_model_after_primary_retry():

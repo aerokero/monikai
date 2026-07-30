@@ -1,4 +1,12 @@
-from scripts.conversation_probe import evaluate_turn, render_report
+import json
+
+from scripts.conversation_probe import (
+    compare_with_baseline,
+    evaluate_conversation,
+    evaluate_turn,
+    render_report,
+    write_jsonl,
+)
 
 
 def _trace(core: str, response: str):
@@ -60,3 +68,125 @@ def test_report_contains_brief_response_and_check_result():
     assert "**Reply core:** Jasne, dokończ." in report
     assert "**Monika:** Jasne, dokończ." in report
     assert "PASS" in report
+
+
+def test_character_quality_checks_detect_psychologizing_and_question_pressure():
+    turn = {
+        "text": "Po prostu zawsze jestem skupiony.",
+        "expect": {
+            "reject_unsupported_traits": True,
+            "allow_memory_claim": False,
+            "must_not_ask": True,
+            "max_sentences": 2,
+        },
+    }
+    response = (
+        "Masz w sobie naturalną zdolność, to cenna cecha. "
+        "Zapiszę to. Co cię rozprasza?"
+    )
+
+    checks = evaluate_turn(turn, _trace(response, response))
+    failed = {
+        check["name"]
+        for check in checks
+        if not check["passed"]
+    }
+
+    assert "must_not_ask" in failed
+    assert "no_memory_claim" in failed
+    assert "unsupported_trait:naturalna_zdolnosc" in failed
+    assert "unsupported_trait:cenna_cecha" in failed
+
+
+def test_conversation_checks_measure_question_runs_and_repetition():
+    scenario = {
+        "conversation_expect": {
+            "max_total_questions": 1,
+            "max_consecutive_question_turns": 1,
+            "max_adjacent_similarity": 0.5,
+        }
+    }
+    results = [
+        {
+            "trace": {"response": "Co pomaga ci się skupić?"},
+            "checks": [],
+        },
+        {
+            "trace": {"response": "Co pomaga ci się skupić?"},
+            "checks": [],
+        },
+    ]
+
+    checks = evaluate_conversation(scenario, results)
+    by_name = {check["name"]: check["passed"] for check in checks}
+
+    assert by_name["total_questions"] is False
+    assert by_name["question_pressure"] is False
+    assert by_name["adjacent_repetition"] is False
+
+
+def test_jsonl_trace_is_versioned_and_redacts_secrets(tmp_path):
+    scenario_path = tmp_path / "scenario.json"
+    scenario_path.write_text(
+        json.dumps({"schema_version": 2, "name": "quality"}),
+        encoding="utf-8",
+    )
+    output = tmp_path / "trace.jsonl"
+    result = {
+        "turn": {"text": "Hej", "expect": {}},
+        "trace": {
+            "response": "Hej.",
+            "api_key": "secret-value",
+            "thinker": {"author_model": "model-a"},
+        },
+        "checks": [{"name": "live_response", "passed": True, "detail": ""}],
+        "roundtrip_ms": 125.5,
+    }
+
+    write_jsonl(
+        output,
+        scenario={"schema_version": 2, "name": "quality"},
+        scenario_path=scenario_path,
+        results=[result],
+        conversation_checks=[],
+    )
+    records = [
+        json.loads(line)
+        for line in output.read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert records[0]["schema_version"] == 2
+    assert len(records[0]["scenario_sha256"]) == 64
+    assert records[1]["trace"]["api_key"] == "[REDACTED]"
+    assert records[1]["roundtrip_ms"] == 125.5
+    assert records[-1]["record_type"] == "conversation_summary"
+
+
+def test_baseline_comparison_reports_pass_delta(tmp_path):
+    baseline = tmp_path / "baseline.jsonl"
+    baseline.write_text(
+        "\n".join(
+            [
+                json.dumps({"record_type": "turn", "checks": [
+                    {"name": "a", "passed": True},
+                    {"name": "b", "passed": False},
+                ]}),
+                json.dumps({"record_type": "conversation_summary", "checks": []}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    current = [
+        {
+            "checks": [
+                {"name": "a", "passed": True},
+                {"name": "b", "passed": True},
+            ]
+        }
+    ]
+
+    comparison = compare_with_baseline(baseline, current, [])
+
+    assert comparison["baseline_passed"] == 1
+    assert comparison["current_passed"] == 2
+    assert comparison["delta"] == 1

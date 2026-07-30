@@ -391,6 +391,7 @@
   "panels": {
     "chat": "Chat",
     "conversations": "Conversations",
+    "worlds": "Worlds",
     "study": "Study",
     "notes": "Notes",
     "daily_briefing": "Briefing",
@@ -506,6 +507,15 @@
     "briefing": "Briefing",
     "relationship": "Relationship",
     "calendar": "Calendar",
-    "her_profile": "Her profile"
+    "her_profile": "Her profile",
+    "worlds": "Worlds"
+  },
+  "worlds": {
+    "title": "Worlds and lorebooks",
+    "import": "Import",
+    "mode": "Reality mode",
+    "books": "Active lorebooks",
+    "empty": "There are no lorebooks yet. Import JSON, YAML, or Markdown.",
+    "diagnostics": "Recent activations"
   }
 }

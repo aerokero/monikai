@@ -8,7 +8,7 @@ from pathlib import Path
 
 from backend.soul.db import get_db
 
-from .models import LoreEntry, Lorebook, WorldStack
+from .models import LoreCandidate, LoreEntry, Lorebook, WorldStack
 
 
 def _iso(value: datetime | None = None) -> str:
@@ -63,6 +63,28 @@ def _row_to_entry(row) -> LoreEntry:
         confidence=row["confidence"],
         created_at=_dt(row["created_at"]),
         updated_at=_dt(row["updated_at"]),
+    )
+
+
+def _row_to_candidate(row) -> LoreCandidate:
+    return LoreCandidate(
+        id=row["id"],
+        conversation_id=row["conversation_id"],
+        target_type=row["target_type"],
+        target_lorebook_id=row["target_lorebook_id"],
+        title=row["title"],
+        content=row["content"],
+        keys=json.loads(row["keys"] or "[]"),
+        entities=json.loads(row["entities"] or "[]"),
+        confidence=row["confidence"],
+        rationale=row["rationale"],
+        source_turn_id=row["source_turn_id"],
+        source_excerpt=row["source_excerpt"],
+        conflicts_with=json.loads(row["conflicts_with"] or "[]"),
+        status=row["status"],
+        accepted_entry_uid=row["accepted_entry_uid"],
+        created_at=_dt(row["created_at"]),
+        reviewed_at=_dt(row["reviewed_at"]) if row["reviewed_at"] else None,
     )
 
 
@@ -154,6 +176,54 @@ async def upsert_entry(entry: LoreEntry, db_path: Path | None = None) -> None:
                 entry.confidence, _iso(entry.created_at), _iso(),
             ),
         )
+        await conn.commit()
+
+
+async def upsert_entries(
+    entries: list[LoreEntry],
+    db_path: Path | None = None,
+) -> None:
+    """Persist a validated import batch in one transaction."""
+    if not entries:
+        return
+    sql = """
+        INSERT INTO lore_entries
+            (uid, lorebook_id, entry_id, title, content, entry_type, keys,
+             secondary_keys, entities, relations, match_mode, priority,
+             constant, enabled, sticky_turns, canon_status, source,
+             confidence, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(lorebook_id, entry_id) DO UPDATE SET
+            title=excluded.title,
+            content=excluded.content,
+            entry_type=excluded.entry_type,
+            keys=excluded.keys,
+            secondary_keys=excluded.secondary_keys,
+            entities=excluded.entities,
+            relations=excluded.relations,
+            match_mode=excluded.match_mode,
+            priority=excluded.priority,
+            constant=excluded.constant,
+            enabled=excluded.enabled,
+            sticky_turns=excluded.sticky_turns,
+            canon_status=excluded.canon_status,
+            source=excluded.source,
+            confidence=excluded.confidence,
+            updated_at=excluded.updated_at
+    """
+    values = [
+        (
+            entry.uid, entry.lorebook_id, entry.id, entry.title, entry.content,
+            entry.entry_type, _json(entry.keys), _json(entry.secondary_keys),
+            _json(entry.entities), _json(entry.relations), entry.match_mode,
+            entry.priority, int(entry.constant), int(entry.enabled),
+            entry.sticky_turns, entry.canon_status, entry.source,
+            entry.confidence, _iso(entry.created_at), _iso(),
+        )
+        for entry in entries
+    ]
+    async with get_db(db_path) as conn:
+        await conn.executemany(sql, values)
         await conn.commit()
 
 
@@ -307,3 +377,177 @@ async def log_activation(
             ),
         )
         await conn.commit()
+
+
+async def list_activation_diagnostics(
+    conversation_id: str,
+    *,
+    turn_id: str | None = None,
+    limit: int = 100,
+    db_path: Path | None = None,
+) -> list[dict]:
+    """Return newest activation decisions for local inspection and UI tooling."""
+    clauses = ["conversation_id = ?"]
+    params: list = [str(conversation_id)]
+    if turn_id is not None:
+        clauses.append("turn_id = ?")
+        params.append(str(turn_id))
+    bounded_limit = max(1, min(500, int(limit)))
+    params.append(bounded_limit)
+    sql = f"""
+        SELECT conversation_id, turn_id, lorebook_id, entry_id,
+               reason, score, included, created_at
+        FROM lore_activation_log
+        WHERE {' AND '.join(clauses)}
+        ORDER BY id DESC
+        LIMIT ?
+    """
+    async with get_db(db_path) as conn:
+        cursor = await conn.execute(sql, params)
+        rows = await cursor.fetchall()
+    return [
+        {
+            "conversation_id": row["conversation_id"],
+            "turn_id": row["turn_id"],
+            "entry_uid": f"{row['lorebook_id']}:{row['entry_id']}",
+            "reason": row["reason"],
+            "score": float(row["score"]),
+            "included": bool(row["included"]),
+            "created_at": row["created_at"],
+        }
+        for row in rows
+    ]
+
+
+async def add_lore_candidate(
+    candidate: LoreCandidate,
+    db_path: Path | None = None,
+) -> LoreCandidate:
+    """Insert a pending candidate, deduplicating identical pending content."""
+    async with get_db(db_path) as conn:
+        cursor = await conn.execute(
+            """
+            SELECT * FROM lore_candidates
+            WHERE status = 'pending'
+              AND target_type = ?
+              AND COALESCE(target_lorebook_id, '') = COALESCE(?, '')
+              AND lower(trim(content)) = lower(trim(?))
+            LIMIT 1
+            """,
+            (
+                candidate.target_type,
+                candidate.target_lorebook_id,
+                candidate.content,
+            ),
+        )
+        existing = await cursor.fetchone()
+        if existing:
+            return _row_to_candidate(existing)
+        await conn.execute(
+            """
+            INSERT INTO lore_candidates
+                (id, conversation_id, target_type, target_lorebook_id,
+                 title, content, keys, entities, confidence, rationale,
+                 source_turn_id, source_excerpt, conflicts_with, status,
+                 accepted_entry_uid, created_at, reviewed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                candidate.id,
+                candidate.conversation_id,
+                candidate.target_type,
+                candidate.target_lorebook_id,
+                candidate.title,
+                candidate.content,
+                _json(candidate.keys),
+                _json(candidate.entities),
+                candidate.confidence,
+                candidate.rationale,
+                candidate.source_turn_id,
+                candidate.source_excerpt,
+                _json(candidate.conflicts_with),
+                candidate.status,
+                candidate.accepted_entry_uid,
+                _iso(candidate.created_at),
+                _iso(candidate.reviewed_at) if candidate.reviewed_at else None,
+            ),
+        )
+        await conn.commit()
+    return candidate
+
+
+async def get_lore_candidate(
+    candidate_id: str,
+    db_path: Path | None = None,
+) -> LoreCandidate | None:
+    async with get_db(db_path) as conn:
+        cursor = await conn.execute(
+            "SELECT * FROM lore_candidates WHERE id = ?",
+            (candidate_id,),
+        )
+        row = await cursor.fetchone()
+    return _row_to_candidate(row) if row else None
+
+
+async def list_lore_candidates(
+    *,
+    status: str | None = "pending",
+    conversation_id: str | None = None,
+    limit: int = 100,
+    db_path: Path | None = None,
+) -> list[LoreCandidate]:
+    clauses = []
+    params: list = []
+    if status is not None:
+        clauses.append("status = ?")
+        params.append(str(status))
+    if conversation_id is not None:
+        clauses.append("conversation_id = ?")
+        params.append(str(conversation_id))
+    sql = "SELECT * FROM lore_candidates"
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    sql += " ORDER BY created_at DESC, id DESC LIMIT ?"
+    params.append(max(1, min(500, int(limit))))
+    async with get_db(db_path) as conn:
+        cursor = await conn.execute(sql, params)
+        rows = await cursor.fetchall()
+    return [_row_to_candidate(row) for row in rows]
+
+
+async def set_lore_candidate_review(
+    candidate_id: str,
+    *,
+    status: str,
+    accepted_entry_uid: str | None = None,
+    db_path: Path | None = None,
+) -> bool:
+    if status not in {"accepted", "rejected"}:
+        raise ValueError("Candidate review status must be accepted or rejected.")
+    async with get_db(db_path) as conn:
+        cursor = await conn.execute(
+            """
+            UPDATE lore_candidates
+            SET status = ?, accepted_entry_uid = ?, reviewed_at = ?
+            WHERE id = ? AND status = 'pending'
+            """,
+            (status, accepted_entry_uid, _iso(), candidate_id),
+        )
+        await conn.commit()
+        return cursor.rowcount > 0
+
+
+async def supersede_entry(
+    entry_uid: str,
+    db_path: Path | None = None,
+) -> bool:
+    async with get_db(db_path) as conn:
+        cursor = await conn.execute(
+            """
+            UPDATE lore_entries SET canon_status = 'superseded', updated_at = ?
+            WHERE uid = ?
+            """,
+            (_iso(), entry_uid),
+        )
+        await conn.commit()
+        return cursor.rowcount > 0

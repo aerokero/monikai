@@ -126,17 +126,22 @@ DEFAULT_SETTINGS = {
         # Model głosowy jest rendererem; każda znacząca tura powinna dostać
         # brief, zamiast polegać na jego płytkim natywnym rozumowaniu.
         "min_interval_sec": 0.0,
-        # 0 = flash zapisuje rozumowanie jawnie w briefie bez dodatkowej,
-        # ukrytej warstwy thinking, która nie mieściła się w timeout_sec.
-        "thinking_budget": 0,
+        # Gemini 3.x: balanced native reasoning. Numeric thinking_budget is a
+        # legacy control and is intentionally not sent to Gemini 3 models.
+        "thinking_level": "medium",
         "timeout_sec": 8.0,
         # A failed quality gate gets one short rewrite pass. If it misses this
         # budget, the original authored response is preserved.
-        "revision_timeout_sec": 2.5,
+        "revision_timeout_sec": 4.0,
         # Structured function-call planning is separate from final authorship.
         "tool_planning_timeout_sec": 4.0,
         # Przerwa po 429/503 — 120 s wyciszało mózg na kilka tur rozmowy.
         "cooldown_sec": 60.0,
+    },
+    "lore_learning": {
+        "enabled": True,
+        "minimum_confidence": 0.78,
+        "timeout_sec": 8.0,
     },
     # Dedicated TTS receives the final immutable text. Set delivery_mode to
     # "live_renderer" only as an explicit compatibility rollback.

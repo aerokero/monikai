@@ -812,6 +812,12 @@ class TelegramBotService:
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
+                    if "HTTP 409" in str(exc):
+                        print(
+                            "[TELEGRAM] Polling disabled for this process: "
+                            "another bot instance already owns getUpdates."
+                        )
+                        return
                     print(f"[TELEGRAM] Polling error: {exc}")
                     await asyncio.sleep(3.0)
         finally:

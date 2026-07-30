@@ -35,6 +35,7 @@ from .handlers.control_handlers import register_control_handlers
 from .handlers.daily_briefing_handlers import register_daily_briefing_handlers
 from .handlers.audio_lifecycle_handlers import register_audio_lifecycle_handlers
 from .handlers.memory_page_handlers import register_memory_page_handlers
+from .handlers.lorebook_handlers import register_lorebook_handlers
 from .handlers.notes_journal_handlers import register_notes_journal_handlers
 from .handlers.openclaw_skill_handlers import register_openclaw_skill_handlers
 from .handlers.settings_profile_handlers import register_settings_profile_handlers
@@ -540,6 +541,12 @@ register_memory_page_handlers(
     resolve_memory_page=lambda path: resolve_memory_page(DATA_DIR, path),
     list_memory_pages=lambda: list_memory_pages(DATA_DIR),
     get_audio_loop=lambda: audio_loop,
+)
+
+register_lorebook_handlers(
+    sio,
+    get_audio_loop=lambda: audio_loop,
+    db_path=DATA_DIR / "monika.db",
 )
 
 register_session_mode_handlers(

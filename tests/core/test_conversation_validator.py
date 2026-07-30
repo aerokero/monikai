@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from backend.conversation.validator import (
     ConversationResponseValidator,
     build_revision_prompt,
@@ -49,6 +51,52 @@ def test_accepts_short_grounded_reply_without_question():
     )
 
     assert result.issues == []
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "To właściwie rzadki komfort, kiedy uwaga nie wymaga wysiłku.",
+        "Masz tę koncentrację fabrycznie wgraną.",
+        "To fabryczne ustawienie, którego można tylko pozazdrościć.",
+        "Oszczędza ci to mnóstwo energii.",
+        "To właściwie luksus, kiedy głowa sama wskakuje na tory.",
+        "Po prostu oddajesz stery tej rutynie.",
+    ],
+)
+def test_rejects_subtle_focus_exceptionalization(reply):
+    result = ConversationResponseValidator().validate(
+        user_text="W sumie nie wiem, tak po prostu mam z automatu.",
+        reply=reply,
+        recent_assistant_messages=[],
+    )
+
+    assert "psychological_inflation" in _codes(result)
+
+
+def test_rejects_unsolicited_advice_and_invented_coffee_motive():
+    validator = ConversationResponseValidator()
+
+    advice = validator.validate(
+        user_text="Jestem w pracy, pracuję.",
+        reply="Odpocznij, kiedy tylko złapiesz chwilę.",
+    )
+    coffee = validator.validate(
+        user_text="Czasami piję kawę w pracy.",
+        reply="Kawa jako narzędzie przetrwania, nie element przyjemności.",
+    )
+
+    assert "unsolicited_advice" in _codes(advice)
+    assert "unsupported_elaboration" in _codes(coffee)
+
+
+def test_rejects_question_after_simple_work_status():
+    result = ConversationResponseValidator().validate(
+        user_text="Całkiem spoko, jestem w pracy, pracuję.",
+        reply="Zwykły roboczy dzień. Masz tam klimatyzację?",
+    )
+
+    assert "unnecessary_question" in _codes(result)
 
 
 def test_detects_question_pressure_across_recent_turns():

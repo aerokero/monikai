@@ -266,6 +266,11 @@ Release metrics include unsupported psychological inference, repeated thesis,
 question pressure, false memory claims, context contamination between worlds,
 character consistency, Polish naturalness, and exactly-once turn handling.
 
+Conversation Lab v2 now implements deterministic per-turn and multi-turn
+checks, the coffee/focus golden regression, prompt fingerprints, redacted JSONL
+traces, latency capture, and baseline comparison. See
+`docs/design/conversation-lab.md`.
+
 ## 11. Delivery phases
 
 ### Phase 1 — Lorebook foundation
@@ -300,16 +305,28 @@ character consistency, Polish naturalness, and exactly-once turn handling.
 
 ### Phase 3 — Full lore retrieval and import
 
-- semantic retrieval and relation expansion;
-- SillyTavern World Info import;
-- generic YAML/JSON/Markdown import/export;
-- world/scenario selection and activation inspection.
+- semantic retrieval and one-hop relation expansion (**local deterministic
+  retrieval implemented; embedding ranker remains optional**);
+- mode-aware World Stack precedence and activation diagnostics
+  (**implemented**);
+- SillyTavern World Info and Character Book import (**implemented**);
+- generic YAML/JSON/Markdown import/export with preview parsing, stable IDs,
+  batch persistence, size limits, and trust downgrading (**implemented**);
+- world/scenario selection, ordering, token budget, file import/export, and
+  activation inspection in the Worlds panel (**implemented**).
 
 ### Phase 4 — Lore learning
 
-- asynchronous fact routing;
-- lore candidates, review, correction, and versioning;
-- editable UI for learned world knowledge.
+- asynchronous post-response fact routing between personal memory, reality,
+  and active fictional worlds (**implemented**);
+- confidence threshold, source provenance, pending candidates, deduplication,
+  and conflict detection (**implemented**);
+- accept/edit/reject review, explicit keep-both or supersede resolution, and
+  exactly-once persistence (**implemented**);
+- proposed and superseded knowledge excluded from activation
+  (**implemented**);
+- review queue embedded in the Worlds panel (**implemented**);
+- richer editing and history browser for learned world knowledge.
 
 ### Phase 5 — Audio separation
 
@@ -326,7 +343,12 @@ character consistency, Polish naturalness, and exactly-once turn handling.
 
 ### Phase 6 — Preference-driven polish
 
-- regenerate/swipe and selected-response tracking;
+- regenerate/swipe and selected-response tracking (**interactive typed-turn
+  slice implemented: one immutable context, uncommitted variants, exactly one
+  selected response reaches transcript/TTS/lore learning**);
+- fail-closed context compilation, mandatory safe revision, model-attempt
+  diagnostics, topic-filtered ambient context and unified lore/v2 database
+  (**implemented**);
 - blind model A/B evaluation on the dialogue suite;
 - iterative character examples based on actual owner preferences.
 

@@ -61,7 +61,9 @@ const RailNav = () => {
   const railPanelLabels = {
     chat: t('navigation.talk'),
     conversations: t('navigation.conversations'),
+    worlds: t('navigation.worlds'),
     notes: t('navigation.journal'),
+    companion: t('companion.tabs.activities'),
     calendar: t('navigation.calendar'),
     profile: t('navigation.her_profile'),
   };
@@ -164,7 +166,7 @@ const RailNav = () => {
               onClick={() => setActiveContext(panel.id)}
               className={`${railButtonBase} ${isActive ? railButtonActive : railButtonIdle}`}
               aria-label={panel.ariaLabel}
-              title={t('panels.' + panel.id)}
+              title={label}
               aria-current={isActive ? 'page' : undefined}
             >
               <IconComponent size={20} />

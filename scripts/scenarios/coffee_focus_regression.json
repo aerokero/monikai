@@ -1,0 +1,85 @@
+{
+  "schema_version": 2,
+  "name": "Kawa i skupienie — bez psychologizowania",
+  "description": "Regresja rozmowy, w której Monika wcześniej wymyślała rytuały, talenty i stabilne cechy oraz powtarzała pytania.",
+  "defaults": {
+    "expect": {
+      "allow_memory_claim": false,
+      "forbid_memory_tool": true,
+      "reject_unsupported_traits": true,
+      "require_compiled_context": true,
+      "require_validation": true,
+      "forbid_fallback_model": true,
+      "max_questions": 1,
+      "max_sentences": 3,
+      "max_chars": 360,
+      "max_similarity_to_previous": 0.62
+    }
+  },
+  "conversation_expect": {
+    "max_total_questions": 1,
+    "max_consecutive_question_turns": 1,
+    "max_adjacent_similarity": 0.58,
+    "forbidden": [
+      "rytuał pracy",
+      "naturalna zdolność",
+      "cenna cecha",
+      "stabilne punkty",
+      "zapiszę to",
+      "naturalne skupienie to rzadkość",
+      "rzadki komfort",
+      "fabrycznie wgran",
+      "fabryczne ustawienie",
+      "tylko pozazdrościć",
+      "oszczędza mnóstwo energii",
+      "narzędzie przetrwania"
+    ]
+  },
+  "turns": [
+    {
+      "text": "Całkiem spoko, jestem w pracy, pracuję.",
+      "expect": {
+        "must_not_ask": true,
+        "forbidden": ["odpocznij", "zrób sobie przerwę"]
+      }
+    },
+    {
+      "text": "Ja kawy nie piję. Znaczy czasami piję, w pracy piję.",
+      "expect": {
+        "must_not_ask": true,
+        "forbidden_inferences": [
+          "rytuał",
+          "pomaga ci się skupić",
+          "narzędzie przetrwania",
+          "nie element przyjemności"
+        ]
+      }
+    },
+    {
+      "text": "W sumie nie wiem, po prostu zawsze jestem skupiony sam z siebie, tak po prostu.",
+      "expect": {
+        "must_not_ask": true,
+        "forbidden_inferences": [
+          "talent",
+          "rzadkość",
+          "rzadki",
+          "nie każdy tak ma",
+          "fabrycznie",
+          "luksus"
+        ]
+      }
+    },
+    {
+      "text": "Tak po prostu, z automatu.",
+      "expect": {
+        "must_not_ask": true,
+        "forbidden_inferences": [
+          "fabrycznie",
+          "pozazdrościć",
+          "oszczędza",
+          "rutyn"
+        ]
+      }
+    }
+  ]
+}

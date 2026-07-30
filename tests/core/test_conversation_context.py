@@ -59,7 +59,7 @@ async def test_compiler_combines_character_current_thread_world_and_lore(tmp_db)
 
     assert "AUTHOR CONTRACT" in compiled.system_instruction
     assert "Anty-wzorce rozmowowe" in compiled.system_instruction
-    assert "**Świat teraz:** czwartek rano." in compiled.user_prompt
+    assert "**Świat teraz:** czwartek rano." not in compiled.user_prompt
     assert 'reality_mode="crossover"' in compiled.user_prompt
     assert 'world="night_city"' in compiled.user_prompt
     assert "Arasaka controls Mikoshi." in compiled.user_prompt
@@ -67,6 +67,38 @@ async def test_compiler_combines_character_current_thread_world_and_lore(tmp_db)
     assert [item.entry.uid for item in compiled.activated_lore] == [
         "night_city:arasaka"
     ]
+
+
+async def test_compiler_filters_ambient_snapshot_by_current_topic(tmp_db):
+    async def snapshot():
+        return (
+            "**Świat wokół Ciebie teraz:**\n"
+            "- Czwartek rano.\n"
+            "- Pogoda: bezchmurnie 34.8°C (Warszawa)\n"
+            "- Na Spotify gra teraz: „Track”."
+        )
+
+    compiler = ConversationContextCompiler(
+        get_history=lambda limit: [],
+        get_conversation_id=lambda: "sess",
+        get_world_snapshot=snapshot,
+        db_path=tmp_db,
+    )
+
+    coffee = await compiler.compile(
+        user_text="Czasami piję kawę w pracy.",
+        author_instruction="AUTHOR",
+    )
+    weather = await compiler.compile(
+        user_text="Jaka jest dzisiaj pogoda i temperatura?",
+        author_instruction="AUTHOR",
+    )
+
+    assert "34.8°C" not in coffee.user_prompt
+    assert "Spotify" not in coffee.user_prompt
+    assert "34.8°C" in weather.user_prompt
+    assert "Spotify" not in weather.user_prompt
+    assert 'usage="only_if_relevant"' in weather.user_prompt
 
 
 async def test_compiler_uses_only_history_provider_scope(tmp_db):

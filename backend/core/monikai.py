@@ -76,6 +76,8 @@ from backend.conversation.speech import (
     GeminiSpeechSynthesizer,
     SpeechSynthesisRequest,
 )
+from backend.conversation.providers import GeminiTextProvider
+from backend.soul.lorebook import LoreLearningEngine
 from backend.conversation.routing import requires_capability_runtime
 from backend.conversation.tools import (
     CONVERSATION_TOOL_DEFINITIONS,
@@ -87,7 +89,7 @@ from backend.conversation.tools import (
 )
 from .conversation_tool_executor import CoreConversationToolExecutor
 from .smart_home_tool_executor import SmartHomeToolExecutor
-from backend.llm.thinker import Thinker
+from backend.llm.thinker import Thinker, THINKER_FALLBACK_MODEL
 from .tool_definitions import tools
 from .system_prompt import SYSTEM_PROMPT
 from backend.services.calendar_manager import CalendarEvent, CalendarManager
@@ -612,6 +614,18 @@ class AudioLoop:
                 "backend.soul.world_snapshot",
                 fromlist=["build_snapshot"],
             ).build_snapshot(),
+        )
+        lore_cfg = APP_SETTINGS.get("lore_learning") or {}
+        self.lore_learning_engine = LoreLearningEngine(
+            provider=GeminiTextProvider(api_key=os.getenv("GEMINI_API_KEY")),
+            model=str(
+                os.getenv("MONIKAI_LORE_LEARNING_MODEL")
+                or THINKER_FALLBACK_MODEL
+            ),
+            db_path=DATA_DIR / "monika.db",
+            minimum_confidence=float(
+                lore_cfg.get("minimum_confidence", 0.78) or 0.78
+            ),
         )
 
         # Workspace for files written by tools
@@ -1430,6 +1444,7 @@ class AudioLoop:
         self.chat_buffer = {"sender": "AI", "text": text}
         self.flush_chat()
         self._ai_turn_open = False
+        self._schedule_lore_learning(text)
 
         self._last_speech_trace = {
             "status": "text_delivered",
@@ -1488,6 +1503,45 @@ class AudioLoop:
             }
             print(f"[SPEECH] synteza nie powiodła się; tekst zachowany: {exc}")
             return True
+
+    def _schedule_lore_learning(self, assistant_reply: str) -> None:
+        """Extract proposals after delivery without adding turn latency."""
+        cfg = APP_SETTINGS.get("lore_learning") or {}
+        if not bool(cfg.get("enabled", True)):
+            return
+        engine = getattr(self, "lore_learning_engine", None)
+        thinker = getattr(self, "thinker", None)
+        trace = dict(getattr(thinker, "last_trace", {}) or {})
+        user_text = str(trace.get("source") or "").strip()
+        authored = str(trace.get("reply_core") or "").strip()
+        if (
+            engine is None
+            or not user_text
+            or authored != str(assistant_reply or "").strip()
+            or trace.get("status") not in {"prepared", "delivered"}
+        ):
+            return
+        conversation_id = str(
+            self.session_manager.get_current_session_id() or "conversation"
+        )
+
+        async def _learn() -> None:
+            timeout = max(1.0, float(cfg.get("timeout_sec", 8.0) or 8.0))
+            try:
+                await asyncio.wait_for(
+                    engine.propose_from_turn(
+                        conversation_id=conversation_id,
+                        user_text=user_text,
+                        assistant_reply=assistant_reply,
+                    ),
+                    timeout=timeout,
+                )
+            except asyncio.TimeoutError:
+                print("[LORE] ekstrakcja propozycji przekroczyła limit czasu.")
+            except Exception as exc:
+                print(f"[LORE] ekstrakcja propozycji nie powiodła się: {exc}")
+
+        asyncio.create_task(_learn())
 
     def build_memory_context(self, user_text: str) -> Optional[str]:
         if not user_text or not getattr(self, "memory_engine", None):

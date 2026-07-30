@@ -5,10 +5,11 @@
  */
 
 import React, { createContext, useState, useCallback } from 'react';
+import { PANELS } from '../config/panelRegistry';
 
 export const MonikaContext = createContext(null);
 
-const CONTEXTS = ['chat', 'conversations', 'study', 'notes', 'companion', 'calendar', 'profile', 'settings'];
+const CONTEXTS = Object.keys(PANELS);
 
 /**
  * MonikaContextProvider
@@ -22,16 +23,9 @@ export const MonikaContextProvider = ({ children }) => {
   const [panelRegistry, setPanelRegistry] = useState({});
 
   // Panel visibility state: { panelId: boolean }
-  const [panelVisibility, setPanelVisibilityState] = useState({
-    chat: true,
-    conversations: false,
-    study: false,
-    notes: false,
-    companion: false,
-    calendar: false,
-    profile: false,
-    settings: false,
-  });
+  const [panelVisibility, setPanelVisibilityState] = useState(() =>
+    Object.fromEntries(CONTEXTS.map((context) => [context, context === 'chat']))
+  );
 
   // Monika visual state (derived from activeContext + backend personality)
   const [monikaState, setMonikaState] = useState({

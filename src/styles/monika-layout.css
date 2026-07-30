@@ -141,10 +141,8 @@
 
 .monika-layout--desktop-wide {
   grid-template-columns: 70px 1fr;
-  grid-template-rows: auto 1fr;
-  grid-template-areas:
-    "rail      context-bar"
-    "rail      workspace";
+  grid-template-rows: 1fr;
+  grid-template-areas: "rail workspace";
   --monika-chat-reserved-space: 282px;
 }
 
@@ -196,10 +194,8 @@
 
 .monika-layout--desktop {
   grid-template-columns: 70px 1fr;
-  grid-template-rows: auto 1fr;
-  grid-template-areas:
-    "rail      context-bar"
-    "rail      workspace";
+  grid-template-rows: 1fr;
+  grid-template-areas: "rail workspace";
   --monika-chat-reserved-space: 272px;
 }
 
@@ -251,11 +247,8 @@
 
 .monika-layout--tablet {
   grid-template-columns: 1fr;
-  grid-template-rows: 70px auto 1fr;
-  grid-template-areas:
-    "rail"
-    "context-bar"
-    "workspace";
+  grid-template-rows: 70px 1fr;
+  grid-template-areas: "rail" "workspace";
   --monika-chat-reserved-space: 224px;
 }
 
@@ -292,11 +285,8 @@
 
 .monika-layout--portrait {
   grid-template-columns: 1fr;
-  grid-template-rows: auto 1fr var(--monika-bottom-rail-height);
-  grid-template-areas:
-    "context-bar"
-    "workspace"
-    "rail";
+  grid-template-rows: 1fr var(--monika-bottom-rail-height);
+  grid-template-areas: "workspace" "rail";
   --monika-chat-reserved-space: 178px;
 }
 
@@ -351,11 +341,8 @@
 
 .monika-layout--landscape-phone {
   grid-template-columns: 1fr;
-  grid-template-rows: auto 1fr var(--monika-bottom-rail-height);
-  grid-template-areas:
-    "context-bar"
-    "workspace"
-    "rail";
+  grid-template-rows: 1fr var(--monika-bottom-rail-height);
+  grid-template-areas: "workspace" "rail";
   --monika-chat-reserved-space: 170px;
 }
 
@@ -393,19 +380,6 @@
     0 -18px 48px rgba(13, 9, 6, 0.54),
     inset 0 1px 0 rgba(255, 246, 233, 0.04);
   animation: monika-bottom-sheet-in var(--monika-transition-normal) cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* ============================================
-   GRID AREAS
-   ============================================ */
-
-.monika-context-bar {
-  grid-area: context-bar;
-  background: linear-gradient(180deg, rgba(24, 17, 12, 0.58), rgba(13, 9, 6, 0.42));
-  backdrop-filter: blur(20px);
-  border-bottom: 1px solid var(--monika-line-warm);
-  padding: 8px 16px;
-  z-index: 45;
 }
 
 .monika-workspace {
@@ -1060,14 +1034,8 @@
 }
 
 /* ============================================
-   CONTEXT BAR STYLING
-   ============================================ */
-
-/* .monika-context-bar defined in GRID AREAS section */
-
-/* ============================================
-   PANEL COMPONENT STYLING
-   ============================================ */
+  PANEL COMPONENT STYLING
+  ============================================ */
 
 .panel-header {
   flex-shrink: 0;
@@ -1179,7 +1147,6 @@
     font-size: 14px;
   }
 
-  .monika-context-bar,
   .monika-info-bar {
     padding: 6px 12px;
     font-size: 12px;
@@ -1255,11 +1222,8 @@
 @media (orientation: portrait) {
   .monika-layout {
     grid-template-columns: 1fr !important;
-    grid-template-rows: auto 1fr var(--monika-bottom-rail-height) !important;
-    grid-template-areas:
-      "context-bar"
-      "workspace"
-      "rail" !important;
+    grid-template-rows: 1fr var(--monika-bottom-rail-height) !important;
+    grid-template-areas: "workspace" "rail" !important;
     --monika-chat-reserved-space: 176px;
   }
 
@@ -1344,7 +1308,6 @@
   z-index: 160 !important;
 }
 
-.monika-layout--portrait-viewport .monika-context-bar,
 .monika-layout--portrait-viewport .mas-clock {
   display: none !important;
 }

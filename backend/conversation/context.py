@@ -25,6 +25,33 @@ WorldSnapshotProvider = Callable[[], str | Awaitable[str]]
 DEFAULT_HISTORY_TURNS = 16
 DEFAULT_TURN_CHARS = 600
 
+_AMBIENT_TOPICS = {
+    "weather": re.compile(
+        r"\b(pogod|temperatur|stopni|upa[łl]|gor[ąa]c|zimn|deszcz|"
+        r"śnieg|snieg|burz|wiatr|cloud|weather|rain|hot|cold)\w*",
+        re.IGNORECASE,
+    ),
+    "time": re.compile(
+        r"\b(godzin|kt[oó]ra|rano|wiecz[oó]r|noc|dzisiaj|dzi[śs]|"
+        r"poniedzia[łl]|wtorek|[śs]rod|czwartek|pi[ąa]tek|sobot|"
+        r"niedziel|time|morning|evening|today)\w*",
+        re.IGNORECASE,
+    ),
+    "spotify": re.compile(
+        r"\b(spotify|muzyk|piosenk|utw[oó]r|album|s[łl]uch|music|song)\w*",
+        re.IGNORECASE,
+    ),
+    "vision": re.compile(
+        r"\b(ekran|kamer|widzisz|sp[oó]jrz|patrz|screen|camera|see)\w*",
+        re.IGNORECASE,
+    ),
+    "gap": re.compile(
+        r"\b(hej|cze[śs][ćc]|siema|dzie[ńn] dobry|dawno|wr[oó]ci|"
+        r"hello|hi|long time)\w*",
+        re.IGNORECASE,
+    ),
+}
+
 
 class ConversationContextCompiler:
     def __init__(
@@ -73,7 +100,10 @@ class ConversationContextCompiler:
             activated,
             reality_mode=stack.reality_mode,
         )
-        world_snapshot = await self._world_snapshot()
+        world_snapshot = self._relevant_world_snapshot(
+            await self._world_snapshot(),
+            user_text,
+        )
 
         system_parts = [
             self._character_prompt.strip(),
@@ -156,3 +186,45 @@ class ConversationContextCompiler:
             return str(value or "").strip()
         except Exception:
             return ""
+
+    @staticmethod
+    def _relevant_world_snapshot(snapshot: str, user_text: str) -> str:
+        """Keep ambient facts available without forcing them into every turn."""
+        raw = str(snapshot or "").strip()
+        if not raw:
+            return ""
+        user = str(user_text or "")
+        active_topics = {
+            topic
+            for topic, pattern in _AMBIENT_TOPICS.items()
+            if pattern.search(user)
+        }
+        if not active_topics:
+            return ""
+
+        selected: list[str] = []
+        for line in raw.splitlines():
+            cleaned = line.strip()
+            lowered = cleaned.casefold()
+            if not cleaned or cleaned.startswith("**"):
+                continue
+            topic = None
+            if "pogoda:" in lowered or "°c" in lowered:
+                topic = "weather"
+            elif "spotify" in lowered:
+                topic = "spotify"
+            elif "ekran" in lowered or "kamer" in lowered:
+                topic = "vision"
+            elif "ostatniej rozmowy" in lowered or "nie rozmawiali" in lowered:
+                topic = "gap"
+            else:
+                topic = "time"
+            if topic in active_topics:
+                selected.append(cleaned)
+        if not selected:
+            return ""
+        return (
+            '<ambient_context usage="only_if_relevant">\n'
+            + "\n".join(selected)
+            + "\n</ambient_context>"
+        )

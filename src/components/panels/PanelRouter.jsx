@@ -14,10 +14,12 @@ import CalendarShellPanel from './CalendarShellPanel';
 import ProfileShellPanel from './ProfileShellPanel';
 import SettingsPanel from './SettingsPanel';
 import ConversationsShellPanel from './ConversationsShellPanel';
+import WorldsShellPanel from './WorldsShellPanel';
 
 const PANEL_COMPONENTS = {
   chat: ChatPanel,
   conversations: ConversationsShellPanel,
+  worlds: WorldsShellPanel,
   study: StudyShellPanel,
   notes: NotesShellPanel,
   companion: CompanionWindow,
@@ -61,6 +63,8 @@ const PanelRouter = ({
   onStartEatTogether = () => {},
   onStopEatTogether = () => {},
   onHeadpat = () => {},
+  onToggleMinecraft = () => {},
+  showMinecraftWindow = false,
   excludeChat = true,
   micDevices = [],
   speakerDevices = [],
@@ -120,6 +124,10 @@ const PanelRouter = ({
           // After "new"/"continue" jump back to the live chat.
           onStarted: () => setActiveContext('chat'),
         };
+      case 'worlds':
+        return {
+          socket,
+        };
       case 'notes':
         return {
           socket,
@@ -138,7 +146,9 @@ const PanelRouter = ({
           onStartEatTogether,
           onStopEatTogether,
           personalityState,
-          allowMinecraft: false,
+          onToggleMinecraft,
+          showMinecraftWindow,
+          allowMinecraft: true,
           embedded: true,
         };
       case 'calendar':

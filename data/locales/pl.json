@@ -390,6 +390,7 @@
   "panels": {
     "chat": "Rozmowa",
     "conversations": "Rozmowy",
+    "worlds": "Światy",
     "study": "Nauka",
     "notes": "Notatki",
     "daily_briefing": "Daily Briefing",
@@ -505,6 +506,15 @@
     "briefing": "Przegląd",
     "relationship": "Relacja",
     "calendar": "Kalendarz",
-    "her_profile": "Profil"
+    "her_profile": "Profil",
+    "worlds": "Światy"
+  },
+  "worlds": {
+    "title": "Światy i lorebooki",
+    "import": "Importuj",
+    "mode": "Tryb rzeczywistości",
+    "books": "Aktywne lorebooki",
+    "empty": "Nie ma jeszcze żadnego lorebooka. Zaimportuj JSON, YAML lub Markdown.",
+    "diagnostics": "Ostatnie aktywacje"
   }
 }

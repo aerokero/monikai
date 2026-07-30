@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 
 from backend.core import model_config as model_config
 from backend.core import monikai
@@ -129,3 +130,43 @@ async def test_authored_reply_is_displayed_and_synthesized_without_rewrite(monke
     assert requests[0].model == "test-tts"
     assert await loop.audio_in_queue.get() == b"\x00\x01" * 8
     assert loop._last_speech_trace["status"] == "audio_delivered"
+
+
+async def test_lore_learning_runs_after_matching_authored_turn(monkeypatch):
+    captured = []
+    finished = asyncio.Event()
+
+    class FakeLearningEngine:
+        async def propose_from_turn(self, **kwargs):
+            captured.append(kwargs)
+            finished.set()
+            return []
+
+    monkeypatch.setitem(
+        monikai.APP_SETTINGS,
+        "lore_learning",
+        {"enabled": True, "timeout_sec": 1.0},
+    )
+    loop = AudioLoop.__new__(AudioLoop)
+    loop.lore_learning_engine = FakeLearningEngine()
+    loop.thinker = SimpleNamespace(
+        last_trace={
+            "status": "prepared",
+            "source": "Pracuję w Warszawie.",
+            "reply_core": "Rozumiem.",
+        }
+    )
+    loop.session_manager = SimpleNamespace(
+        get_current_session_id=lambda: "session-1"
+    )
+
+    loop._schedule_lore_learning("Rozumiem.")
+    await asyncio.wait_for(finished.wait(), timeout=1.0)
+
+    assert captured == [
+        {
+            "conversation_id": "session-1",
+            "user_text": "Pracuję w Warszawie.",
+            "assistant_reply": "Rozumiem.",
+        }
+    ]

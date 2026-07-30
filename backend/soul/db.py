@@ -21,6 +21,23 @@ import aiosqlite
 logger = logging.getLogger(__name__)
 
 _DB_PATH = Path(__file__).parent.parent.parent / "data" / "monika.db"
+_LEGACY_DB_PATH = Path(__file__).parent.parent / "data" / "monika.db"
+_LEGACY_MIGRATION_KEY = "legacy_backend_db_migrated_v1"
+_MIGRATABLE_TABLES = (
+    "memory_entries",
+    "kg_entities",
+    "kg_relationships",
+    "progression_state",
+    "events",
+    "jobs",
+    "flashcards",
+    "lorebooks",
+    "lore_entries",
+    "conversation_world_stacks",
+    "lore_sticky_activations",
+    "lore_activation_log",
+    "lore_candidates",
+)
 
 _SCHEMA = """
 PRAGMA journal_mode = WAL;
@@ -240,6 +257,31 @@ CREATE TABLE IF NOT EXISTS lore_activation_log (
 
 CREATE INDEX IF NOT EXISTS idx_lore_activation_turn
     ON lore_activation_log (conversation_id, turn_id, created_at);
+
+CREATE TABLE IF NOT EXISTS lore_candidates (
+    id                  TEXT PRIMARY KEY,
+    conversation_id     TEXT NOT NULL,
+    target_type         TEXT NOT NULL
+                            CHECK (target_type IN ('personal_memory', 'world_lore', 'fiction_lore')),
+    target_lorebook_id  TEXT,
+    title               TEXT NOT NULL,
+    content             TEXT NOT NULL,
+    keys                TEXT NOT NULL DEFAULT '[]',
+    entities            TEXT NOT NULL DEFAULT '[]',
+    confidence          REAL NOT NULL CHECK (confidence BETWEEN 0 AND 1),
+    rationale           TEXT NOT NULL DEFAULT '',
+    source_turn_id      TEXT,
+    source_excerpt      TEXT NOT NULL DEFAULT '',
+    conflicts_with      TEXT NOT NULL DEFAULT '[]',
+    status              TEXT NOT NULL DEFAULT 'pending'
+                            CHECK (status IN ('pending', 'accepted', 'rejected')),
+    accepted_entry_uid  TEXT,
+    created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    reviewed_at         TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_lore_candidates_status
+    ON lore_candidates (status, conversation_id, created_at DESC);
 """
 
 
@@ -252,6 +294,69 @@ async def init_db(path: Path | None = None) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     async with aiosqlite.connect(db_path) as conn:
         await conn.executescript(_SCHEMA)
+        if (
+            db_path.resolve() == _DB_PATH.resolve()
+            and _LEGACY_DB_PATH.exists()
+            and _LEGACY_DB_PATH.resolve() != db_path.resolve()
+        ):
+            marker = await conn.execute(
+                "SELECT 1 FROM progression_state WHERE key = ?",
+                (_LEGACY_MIGRATION_KEY,),
+            )
+            already_migrated = await marker.fetchone()
+            if not already_migrated:
+                await conn.execute(
+                    "ATTACH DATABASE ? AS legacy_monika",
+                    (str(_LEGACY_DB_PATH.resolve()),),
+                )
+                copied = 0
+                try:
+                    for table in _MIGRATABLE_TABLES:
+                        legacy_info = await conn.execute(
+                            f'PRAGMA legacy_monika.table_info("{table}")'
+                        )
+                        legacy_columns = [
+                            str(row[1]) for row in await legacy_info.fetchall()
+                        ]
+                        main_info = await conn.execute(
+                            f'PRAGMA main.table_info("{table}")'
+                        )
+                        main_columns = {
+                            str(row[1]) for row in await main_info.fetchall()
+                        }
+                        columns = [
+                            column
+                            for column in legacy_columns
+                            if column in main_columns
+                        ]
+                        if not columns:
+                            continue
+                        quoted = ", ".join(f'"{column}"' for column in columns)
+                        cursor = await conn.execute(
+                            f'INSERT OR IGNORE INTO main."{table}" ({quoted}) '
+                            f'SELECT {quoted} FROM legacy_monika."{table}"'
+                        )
+                        if cursor.rowcount and cursor.rowcount > 0:
+                            copied += cursor.rowcount
+                    await conn.execute(
+                        """
+                        INSERT OR REPLACE INTO progression_state
+                            (key, value, updated_at)
+                        VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+                        """,
+                        (_LEGACY_MIGRATION_KEY, f'{{"copied_rows":{copied}}}'),
+                    )
+                    await conn.commit()
+                except Exception:
+                    await conn.rollback()
+                    raise
+                finally:
+                    await conn.execute("DETACH DATABASE legacy_monika")
+                logger.info(
+                    "Migrated %s legacy rows from %s",
+                    copied,
+                    _LEGACY_DB_PATH,
+                )
         await conn.commit()
     logger.info("Database ready at %s", db_path)
 

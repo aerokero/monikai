@@ -236,7 +236,6 @@ export const Z_INDEX = {
   panelContent: 30,
   panelBackdrop: 35,
   rail: 40,
-  contextBar: 45,
   overlays: 50,
   modals: 60,
   notifications: 70

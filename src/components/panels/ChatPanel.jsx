@@ -1,21 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  BookOpen,
-  ClipboardList,
-  Gamepad2,
-  Gift,
-  Heart,
+  Check,
+  ChevronLeft,
+  ChevronRight,
   Maximize2,
-  MessageSquare,
   Mic,
   MicOff,
   Plus,
-  Settings,
+  Sparkles,
   Terminal,
   Upload,
-  Utensils,
   X,
-  Zap,
 } from '../icons';
 import AudioBar from '../AudioBar';
 import { useAudioVideo } from '../../contexts/AudioVideoContext';
@@ -129,27 +124,6 @@ function cleanDialogueText(text) {
     .trim();
 }
 
-const ActivityTile = ({ icon: Icon, title, description, onClick, accentClass, active = false }) => (
-  <button
-    onClick={onClick}
-    className={`group rounded-xl border p-3 text-left transition-all duration-200 hover:-translate-y-0.5 ${
-      active
-        ? 'border-[rgba(232,178,102,0.32)] bg-[rgba(232,178,102,0.08)]'
-        : 'border-[rgba(232,178,102,0.12)] bg-[rgba(255,238,212,0.035)] hover:border-[rgba(232,178,102,0.22)] hover:bg-[rgba(255,238,212,0.06)]'
-    }`}
-  >
-    <div className="flex items-start gap-3">
-      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${accentClass}`}>
-        <Icon size={18} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-sm font-semibold text-white">{title}</div>
-        <div className="mt-1 text-[13px] leading-relaxed text-white/80">{description}</div>
-      </div>
-    </div>
-  </button>
-);
-
 const ChatPanel = ({
   messages = [],
   inputValue = '',
@@ -161,20 +135,9 @@ const ChatPanel = ({
   isExpanded = false,
   onToggleExpand = () => {},
   agenticLogs = [],
-  studyModeActive = false,
-  onShareStudyPage = null,
   onMinimizedChange = null,
   onSizeChange = null,
-  onOpenSettings = () => {},
-  onHeadpat = null,
-  eatTogetherActive = false,
-  onStartEatTogether = null,
-  onStopEatTogether = null,
-  onToggleMinecraft = null,
-  showMinecraftWindow = false,
   sessionActive = false,
-  onToggleSession = null,
-  onOpenStudy = null,
   compactDock = false,
 }) => {
   const { t } = useLanguage();
@@ -183,12 +146,24 @@ const ChatPanel = ({
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
+  const draftTimerRef = useRef(null);
+  const draftRequestIdRef = useRef('');
 
   const [attachments, setAttachments] = useState([]);
   const [attachError, setAttachError] = useState('');
-  const [viewMode, setViewMode] = useState('chat');
-  const [localEatTogetherActive, setLocalEatTogetherActive] = useState(false);
   const [prevAgenticLogLength, setPrevAgenticLogLength] = useState(0);
+  const [conversationLab, setConversationLab] = useState(() => {
+    try {
+      return localStorage.getItem('conversation_lab_enabled') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [draftSet, setDraftSet] = useState(null);
+  const [draftIndex, setDraftIndex] = useState(0);
+  const [draftBusy, setDraftBusy] = useState(false);
+  const [draftError, setDraftError] = useState('');
+  const [draftProgress, setDraftProgress] = useState(null);
   
   // Auto-show agentic log when there's new agent activity (context-based)
   const hasAgenticActivity = useMemo(() => agenticLogs && agenticLogs.length > 0, [agenticLogs]);
@@ -230,13 +205,45 @@ const ChatPanel = ({
     const observer = new ResizeObserver(() => notify());
     observer.observe(node);
     return () => observer.disconnect();
-  }, [onSizeChange, viewMode, attachments.length, showAgenticLog, isExpanded]);
+  }, [onSizeChange, attachments.length, showAgenticLog, isExpanded]);
 
   useEffect(() => () => {
     attachments.forEach((item) => {
       if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
     });
   }, [attachments]);
+
+  useEffect(() => {
+    if (!socket) return undefined;
+    const onProgress = (payload) => {
+      if (
+        payload?.request_id
+        && payload.request_id !== draftRequestIdRef.current
+      ) {
+        return;
+      }
+      setDraftProgress(payload || null);
+    };
+    const onDisconnect = () => {
+      if (!draftRequestIdRef.current) return;
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+      draftTimerRef.current = null;
+      draftRequestIdRef.current = '';
+      setDraftBusy(false);
+      setDraftError('Połączenie z backendem zostało przerwane.');
+      setDraftProgress(null);
+    };
+    socket.on('conversation_draft_progress', onProgress);
+    socket.on('disconnect', onDisconnect);
+    return () => {
+      socket.off('conversation_draft_progress', onProgress);
+      socket.off('disconnect', onDisconnect);
+    };
+  }, [socket]);
+
+  useEffect(() => () => {
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+  }, []);
 
   const visibleMessages = useMemo(() => {
     const list = Array.isArray(messages) ? messages : [];
@@ -252,9 +259,28 @@ const ChatPanel = ({
     () => attachments.reduce((sum, item) => sum + (item?.file?.size || 0), 0),
     [attachments]
   );
-  const canSend = Boolean((inputValue || '').trim()) || attachments.length > 0;
-  const isEatTogetherActive = Boolean(eatTogetherActive || localEatTogetherActive);
+  const canSend = (
+    Boolean((inputValue || '').trim()) || attachments.length > 0
+  ) && !draftBusy && !draftSet;
   const dialogueMessages = visibleMessages.slice(-8);
+  const draftProgressLabel = useMemo(() => {
+    const stage = draftProgress?.stage;
+    if (stage === 'compiling_context') return 'Kompiluję historię, postać i aktywne lore…';
+    if (stage === 'context_ready') return 'Kontekst gotowy. Uruchamiam model tekstowy…';
+    if (stage === 'generating_candidate') {
+      return `Generuję wariant ${Math.min(
+        (draftProgress?.ready_count || 0) + 1,
+        draftProgress?.target_count || 3,
+      )} z ${draftProgress?.target_count || 3}…`;
+    }
+    if (stage === 'candidate_ready') {
+      return `Gotowe ${draftProgress?.ready_count || 0} z ${
+        draftProgress?.target_count || 3
+      } wariantów…`;
+    }
+    if (stage === 'timeout') return 'Model przekroczył limit czasu; zachowuję gotowe warianty…';
+    return 'Wysyłam żądanie do backendu…';
+  }, [draftProgress]);
   const userSenderAliases = useMemo(() => {
     const aliases = new Set(['you', 'ty', 'user']);
     const localizedYou = String(t('chat.you') || '').trim().toLowerCase();
@@ -263,59 +289,6 @@ const ChatPanel = ({
   }, [t]);
 
   const isUserMessage = (sender) => userSenderAliases.has(String(sender || '').trim().toLowerCase());
-
-  const handleAction = (action, arg) => {
-    let text = '';
-
-    switch (action) {
-      case 'eat':
-        if (isEatTogetherActive) {
-          if (typeof onStopEatTogether === 'function') onStopEatTogether();
-          setLocalEatTogetherActive(false);
-          text = "That was nice. Let's wrap up our little meal together.";
-        } else {
-          if (typeof onStartEatTogether === 'function') onStartEatTogether();
-          setLocalEatTogetherActive(true);
-          text = "Let's eat together for a bit. I want something cozy and low-key.";
-        }
-        break;
-      case 'headpat':
-        text = 'headpat for you';
-        if (typeof onHeadpat === 'function') onHeadpat();
-        break;
-      case 'gift': {
-        const gift = window.prompt(t('companion.activities.gift_prompt'));
-        if (gift) text = `I brought you a little gift: ${gift}.`;
-        break;
-      }
-      case 'minecraft':
-        if (typeof onToggleMinecraft === 'function') {
-          onToggleMinecraft();
-          return;
-        }
-        text = "Let's play Minecraft together!";
-        break;
-      case 'study':
-        if (typeof onOpenStudy === 'function') {
-          onOpenStudy();
-          return;
-        }
-        text = "Let's study Japanese together.";
-        break;
-      case 'session':
-        if (typeof onToggleSession === 'function') {
-          onToggleSession(arg);
-          return;
-        }
-        break;
-      default:
-        return;
-    }
-
-    if (text && socket) {
-      socket.emit('user_input', { text });
-    }
-  };
 
   const clearAttachments = () => {
     setAttachments((current) => {
@@ -397,9 +370,105 @@ const ChatPanel = ({
       }
     }
 
-    handleSend({ key: 'Enter', attachments: payloadAttachments });
+    const useConversationLab = conversationLab && attachments.length === 0;
+    if (useConversationLab) {
+      if (!socket?.connected) {
+        setDraftError('Backend jest rozłączony. Uruchom serwer i połącz sesję.');
+        return;
+      }
+      const requestId = `draft-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      draftRequestIdRef.current = requestId;
+      setDraftBusy(true);
+      setDraftError('');
+      setDraftProgress({ stage: 'requesting', ready_count: 0, target_count: 3 });
+      draftTimerRef.current = setTimeout(() => {
+        if (draftRequestIdRef.current !== requestId) return;
+        draftRequestIdRef.current = '';
+        draftTimerRef.current = null;
+        setDraftBusy(false);
+        setDraftProgress(null);
+        setDraftError(
+          'Generowanie przekroczyło 35 sekund. Backend lub model nie odpowiedział.',
+        );
+      }, 35000);
+      handleSend({
+        key: 'Enter',
+        attachments: payloadAttachments,
+        conversationLab: true,
+        candidateCount: 3,
+        requestId,
+        onDraftResult: (result) => {
+          if (draftRequestIdRef.current !== requestId) return;
+          if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+          draftTimerRef.current = null;
+          draftRequestIdRef.current = '';
+          setDraftBusy(false);
+          setDraftProgress(null);
+          if (!result?.ok || !Array.isArray(result?.candidates) || !result.candidates.length) {
+            const contextError = result?.trace?.context?.error;
+            setDraftError(
+              contextError
+                ? `Błąd kontekstu: ${contextError}`
+                : (result?.error || 'Nie udało się przygotować wariantów.'),
+            );
+            return;
+          }
+          setDraftSet(result);
+          setDraftIndex(0);
+        },
+      });
+    } else {
+      handleSend({ key: 'Enter', attachments: payloadAttachments });
+    }
     clearAttachments();
     textareaRef.current?.focus();
+  };
+
+  const toggleConversationLab = () => {
+    const next = !conversationLab;
+    setConversationLab(next);
+    try {
+      localStorage.setItem('conversation_lab_enabled', String(next));
+    } catch {}
+  };
+
+  const selectDraft = () => {
+    if (!socket || !draftSet || draftBusy) return;
+    setDraftBusy(true);
+    setDraftError('');
+    socket.emit(
+      'conversation_draft_select',
+      {
+        response_set_id: draftSet.response_set_id,
+        index: draftIndex,
+        speak: true,
+      },
+      (result) => {
+        setDraftBusy(false);
+        if (!result?.ok) {
+          setDraftError(result?.error || 'Nie udało się zatwierdzić odpowiedzi.');
+          return;
+        }
+        setDraftSet(null);
+        setDraftIndex(0);
+      },
+    );
+  };
+
+  const cancelDraft = () => {
+    if (socket && draftSet?.response_set_id) {
+      socket.emit('conversation_draft_cancel', {
+        response_set_id: draftSet.response_set_id,
+      });
+    }
+    setDraftSet(null);
+    setDraftIndex(0);
+    setDraftBusy(false);
+    setDraftError('');
+    setDraftProgress(null);
+    draftRequestIdRef.current = '';
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = null;
   };
 
   const handleKeyDown = async (event) => {
@@ -447,11 +516,9 @@ const ChatPanel = ({
           boxShadow: 'none',
         }}
       >
-        {/* Content Area - Main scrollable messages and views */}
+        {/* Content Area - Main scrollable messages */}
         {!compactDock && (
           <div className="monika-chat-panel-content flex-1 min-h-0 overflow-y-auto custom-scrollbar relative flex flex-col px-1 pb-2 pt-0 z-10">
-        {/* Chat View */}
-        {viewMode === 'chat' && (
           <div className="flex min-h-full flex-col">
             <div className="mt-auto" />
             {showAgenticLog && hasAgenticActivity ? (
@@ -511,93 +578,96 @@ const ChatPanel = ({
                 </div>
               </div>
             ) : null}
+            {(draftBusy || draftSet || draftError) ? (
+              <div className="mb-4 px-5">
+                <div className="max-w-[min(82%,52rem)] rounded-[22px] border border-[rgba(232,178,102,0.2)] bg-[rgba(17,12,10,0.82)] px-5 py-4 shadow-[0_14px_30px_rgba(0,0,0,0.3)]">
+                  <div className="mb-2 flex items-center justify-between text-[11px] uppercase tracking-[0.15em] text-[rgba(232,178,102,0.75)]">
+                    <span className="flex items-center gap-2">
+                      <Sparkles size={13} />
+                      Conversation Lab
+                    </span>
+                    {draftSet ? (
+                      <span>{draftIndex + 1} / {draftSet.candidates.length}</span>
+                    ) : null}
+                  </div>
+                  {draftBusy && !draftSet ? (
+                    <div className="text-sm text-[rgba(255,240,218,0.65)]">
+                      {draftProgressLabel}
+                    </div>
+                  ) : null}
+                  {draftSet ? (
+                    <>
+                      <div className="min-h-[3.5rem] text-[clamp(1rem,1.1vw,1.15rem)] font-medium leading-[1.42] text-[rgba(255,248,238,0.94)]">
+                        {renderMarkdown(draftSet.candidates[draftIndex]?.text)}
+                      </div>
+                      <div className="mt-2 font-mono text-[10px] text-white/35">
+                        {draftSet.diagnostics?.author_model || 'model nieznany'}
+                        {' · '}
+                        {draftSet.context?.status || 'kontekst nieznany'}
+                        {draftSet.diagnostics?.candidate_attempts?.[draftIndex]?.latency_ms
+                          ? ` · ${Math.round(
+                            draftSet.diagnostics.candidate_attempts[draftIndex].latency_ms,
+                          )} ms`
+                          : ''}
+                      </div>
+                      <div className="mt-3 flex items-center justify-between">
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setDraftIndex((current) => (
+                              current <= 0 ? draftSet.candidates.length - 1 : current - 1
+                            ))}
+                            className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.06] text-white/70 transition hover:bg-white/[0.1] hover:text-white"
+                            title="Poprzedni wariant"
+                          >
+                            <ChevronLeft size={15} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDraftIndex((current) => (
+                              (current + 1) % draftSet.candidates.length
+                            ))}
+                            className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.06] text-white/70 transition hover:bg-white/[0.1] hover:text-white"
+                            title="Następny wariant"
+                          >
+                            <ChevronRight size={15} />
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={cancelDraft}
+                            className="rounded-full px-3 py-1.5 text-xs text-white/55 transition hover:bg-white/[0.06] hover:text-white/80"
+                          >
+                            Anuluj
+                          </button>
+                          <button
+                            type="button"
+                            onClick={selectDraft}
+                            disabled={draftBusy}
+                            className="flex items-center gap-1.5 rounded-full bg-[rgba(232,178,102,0.92)] px-3.5 py-1.5 text-xs font-semibold text-[#20160f] transition hover:bg-[rgba(255,205,128,1)] disabled:opacity-50"
+                          >
+                            <Check size={13} />
+                            Wybierz
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+                  {draftError ? (
+                    <div className="mt-2 text-xs text-[#df8978]">{draftError}</div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
             <div ref={messagesEndRef} />
           </div>
-        )}
-
-        {/* Activities View */}
-        {viewMode === 'activities' && (
-          <div className="mb-3 rounded-[18px] border border-[rgba(232,178,102,0.12)] bg-black/45 p-4 shadow-[0_14px_34px_rgba(0,0,0,0.48)] backdrop-blur-md">
-            <div className="grid grid-cols-2 gap-3">
-              <ActivityTile
-                icon={Utensils}
-                title={t('companion.activities.eat')}
-                description={t('companion.activities.eat_desc')}
-                onClick={() => handleAction('eat')}
-                accentClass={isEatTogetherActive ? 'bg-orange-500/32 text-orange-100' : 'bg-orange-500/22 text-orange-200'}
-                active={isEatTogetherActive}
-              />
-              <ActivityTile
-                icon={Heart}
-                title={t('companion.activities.headpat')}
-                description={t('companion.activities.headpat_desc')}
-                onClick={() => handleAction('headpat')}
-                accentClass="bg-[rgba(226,151,153,0.18)] text-[rgba(255,210,210,0.9)]"
-              />
-              <ActivityTile
-                icon={Gift}
-                title={t('companion.activities.gift')}
-                description={t('companion.activities.gift_desc')}
-                onClick={() => handleAction('gift')}
-                accentClass="bg-violet-500/22 text-violet-200"
-              />
-              <ActivityTile
-                icon={Gamepad2}
-                title={t('companion.activities.minecraft') || 'Minecraft'}
-                description={t('companion.activities.minecraft_desc') || 'Open the Minecraft companion activity panel.'}
-                onClick={() => handleAction('minecraft')}
-                accentClass={showMinecraftWindow ? 'bg-emerald-500/32 text-emerald-100' : 'bg-emerald-500/22 text-emerald-200'}
-                active={Boolean(showMinecraftWindow)}
-              />
-              <ActivityTile
-                icon={BookOpen}
-                title={t('companion.study.japanese_together') || 'Japanese Study Together'}
-                description={t('companion.study.desc') || 'Open study materials and learn together.'}
-                onClick={() => handleAction('study')}
-                accentClass={studyModeActive ? 'bg-cyan-500/32 text-cyan-100' : 'bg-cyan-500/22 text-cyan-200'}
-                active={Boolean(studyModeActive)}
-              />
-              {sessionActive ? (
-                <ActivityTile
-                  icon={ClipboardList}
-                  title={t('companion.session.end')}
-                  description={t('companion.session.end_desc')}
-                  onClick={() => handleAction('session')}
-                  accentClass="bg-amber-500/32 text-amber-100"
-                  active={true}
-                />
-              ) : (
-                <>
-                  <ActivityTile
-                    icon={Heart}
-                    title={t('companion.session.talk') || 'I need to talk'}
-                    description={t('companion.session.talk_desc') || 'A calm, warm conversation.'}
-                    onClick={() => handleAction('session', 'reflective')}
-                    accentClass="bg-amber-500/22 text-amber-200"
-                    active={false}
-                  />
-                  <ActivityTile
-                    icon={ClipboardList}
-                    title={t('companion.session.work') || 'I want to work on something'}
-                    description={t('companion.session.work_desc') || 'Deeper, therapeutic work.'}
-                    onClick={() => handleAction('session', 'therapy')}
-                    accentClass="bg-amber-500/22 text-amber-200"
-                    active={false}
-                  />
-                </>
-              )}
-            </div>
-          </div>
-        )}
-
           </div>
         )}
 
         {/* Unified Bottom Bar - All controls in one place */}
         <div className="shrink-0 text-sm px-6">
-          {/* Input Row - Only shows in chat or activities */}
-          {(compactDock || viewMode === 'chat' || viewMode === 'activities') && (
-            <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2">
               <div className="flex min-h-[64px] items-center gap-3 rounded-full border border-[rgba(232,178,102,0.16)] bg-[rgba(13,10,9,0.88)] px-4 py-2 shadow-[0_14px_34px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,234,198,0.05)] backdrop-blur-xl">
                 <input
                   ref={fileInputRef}
@@ -620,6 +690,34 @@ const ChatPanel = ({
                     </span>
                   )}
                 </button>
+                <button
+                  type="button"
+                  onClick={toggleConversationLab}
+                  title={conversationLab ? 'Wyłącz Conversation Lab' : 'Włącz Conversation Lab'}
+                  aria-pressed={conversationLab}
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition ${
+                    conversationLab
+                      ? 'bg-[rgba(232,178,102,0.12)] text-[rgba(232,178,102,0.95)]'
+                      : 'text-[rgba(255,240,218,0.58)] hover:bg-[rgba(255,238,212,0.08)] hover:text-[rgba(255,248,235,0.95)]'
+                  }`}
+                >
+                  <Sparkles size={18} />
+                </button>
+                {hasAgenticActivity && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAgenticLog(!showAgenticLog)}
+                    title="Agent logs"
+                    aria-pressed={showAgenticLog}
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition ${
+                      showAgenticLog
+                        ? 'bg-[rgba(232,178,102,0.12)] text-[rgba(232,178,102,0.95)]'
+                        : 'text-[rgba(255,240,218,0.58)] hover:bg-[rgba(255,238,212,0.08)] hover:text-[rgba(255,248,235,0.95)]'
+                    }`}
+                  >
+                    <Terminal size={18} />
+                  </button>
+                )}
                 <textarea
                   ref={textareaRef}
                   value={inputValue}
@@ -690,53 +788,6 @@ const ChatPanel = ({
               </div>
             ) : null}
           </div>
-        )}
-
-        {/* Menu Bar - Icon tabs */}
-        <div className="mt-2 flex items-center justify-center gap-1">
-          {[
-            { mode: 'chat', icon: MessageSquare, title: t('chat.chat_tab') || 'Chat' },
-            { mode: 'activities', icon: Zap, title: t('chat.activities_tab') || 'Activities' },
-          ].map(({ mode, icon: Icon, title }) => (
-            <button
-              key={mode}
-              onClick={() => setViewMode(mode)}
-              title={title}
-              className={`flex items-center justify-center w-7 h-7 rounded-lg transition-all ${
-                viewMode === mode
-                  ? 'text-[rgba(232,178,102,0.95)] bg-[rgba(232,178,102,0.12)]'
-                  : 'text-[rgba(255,224,190,0.36)] hover:text-[rgba(255,240,218,0.68)] hover:bg-[rgba(255,238,212,0.055)]'
-              }`}
-            >
-              <Icon size={14} />
-            </button>
-          ))}
-
-          <div className="w-px h-4 bg-white/10 mx-1" />
-
-          <button
-            type="button"
-            onClick={onOpenSettings}
-            title={t('chat.settings_tab') || 'Settings'}
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-[rgba(255,224,190,0.36)] transition-all hover:bg-[rgba(255,238,212,0.055)] hover:text-[rgba(255,240,218,0.68)]"
-          >
-            <Settings size={14} />
-          </button>
-
-          {hasAgenticActivity && (
-            <button
-              onClick={() => setShowAgenticLog(!showAgenticLog)}
-              title="Agent logs"
-              className={`flex items-center justify-center w-7 h-7 rounded-lg transition-all ${
-                showAgenticLog
-                  ? 'text-[rgba(232,178,102,0.95)] bg-[rgba(232,178,102,0.12)]'
-                  : 'text-[rgba(255,224,190,0.36)] hover:text-[rgba(255,240,218,0.68)] hover:bg-[rgba(255,238,212,0.055)]'
-              }`}
-            >
-              <Terminal size={14} />
-            </button>
-          )}
-        </div>
       </div>
       </div>
     </div>

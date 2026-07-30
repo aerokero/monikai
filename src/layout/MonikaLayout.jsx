@@ -13,7 +13,6 @@ import MonikaSprite from './MonikaSprite';
 import MASClock from './MASClock';
 import RailNav from '../components/shared/RailNav';
 import WindowTopBar from '../components/shared/WindowTopBar';
-import ContextBar from '../components/shared/ContextBar';
 import PanelRouter from '../components/panels/PanelRouter';
 import ChatPanel from '../components/panels/ChatPanel';
 
@@ -22,7 +21,7 @@ import ChatPanel from '../components/panels/ChatPanel';
  * Root layout container providing responsive grid structure
  * Monika sprite is central, panels adapt around her based on viewport
  *
- * Auto-wires: RailNav, ContextBar, and PanelRouter based on activeContext
+ * Auto-wires: RailNav and PanelRouter based on activeContext
  *
  * @component
  * @param {Object} props
@@ -132,7 +131,7 @@ const MonikaLayout = ({
   }, [layoutMode, hasUtilityPanel]);
 
   const panelContainerClassName = useMemo(() => {
-    const sharedShellClass = ['settings', 'calendar', 'notes'].includes(resolvedContext) ? ' is-settings' : '';
+    const sharedShellClass = ['settings', 'calendar', 'notes', 'worlds'].includes(resolvedContext) ? ' is-settings' : '';
     return `monika-panel-container is-${resolvedContext}${sharedShellClass}`;
   }, [resolvedContext]);
 
@@ -142,9 +141,6 @@ const MonikaLayout = ({
 
       {/* Rail Navigation (Left/Bottom/Top depending on layout) */}
       <RailNav />
-
-      {/* Context Bar (Top, shows current activity) */}
-      <ContextBar />
 
       {/* Main Workspace (Monika + Other Panels) */}
       <div className="monika-workspace" role="main">
@@ -182,6 +178,8 @@ const MonikaLayout = ({
               onStartEatTogether={onStartEatTogether}
               onStopEatTogether={onStopEatTogether}
               onHeadpat={onHeadpat}
+              onToggleMinecraft={onToggleMinecraft}
+              showMinecraftWindow={showMinecraftWindow}
               excludeChat={true}
               micDevices={micDevices}
               speakerDevices={speakerDevices}
@@ -230,20 +228,9 @@ const MonikaLayout = ({
             isExpanded={isExpanded}
             onToggleExpand={() => setIsExpanded((current) => !current)}
             agenticLogs={agenticLogs}
-            studyModeActive={resolvedContext === 'study'}
-            onShareStudyPage={onShareStudyPage}
             onMinimizedChange={onChatMinimizedChange}
             onSizeChange={onChatSizeChange}
-            onOpenSettings={() => setActiveContext('settings')}
-            onHeadpat={onHeadpat}
-            eatTogetherActive={eatTogetherActive}
-            onStartEatTogether={onStartEatTogether}
-            onStopEatTogether={onStopEatTogether}
-            onToggleMinecraft={onToggleMinecraft}
-            showMinecraftWindow={showMinecraftWindow}
             sessionActive={sessionActive}
-            onToggleSession={onToggleSession}
-            onOpenStudy={onOpenStudy}
           />
         </div>
       </div>

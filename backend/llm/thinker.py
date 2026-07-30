@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from contextvars import ContextVar, Token
 from html import escape
+import hashlib
 import os
 import re
 import time
@@ -38,7 +39,11 @@ THINKER_MODEL = os.getenv(
 )
 THINKER_FALLBACK_MODEL = os.getenv(
     "MONIKAI_CONVERSATION_FALLBACK_MODEL",
-    os.getenv("MONIKAI_THINKER_FALLBACK_MODEL", "gemini-3.5-flash-lite"),
+    os.getenv("MONIKAI_THINKER_FALLBACK_MODEL", "gemini-3.1-pro-preview"),
+)
+THINKER_EMERGENCY_MODEL = os.getenv(
+    "MONIKAI_CONVERSATION_EMERGENCY_MODEL",
+    "gemini-3.5-flash-lite",
 )
 MAX_THOUGHT_CHARS = 600
 MAX_HISTORY_TURNS = 8
@@ -67,6 +72,14 @@ _FALLBACK_CARD = (
 _TASK_INSTRUCTION = AUTHOR_INSTRUCTION
 
 _card_cache: Optional[str] = None
+
+
+class ContextCompilationError(RuntimeError):
+    """The configured immutable context could not be built for this turn."""
+
+
+def _compact_error(exc: Exception, limit: int = 500) -> str:
+    return re.sub(r"\s+", " ", str(exc or "")).strip()[:limit]
 
 
 def _load_card() -> str:
@@ -128,9 +141,11 @@ class Thinker:
         self._text_provider = None
         self._last_success_model: str | None = None
         self.fallback_model = THINKER_FALLBACK_MODEL
+        self.emergency_model = THINKER_EMERGENCY_MODEL
         self.last_trace: Dict = {}
         self._last_context_trace: Dict = {}
         self._last_validation_trace: Dict = {}
+        self._generation_attempts: list[dict] = []
         self._validator = ConversationResponseValidator()
         # 120 s wyciszało mózg na kilka tur w środku żywej rozmowy; 60 s
         # wystarcza, a settings["thinker"]["cooldown_sec"] pozwala stroić.
@@ -209,8 +224,38 @@ class Thinker:
         503 gets one same-model retry; 429 goes directly to the lower-cost
         fallback because retrying the exhausted model burns turn latency.
         """
+        async def attempt(label: str, model: str, generate) -> str:
+            started = time.monotonic()
+            try:
+                result = await generate()
+                self._generation_attempts.append(
+                    {
+                        "attempt": label,
+                        "model": model,
+                        "status": "success",
+                        "latency_ms": round((time.monotonic() - started) * 1000, 1),
+                    }
+                )
+                return result
+            except Exception as exc:
+                self._generation_attempts.append(
+                    {
+                        "attempt": label,
+                        "model": model,
+                        "status": "error",
+                        "latency_ms": round((time.monotonic() - started) * 1000, 1),
+                        "error_type": type(exc).__name__,
+                        "error": _compact_error(exc),
+                    }
+                )
+                raise
+
         try:
-            return await self._generate(user_text)
+            return await attempt(
+                "primary",
+                THINKER_MODEL,
+                lambda: self._generate(user_text),
+            )
         except Exception as exc:
             msg = str(exc)
             is_overload = "503" in msg or "UNAVAILABLE" in msg
@@ -221,13 +266,43 @@ class Thinker:
             if is_overload:
                 await asyncio.sleep(self.overload_retry_delay_sec)
                 try:
-                    return await self._generate(user_text)
+                    return await attempt(
+                        "primary_retry",
+                        THINKER_MODEL,
+                        lambda: self._generate(user_text),
+                    )
                 except Exception as retry_exc:
                     last_error = retry_exc
             if not self.fallback_model:
                 raise last_error
             print(f"[THINKER] primary niedostępny — fallback: {self.fallback_model}")
-            return await self._generate_on_model(user_text, self.fallback_model)
+            try:
+                return await attempt(
+                    "fallback",
+                    self.fallback_model,
+                    lambda: self._generate_on_model(
+                        user_text,
+                        self.fallback_model,
+                    ),
+                )
+            except Exception as fallback_exc:
+                if (
+                    not self.emergency_model
+                    or self.emergency_model == self.fallback_model
+                ):
+                    raise
+                print(
+                    "[THINKER] fallback niedostępny — awaryjny model: "
+                    f"{self.emergency_model}"
+                )
+                return await attempt(
+                    "emergency_fallback",
+                    self.emergency_model,
+                    lambda: self._generate_on_model(
+                        user_text,
+                        self.emergency_model,
+                    ),
+                )
 
     def update_voice_transcript(self, text: str) -> None:
         """Store the latest ASR revision without generating a partial brief."""
@@ -271,6 +346,201 @@ class Thinker:
             return None
         self.last_trace = {**self.last_trace, "status": "prepared"}
         return reply
+
+    async def prepare_reply_candidates(
+        self,
+        text: str,
+        *,
+        count: int = 3,
+        timeout_sec: float | None = None,
+        turn_evidence: str | None = None,
+        on_progress: Callable[[dict], Awaitable[None] | None] | None = None,
+    ) -> tuple[str, ...]:
+        """Author several uncommitted replies from one immutable context.
+
+        This is the Conversation Lab boundary: callers may show and compare
+        these drafts, but must explicitly select one before publishing it to
+        the transcript, memory pipeline or speech renderer.
+        """
+        cleaned = self._gate(text)
+        if cleaned is None:
+            self.last_trace = {"source": str(text or "").strip(), "status": "skipped"}
+            return ()
+        self._mark_shot()
+        target_count = max(1, min(4, int(count or 1)))
+        if timeout_sec is None:
+            per_candidate = float(self._config().get("timeout_sec", 8.0) or 8.0)
+            timeout_sec = per_candidate * target_count
+
+        async def progress(payload: dict) -> None:
+            if on_progress is None:
+                return
+            value = on_progress(payload)
+            if asyncio.iscoroutine(value):
+                await value
+
+        await progress({"stage": "compiling_context", "target_count": target_count})
+        compiled = await self._compile_turn_context(cleaned, turn_evidence=turn_evidence)
+        if self._context_compiler is not None and compiled is None:
+            self.last_trace = {
+                "source": cleaned,
+                "status": "context_error",
+                "context": dict(self._last_context_trace),
+                "generation": [],
+            }
+            await progress(
+                {
+                    "stage": "error",
+                    "error": "Nie udało się skompilować kontekstu rozmowy.",
+                }
+            )
+            return ()
+        await progress(
+            {
+                "stage": "context_ready",
+                "context": dict(self._last_context_trace),
+                "target_count": target_count,
+            }
+        )
+        token = self._compiled_context.set(compiled)
+        candidates: list[str] = []
+        validation_traces: list[dict] = []
+        candidate_traces: list[dict] = []
+        deadline = time.monotonic() + max(1.0, float(timeout_sec))
+        try:
+            # A small retry allowance handles providers returning an identical
+            # sample without changing the context or prompt between variants.
+            max_attempts = target_count + 2
+            for attempt_index in range(max_attempts):
+                if len(candidates) >= target_count:
+                    break
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                await progress(
+                    {
+                        "stage": "generating_candidate",
+                        "attempt": attempt_index + 1,
+                        "ready_count": len(candidates),
+                        "target_count": target_count,
+                    }
+                )
+                started = time.monotonic()
+                raw = await asyncio.wait_for(
+                    self._generate_with_retry(cleaned),
+                    timeout=remaining,
+                )
+                brief = _parse_response_brief(raw)
+                if brief is None:
+                    candidate_traces.append(
+                        {
+                            "attempt": attempt_index + 1,
+                            "status": "invalid",
+                            "latency_ms": round(
+                                (time.monotonic() - started) * 1000, 1
+                            ),
+                        }
+                    )
+                    continue
+                brief, validation_trace = await self._validate_compiled_candidate(
+                    compiled=compiled,
+                    user_text=cleaned,
+                    candidate=brief,
+                    timeout_sec=max(0.1, min(remaining, float(
+                        self._config().get("revision_timeout_sec", 2.5) or 2.5
+                    ))),
+                )
+                validation_traces.append(validation_trace)
+                if brief is None:
+                    candidate_traces.append(
+                        {
+                            "attempt": attempt_index + 1,
+                            "status": "rejected",
+                            "latency_ms": round(
+                                (time.monotonic() - started) * 1000, 1
+                            ),
+                            "validation": validation_trace,
+                        }
+                    )
+                    continue
+                reply = re.sub(r"\s+", " ", brief.reply or "").strip()
+                if reply and reply.casefold() not in {
+                    item.casefold() for item in candidates
+                }:
+                    candidates.append(reply)
+                    candidate_traces.append(
+                        {
+                            "attempt": attempt_index + 1,
+                            "status": "ready",
+                            "latency_ms": round(
+                                (time.monotonic() - started) * 1000, 1
+                            ),
+                            "validation": validation_trace,
+                        }
+                    )
+                    await progress(
+                        {
+                            "stage": "candidate_ready",
+                            "ready_count": len(candidates),
+                            "target_count": target_count,
+                            "latency_ms": candidate_traces[-1]["latency_ms"],
+                        }
+                    )
+                else:
+                    candidate_traces.append(
+                        {
+                            "attempt": attempt_index + 1,
+                            "status": "duplicate",
+                            "latency_ms": round(
+                                (time.monotonic() - started) * 1000, 1
+                            ),
+                            "validation": validation_trace,
+                        }
+                    )
+        except asyncio.TimeoutError:
+            await progress(
+                {
+                    "stage": "timeout",
+                    "ready_count": len(candidates),
+                    "target_count": target_count,
+                }
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self._note_generate_failure(exc)
+            if not candidates:
+                self.last_trace = {
+                    "source": cleaned,
+                    "status": "error",
+                    "error": str(exc),
+                    "context": dict(self._last_context_trace),
+                    "generation": list(self._generation_attempts),
+                }
+                await progress({"stage": "error", "error": _compact_error(exc)})
+                return ()
+        finally:
+            self._compiled_context.reset(token)
+
+        self.last_trace = {
+            "source": cleaned,
+            "status": "candidates_ready" if candidates else "invalid_or_pass",
+            "author_model": self._last_success_model,
+            "candidate_count": len(candidates),
+            "candidates": list(candidates),
+            "context": dict(self._last_context_trace),
+            "validation": validation_traces,
+            "candidate_attempts": candidate_traces,
+            "generation": list(self._generation_attempts),
+        }
+        await progress(
+            {
+                "stage": "complete",
+                "ready_count": len(candidates),
+                "target_count": target_count,
+            }
+        )
+        return tuple(candidates)
 
     async def finalize_voice_turn(self, text: str = "") -> bool:
         """Compatibility helper; runtime uses prepare + ordered realtime send."""
@@ -317,6 +587,7 @@ class Thinker:
                 "status": "timeout",
                 "context": dict(self._last_context_trace),
                 "validation": dict(self._last_validation_trace),
+                "generation": list(self._generation_attempts),
             }
             print("[THINKER] brief porzucony — model tekstowy nie zdążył w limicie.")
             return None
@@ -329,6 +600,7 @@ class Thinker:
                 "error": str(exc),
                 "context": dict(self._last_context_trace),
                 "validation": dict(self._last_validation_trace),
+                "generation": list(self._generation_attempts),
             }
             self._note_generate_failure(exc)
             return None
@@ -338,6 +610,7 @@ class Thinker:
                 "status": "invalid_or_pass",
                 "context": dict(self._last_context_trace),
                 "validation": dict(self._last_validation_trace),
+                "generation": list(self._generation_attempts),
             }
             return None
         injection = brief.to_injection(cleaned)
@@ -350,6 +623,7 @@ class Thinker:
             "injection": injection,
             "context": dict(self._last_context_trace),
             "validation": dict(self._last_validation_trace),
+            "generation": list(self._generation_attempts),
         }
         diagnostic = brief.diagnostic_text()
         print(f"[THINKER] brief: {diagnostic}")
@@ -368,36 +642,15 @@ class Thinker:
         turn_evidence: str | None = None,
     ) -> str:
         """Compile one immutable turn context and reuse it for all retries."""
-        compiled = None
-        self._last_success_model = None
-        self._last_context_trace = {}
+        compiled = await self._compile_turn_context(
+            user_text,
+            turn_evidence=turn_evidence,
+        )
         self._last_validation_trace = {"status": "not_run", "issues": []}
-        if self._context_compiler is not None:
-            try:
-                conversation_id = str(self._get_conversation_id() or "conversation")
-                turn_id = f"{conversation_id}:turn_{uuid4().hex[:12]}"
-                compiled = await self._context_compiler.compile(
-                    user_text=user_text,
-                    author_instruction=_TASK_INSTRUCTION,
-                    turn_id=turn_id,
-                    turn_evidence=turn_evidence,
-                )
-                self._last_context_trace = {
-                    "conversation_id": compiled.conversation_id,
-                    "turn_id": compiled.turn_id,
-                    "reality_mode": compiled.reality_mode,
-                    "activated_lore": [
-                        {
-                            "uid": item.entry.uid,
-                            "reason": item.reason,
-                            "score": item.score,
-                        }
-                        for item in compiled.activated_lore
-                    ],
-                    "tool_evidence": bool(turn_evidence),
-                }
-            except Exception as exc:
-                print(f"[THINKER] context compiler fallback: {exc}")
+        if self._context_compiler is not None and compiled is None:
+            raise ContextCompilationError(
+                str(self._last_context_trace.get("error") or "context compilation failed")
+            )
 
         token = self._compiled_context.set(compiled)
         try:
@@ -408,7 +661,11 @@ class Thinker:
                 else await generation
             )
             brief = _parse_response_brief(raw)
-            if compiled is None or brief is None:
+            if brief is None:
+                self._last_validation_trace = {
+                    "status": "invalid_response",
+                    "issues": [],
+                }
                 return raw
 
             validation = self._validator.validate(
@@ -422,6 +679,9 @@ class Thinker:
             }
             if not validation.needs_rewrite:
                 return raw
+            if compiled is None:
+                self._last_validation_trace["status"] = "rejected_no_revision_context"
+                return ""
 
             try:
                 revision_timeout = float(
@@ -438,7 +698,7 @@ class Thinker:
                 revised = _parse_response_brief(revised_raw)
                 if revised is None:
                     self._last_validation_trace["status"] = "revision_invalid"
-                    return raw
+                    return ""
                 revised_validation = self._validator.validate(
                     user_text=user_text,
                     reply=revised.reply,
@@ -455,15 +715,136 @@ class Thinker:
                         issue.code for issue in revised_validation.issues
                     ],
                 }
+                if revised_validation.needs_rewrite:
+                    return ""
                 return revised_raw
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 self._last_validation_trace["status"] = "revision_failed"
-                self._last_validation_trace["error"] = str(exc)
-                return raw
+                self._last_validation_trace["error_type"] = type(exc).__name__
+                self._last_validation_trace["error"] = (
+                    _compact_error(exc) or type(exc).__name__
+                )
+                return ""
         finally:
             self._compiled_context.reset(token)
+
+    async def _compile_turn_context(
+        self,
+        user_text: str,
+        *,
+        turn_evidence: str | None = None,
+    ) -> CompiledConversationContext | None:
+        self._last_success_model = None
+        self._generation_attempts = []
+        self._last_context_trace = {"status": "not_configured"}
+        if self._context_compiler is None:
+            return None
+        try:
+            conversation_id = str(self._get_conversation_id() or "conversation")
+            turn_id = f"{conversation_id}:turn_{uuid4().hex[:12]}"
+            compiled = await self._context_compiler.compile(
+                user_text=user_text,
+                author_instruction=_TASK_INSTRUCTION,
+                turn_id=turn_id,
+                turn_evidence=turn_evidence,
+            )
+            self._last_context_trace = {
+                "status": "compiled",
+                "conversation_id": compiled.conversation_id,
+                "turn_id": compiled.turn_id,
+                "reality_mode": compiled.reality_mode,
+                "activated_lore": [
+                    {
+                        "uid": item.entry.uid,
+                        "reason": item.reason,
+                        "score": item.score,
+                    }
+                    for item in compiled.activated_lore
+                ],
+                "tool_evidence": bool(turn_evidence),
+                "system_instruction_sha256": hashlib.sha256(
+                    compiled.system_instruction.encode("utf-8")
+                ).hexdigest(),
+                "user_prompt_sha256": hashlib.sha256(
+                    compiled.user_prompt.encode("utf-8")
+                ).hexdigest(),
+                "system_instruction_chars": len(compiled.system_instruction),
+                "user_prompt_chars": len(compiled.user_prompt),
+            }
+            return compiled
+        except Exception as exc:
+            self._last_context_trace = {
+                "status": "error",
+                "error_type": type(exc).__name__,
+                "error": _compact_error(exc),
+            }
+            print(f"[THINKER] context compiler error: {_compact_error(exc)}")
+            return None
+
+    async def _validate_compiled_candidate(
+        self,
+        *,
+        compiled: CompiledConversationContext | None,
+        user_text: str,
+        candidate: ResponseBrief,
+        timeout_sec: float,
+    ) -> tuple[ResponseBrief | None, dict]:
+        validation = self._validator.validate(
+            user_text=user_text,
+            reply=candidate.reply,
+            recent_assistant_messages=self._recent_assistant_messages(),
+        )
+        trace = {
+            "status": "rewrite_needed" if validation.needs_rewrite else "passed",
+            "issues": [issue.code for issue in validation.issues],
+        }
+        if not validation.needs_rewrite:
+            return candidate, trace
+        if compiled is None:
+            return None, {**trace, "status": "rejected_no_revision_context"}
+        try:
+            revised_raw = await asyncio.wait_for(
+                self._revise_once(
+                    compiled=compiled,
+                    candidate=candidate,
+                    issues=validation.issues,
+                ),
+                timeout=timeout_sec,
+            )
+            revised = _parse_response_brief(revised_raw)
+            if revised is None:
+                return None, {**trace, "status": "revision_invalid"}
+            revised_validation = self._validator.validate(
+                user_text=user_text,
+                reply=revised.reply,
+                recent_assistant_messages=self._recent_assistant_messages(),
+            )
+            revised_trace = {
+                "status": (
+                    "corrected"
+                    if not revised_validation.needs_rewrite
+                    else "corrected_with_remaining_issues"
+                ),
+                "issues": trace["issues"],
+                "remaining_issues": [
+                    issue.code for issue in revised_validation.issues
+                ],
+            }
+            return (
+                None if revised_validation.needs_rewrite else revised,
+                revised_trace,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            return None, {
+                **trace,
+                "status": "revision_failed",
+                "error_type": type(exc).__name__,
+                "error": _compact_error(exc) or type(exc).__name__,
+            }
 
     def _recent_assistant_messages(self) -> list[str]:
         try:
@@ -498,6 +879,7 @@ class Thinker:
             model=model,
             system_instruction=compiled.system_instruction,
             prompt=prompt,
+            thinking_level_override="low",
         )
 
     def close(self) -> None:
@@ -527,22 +909,38 @@ class Thinker:
         model: str,
         system_instruction: str,
         prompt: str,
+        thinking_level_override: str | None = None,
     ) -> str:
         if self._text_provider is None:
             self._text_provider = GeminiTextProvider(
                 api_key=os.getenv("GEMINI_API_KEY")
             )
-        thinking_budget = int(self._config().get("thinking_budget", 0) or 0)
-        is_fallback_3 = (
-            model == self.fallback_model and str(model).startswith("gemini-3")
+        config = self._config()
+        is_gemini_3 = str(model).startswith("gemini-3")
+        thinking_level = (
+            str(
+                thinking_level_override
+                or config.get("thinking_level")
+                or "medium"
+            ).strip().lower()
+            if is_gemini_3
+            else None
+        )
+        if thinking_level not in {"minimal", "low", "medium", "high"}:
+            thinking_level = "medium"
+        legacy_budget = config.get("thinking_budget")
+        thinking_budget = (
+            int(legacy_budget)
+            if legacy_budget is not None and not is_gemini_3
+            else None
         )
         return await self._text_provider.generate(
             TextGenerationRequest(
                 model=model,
                 system_instruction=system_instruction,
                 prompt=prompt,
-                thinking_level="minimal" if is_fallback_3 else None,
-                thinking_budget=None if is_fallback_3 else thinking_budget,
+                thinking_level=thinking_level,
+                thinking_budget=thinking_budget,
             )
         )
 

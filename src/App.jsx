@@ -1473,7 +1473,21 @@ function AppContent() {
     }
 
     const shouldAutoShare = Boolean(showStudyWindow && studyShareRef.current && isCurrentPageRequest(text));
-    const sendToBackend = () => socket.emit('user_input', { text, attachments });
+    const sendToBackend = () => {
+      if (e.conversationLab && text && attachments.length === 0) {
+        socket.emit(
+          'conversation_draft_turn',
+          {
+            text,
+            count: e.candidateCount || 3,
+            request_id: e.requestId || '',
+          },
+          typeof e.onDraftResult === 'function' ? e.onDraftResult : undefined,
+        );
+        return;
+      }
+      socket.emit('user_input', { text, attachments });
+    };
     if (shouldAutoShare) {
       try {
         studyShareRef.current();

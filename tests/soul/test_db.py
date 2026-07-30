@@ -98,3 +98,61 @@ async def test_init_db_is_idempotent(tmp_path):
     db_path = tmp_path / "idem.db"
     await init_db(path=db_path)
     await init_db(path=db_path)  # second call must not raise
+
+
+async def test_init_db_migrates_split_legacy_database_once(tmp_path, monkeypatch):
+    import aiosqlite
+    from backend.soul import db
+
+    canonical = tmp_path / "data" / "monika.db"
+    legacy = tmp_path / "backend" / "data" / "monika.db"
+    await db.init_db(path=legacy)
+    async with aiosqlite.connect(legacy) as conn:
+        await conn.execute(
+            """
+            INSERT INTO memory_entries
+                (id, type, content, importance, created_at)
+            VALUES ('legacy-memory', 'semantic', 'ważny fakt', 1,
+                    '2026-01-01T00:00:00Z')
+            """
+        )
+        await conn.execute(
+            """
+            INSERT INTO progression_state (key, value, updated_at)
+            VALUES ('legacy-key', '"legacy-value"', '2026-01-01T00:00:00Z')
+            """
+        )
+        await conn.commit()
+
+    monkeypatch.setattr(db, "_DB_PATH", canonical)
+    monkeypatch.setattr(db, "_LEGACY_DB_PATH", legacy)
+    await db.init_db()
+    await db.init_db()
+
+    async with aiosqlite.connect(canonical) as conn:
+        memory_count = (
+            await (
+                await conn.execute(
+                    "SELECT COUNT(*) FROM memory_entries WHERE id='legacy-memory'"
+                )
+            ).fetchone()
+        )[0]
+        state_count = (
+            await (
+                await conn.execute(
+                    "SELECT COUNT(*) FROM progression_state WHERE key='legacy-key'"
+                )
+            ).fetchone()
+        )[0]
+        marker_count = (
+            await (
+                await conn.execute(
+                    "SELECT COUNT(*) FROM progression_state WHERE key=?",
+                    (db._LEGACY_MIGRATION_KEY,),
+                )
+            ).fetchone()
+        )[0]
+
+    assert memory_count == 1
+    assert state_count == 1
+    assert marker_count == 1

@@ -42,6 +42,25 @@ export const PANELS = {
     ariaLabel: 'Conversation history',
     keyboardShortcut: 'Alt+2'
   },
+  worlds: {
+    id: 'worlds',
+    name: 'Worlds',
+    displayName: 'Worlds',
+    description: 'Manage lorebooks and active worlds',
+    icon: 'Globe',
+    contextKey: 'worlds',
+    component: 'WorldsShellPanel',
+    order: 3,
+    draggable: false,
+    collapsible: true,
+    dockPreference: {
+      desktop: 'main-panel',
+      tablet: 'drawer',
+      portrait: 'drawer'
+    },
+    ariaLabel: 'Lorebooks and active worlds',
+    keyboardShortcut: 'Alt+3'
+  },
   study: {
     id: 'study',
     name: 'Study',
@@ -83,10 +102,10 @@ export const PANELS = {
   },
   companion: {
     id: 'companion',
-    name: 'Companion',
-    displayName: 'Companion',
+    name: 'Activities',
+    displayName: 'Activities',
     description: 'Activities and session controls',
-    icon: 'Heart',
+    icon: 'Zap',
     contextKey: 'companion',
     component: 'CompanionWindow',
     order: 4,
@@ -97,9 +116,8 @@ export const PANELS = {
       tablet: 'drawer',
       portrait: 'drawer'
     },
-    ariaLabel: 'Companion actions',
-    keyboardShortcut: 'Alt+5',
-    hiddenInRail: true
+    ariaLabel: 'Activities and companion actions',
+    keyboardShortcut: 'Alt+4'
   },
   calendar: {
     id: 'calendar',

@@ -68,7 +68,7 @@ const CompanionWindow = ({
   allowMinecraft = true,
 }) => {
   const { t } = useLanguage();
-  const [activeTab, setActiveTab] = useState('session');
+  const [activeTab, setActiveTab] = useState('activities');
   const isWide = width >= 700;
 
   const handleAction = (action) => {

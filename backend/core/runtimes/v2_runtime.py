@@ -17,9 +17,10 @@ import time
 from typing import Optional
 import urllib.request
 
+from ..config import DATA_DIR as _DATA_DIR
+
 logger = logging.getLogger(__name__)
 
-_DATA_DIR = Path(__file__).parent.parent.parent / "data"
 _DB_PATH = _DATA_DIR / "monika.db"
 
 _weather_cache = None

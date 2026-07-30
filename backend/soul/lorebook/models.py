@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Literal
+from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -23,6 +24,10 @@ LoreEntryType = Literal[
 ]
 LoreMatchMode = Literal["any", "all", "primary_and_secondary"]
 CanonStatus = Literal["canonical", "learned", "proposed", "superseded"]
+LoreCandidateTarget = Literal[
+    "personal_memory", "world_lore", "fiction_lore"
+]
+LoreCandidateStatus = Literal["pending", "accepted", "rejected"]
 
 
 class Lorebook(BaseModel):
@@ -110,4 +115,32 @@ class WorldStack(BaseModel):
         clean = list(dict.fromkeys(str(v).strip() for v in values if str(v).strip()))
         if any(":" not in value for value in clean):
             raise ValueError("pinned entries must use 'lorebook_id:entry_id'")
+        return clean
+
+
+class LoreCandidate(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    conversation_id: str
+    target_type: LoreCandidateTarget
+    target_lorebook_id: str | None = None
+    title: str
+    content: str
+    keys: list[str] = Field(default_factory=list)
+    entities: list[str] = Field(default_factory=list)
+    confidence: float = Field(ge=0.0, le=1.0)
+    rationale: str = ""
+    source_turn_id: str | None = None
+    source_excerpt: str = ""
+    conflicts_with: list[str] = Field(default_factory=list)
+    status: LoreCandidateStatus = "pending"
+    accepted_entry_uid: str | None = None
+    created_at: datetime = Field(default_factory=_utcnow)
+    reviewed_at: datetime | None = None
+
+    @field_validator("conversation_id", "title", "content")
+    @classmethod
+    def candidate_required_text(cls, value: str) -> str:
+        clean = str(value or "").strip()
+        if not clean:
+            raise ValueError("candidate text fields must be non-empty")
         return clean
