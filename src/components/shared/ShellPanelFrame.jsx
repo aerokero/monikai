@@ -9,7 +9,7 @@ const ShellPanelFrame = ({
   actions = null,
   children,
   className = '',
-  bodyClassName = '',
+  bodyClassName = 'flex flex-col h-full overflow-hidden',
 }) => {
   return (
     <section

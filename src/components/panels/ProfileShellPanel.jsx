@@ -3,54 +3,27 @@ import { User, Edit2, Save, X, Heart, Cake } from '../icons';
 import ShellPanelFrame from '../shared/ShellPanelFrame';
 import useElementSize from '../../hooks/useElementSize';
 import { useLanguage } from '../../contexts/LanguageContext';
-
-const Field = ({ label, value }) => (
-  <div className="flex items-baseline justify-between gap-4 border-b border-[#2c1e15] py-2.5 last:border-0">
-    <span className="shrink-0 text-xs text-[#8c7769]">{label}</span>
-    <span className="text-right text-sm text-[#f5e6d3]">{value}</span>
-  </div>
-);
+import { SectionLabel, Card, SummaryField, TextField, SelectField, TextAreaField } from '../shared/panelPrimitives';
 
 const Section = ({ title, icon: Icon, children }) => (
   <div>
-    <div className="mb-3 flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.22em] text-[#8c7769]/60">
-      {Icon && <Icon size={11} className="text-[#de9d50]/70" />}
-      {title}
-    </div>
-    <div className="rounded-lg border border-[#2c1e15] bg-[#140d08]/40 px-4">
-      {children}
-    </div>
+    <SectionLabel>
+      <span className="flex items-center gap-1.5">
+        {Icon && <Icon size={11} className="text-[#de9d50]/70" />}
+        {title}
+      </span>
+    </SectionLabel>
+    <Card className="px-4">{children}</Card>
   </div>
 );
 
-const InputField = ({ label, type = 'text', value, onChange, placeholder = '' }) => (
-  <div className="flex flex-col gap-1.5">
-    <label className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8c7769]/70">{label}</label>
-    <input
-      type={type}
-      value={value}
-      onChange={onChange}
-      placeholder={placeholder}
-      className="rounded-lg border border-[#3c2e26] bg-[#1e1612] px-3 py-2 text-sm text-[#f5e6d3] placeholder-[#8c7769]/40 transition-colors focus:border-[#de9d50] focus:outline-none"
-    />
-  </div>
-);
-
-const SelectField = ({ label, value, onChange, options }) => (
-  <div className="flex flex-col gap-1.5">
-    <label className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8c7769]/70">{label}</label>
-    <select
-      value={value}
-      onChange={onChange}
-      className="rounded-lg border border-[#3c2e26] bg-[#1e1612] px-3 py-2 text-sm text-[#f5e6d3] transition-colors focus:border-[#de9d50] focus:outline-none"
-    >
-      <option value="">—</option>
-      {options.map((opt) => (
-        <option key={opt.value} value={opt.value}>{opt.label}</option>
-      ))}
-    </select>
-  </div>
-);
+const GENDER_OPTIONS = [
+  { value: '', label: '—' },
+  { value: 'M', label: 'Male' },
+  { value: 'F', label: 'Female' },
+  { value: 'Other', label: 'Other' },
+  { value: 'Prefer not to say', label: 'Prefer not to say' },
+];
 
 const ProfileShellPanel = ({ socket = null }) => {
   const { t } = useLanguage();
@@ -105,55 +78,35 @@ const ProfileShellPanel = ({ socket = null }) => {
   /* ── Edit mode ─────────────────────────────────────────────────── */
   if (isEditing) {
     return (
-      <ShellPanelFrame
-        icon={null}
-        title="Edit Profile"
-        titleClassName="font-serif text-[28px] text-[#f5e6d3] font-normal tracking-wide py-1"
-        headerClassName="flex items-start justify-between gap-4 border-b border-[#2c1e15] bg-transparent px-6 pt-6 pb-4"
-        bodyClassName="flex flex-col h-full overflow-hidden"
-      >
+      <ShellPanelFrame icon={User} title="Edit Profile">
         <div ref={panelRef} className="flex-1 overflow-y-auto px-6 py-4 pb-10 custom-scrollbar">
           <div className="flex flex-col gap-5">
             <Section title="Personal" icon={User}>
               <div className="space-y-3.5 py-4">
-                <InputField label="Name" value={formData.user_name} onChange={set('user_name')} placeholder="Your name" />
-                <SelectField
-                  label="Gender"
-                  value={formData.gender}
-                  onChange={set('gender')}
-                  options={[
-                    { value: 'M', label: 'Male' },
-                    { value: 'F', label: 'Female' },
-                    { value: 'Other', label: 'Other' },
-                    { value: 'Prefer not to say', label: 'Prefer not to say' },
-                  ]}
-                />
-                <InputField label="Birthday" type="date" value={formData.birthday} onChange={set('birthday')} />
-                <InputField label="Location" value={formData.location} onChange={set('location')} placeholder="City, Country" />
-                <InputField label="Occupation" value={formData.occupation} onChange={set('occupation')} placeholder="Your job or profession" />
+                <TextField label="Name" value={formData.user_name} onChange={set('user_name')} placeholder="Your name" />
+                <SelectField label="Gender" value={formData.gender} onChange={set('gender')} options={GENDER_OPTIONS} />
+                <TextField label="Birthday" type="date" value={formData.birthday} onChange={set('birthday')} />
+                <TextField label="Location" value={formData.location} onChange={set('location')} placeholder="City, Country" />
+                <TextField label="Occupation" value={formData.occupation} onChange={set('occupation')} placeholder="Your job or profession" />
               </div>
             </Section>
 
             <Section title="About you" icon={Heart}>
               <div className="space-y-3.5 py-4">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8c7769]/70">Interests</label>
-                  <textarea
-                    value={formData.interests}
-                    onChange={set('interests')}
-                    placeholder="Your hobbies and interests..."
-                    className="h-20 resize-none rounded-lg border border-[#3c2e26] bg-[#1e1612] px-3 py-2 text-sm text-[#f5e6d3] placeholder-[#8c7769]/40 transition-colors focus:border-[#de9d50] focus:outline-none"
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8c7769]/70">Personality</label>
-                  <textarea
-                    value={formData.personality_traits}
-                    onChange={set('personality_traits')}
-                    placeholder="Describe your personality..."
-                    className="h-20 resize-none rounded-lg border border-[#3c2e26] bg-[#1e1612] px-3 py-2 text-sm text-[#f5e6d3] placeholder-[#8c7769]/40 transition-colors focus:border-[#de9d50] focus:outline-none"
-                  />
-                </div>
+                <TextAreaField
+                  label="Interests"
+                  value={formData.interests}
+                  onChange={set('interests')}
+                  placeholder="Your hobbies and interests..."
+                  className="h-20"
+                />
+                <TextAreaField
+                  label="Personality"
+                  value={formData.personality_traits}
+                  onChange={set('personality_traits')}
+                  placeholder="Describe your personality..."
+                  className="h-20"
+                />
               </div>
             </Section>
 
@@ -182,11 +135,8 @@ const ProfileShellPanel = ({ socket = null }) => {
   /* ── View mode ─────────────────────────────────────────────────── */
   return (
     <ShellPanelFrame
-      icon={null}
+      icon={User}
       title={profile.user_name || 'Profile'}
-      titleClassName="font-serif text-[28px] text-[#f5e6d3] font-normal tracking-wide py-1"
-      headerClassName="flex items-start justify-between gap-4 border-b border-[#2c1e15] bg-transparent px-6 pt-6 pb-4"
-      bodyClassName="flex flex-col h-full overflow-hidden"
       actions={(
         <button
           onClick={handleEditToggle}
@@ -211,18 +161,18 @@ const ProfileShellPanel = ({ socket = null }) => {
         {!isLoading && socket && (
           <div className="flex flex-col gap-5">
             <Section title="Personal" icon={User}>
-              {profile.user_name && <Field label="Name" value={profile.user_name} />}
-              {profile.gender && <Field label="Gender" value={profile.gender} />}
+              {profile.user_name && <SummaryField label="Name" value={profile.user_name} />}
+              {profile.gender && <SummaryField label="Gender" value={profile.gender} />}
               {profile.birthday && (
-                <Field
+                <SummaryField
                   label={<span className="flex items-center gap-1"><Cake size={11} />Birthday</span>}
                   value={new Date(profile.birthday).toLocaleDateString()}
                 />
               )}
-              {profile.location && <Field label="Location" value={profile.location} />}
-              {profile.occupation && <Field label="Occupation" value={profile.occupation} />}
+              {profile.location && <SummaryField label="Location" value={profile.location} />}
+              {profile.occupation && <SummaryField label="Occupation" value={profile.occupation} />}
               {!profile.user_name && !profile.birthday && !profile.location && !profile.occupation && (
-                <p className="py-4 text-sm text-[#8c7769]/50">No information yet.</p>
+                <p className="py-4 text-sm text-[#8c7769]/70">No information yet.</p>
               )}
             </Section>
 

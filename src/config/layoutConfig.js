@@ -98,111 +98,6 @@ export const getMonikaConfig = (layoutMode, viewportWidth, viewportHeight) => {
 };
 
 /**
- * Rail (navigation) configuration per layout mode
- */
-export const getRailConfig = (layoutMode) => {
-  const configs = {
-    [LAYOUT_MODES.DESKTOP_WIDE]: {
-      position: 'left',
-      width: 80,
-      height: '100vh',
-      displayMode: 'icons-and-labels',
-      orientation: 'vertical',
-      zIndex: 40
-    },
-    [LAYOUT_MODES.DESKTOP]: {
-      position: 'left',
-      width: 70,
-      height: '100vh',
-      displayMode: 'icons',
-      orientation: 'vertical',
-      zIndex: 40
-    },
-    [LAYOUT_MODES.TABLET]: {
-      position: 'top',
-      height: 56,
-      width: '100%',
-      displayMode: 'icons-and-labels',
-      orientation: 'horizontal',
-      zIndex: 40
-    },
-    [LAYOUT_MODES.PORTRAIT]: {
-      position: 'bottom',
-      height: 56,
-      width: '100%',
-      displayMode: 'icons-and-labels-compact',
-      orientation: 'horizontal',
-      zIndex: 40
-    },
-    [LAYOUT_MODES.LANDSCAPE_PHONE]: {
-      position: 'bottom',
-      height: 48,
-      width: '100%',
-      displayMode: 'icons-only',
-      orientation: 'horizontal',
-      zIndex: 40
-    }
-  };
-
-  return configs[layoutMode] || configs[LAYOUT_MODES.DESKTOP];
-};
-
-/**
- * Panel container configuration per layout mode
- */
-export const getPanelConfig = (layoutMode) => {
-  const configs = {
-    [LAYOUT_MODES.DESKTOP_WIDE]: {
-      position: 'right',
-      width: 'calc(100% - 400px - 80px)',  // Full width minus Monika space and rail
-      maxWidth: 600,
-      height: '100%',
-      displayMode: 'side-panel',
-      scrollable: true,
-      zIndex: 30
-    },
-    [LAYOUT_MODES.DESKTOP]: {
-      position: 'right',
-      width: 'calc(100% - 300px - 70px)',
-      maxWidth: 500,
-      height: '100%',
-      displayMode: 'side-panel',
-      scrollable: true,
-      zIndex: 30
-    },
-    [LAYOUT_MODES.TABLET]: {
-      position: 'bottom',
-      width: '100%',
-      height: 'calc(100% - 200px - 56px)',  // Below Monika and top rail
-      displayMode: 'drawer',
-      scrollable: true,
-      drawerHeight: '60%',
-      zIndex: 30
-    },
-    [LAYOUT_MODES.PORTRAIT]: {
-      position: 'bottom',
-      width: '100%',
-      height: 'calc(100% - 45% - 56px)',    // Below Monika and bottom rail
-      displayMode: 'drawer',
-      scrollable: true,
-      drawerHeight: '100%',
-      zIndex: 30
-    },
-    [LAYOUT_MODES.LANDSCAPE_PHONE]: {
-      position: 'full',
-      width: '100%',
-      height: '100%',
-      displayMode: 'fullscreen-drawer',
-      scrollable: true,
-      drawerHeight: '90%',
-      zIndex: 30
-    }
-  };
-
-  return configs[layoutMode] || configs[LAYOUT_MODES.DESKTOP];
-};
-
-/**
  * Safe area insets for notch/home button support
  */
 export const getSafeAreaInsets = () => {
@@ -245,8 +140,6 @@ export default {
   LAYOUT_MODES,
   getLayoutMode,
   getMonikaConfig,
-  getRailConfig,
-  getPanelConfig,
   getSafeAreaInsets,
   BREAKPOINTS,
   Z_INDEX

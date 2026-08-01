@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, Gamepad2, MessageSquare, Plus, RefreshCw, Send, Trash2 } from '../icons';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { Badge, EmptyState } from '../shared/panelPrimitives';
 
 // v3 Phase G: conversation history view. Talks to the backend socket API
 // (conversations_list / conversations_get / conversations_new /
@@ -236,9 +237,9 @@ const ConversationHistory = ({ socket = null, active = false, onStarted = () => 
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 custom-scrollbar">
         {grouped.length === 0 && (
-          <div className="py-5 text-center text-[13px] text-[rgba(255,224,190,0.4)]">
+          <EmptyState>
             {loading ? (t('conversations.loading') || 'Loading…') : (t('conversations.empty') || 'No saved conversations yet.')}
-          </div>
+          </EmptyState>
         )}
         {grouped.map(([day, dayItems]) => (
           <div key={day} className="mb-2">
@@ -288,14 +289,10 @@ const ConversationHistory = ({ socket = null, active = false, onStarted = () => 
                       <div className="flex items-center gap-2">
                         <span className="truncate text-[13px] font-medium text-[rgba(255,246,233,0.9)]">{title}</span>
                         {isCurrent && (
-                          <span className="shrink-0 rounded-full bg-[rgba(232,178,102,0.2)] px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wide text-[rgba(255,226,180,0.9)]">
-                            {t('conversations.current') || 'current'}
-                          </span>
+                          <Badge tone="amber">{t('conversations.current') || 'current'}</Badge>
                         )}
                         {item.continues && (
-                          <span className="shrink-0 rounded-full bg-white/10 px-1.5 py-px text-[9.5px] uppercase tracking-wide text-white/50">
-                            {t('conversations.continued') || 'continuation'}
-                          </span>
+                          <Badge tone="neutral">{t('conversations.continued') || 'continuation'}</Badge>
                         )}
                       </div>
                       {isStream ? (

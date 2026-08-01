@@ -4,6 +4,7 @@ import { useLanguage } from '../../contexts/LanguageContext';
 import { useMonika } from '../../contexts/MonikaContext';
 import { useAudioVideo } from '../../contexts/AudioVideoContext';
 import ShellPanelFrame from '../shared/ShellPanelFrame';
+import { SectionLabel, FieldRow, Toggle, SelectField, TextField, EmptyState, Badge, Checkbox, ListContainer, ListRow } from '../shared/panelPrimitives';
 
 const GEMINI_VOICES = [
   { value: 'Leda',    label: 'Leda'    },
@@ -30,49 +31,11 @@ const CONFIGURABLE_TOOLS = [
   'write_file'
 ];
 
-const SettingsRow = ({ title, description, children }) => (
-  <div className="settings-row flex items-center justify-between py-3.5 border-b border-[#2c1e15] gap-4">
-    <div className="flex flex-col min-w-0 flex-1">
-      <span className="text-[13px] font-semibold text-[#f5e6d3] font-sans tracking-wide">{title}</span>
-      {description && <span className="text-[11px] text-[#8c7769] font-sans mt-0.5 leading-relaxed">{description}</span>}
-    </div>
-    <div className="settings-row__control shrink-0 flex items-center justify-end">
-      {children}
-    </div>
-  </div>
-);
-
-const Toggle = ({ checked, onChange }) => (
-  <button
-    onClick={() => onChange(!checked)}
-    className={`w-11 h-6 rounded-full transition-colors relative flex items-center shrink-0 focus:outline-none ${
-      checked ? 'bg-[#de9d50]' : 'bg-[#251c17]'
-    }`}
-  >
-    <div className={`w-4 h-4 rounded-full transition-all duration-200 ${
-      checked ? 'translate-x-[24px] bg-[#fff]' : 'translate-x-1 bg-[#5c4a3f]'
-    }`} />
-  </button>
-);
-
-const Dropdown = ({ value, onChange, options, className = "w-[220px] shrink-0" }) => (
-  <div className={`settings-dropdown relative select-none ${className}`}>
-    <select
-      value={value}
-      onChange={onChange}
-      className="appearance-none bg-[#1e1612] text-[#f5e6d3] border border-[#3c2e26] rounded-[8px] pl-3 pr-8 py-2 text-xs focus:ring-0 focus:outline-none hover:border-[#de9d50] hover:text-[#de9d50] transition-colors cursor-pointer w-full truncate text-ellipsis"
-    >
-      {options.map((opt) => (
-        <option key={opt.value} value={opt.value} className="bg-[#140d08] text-[#f5e6d3]">
-          {opt.label}
-        </option>
-      ))}
-    </select>
-    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 text-[#f5e6d3]/60">
-      <Icons.ChevronDown size={11} />
-    </div>
-  </div>
-);
+const skillStatus = (skill) => {
+  if (skill.enabled === false) return { tone: 'red', label: 'wyłączone' };
+  if (skill.eligible) return { tone: 'green', label: 'gotowe' };
+  return { tone: 'amber', label: 'wymaga zal.' };
+};
 
 const SettingsPanel = ({
   micDevices = [],
@@ -104,13 +67,13 @@ const SettingsPanel = ({
   const { t, language, setLanguage } = useLanguage();
   const { setActiveContext } = useMonika();
   const { onLogout } = useAudioVideo();
-  
+
   const [isSkillDropActive, setIsSkillDropActive] = useState(false);
   const [skillSource, setSkillSource] = useState('');
   const [skillNameFilter, setSkillNameFilter] = useState('');
   const [skillAgent, setSkillAgent] = useState('codex');
   const [skillGlobalScope, setSkillGlobalScope] = useState(false);
-  
+
   const skillFileInputRef = useRef(null);
   const memoryFileInputRef = useRef(null);
 
@@ -146,32 +109,16 @@ const SettingsPanel = ({
     });
   };
 
-  const renderSectionHeader = (title, isSensitive = false) => (
-    <h3 className={`text-[10px] font-bold uppercase tracking-[0.22em] font-sans pt-5 pb-1 ${
-      isSensitive ? 'text-[#a66a5e]' : 'text-[#806b5c]'
-    }`}>
-      {title}
-    </h3>
-  );
-
   return (
-    <ShellPanelFrame
-      icon={null}
-      title={t('settings.title') || 'Settings'}
-      subtitle=""
-      titleClassName="font-serif text-[28px] text-[#f5e6d3] font-normal tracking-wide py-1"
-      headerClassName="flex items-start justify-between gap-4 border-b border-[#2c1e15] bg-transparent px-6 pt-6 pb-4"
-      bodyClassName="flex flex-col h-full overflow-hidden"
-    >
+    <ShellPanelFrame icon={Icons.Settings} title={t('settings.title') || 'Settings'}>
       <div className="flex-1 overflow-y-auto px-6 py-4 custom-scrollbar text-sm pb-10">
-        
-        {/* PERSONALITY / JĘZYK I MODEL */}
-        {renderSectionHeader(t('settings.language') + ' i model')}
-        
-        <SettingsRow title="Język aplikacji" description="Wybierz język interfejsu Moniki">
-          <Dropdown
+
+        <SectionLabel className="pt-2">{t('settings.language')} i model</SectionLabel>
+        <FieldRow title="Język aplikacji" description="Wybierz język interfejsu Moniki">
+          <SelectField
             value={language}
             onChange={(e) => setLanguage(e.target.value)}
+            wrapperClassName="w-[220px]"
             options={[
               { value: 'pl', label: 'Polski' },
               { value: 'en', label: 'English' },
@@ -179,133 +126,126 @@ const SettingsPanel = ({
               { value: 'ja', label: '日本語' },
             ]}
           />
-        </SettingsRow>
-
-        <SettingsRow title="Preset modelu AI" description="Wybierz wersję modelu sztucznej inteligencji">
-          <Dropdown
+        </FieldRow>
+        <FieldRow title="Preset modelu AI" description="Wybierz wersję modelu sztucznej inteligencji">
+          <SelectField
             value={geminiModelPreset}
             onChange={(e) => onModelPresetChange?.(e.target.value)}
+            wrapperClassName="w-[220px]"
             options={[
               { value: '2.5', label: 'Gemini 2.5 (Native Audio)' },
               { value: '3.1', label: 'Gemini 3.1 (Flash Live)' },
             ]}
           />
-        </SettingsRow>
-
-        <SettingsRow title="Głos" description="Wybierz głos lektora sztucznej inteligencji">
-          <Dropdown
+        </FieldRow>
+        <FieldRow title="Głos" description="Wybierz głos lektora sztucznej inteligencji">
+          <SelectField
             value={geminiVoice}
             onChange={(e) => onVoiceChange?.(e.target.value)}
+            wrapperClassName="w-[220px]"
             options={GEMINI_VOICES}
           />
-        </SettingsRow>
+        </FieldRow>
 
-        {/* DEVICES / URZĄDZENIA */}
-        {renderSectionHeader('Urządzenia')}
-
-        <SettingsRow title="Mikrofon" description="Urządzenie wejściowe audio">
-          <Dropdown
+        <SectionLabel className="pt-6">Urządzenia</SectionLabel>
+        <FieldRow title="Mikrofon" description="Urządzenie wejściowe audio">
+          <SelectField
             value={selectedMicId}
             onChange={(e) => setSelectedMicId(e.target.value)}
+            wrapperClassName="w-[220px]"
             options={micDevices.map(device => ({
               value: device.deviceId,
               label: device.label || `Mikrofon ${device.deviceId.slice(0, 5)}...`
             }))}
           />
-        </SettingsRow>
-
-        <SettingsRow title="Głośnik" description="Urządzenie wyjściowe audio">
-          <Dropdown
+        </FieldRow>
+        <FieldRow title="Głośnik" description="Urządzenie wyjściowe audio">
+          <SelectField
             value={selectedSpeakerId}
             onChange={(e) => setSelectedSpeakerId(e.target.value)}
+            wrapperClassName="w-[220px]"
             options={speakerDevices.map(device => ({
               value: device.deviceId,
               label: device.label || `Głośnik ${device.deviceId.slice(0, 5)}...`
             }))}
           />
-        </SettingsRow>
-
-        <SettingsRow title="Kamera" description="Urządzenie wideo">
-          <Dropdown
+        </FieldRow>
+        <FieldRow title="Kamera" description="Urządzenie wideo">
+          <SelectField
             value={selectedWebcamId}
             onChange={(e) => setSelectedWebcamId(e.target.value)}
+            wrapperClassName="w-[220px]"
             options={webcamDevices.map(device => ({
               value: device.deviceId,
               label: device.label || `Kamera ${device.deviceId.slice(0, 5)}...`
             }))}
           />
-        </SettingsRow>
-
-        <SettingsRow title="Odbicie lustrzane kamery" description="Odwróć obraz wideo w poziomie">
+        </FieldRow>
+        <FieldRow title="Odbicie lustrzane kamery" description="Odwróć obraz wideo w poziomie">
           <Toggle checked={isCameraFlipped} onChange={setIsCameraFlipped} />
-        </SettingsRow>
+        </FieldRow>
 
-        {/* SECURITY / BEZPIECZEŃSTWO */}
-        {renderSectionHeader(t('settings.security'), true)}
-
+        <SectionLabel className="pt-6">{t('settings.security')}</SectionLabel>
         {CONFIGURABLE_TOOLS.map((key) => {
           const val = toolPermissions[key] || false;
           return (
-            <SettingsRow
+            <FieldRow
               key={key}
               title={`Narzędzie: ${key.replace(/_/g, ' ')}`}
               description={`Zezwól modelowi na automatyczne uruchamianie funkcji ${key}`}
             >
               <Toggle checked={val} onChange={() => onTogglePermission && onTogglePermission(key)} />
-            </SettingsRow>
+            </FieldRow>
           );
         })}
 
-        {/* SKILLS / ROZSZERZENIA */}
-        {renderSectionHeader('Rozszerzenia (Skills)')}
-
+        <SectionLabel className="pt-6">Rozszerzenia (Skills)</SectionLabel>
         <div className="border-b border-[#2c1e15] py-4 space-y-4">
           <div className="flex flex-col gap-2.5">
-            <span className="text-[13px] font-semibold text-white/92">Zainstaluj nowe rozszerzenie</span>
+            <span className="text-[13px] font-semibold text-[#f5e6d3]">Zainstaluj nowe rozszerzenie</span>
             <div className="flex gap-2">
-              <input
+              <TextField
                 value={skillSource}
                 onChange={(e) => setSkillSource(e.target.value)}
                 placeholder="Adres URL z repozytorium GitHub dla rozszerzenia"
                 disabled={skillsActionBusy}
-                className="flex-1 bg-white/5 border border-[#3c2e26] rounded-lg px-3 py-1.5 text-xs text-white placeholder-white/30 focus:border-white/30 focus:outline-none disabled:opacity-50"
+                size="sm"
+                wrapperClassName="flex-1"
+                className="disabled:opacity-50"
               />
               <button
                 onClick={submitSkillSource}
                 disabled={skillsActionBusy || !skillSource.trim()}
-                className="px-4 py-1.5 rounded-lg bg-[#de9d50] text-[#20160f] text-xs font-semibold hover:brightness-110 disabled:opacity-50 transition-all"
+                className="shrink-0 rounded-lg bg-[#de9d50] px-4 py-1.5 text-xs font-semibold text-[#20160f] transition-all hover:brightness-110 disabled:opacity-50"
               >
                 Instaluj
               </button>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <input
+              <TextField
                 value={skillNameFilter}
                 onChange={(e) => setSkillNameFilter(e.target.value)}
                 placeholder="Nazwa rozszerzenia (opcjonalnie)"
                 disabled={skillsActionBusy}
-                className="bg-white/5 border border-[#3c2e26] rounded-lg px-3 py-1.5 text-xs text-white placeholder-white/30 focus:border-white/30 focus:outline-none disabled:opacity-50"
+                size="sm"
+                className="disabled:opacity-50"
               />
-              <Dropdown
+              <SelectField
                 value={skillAgent}
                 onChange={(e) => setSkillAgent(e.target.value)}
-                className="w-full"
+                size="sm"
                 options={[
                   { value: 'codex', label: 'Agent: Codex' },
                   { value: 'openclaw', label: 'Agent: OpenClaw' }
                 ]}
               />
             </div>
-            <label className="flex items-center gap-2 text-xs text-white/60 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={skillGlobalScope}
-                onChange={(e) => setSkillGlobalScope(e.target.checked)}
-                disabled={skillsActionBusy}
-                className="accent-[#de9d50]"
-              />
-              Zainstaluj globalnie
-            </label>
+            <Checkbox
+              checked={skillGlobalScope}
+              onChange={setSkillGlobalScope}
+              disabled={skillsActionBusy}
+              label="Zainstaluj globalnie"
+            />
           </div>
 
           <div
@@ -322,18 +262,16 @@ const SettingsPanel = ({
               setIsSkillDropActive(false);
               handleSkillFiles(e.dataTransfer?.files);
             }}
-            className={`p-4 border border-dashed border-[#3c2e26] rounded-lg transition-all text-center ${
-              isSkillDropActive
-                ? 'border-[#de9d50] bg-white/5'
-                : 'border-white/10 bg-black/10'
+            className={`rounded-lg border border-dashed p-4 text-center transition-colors ${
+              isSkillDropActive ? 'border-[#de9d50] bg-[#de9d50]/[0.06]' : 'border-[#3c2e26] bg-[#140d08]/40'
             }`}
           >
             <div className="flex flex-col items-center justify-center gap-2">
-              <p className="text-[11px] text-white/50">Przeciągnij plik ZIP lub wybierz z komputera</p>
+              <p className="text-[11px] text-[#8c7769]">Przeciągnij plik ZIP lub wybierz z komputera</p>
               <button
                 onClick={() => skillFileInputRef.current?.click()}
                 disabled={skillsActionBusy}
-                className="px-3 py-1 rounded border border-white/10 text-[10px] text-white/80 hover:bg-white/5"
+                className="rounded border border-[#3c2e26] px-3 py-1 text-[10px] text-[#f5e6d3] hover:bg-white/5"
               >
                 Wybierz plik
               </button>
@@ -350,58 +288,59 @@ const SettingsPanel = ({
 
         <div className="py-4 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-[13px] font-semibold text-white/92">Zainstalowane rozszerzenia ({skills.length})</span>
+            <span className="text-[13px] font-semibold text-[#f5e6d3]">Zainstalowane rozszerzenia ({skills.length})</span>
             <button
               onClick={() => onRefreshSkills && onRefreshSkills()}
               disabled={skillsLoading || skillsActionBusy}
-              className="p-1 rounded border border-white/10 text-white/60 hover:bg-white/5 disabled:opacity-50 flex items-center gap-1 text-[10px]"
+              className="flex items-center gap-1 rounded border border-[#3c2e26] p-1 text-[10px] text-[#8c7769] hover:bg-white/5 disabled:opacity-50"
             >
               <Icons.RefreshCw size={10} />
               Odśwież
             </button>
           </div>
 
-          <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
-            {skillsLoading && <div className="text-[11px] text-white/50">Wczytywanie...</div>}
-            {!skillsLoading && skills.length === 0 && <div className="text-[11px] text-white/30">Brak rozszerzeń.</div>}
-            {!skillsLoading && skills.map((skill) => (
-              <div key={`${skill.name}-${skill.path}`} className="flex items-center justify-between p-2 rounded-lg border border-white/5 bg-black/10 text-xs">
-                <div className="min-w-0 pr-2">
-                  <div className="font-semibold text-white/90 truncate flex items-center gap-1.5">
-                    {skill.name}
-                    <span className={`text-[8px] px-1 rounded-sm ${
-                      skill.enabled === false
-                        ? 'bg-red-500/10 text-red-300 border border-red-500/20'
-                        : skill.eligible
-                        ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20'
-                        : 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
-                    }`}>
-                      {skill.enabled === false ? 'wyłączone' : (skill.eligible ? 'gotowe' : 'wymaga zal.')}
-                    </span>
-                  </div>
-                  <div className="text-[10px] text-white/40 truncate mt-0.5">{skill.description}</div>
-                </div>
-                <button
-                  onClick={() => onUninstallSkill && onUninstallSkill(skill.name)}
-                  disabled={skillsActionBusy || !skill.managed}
-                  className="px-2 py-0.5 rounded border border-red-500/20 text-red-400 text-[10px] hover:bg-red-500/5 disabled:opacity-30"
-                >
-                  Usuń
-                </button>
-              </div>
-            ))}
+          <div className="max-h-48 overflow-y-auto custom-scrollbar">
+            {skillsLoading && <div className="text-[11px] text-[#8c7769]">Wczytywanie...</div>}
+            {!skillsLoading && skills.length === 0 && <EmptyState>Brak rozszerzeń.</EmptyState>}
+            {!skillsLoading && skills.length > 0 && (
+              <ListContainer>
+                {skills.map((skill) => {
+                  const status = skillStatus(skill);
+                  return (
+                    <ListRow
+                      key={`${skill.name}-${skill.path}`}
+                      className="py-2.5"
+                      title={(
+                        <span className="flex items-center gap-1.5 truncate font-semibold">
+                          {skill.name}
+                          <Badge tone={status.tone} className="normal-case tracking-normal">{status.label}</Badge>
+                        </span>
+                      )}
+                      description={skill.description}
+                      trailing={(
+                        <button
+                          onClick={() => onUninstallSkill && onUninstallSkill(skill.name)}
+                          disabled={skillsActionBusy || !skill.managed}
+                          className="shrink-0 rounded border border-[rgba(202,104,85,0.3)] px-2 py-0.5 text-[10px] text-[#df8978] hover:bg-[rgba(166,72,58,0.1)] disabled:opacity-30"
+                        >
+                          Usuń
+                        </button>
+                      )}
+                    />
+                  );
+                })}
+              </ListContainer>
+            )}
           </div>
         </div>
 
-        {/* MEMORY / PAMIĘĆ */}
-        {renderSectionHeader(t('settings.memory'))}
-
+        <SectionLabel className="pt-6">{t('settings.memory')}</SectionLabel>
         <div className="py-4">
-          <label className="flex flex-col items-center justify-center w-full h-24 border border-dashed border-white/10 rounded-lg cursor-pointer hover:border-white/20 hover:bg-white/5 transition-all">
-            <div className="flex flex-col items-center justify-center text-center px-4">
-              <Icons.Upload className="w-5 h-5 mb-1.5 text-white/40" />
-              <span className="text-xs text-white/60 font-semibold">{t('settings.import_memory')}</span>
-              <span className="text-[10px] text-white/30 mt-0.5">TXT, MD, JSON</span>
+          <label className="flex h-24 w-full cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-[#3c2e26] transition-colors hover:border-[#de9d50]/60 hover:bg-[#de9d50]/[0.04]">
+            <div className="flex flex-col items-center justify-center px-4 text-center">
+              <Icons.Upload className="mb-1.5 h-5 w-5 text-[#8c7769]" />
+              <span className="text-xs font-semibold text-[#f5e6d3]">{t('settings.import_memory')}</span>
+              <span className="mt-0.5 text-[10px] text-[#8c7769]">TXT, MD, JSON</span>
             </div>
             <input
               ref={memoryFileInputRef}
@@ -413,18 +352,17 @@ const SettingsPanel = ({
           </label>
         </div>
 
-        {/* BOTTOM BUTTONS / PRZYCISKI DOLNE */}
-        <div className="flex gap-4 pt-8 pb-12 mt-4">
+        <div className="mt-4 flex gap-4 pt-8 pb-12">
           <button
             onClick={onLogout}
-            className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-full border border-[#3c2e26] bg-[#1e1612] text-[#f5e6d3] text-xs font-semibold hover:brightness-110 transition-all focus:outline-none"
+            className="flex flex-1 items-center justify-center gap-2 rounded-full border border-[#3c2e26] bg-[#1e1612] px-4 py-3 text-xs font-semibold text-[#f5e6d3] transition-all hover:brightness-110 focus:outline-none"
           >
             <Icons.LogOut size={14} />
             Quit the App
           </button>
           <button
             onClick={() => setActiveContext('chat')}
-            className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-full bg-[#de9d50] text-[#16100d] text-xs font-bold hover:brightness-110 transition-all shadow-[0_4px_16px_rgba(222,157,80,0.15)] focus:outline-none"
+            className="flex flex-1 items-center justify-center gap-2 rounded-full bg-[#de9d50] px-4 py-3 text-xs font-bold text-[#16100d] shadow-[0_4px_16px_rgba(222,157,80,0.15)] transition-all hover:brightness-110 focus:outline-none"
           >
             <Icons.Check size={14} />
             Save

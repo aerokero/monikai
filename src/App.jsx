@@ -9,8 +9,7 @@ import SettingsWindow from './components/SettingsWindow';
 import GoodbyePopup from './components/GoodbyePopup';
 import ToastStack from './components/toasts/ToastStack';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
-import { LayoutProvider } from './contexts/LayoutContext';
-import { useLayout } from './contexts/LayoutContext';
+import useLayoutMode from './hooks/useLayoutMode';
 import { ModeProvider } from './contexts/ModeContext';
 import { RealtimeProvider } from './contexts/RealtimeContext';
 import { useSettings } from './contexts/SettingsContext';
@@ -110,7 +109,7 @@ const normalizeToolPermissions = (raw) => {
 
 function AppContent() {
   const { t, language } = useLanguage();
-  const { isPortrait } = useLayout();
+  const { isPortrait } = useLayoutMode();
   const { showSettings, setShowSettings } = useSettings();
   const tRef = useRef(t);
 
@@ -1863,9 +1862,8 @@ function App() {
     <LanguageProvider>
       <MonikaContextProvider>
         <SettingsProvider>
-          <LayoutProvider>
-            <ModeProvider>
-              <RealtimeProvider socket={socket}>
+          <ModeProvider>
+            <RealtimeProvider socket={socket}>
             <style>{`
               ::-webkit-scrollbar {
                 width: 6px;
@@ -1892,9 +1890,8 @@ function App() {
             `}</style>
 
             <AppContent />
-          </RealtimeProvider>
-        </ModeProvider>
-      </LayoutProvider>
+            </RealtimeProvider>
+          </ModeProvider>
         </SettingsProvider>
       </MonikaContextProvider>
     </LanguageProvider>

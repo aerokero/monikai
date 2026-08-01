@@ -7,7 +7,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import useLayoutMode from '../hooks/useLayoutMode';
 import { useMonika } from '../contexts/MonikaContext';
-import { useSettings } from '../contexts/SettingsContext';
 import { getPanelById } from '../config/panelRegistry';
 import MonikaSprite from './MonikaSprite';
 import MASClock from './MASClock';
@@ -92,18 +91,16 @@ const MonikaLayout = ({
   const {
     layoutMode,
     monikaConfig,
-    viewport
+    isPortrait
   } = useLayoutMode();
 
   const { activeContext, setActiveContext } = useMonika();
-  const { openSettings } = useSettings();
   const isElectron = typeof window !== 'undefined' && typeof window.require === 'function';
 
   const [isExpanded, setIsExpanded] = useState(false);
   const activePanel = getPanelById(activeContext);
   const resolvedContext = activePanel ? activeContext : 'chat';
   const hasUtilityPanel = resolvedContext !== 'chat';
-  const isPortraitViewport = viewport.height > viewport.width;
 
   useEffect(() => {
     if (!activePanel) {
@@ -117,9 +114,9 @@ const MonikaLayout = ({
       'monika-layout',
       `monika-layout--${layoutMode}`,
       hasUtilityPanel ? 'monika-layout--panel-open' : '',
-      isPortraitViewport ? 'monika-layout--portrait-viewport' : '',
+      isPortrait ? 'monika-layout--portrait-viewport' : '',
     ].filter(Boolean).join(' ');
-  }, [layoutMode, hasUtilityPanel, isPortraitViewport]);
+  }, [layoutMode, hasUtilityPanel, isPortrait]);
 
   // Monika sprite scale based on layout mode
   const monikaScale = useMemo(() => {
@@ -234,26 +231,6 @@ const MonikaLayout = ({
           />
         </div>
       </div>
-
-      {/* Debug info (development only) */}
-      {import.meta.env.DEV && false && (
-        <div style={{
-          position: 'fixed',
-          bottom: 80,
-          right: 10,
-          fontSize: '10px',
-          color: 'rgba(255,255,255,0.3)',
-          fontFamily: 'monospace',
-          background: 'rgba(0,0,0,0.5)',
-          padding: '5px',
-          borderRadius: '4px',
-          zIndex: 999
-        }}>
-          <div>Mode: {layoutMode}</div>
-          <div>Size: {viewport.width}x{viewport.height}</div>
-          <div>Context: {activeContext}</div>
-        </div>
-      )}
     </div>
   );
 };
