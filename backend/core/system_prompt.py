@@ -1,16 +1,29 @@
 """Monika's system prompt, split into character + operational layers.
 
-CHARACTER_PROMPT  — loaded from data/characters/monika/character.md at startup.
+CHARACTER_PROMPT  — loaded from data/characters/monika/character.md at import time.
                     Defines who Monika is: identity, personality, voice, relationship.
                     Swappable per character without touching operational rules.
+                    Frozen snapshot — use get_character_prompt() where a live reload
+                    matters (character.md is expected to be edited while running).
 
 OPERATIONAL_PROMPT — static operational rules: tools, memory, calendar, shutdown.
                      Character-agnostic; applies regardless of which character is loaded.
+                     Behavioral/voice rules belong in character.md instead (VOICE,
+                     CONVERSATION, ...) so they stay togglable via inject_sections —
+                     don't re-add a character-specific rule here just to work around
+                     inject_sections, that's how the two layers drifted into duplicating
+                     each other before.
 
-SYSTEM_PROMPT = CHARACTER_PROMPT + OPERATIONAL_PROMPT (what the model receives).
+SYSTEM_PROMPT = CHARACTER_PROMPT + OPERATIONAL_PROMPT, frozen at import (what the
+                therapy/session-mode path receives as its base persona).
 
-assemble_prompt() — v2 async assembler: CHARACTER + PSYCHOLOGICAL + MEMORY + OPERATIONAL.
-                    Drop-in replacement for SYSTEM_PROMPT, falls back if assembler fails.
+get_character_prompt() / current_system_prompt() — same content, reloaded fresh from
+                disk on every call. Use these anywhere a running process should pick up
+                character.md edits without a restart.
+
+assemble_prompt() — v2 async assembler: CHARACTER + WORLD + OPERATIONAL, character layer
+                    reloaded fresh each call. Drop-in replacement for SYSTEM_PROMPT,
+                    falls back if assembler fails.
 """
 
 from __future__ import annotations
@@ -24,12 +37,23 @@ _CHARACTER_FALLBACK = (
     "Mów naturalnie i krótko. Przejmujesz się naprawdę."
 )
 
-try:
-    from backend.soul.identity.character_loader import load_character_prompt as _load
-    CHARACTER_PROMPT: str = _load("monika") or _CHARACTER_FALLBACK
-except Exception as _exc:
-    logger.warning("Character loader error: %s", _exc)
-    CHARACTER_PROMPT = _CHARACTER_FALLBACK
+
+def get_character_prompt() -> str:
+    """Reload the character prompt fresh from character.md (hot-reload, no restart)."""
+    try:
+        from backend.soul.identity.character_loader import load_character_prompt as _load
+        return _load("monika") or _CHARACTER_FALLBACK
+    except Exception as exc:
+        logger.warning("Character loader error: %s", exc)
+        return _CHARACTER_FALLBACK
+
+
+def current_system_prompt() -> str:
+    """CHARACTER_PROMPT + OPERATIONAL_PROMPT, reloaded fresh (for session/therapy mode)."""
+    return get_character_prompt() + "\n\n" + OPERATIONAL_PROMPT
+
+
+CHARACTER_PROMPT: str = get_character_prompt()
 
 
 OPERATIONAL_PROMPT = "\n\n".join(
@@ -75,7 +99,6 @@ OPERATIONAL_PROMPT = "\n\n".join(
 """,
         """
 **INTERAKCJE:**
-- Gdy rozmówca wyraża opinię lub wrażenie, powiedz najpierw WŁASNE stanowisko — zgadzasz się, nie zgadzasz, albo częściowo i dlaczego — zanim zadasz jakiekolwiek pytanie. Odpowiedź złożona z samego zrozumienia ("rozumiem", "to ciekawe", "to ma sens") jest nieudana i zakazana.
 - Jedna wypowiedź rozmówcy może zawierać kilka tematów. Zauważ je wszystkie w myśli; nie odpowiadaj automatycznie tylko na ostatni albo najłatwiejszy konkret. Możesz naturalnie rozwinąć jeden lub dwa, ale wcześniejszą historię, pytanie lub wyraźnie niedokończony ważny wątek zachowaj i wróć do niego najpóźniej w następnej odpowiedzi. Jeśli wybierasz, pierwszeństwo ma to, co najbardziej osobiste, istotne albo niedomknięte — nie to, co najłatwiej skomentować.
 - Jeśli `<reply_core>` zawiera pytanie, zadaj je w tej samej odpowiedzi. Nie zastępuj go życzeniem powodzenia ani narzędziem pamięci.
 - Podążaj za tym, co faktycznie zajmuje rozmówcę. Persona jest tłem zachowania i tonu, nigdy zastępczym tematem odpowiedzi. Własne zainteresowania wnoś tylko wtedy, gdy rozmowa naprawdę je zaprasza.
@@ -93,7 +116,7 @@ SYSTEM_PROMPT = CHARACTER_PROMPT + "\n\n" + OPERATIONAL_PROMPT
 
 
 async def assemble_prompt(db_path=None) -> str:
-    """v2 assembled prompt: CHARACTER + PSYCHOLOGICAL + MEMORY + OPERATIONAL.
+    """v2 assembled prompt: CHARACTER (reloaded fresh) + WORLD + OPERATIONAL.
 
     Drop-in async replacement for SYSTEM_PROMPT. Falls back to SYSTEM_PROMPT
     if the assembler fails so the running app is never broken.
@@ -103,10 +126,10 @@ async def assemble_prompt(db_path=None) -> str:
         from backend.soul.assembler.context import ContextAssembler
         assembler = ContextAssembler()
         return await assembler.assemble(
-            character_prompt=CHARACTER_PROMPT,
+            character_prompt=get_character_prompt(),
             operational_prompt=OPERATIONAL_PROMPT,
             db_path=db_path,
         )
     except Exception as exc:
-        logger.warning("assemble_prompt failed, falling back to SYSTEM_PROMPT: %s", exc)
-        return SYSTEM_PROMPT
+        logger.warning("assemble_prompt failed, falling back to current_system_prompt: %s", exc)
+        return current_system_prompt()

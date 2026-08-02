@@ -67,7 +67,7 @@ class ConversationContextCompiler:
     ):
         self._get_history = get_history
         self._get_conversation_id = get_conversation_id
-        self._character_prompt = load_character_prompt(character_id) or ""
+        self._character_id = character_id
         self._history_turns = max(1, int(history_turns))
         self._turn_chars = max(80, int(turn_chars))
         self._get_world_snapshot = get_world_snapshot
@@ -105,8 +105,9 @@ class ConversationContextCompiler:
             user_text,
         )
 
+        character_prompt = load_character_prompt(self._character_id) or ""
         system_parts = [
-            self._character_prompt.strip(),
+            character_prompt.strip(),
             author_instruction.strip(),
         ]
         system_instruction = "\n\n".join(part for part in system_parts if part)
