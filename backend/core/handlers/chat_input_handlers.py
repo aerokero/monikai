@@ -2,7 +2,6 @@ import asyncio
 import base64
 import re
 import time
-from uuid import uuid4
 
 from backend.core.routers.frontend_router import is_active_frontend_sid
 from backend.conversation.routing import requires_capability_runtime
@@ -24,14 +23,6 @@ def register_chat_input_handlers(
     study_reader,
     screen_ocr_runtime,
 ):
-    pending_response_sets = {}
-
-    def _prune_response_sets():
-        cutoff = time.time() - 15 * 60
-        for response_set_id, item in list(pending_response_sets.items()):
-            if float(item.get("created_at") or 0) < cutoff:
-                pending_response_sets.pop(response_set_id, None)
-
     @sio.event
     async def conversation_probe_status(sid):
         audio_loop = get_audio_loop()
@@ -76,145 +67,6 @@ def register_chat_input_handlers(
         finally:
             if thinker is not None and history_token is not None:
                 thinker.reset_history_provider(history_token)
-
-    @sio.event
-    async def conversation_draft_turn(sid, data):
-        """Generate uncommitted response variants for Conversation Lab."""
-        payload = data if isinstance(data, dict) else {}
-        text = re.sub(r"\s+", " ", str(payload.get("text") or "")).strip()
-        if not text:
-            return {"ok": False, "error": "text is required"}
-        if requires_capability_runtime(text, has_external_context=False):
-            return {
-                "ok": False,
-                "error": "This turn needs tools or external context; use normal chat.",
-            }
-        audio_loop = get_audio_loop()
-        thinker = getattr(audio_loop, "thinker", None) if audio_loop else None
-        if not audio_loop or not getattr(audio_loop, "session", None) or thinker is None:
-            return {"ok": False, "error": "Monika Live session is not running"}
-        if not audio_loop._dedicated_speech_enabled():
-            return {"ok": False, "error": "Dedicated text author is disabled"}
-
-        _prune_response_sets()
-        count = max(2, min(4, int(payload.get("count") or 3)))
-        timeout_sec = max(5.0, min(120.0, float(payload.get("timeout_sec") or 30.0)))
-        try:
-            audio_loop_mark_user_activity(audio_loop, text)
-            manager = getattr(audio_loop, "session_manager", None)
-            if manager is not None:
-                manager.log_chat("User", text)
-
-            async def emit_progress(progress):
-                await sio.emit(
-                    "conversation_draft_progress",
-                    {
-                        "request_id": str(payload.get("request_id") or ""),
-                        **dict(progress or {}),
-                    },
-                    room=sid,
-                )
-
-            candidates = await thinker.prepare_reply_candidates(
-                text,
-                count=count,
-                timeout_sec=timeout_sec,
-                on_progress=emit_progress,
-            )
-            if not candidates:
-                trace = dict(getattr(thinker, "last_trace", {}) or {})
-                return {
-                    "ok": False,
-                    "error": (
-                        "Nie udało się przygotować bezpiecznych wariantów."
-                    ),
-                    "trace": trace,
-                }
-
-            response_set_id = f"responses_{uuid4().hex}"
-            pending_response_sets[response_set_id] = {
-                "sid": sid,
-                "text": text,
-                "candidates": tuple(candidates),
-                "created_at": time.time(),
-                "trace": dict(getattr(thinker, "last_trace", {}) or {}),
-            }
-            context = dict(
-                pending_response_sets[response_set_id]["trace"].get("context") or {}
-            )
-            return {
-                "ok": True,
-                "response_set_id": response_set_id,
-                "candidates": [
-                    {"index": index, "text": candidate}
-                    for index, candidate in enumerate(candidates)
-                ],
-                "context": context,
-                "diagnostics": {
-                    "author_model": pending_response_sets[response_set_id][
-                        "trace"
-                    ].get("author_model"),
-                    "candidate_attempts": pending_response_sets[response_set_id][
-                        "trace"
-                    ].get("candidate_attempts", []),
-                    "generation": pending_response_sets[response_set_id][
-                        "trace"
-                    ].get("generation", []),
-                    "validation": pending_response_sets[response_set_id][
-                        "trace"
-                    ].get("validation", []),
-                },
-            }
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
-
-    @sio.event
-    async def conversation_draft_select(sid, data):
-        """Commit exactly one draft; only this path writes/speaks the AI turn."""
-        payload = data if isinstance(data, dict) else {}
-        response_set_id = str(payload.get("response_set_id") or "").strip()
-        _prune_response_sets()
-        item = pending_response_sets.get(response_set_id)
-        if item is None or item.get("sid") != sid:
-            return {"ok": False, "error": "Response set does not exist or expired"}
-        try:
-            index = int(payload.get("index"))
-        except (TypeError, ValueError):
-            return {"ok": False, "error": "candidate index is required"}
-        candidates = item["candidates"]
-        if index < 0 or index >= len(candidates):
-            return {"ok": False, "error": "candidate index is out of range"}
-
-        audio_loop = get_audio_loop()
-        if not audio_loop or not getattr(audio_loop, "session", None):
-            return {"ok": False, "error": "Monika Live session is not running"}
-        # Remove before awaiting delivery: double clicks cannot commit twice.
-        pending_response_sets.pop(response_set_id, None)
-        reply = candidates[index]
-        delivered = await audio_loop.deliver_authored_reply(
-            reply,
-            speak=bool(payload.get("speak", True)),
-        )
-        if delivered:
-            thinker = getattr(audio_loop, "thinker", None)
-            if thinker is not None:
-                thinker.mark_voice_delivered()
-        return {
-            "ok": bool(delivered),
-            "response_set_id": response_set_id,
-            "selected_index": index,
-            "response": reply if delivered else "",
-        }
-
-    @sio.event
-    async def conversation_draft_cancel(sid, data):
-        payload = data if isinstance(data, dict) else {}
-        response_set_id = str(payload.get("response_set_id") or "").strip()
-        item = pending_response_sets.get(response_set_id)
-        if item is not None and item.get("sid") == sid:
-            pending_response_sets.pop(response_set_id, None)
-            return {"ok": True}
-        return {"ok": False, "error": "Response set does not exist or expired"}
 
     @sio.event
     async def user_input(sid, data):

@@ -266,10 +266,10 @@ Release metrics include unsupported psychological inference, repeated thesis,
 question pressure, false memory claims, context contamination between worlds,
 character consistency, Polish naturalness, and exactly-once turn handling.
 
-Conversation Lab v2 now implements deterministic per-turn and multi-turn
-checks, the coffee/focus golden regression, prompt fingerprints, redacted JSONL
-traces, latency capture, and baseline comparison. See
-`docs/design/conversation-lab.md`.
+Conversation Probe's scenario v2 format now implements deterministic per-turn
+and multi-turn checks, the coffee/focus golden regression, prompt
+fingerprints, redacted JSONL traces, latency capture, and baseline comparison.
+See `docs/design/conversation-lab.md`.
 
 ## 11. Delivery phases
 
@@ -344,8 +344,9 @@ traces, latency capture, and baseline comparison. See
 ### Phase 6 — Preference-driven polish
 
 - regenerate/swipe and selected-response tracking (**interactive typed-turn
-  slice implemented: one immutable context, uncommitted variants, exactly one
-  selected response reaches transcript/TTS/lore learning**);
+  slice was implemented, then removed 2026-08-02 as unneeded product
+  surface** — the underlying immutable-context/validation pipeline it reused
+  stays live for ordinary replies and for `conversation_probe`);
 - fail-closed context compilation, mandatory safe revision, model-attempt
   diagnostics, topic-filtered ambient context and unified lore/v2 database
   (**implemented**);

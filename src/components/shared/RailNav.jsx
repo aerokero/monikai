@@ -136,7 +136,6 @@ const RailNav = () => {
 
   const panels = getAllPanels().filter((panel) => !panel.hiddenInRail);
   const railPanelLabels = {
-    chat: t('navigation.talk'),
     conversations: t('navigation.conversations'),
     worlds: t('navigation.worlds'),
     notes: t('navigation.journal'),
@@ -183,13 +182,14 @@ const RailNav = () => {
           return (
             <RailButton
               key={panel.id}
-              onClick={() => setActiveContext(panel.id)}
-              icon={IconComponent}
+              onClick={() => setActiveContext(isActive ? 'chat' : panel.id)}
+              icon={isActive ? Icons.X : IconComponent}
               label={label}
+              tooltipLabel={isActive ? t('navigation.close_panel') : label}
               variant={isActive ? 'active' : 'idle'}
               canExpandRail={canExpandRail}
               isExpanded={isExpanded}
-              ariaLabel={panel.ariaLabel}
+              ariaLabel={isActive ? t('navigation.close_panel') : panel.ariaLabel}
               ariaCurrent={isActive ? 'page' : undefined}
             />
           );
@@ -239,13 +239,14 @@ const RailNav = () => {
 
         {/* Settings Button */}
         <RailButton
-          onClick={() => setActiveContext('settings')}
-          icon={Icons.Settings}
+          onClick={() => setActiveContext(activeContext === 'settings' ? 'chat' : 'settings')}
+          icon={activeContext === 'settings' ? Icons.X : Icons.Settings}
           label={t('tools.settings')}
+          tooltipLabel={activeContext === 'settings' ? t('navigation.close_panel') : t('tools.settings')}
           variant={activeContext === 'settings' ? 'active' : 'idle'}
           canExpandRail={canExpandRail}
           isExpanded={isExpanded}
-          ariaLabel="Settings"
+          ariaLabel={activeContext === 'settings' ? t('navigation.close_panel') : 'Settings'}
           className="mt-auto"
         />
 

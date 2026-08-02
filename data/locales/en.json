@@ -508,7 +508,8 @@
     "relationship": "Relationship",
     "calendar": "Calendar",
     "her_profile": "Her profile",
-    "worlds": "Worlds"
+    "worlds": "Worlds",
+    "close_panel": "Close panel"
   },
   "worlds": {
     "title": "Worlds and lorebooks",

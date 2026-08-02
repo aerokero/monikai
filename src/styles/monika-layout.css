@@ -397,7 +397,7 @@
 
 .mas-clock {
   position: absolute;
-  top: 0;
+  top: var(--monika-window-topbar-height);
   right: 0;
   z-index: 55;
   min-width: 250px;

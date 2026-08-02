@@ -10,6 +10,11 @@ export const PANELS = {
     icon: 'MessageSquare',
     order: 1,
     ariaLabel: 'Chat with companion',
+    // The chat window is always on screen (see ChatPanel), so it isn't a
+    // panel to navigate to — it's the default/closed state every other
+    // panel's close button returns to. Keeping the entry (not deleting it)
+    // because activeContext still needs a valid fallback id.
+    hiddenInRail: true,
   },
   conversations: {
     id: 'conversations',

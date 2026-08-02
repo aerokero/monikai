@@ -107,6 +107,14 @@ sesja Live `running/ready`. Zwykłe połączenie **nie** przejmuje aktywnego fro
 
 ## 3. Zadanie A — napraw Conversation Lab (małe, zrób najpierw)
 
+> **NIEAKTUALNE od 2026-08-02:** interaktywny UI Conversation Lab (przycisk-iskierka,
+> `conversation_draft_turn`/`_select`/`_cancel`) został całkowicie usunięty z kodu jako
+> niepotrzebna powierzchnia produktu. Sekcja niżej opisuje incydent historyczny —
+> `thinker.enabled`/`speech.delivery_mode` nadal gate'ują prawdziwą ścieżkę
+> dedicated_speech (patrz [[server-thinker-disabled]] w pamięci Claude'a), więc reszta
+> diagnozy o ustawieniach serwera zostaje aktualna, ale baner „Dedicated text author is
+> disabled" już nie istnieje, bo istniał tylko w usuniętym UI.
+
 **Objaw:** w UI baner „CONVERSATION LAB — Dedicated text author is disabled".
 
 **Przyczyna:** gate `_dedicated_speech_enabled()` w `backend/core/monikai.py:1237-1243`
