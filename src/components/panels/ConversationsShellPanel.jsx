@@ -1,4 +1,5 @@
 import React from 'react';
+import { Clock } from '../icons';
 import ShellPanelFrame from '../shared/ShellPanelFrame';
 import ConversationHistory from './ConversationHistory';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -10,10 +11,8 @@ const ConversationsShellPanel = ({ socket, onStarted = () => {} }) => {
 
   return (
     <ShellPanelFrame
-      icon={null}
+      icon={Clock}
       title={t('conversations.title') || 'Conversations'}
-      titleClassName="font-serif text-[28px] text-[#f5e6d3] font-normal tracking-wide py-1"
-      headerClassName="flex items-start justify-between gap-4 border-b border-[#2c1e15] bg-transparent px-6 pt-6 pb-4"
       bodyClassName="flex flex-col h-full overflow-hidden px-4 py-3"
     >
       <ConversationHistory socket={socket} active variant="shell" onStarted={onStarted} />

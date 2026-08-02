@@ -11,11 +11,8 @@ const NotesShellPanel = ({ socket }) => {
 
   return (
     <ShellPanelFrame
-      icon={null}
+      icon={FileText}
       title={t('tools.notes') || 'Notes'}
-      titleClassName="font-serif text-[28px] text-[#f5e6d3] font-normal tracking-wide py-1"
-      headerClassName="flex items-start justify-between gap-4 border-b border-[#2c1e15] bg-transparent px-6 pt-6 pb-4"
-      bodyClassName="flex flex-col h-full overflow-hidden"
     >
       <div ref={panelRef} className="flex-1 min-h-0 overflow-hidden">
         <NoteWorkspace

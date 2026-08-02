@@ -3,57 +3,29 @@ import { User, Edit2, Save, X, Heart, Cake } from '../icons';
 import ShellPanelFrame from '../shared/ShellPanelFrame';
 import useElementSize from '../../hooks/useElementSize';
 import { useLanguage } from '../../contexts/LanguageContext';
-
-const Field = ({ label, value }) => (
-  <div className="flex items-baseline justify-between gap-4 border-b border-[#2c1e15] py-2.5 last:border-0">
-    <span className="shrink-0 text-xs text-[#8c7769]">{label}</span>
-    <span className="text-right text-sm text-[#f5e6d3]">{value}</span>
-  </div>
-);
+import { SectionLabel, Card, SummaryField, TextField, SelectField, TextAreaField } from '../shared/panelPrimitives';
 
 const Section = ({ title, icon: Icon, children }) => (
   <div>
-    <div className="mb-3 flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.22em] text-[#8c7769]/60">
-      {Icon && <Icon size={11} className="text-[#de9d50]/70" />}
-      {title}
-    </div>
-    <div className="rounded-lg border border-[#2c1e15] bg-[#140d08]/40 px-4">
-      {children}
-    </div>
-  </div>
-);
-
-const InputField = ({ label, type = 'text', value, onChange, placeholder = '' }) => (
-  <div className="flex flex-col gap-1.5">
-    <label className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8c7769]/70">{label}</label>
-    <input
-      type={type}
-      value={value}
-      onChange={onChange}
-      placeholder={placeholder}
-      className="rounded-lg border border-[#3c2e26] bg-[#1e1612] px-3 py-2 text-sm text-[#f5e6d3] placeholder-[#8c7769]/40 transition-colors focus:border-[#de9d50] focus:outline-none"
-    />
-  </div>
-);
-
-const SelectField = ({ label, value, onChange, options }) => (
-  <div className="flex flex-col gap-1.5">
-    <label className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8c7769]/70">{label}</label>
-    <select
-      value={value}
-      onChange={onChange}
-      className="rounded-lg border border-[#3c2e26] bg-[#1e1612] px-3 py-2 text-sm text-[#f5e6d3] transition-colors focus:border-[#de9d50] focus:outline-none"
-    >
-      <option value="">—</option>
-      {options.map((opt) => (
-        <option key={opt.value} value={opt.value}>{opt.label}</option>
-      ))}
-    </select>
+    <SectionLabel>
+      <span className="flex items-center gap-1.5">
+        {Icon && <Icon size={11} className="text-[#de9d50]/70" />}
+        {title}
+      </span>
+    </SectionLabel>
+    <Card className="px-4">{children}</Card>
   </div>
 );
 
 const ProfileShellPanel = ({ socket = null }) => {
   const { t } = useLanguage();
+  const GENDER_OPTIONS = [
+    { value: '', label: '—' },
+    { value: 'M', label: t('profile.gender_male') },
+    { value: 'F', label: t('profile.gender_female') },
+    { value: 'Other', label: t('profile.gender_other') },
+    { value: 'Prefer not to say', label: t('profile.gender_prefer_not_say') },
+  ];
   const [panelRef] = useElementSize();
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -105,55 +77,35 @@ const ProfileShellPanel = ({ socket = null }) => {
   /* ── Edit mode ─────────────────────────────────────────────────── */
   if (isEditing) {
     return (
-      <ShellPanelFrame
-        icon={null}
-        title="Edit Profile"
-        titleClassName="font-serif text-[28px] text-[#f5e6d3] font-normal tracking-wide py-1"
-        headerClassName="flex items-start justify-between gap-4 border-b border-[#2c1e15] bg-transparent px-6 pt-6 pb-4"
-        bodyClassName="flex flex-col h-full overflow-hidden"
-      >
+      <ShellPanelFrame icon={User} title={t('profile.edit_title')}>
         <div ref={panelRef} className="flex-1 overflow-y-auto px-6 py-4 pb-10 custom-scrollbar">
           <div className="flex flex-col gap-5">
-            <Section title="Personal" icon={User}>
+            <Section title={t('profile.section_personal')} icon={User}>
               <div className="space-y-3.5 py-4">
-                <InputField label="Name" value={formData.user_name} onChange={set('user_name')} placeholder="Your name" />
-                <SelectField
-                  label="Gender"
-                  value={formData.gender}
-                  onChange={set('gender')}
-                  options={[
-                    { value: 'M', label: 'Male' },
-                    { value: 'F', label: 'Female' },
-                    { value: 'Other', label: 'Other' },
-                    { value: 'Prefer not to say', label: 'Prefer not to say' },
-                  ]}
-                />
-                <InputField label="Birthday" type="date" value={formData.birthday} onChange={set('birthday')} />
-                <InputField label="Location" value={formData.location} onChange={set('location')} placeholder="City, Country" />
-                <InputField label="Occupation" value={formData.occupation} onChange={set('occupation')} placeholder="Your job or profession" />
+                <TextField label={t('profile.name')} value={formData.user_name} onChange={set('user_name')} placeholder={t('profile.name_placeholder')} />
+                <SelectField label={t('profile.gender')} value={formData.gender} onChange={set('gender')} options={GENDER_OPTIONS} />
+                <TextField label={t('profile.birthday')} type="date" value={formData.birthday} onChange={set('birthday')} />
+                <TextField label={t('profile.location')} value={formData.location} onChange={set('location')} placeholder={t('profile.location_placeholder')} />
+                <TextField label={t('profile.occupation')} value={formData.occupation} onChange={set('occupation')} placeholder={t('profile.occupation_placeholder')} />
               </div>
             </Section>
 
-            <Section title="About you" icon={Heart}>
+            <Section title={t('profile.section_about')} icon={Heart}>
               <div className="space-y-3.5 py-4">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8c7769]/70">Interests</label>
-                  <textarea
-                    value={formData.interests}
-                    onChange={set('interests')}
-                    placeholder="Your hobbies and interests..."
-                    className="h-20 resize-none rounded-lg border border-[#3c2e26] bg-[#1e1612] px-3 py-2 text-sm text-[#f5e6d3] placeholder-[#8c7769]/40 transition-colors focus:border-[#de9d50] focus:outline-none"
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8c7769]/70">Personality</label>
-                  <textarea
-                    value={formData.personality_traits}
-                    onChange={set('personality_traits')}
-                    placeholder="Describe your personality..."
-                    className="h-20 resize-none rounded-lg border border-[#3c2e26] bg-[#1e1612] px-3 py-2 text-sm text-[#f5e6d3] placeholder-[#8c7769]/40 transition-colors focus:border-[#de9d50] focus:outline-none"
-                  />
-                </div>
+                <TextAreaField
+                  label={t('profile.interests')}
+                  value={formData.interests}
+                  onChange={set('interests')}
+                  placeholder={t('profile.interests_placeholder')}
+                  className="h-20"
+                />
+                <TextAreaField
+                  label={t('profile.personality')}
+                  value={formData.personality_traits}
+                  onChange={set('personality_traits')}
+                  placeholder={t('profile.personality_placeholder')}
+                  className="h-20"
+                />
               </div>
             </Section>
 
@@ -163,14 +115,14 @@ const ProfileShellPanel = ({ socket = null }) => {
                 className="flex-1 rounded-full bg-[#de9d50] py-2.5 text-xs font-bold text-[#16100d] transition-all hover:brightness-110"
               >
                 <Save size={12} className="mr-1.5 inline" />
-                Save Changes
+                {t('profile.save_changes')}
               </button>
               <button
                 onClick={handleEditToggle}
                 className="flex-1 rounded-full border border-[#3c2e26] bg-[#1e1612] py-2.5 text-xs font-semibold text-[#8c7769] transition-colors hover:text-[#f5e6d3]"
               >
                 <X size={12} className="mr-1.5 inline" />
-                Cancel
+                {t('common.cancel')}
               </button>
             </div>
           </div>
@@ -182,25 +134,22 @@ const ProfileShellPanel = ({ socket = null }) => {
   /* ── View mode ─────────────────────────────────────────────────── */
   return (
     <ShellPanelFrame
-      icon={null}
-      title={profile.user_name || 'Profile'}
-      titleClassName="font-serif text-[28px] text-[#f5e6d3] font-normal tracking-wide py-1"
-      headerClassName="flex items-start justify-between gap-4 border-b border-[#2c1e15] bg-transparent px-6 pt-6 pb-4"
-      bodyClassName="flex flex-col h-full overflow-hidden"
+      icon={User}
+      title={profile.user_name || t('panels.profile')}
       actions={(
         <button
           onClick={handleEditToggle}
           className="rounded-full border border-[#3c2e26] bg-[#1e1612] px-3 py-1.5 text-xs text-[#8c7769] transition-colors hover:border-[#de9d50] hover:text-[#de9d50]"
         >
           <Edit2 size={11} className="mr-1.5 inline" />
-          Edit
+          {t('profile.edit')}
         </button>
       )}
     >
       <div ref={panelRef} className="flex-1 overflow-y-auto px-6 py-4 pb-10 custom-scrollbar">
         {isLoading && (
           <div className="flex items-center justify-center py-12 text-sm text-[#8c7769]/50">
-            Loading…
+            {t('profile.loading')}
           </div>
         )}
         {!isLoading && !socket && (
@@ -210,30 +159,30 @@ const ProfileShellPanel = ({ socket = null }) => {
         )}
         {!isLoading && socket && (
           <div className="flex flex-col gap-5">
-            <Section title="Personal" icon={User}>
-              {profile.user_name && <Field label="Name" value={profile.user_name} />}
-              {profile.gender && <Field label="Gender" value={profile.gender} />}
+            <Section title={t('profile.section_personal')} icon={User}>
+              {profile.user_name && <SummaryField label={t('profile.name')} value={profile.user_name} />}
+              {profile.gender && <SummaryField label={t('profile.gender')} value={profile.gender} />}
               {profile.birthday && (
-                <Field
-                  label={<span className="flex items-center gap-1"><Cake size={11} />Birthday</span>}
+                <SummaryField
+                  label={<span className="flex items-center gap-1"><Cake size={11} />{t('profile.birthday')}</span>}
                   value={new Date(profile.birthday).toLocaleDateString()}
                 />
               )}
-              {profile.location && <Field label="Location" value={profile.location} />}
-              {profile.occupation && <Field label="Occupation" value={profile.occupation} />}
+              {profile.location && <SummaryField label={t('profile.location')} value={profile.location} />}
+              {profile.occupation && <SummaryField label={t('profile.occupation')} value={profile.occupation} />}
               {!profile.user_name && !profile.birthday && !profile.location && !profile.occupation && (
-                <p className="py-4 text-sm text-[#8c7769]/50">No information yet.</p>
+                <p className="py-4 text-sm text-[#8c7769]/70">{t('profile.no_information')}</p>
               )}
             </Section>
 
             {profile.interests && (
-              <Section title="Interests" icon={Heart}>
+              <Section title={t('profile.interests')} icon={Heart}>
                 <p className="py-4 text-sm leading-relaxed text-[#8c7769]">{profile.interests}</p>
               </Section>
             )}
 
             {profile.personality_traits && (
-              <Section title="Personality" icon={Heart}>
+              <Section title={t('profile.personality')} icon={Heart}>
                 <p className="py-4 text-sm leading-relaxed text-[#8c7769]">{profile.personality_traits}</p>
               </Section>
             )}

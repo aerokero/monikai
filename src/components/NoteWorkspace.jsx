@@ -1037,7 +1037,8 @@ const NoteWorkspace = ({
     const extMatch = normalized.match(/\.[^/.]+$/);
     const ext = extMatch ? extMatch[0] : '.md';
     const dir = normalized.includes('/') ? normalized.slice(0, normalized.lastIndexOf('/')) : '';
-    const baseSlug = slugify(`${baseTitle}-kopia`);
+    const duplicateSuffix = t('notes.duplicate_suffix');
+    const baseSlug = slugify(`${baseTitle}-${duplicateSuffix}`);
     let candidate = dir ? `${dir}/${baseSlug}${ext}` : `${baseSlug}${ext}`;
     const existing = new Set(pages.map(p => p.path));
     let i = 2;
@@ -1045,7 +1046,7 @@ const NoteWorkspace = ({
       candidate = dir ? `${dir}/${baseSlug}-${i}${ext}` : `${baseSlug}-${i}${ext}`;
       i += 1;
     }
-    const newTitle = `${baseTitle} kopia`;
+    const newTitle = `${baseTitle} ${duplicateSuffix}`;
     let timeoutId;
     const handler = (data) => {
       const dataPath = String(data?.path || '').replace(/\\/g, '/');
@@ -1240,7 +1241,7 @@ const NoteWorkspace = ({
       {!singlePage && isShellNarrow && sidebarOpen ? (
         <button
           type="button"
-          aria-label="Close notes sidebar"
+          aria-label={t('notes.close_sidebar_aria')}
           className="absolute inset-0 z-20 bg-black/55 backdrop-blur-[1px]"
           onClick={() => setSidebarOpen(false)}
         />
@@ -1278,7 +1279,7 @@ const NoteWorkspace = ({
                   onClick={() => setSidebarOpen(false)}
                   className="px-2 py-1 rounded-full bg-[#1e1612] border border-[#3c2e26] text-[10px] text-[#f5e6d3] hover:border-[#de9d50] hover:text-[#de9d50]"
                 >
-                  Close
+                  {t('common.close')}
                 </button>
               ) : null}
             </div>
@@ -1377,7 +1378,7 @@ const NoteWorkspace = ({
                 onClick={() => setSidebarOpen(true)}
                 className="inline-flex shrink-0 items-center gap-2 rounded-full border border-[#3c2e26] bg-[#1e1612] px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-[#f5e6d3] font-semibold"
               >
-                Pages
+                {t('notes.pages_label')}
                 <span className="rounded-full bg-[#de9d50] text-[#16100d] px-1.5 py-0.5 text-[9px] font-bold">{visiblePages.length}</span>
               </button>
             ) : null}

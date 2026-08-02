@@ -51,14 +51,15 @@ MAX_TURN_CHARS = 300
 
 _USER_SENDERS = {"ty", "user", "użytkownik", "uzytkownik"}
 
-# Potakiwania, krótkie wtrącenia i kontrola łącza — nie zasługują na strzał
-# do API.
+# Czyste potakiwania i wtrącenia w trakcie już trwającej wypowiedzi — nie
+# zasługują na strzał do API. NIE wolno tu wrzucać powitań ("hej", "cześć")
+# ani kontroli łącza ("halo, słyszysz mnie?", "jesteś tam?"): w trybie
+# dedicated_speech Thinker jest JEDYNYM kanałem odpowiedzi, więc odrzucenie
+# tu = całkowita cisza bez żadnego komunikatu — gorsze niż zbędny strzał.
 _BACKCHANNEL_RE = re.compile(
     r"^(no+|ta+k(?:\s+ta+k)*|mhm+|aha+|yhm+|ok(ej)?|dobra|jasne|spoko|super|fajnie|git|"
-    r"czesc|cześć|hej+|siema|hm+|w porz[ąa]dku|wporzo|dzi[ęe]ki|"
-    r"dzi[ęe]kuj[ęe]|no tak|no dobra|w[łl]a[śs]nie|serio|naprawd[ęe]|wow|o+|"
-    r"halo+(?:\s+halo+)*([\s,]+(s[łl]yszymy si[ęe]|s[łl]yszysz( mnie)?))?|"
-    r"s[łl]yszymy si[ęe]|s[łl]yszysz( mnie)?|jeste[śs] tam)"
+    r"hm+|w porz[ąa]dku|wporzo|dzi[ęe]ki|"
+    r"dzi[ęe]kuj[ęe]|no tak|no dobra|w[łl]a[śs]nie|serio|naprawd[ęe]|wow|o+)"
     r"[\s.,!?~]*$",
     re.IGNORECASE,
 )
@@ -359,201 +360,6 @@ class Thinker:
         self.last_trace = {**self.last_trace, "status": "prepared"}
         return reply
 
-    async def prepare_reply_candidates(
-        self,
-        text: str,
-        *,
-        count: int = 3,
-        timeout_sec: float | None = None,
-        turn_evidence: str | None = None,
-        on_progress: Callable[[dict], Awaitable[None] | None] | None = None,
-    ) -> tuple[str, ...]:
-        """Author several uncommitted replies from one immutable context.
-
-        This is the Conversation Lab boundary: callers may show and compare
-        these drafts, but must explicitly select one before publishing it to
-        the transcript, memory pipeline or speech renderer.
-        """
-        cleaned = self._gate(text)
-        if cleaned is None:
-            self.last_trace = {"source": str(text or "").strip(), "status": "skipped"}
-            return ()
-        self._mark_shot()
-        target_count = max(1, min(4, int(count or 1)))
-        if timeout_sec is None:
-            per_candidate = float(self._config().get("timeout_sec", 8.0) or 8.0)
-            timeout_sec = per_candidate * target_count
-
-        async def progress(payload: dict) -> None:
-            if on_progress is None:
-                return
-            value = on_progress(payload)
-            if asyncio.iscoroutine(value):
-                await value
-
-        await progress({"stage": "compiling_context", "target_count": target_count})
-        compiled = await self._compile_turn_context(cleaned, turn_evidence=turn_evidence)
-        if self._context_compiler is not None and compiled is None:
-            self.last_trace = {
-                "source": cleaned,
-                "status": "context_error",
-                "context": dict(self._last_context_trace),
-                "generation": [],
-            }
-            await progress(
-                {
-                    "stage": "error",
-                    "error": "Nie udało się skompilować kontekstu rozmowy.",
-                }
-            )
-            return ()
-        await progress(
-            {
-                "stage": "context_ready",
-                "context": dict(self._last_context_trace),
-                "target_count": target_count,
-            }
-        )
-        token = self._compiled_context.set(compiled)
-        candidates: list[str] = []
-        validation_traces: list[dict] = []
-        candidate_traces: list[dict] = []
-        deadline = time.monotonic() + max(1.0, float(timeout_sec))
-        try:
-            # A small retry allowance handles providers returning an identical
-            # sample without changing the context or prompt between variants.
-            max_attempts = target_count + 2
-            for attempt_index in range(max_attempts):
-                if len(candidates) >= target_count:
-                    break
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    break
-                await progress(
-                    {
-                        "stage": "generating_candidate",
-                        "attempt": attempt_index + 1,
-                        "ready_count": len(candidates),
-                        "target_count": target_count,
-                    }
-                )
-                started = time.monotonic()
-                raw = await asyncio.wait_for(
-                    self._generate_with_retry(cleaned),
-                    timeout=remaining,
-                )
-                brief = _parse_response_brief(raw)
-                if brief is None:
-                    candidate_traces.append(
-                        {
-                            "attempt": attempt_index + 1,
-                            "status": "invalid",
-                            "latency_ms": round(
-                                (time.monotonic() - started) * 1000, 1
-                            ),
-                        }
-                    )
-                    continue
-                brief, validation_trace = await self._validate_compiled_candidate(
-                    compiled=compiled,
-                    user_text=cleaned,
-                    candidate=brief,
-                    timeout_sec=max(0.1, min(remaining, float(
-                        self._config().get("revision_timeout_sec", 2.5) or 2.5
-                    ))),
-                )
-                validation_traces.append(validation_trace)
-                if brief is None:
-                    candidate_traces.append(
-                        {
-                            "attempt": attempt_index + 1,
-                            "status": "rejected",
-                            "latency_ms": round(
-                                (time.monotonic() - started) * 1000, 1
-                            ),
-                            "validation": validation_trace,
-                        }
-                    )
-                    continue
-                reply = re.sub(r"\s+", " ", brief.reply or "").strip()
-                if reply and reply.casefold() not in {
-                    item.casefold() for item in candidates
-                }:
-                    candidates.append(reply)
-                    candidate_traces.append(
-                        {
-                            "attempt": attempt_index + 1,
-                            "status": "ready",
-                            "latency_ms": round(
-                                (time.monotonic() - started) * 1000, 1
-                            ),
-                            "validation": validation_trace,
-                        }
-                    )
-                    await progress(
-                        {
-                            "stage": "candidate_ready",
-                            "ready_count": len(candidates),
-                            "target_count": target_count,
-                            "latency_ms": candidate_traces[-1]["latency_ms"],
-                        }
-                    )
-                else:
-                    candidate_traces.append(
-                        {
-                            "attempt": attempt_index + 1,
-                            "status": "duplicate",
-                            "latency_ms": round(
-                                (time.monotonic() - started) * 1000, 1
-                            ),
-                            "validation": validation_trace,
-                        }
-                    )
-        except asyncio.TimeoutError:
-            await progress(
-                {
-                    "stage": "timeout",
-                    "ready_count": len(candidates),
-                    "target_count": target_count,
-                }
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            self._note_generate_failure(exc)
-            if not candidates:
-                self.last_trace = {
-                    "source": cleaned,
-                    "status": "error",
-                    "error": str(exc),
-                    "context": dict(self._last_context_trace),
-                    "generation": list(self._generation_attempts),
-                }
-                await progress({"stage": "error", "error": _compact_error(exc)})
-                return ()
-        finally:
-            self._compiled_context.reset(token)
-
-        self.last_trace = {
-            "source": cleaned,
-            "status": "candidates_ready" if candidates else "invalid_or_pass",
-            "author_model": self._last_success_model,
-            "candidate_count": len(candidates),
-            "candidates": list(candidates),
-            "context": dict(self._last_context_trace),
-            "validation": validation_traces,
-            "candidate_attempts": candidate_traces,
-            "generation": list(self._generation_attempts),
-        }
-        await progress(
-            {
-                "stage": "complete",
-                "ready_count": len(candidates),
-                "target_count": target_count,
-            }
-        )
-        return tuple(candidates)
-
     async def finalize_voice_turn(self, text: str = "") -> bool:
         """Compatibility helper; runtime uses prepare + ordered realtime send."""
         injection = await self.prepare_voice_turn(text)
@@ -795,69 +601,6 @@ class Thinker:
             }
             print(f"[THINKER] context compiler error: {_compact_error(exc)}")
             return None
-
-    async def _validate_compiled_candidate(
-        self,
-        *,
-        compiled: CompiledConversationContext | None,
-        user_text: str,
-        candidate: ResponseBrief,
-        timeout_sec: float,
-    ) -> tuple[ResponseBrief | None, dict]:
-        validation = self._validator.validate(
-            user_text=user_text,
-            reply=candidate.reply,
-            recent_assistant_messages=self._recent_assistant_messages(),
-        )
-        trace = {
-            "status": "rewrite_needed" if validation.needs_rewrite else "passed",
-            "issues": [issue.code for issue in validation.issues],
-        }
-        if not validation.needs_rewrite:
-            return candidate, trace
-        if compiled is None:
-            return None, {**trace, "status": "rejected_no_revision_context"}
-        try:
-            revised_raw = await asyncio.wait_for(
-                self._revise_once(
-                    compiled=compiled,
-                    candidate=candidate,
-                    issues=validation.issues,
-                ),
-                timeout=timeout_sec,
-            )
-            revised = _parse_response_brief(revised_raw)
-            if revised is None:
-                return None, {**trace, "status": "revision_invalid"}
-            revised_validation = self._validator.validate(
-                user_text=user_text,
-                reply=revised.reply,
-                recent_assistant_messages=self._recent_assistant_messages(),
-            )
-            revised_trace = {
-                "status": (
-                    "corrected"
-                    if not revised_validation.needs_rewrite
-                    else "corrected_with_remaining_issues"
-                ),
-                "issues": trace["issues"],
-                "remaining_issues": [
-                    issue.code for issue in revised_validation.issues
-                ],
-            }
-            return (
-                None if revised_validation.needs_rewrite else revised,
-                revised_trace,
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            return None, {
-                **trace,
-                "status": "revision_failed",
-                "error_type": type(exc).__name__,
-                "error": _compact_error(exc) or type(exc).__name__,
-            }
 
     def _recent_assistant_messages(self) -> list[str]:
         try:

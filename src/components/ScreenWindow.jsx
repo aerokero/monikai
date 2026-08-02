@@ -51,12 +51,12 @@ const ScreenWindow = ({
                     <img
                       src={`data:${imageSrc.mime_type || 'image/jpeg'};base64,${imageSrc.data}`}
                       className="w-full h-full object-cover"
-                      alt="SCREEN"
+                      alt={t('screen_window.alt')}
                     />
                 ) : (
                     <div className="flex flex-col items-center gap-2 text-white/30">
                         <div className="w-8 h-8 border-2 border-white/10 border-t-cyan-500 rounded-full animate-spin" />
-                        <span className="text-[10px] tracking-widest uppercase">Waiting for signal...</span>
+                        <span className="text-[10px] tracking-widest uppercase">{t('screen_window.waiting')}</span>
                     </div>
                 )}
             </div>

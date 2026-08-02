@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Minus, X } from '../icons';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 const WindowTopBar = () => {
+  const { t } = useLanguage();
   const ipcRenderer = useMemo(() => {
     try {
       if (typeof window !== 'undefined' && typeof window.require === 'function') {
@@ -42,7 +44,7 @@ const WindowTopBar = () => {
   if (!ipcRenderer) return null;
 
   return (
-    <header className="window-topbar" aria-label="Window controls">
+    <header className="window-topbar" aria-label={t('window_topbar.controls_label')}>
       <div
         className="window-topbar__drag"
         onDoubleClick={() => ipcRenderer.send('window-maximize')}
@@ -53,8 +55,8 @@ const WindowTopBar = () => {
           type="button"
           className="window-topbar__btn"
           onClick={() => ipcRenderer.send('window-minimize')}
-          aria-label="Minimize"
-          title="Minimize"
+          aria-label={t('window_topbar.minimize')}
+          title={t('window_topbar.minimize')}
         >
           <Minus size={14} />
         </button>
@@ -63,8 +65,8 @@ const WindowTopBar = () => {
           type="button"
           className="window-topbar__btn"
           onClick={() => ipcRenderer.send('window-maximize')}
-          aria-label={isMaximized ? 'Restore' : 'Maximize'}
-          title={isMaximized ? 'Restore' : 'Maximize'}
+          aria-label={isMaximized ? t('window_topbar.restore') : t('window_topbar.maximize')}
+          title={isMaximized ? t('window_topbar.restore') : t('window_topbar.maximize')}
         >
           <span className="window-topbar__square" />
         </button>
@@ -73,8 +75,8 @@ const WindowTopBar = () => {
           type="button"
           className="window-topbar__btn window-topbar__btn--close"
           onClick={() => ipcRenderer.send('window-close')}
-          aria-label="Close"
-          title="Close"
+          aria-label={t('window_topbar.close')}
+          title={t('window_topbar.close')}
         >
           <X size={14} />
         </button>

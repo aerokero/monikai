@@ -9,15 +9,17 @@ import {
 } from '../icons';
 import ShellPanelFrame from '../shared/ShellPanelFrame';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { SectionLabel, Card, Badge, TextField, TextAreaField, SelectField, EmptyState, ListContainer, ListRow } from '../shared/panelPrimitives';
 
 const MODES = [
-  ['grounded', 'Rzeczywistość', 'Fakty realne mają pierwszeństwo.'],
-  ['crossover', 'Crossover', 'Aktywne światy mogą się przenikać.'],
-  ['roleplay', 'Roleplay', 'Scenariusz i fikcja prowadzą scenę.'],
-  ['ambiguous', 'Niejednoznaczny', 'Monika zachowuje kilka interpretacji.'],
+  ['grounded', 'worlds.modes.grounded'],
+  ['crossover', 'worlds.modes.crossover'],
+  ['roleplay', 'worlds.modes.roleplay'],
+  ['ambiguous', 'worlds.modes.ambiguous'],
 ];
 
 const CandidateCard = ({ candidate, lorebooks, busy, onReview }) => {
+  const { t } = useLanguage();
   const [title, setTitle] = useState(candidate.title);
   const [content, setContent] = useState(candidate.content);
   const [targetBook, setTargetBook] = useState(candidate.target_lorebook_id || '');
@@ -25,66 +27,64 @@ const CandidateCard = ({ candidate, lorebooks, busy, onReview }) => {
   const conflicts = candidate.conflicts_with || [];
   const needsWorld = candidate.target_type !== 'personal_memory';
 
+  const bookOptions = candidate.target_type === 'world_lore'
+    ? [{ value: 'reality', label: t('worlds.reality_option') }]
+    : lorebooks
+      .filter((book) => ['imported_fiction', 'scenario', 'custom'].includes(book.kind))
+      .map((book) => ({ value: book.id, label: book.name }));
+
+  const conflictOptions = [
+    { value: '', label: t('worlds.resolve_conflict') },
+    ...conflicts.map((uid) => ({ value: uid, label: t('worlds.replace_uid', { uid }) })),
+    { value: 'keep_both', label: t('worlds.keep_both') },
+  ];
+
   return (
-    <div className="rounded-xl border border-[#493426] bg-black/15 p-3">
-      <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wide">
-        <span className="rounded-full border border-[#5b412d] px-2 py-0.5 text-[#d6a66f]">
-          {candidate.target_type}
-        </span>
-        <span className="text-[#8f7b6d]">
-          pewność {Math.round(candidate.confidence * 100)}%
+    <Card className="p-3">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <Badge tone="amber">{candidate.target_type}</Badge>
+        <span className="text-[11px] text-[#8c7769]">
+          {t('worlds.confidence', { percent: Math.round(candidate.confidence * 100) })}
         </span>
         {conflicts.length ? (
-          <span className="text-[#d98570]">konflikt: {conflicts.length}</span>
+          <Badge tone="red">{t('worlds.conflict_count', { count: conflicts.length })}</Badge>
         ) : null}
       </div>
-      <input
-        value={title}
-        onChange={(event) => setTitle(event.target.value)}
-        className="w-full rounded-md border border-[#3b2a20] bg-black/25 px-2.5 py-2 text-sm font-semibold text-[#f5e6d3] outline-none focus:border-[#8e643d]"
-      />
-      <textarea
+      <TextField value={title} onChange={(event) => setTitle(event.target.value)} className="font-semibold" />
+      <TextAreaField
         value={content}
         onChange={(event) => setContent(event.target.value)}
         rows={3}
-        className="mt-2 w-full resize-y rounded-md border border-[#3b2a20] bg-black/25 px-2.5 py-2 text-xs leading-relaxed text-[#d7c1ae] outline-none focus:border-[#8e643d]"
+        size="sm"
+        className="leading-relaxed"
+        wrapperClassName="mt-2"
       />
-      <div className="mt-2 text-[11px] leading-relaxed text-[#806f63]">
-        Źródło: {candidate.source_excerpt || 'brak fragmentu'}
+      <div className="mt-2 text-[11px] leading-relaxed text-[#8c7769]">
+        {t('worlds.source_label')}{candidate.source_excerpt || t('worlds.no_excerpt')}
       </div>
       {candidate.rationale ? (
-        <div className="mt-1 text-[11px] leading-relaxed text-[#806f63]">
-          Powód: {candidate.rationale}
+        <div className="mt-1 text-[11px] leading-relaxed text-[#8c7769]">
+          {t('worlds.reason_label')}{candidate.rationale}
         </div>
       ) : null}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {needsWorld ? (
-          <select
+          <SelectField
             value={targetBook}
             onChange={(event) => setTargetBook(event.target.value)}
-            className="min-w-36 rounded-md border border-[#3b2a20] bg-[#17100c] px-2 py-1.5 text-xs text-[#d7c1ae]"
-          >
-            {candidate.target_type === 'world_lore' ? (
-              <option value="reality">Rzeczywistość</option>
-            ) : lorebooks
-              .filter((book) => ['imported_fiction', 'scenario', 'custom'].includes(book.kind))
-              .map((book) => (
-                <option key={book.id} value={book.id}>{book.name}</option>
-              ))}
-          </select>
+            options={bookOptions}
+            size="sm"
+            wrapperClassName="min-w-36"
+          />
         ) : null}
         {conflicts.length ? (
-          <select
+          <SelectField
             value={resolution}
             onChange={(event) => setResolution(event.target.value)}
-            className="min-w-44 rounded-md border border-[#754536] bg-[#21130f] px-2 py-1.5 text-xs text-[#dfaa98]"
-          >
-            <option value="">Rozwiąż konflikt…</option>
-            {conflicts.map((uid) => (
-              <option key={uid} value={uid}>Zastąp {uid}</option>
-            ))}
-            <option value="keep_both">Zachowaj oba fakty</option>
-          </select>
+            options={conflictOptions}
+            size="sm"
+            wrapperClassName="min-w-44"
+          />
         ) : null}
         <div className="flex-1" />
         <button
@@ -93,7 +93,7 @@ const CandidateCard = ({ candidate, lorebooks, busy, onReview }) => {
           onClick={() => onReview(candidate.id, false)}
           className="rounded-md border border-[#59372e] px-3 py-1.5 text-xs text-[#cb8b7c] hover:bg-[#4a2922]/40 disabled:opacity-50"
         >
-          Odrzuć
+          {t('worlds.reject')}
         </button>
         <button
           type="button"
@@ -109,10 +109,10 @@ const CandidateCard = ({ candidate, lorebooks, busy, onReview }) => {
           })}
           className="rounded-md border border-[#627c4e] bg-[#526942]/30 px-3 py-1.5 text-xs font-medium text-[#bad39f] hover:bg-[#526942]/45 disabled:opacity-40"
         >
-          Zaakceptuj
+          {t('worlds.accept')}
         </button>
       </div>
-    </div>
+    </Card>
   );
 };
 
@@ -146,8 +146,8 @@ const WorldsShellPanel = ({ socket }) => {
         : '';
       setNotice(
         payload?.ok
-          ? `Zaimportowano ${payload.entry_count} wpisów.${warnings}`
-          : 'Import nie powiódł się.',
+          ? `${t('worlds.import_success', { count: payload.entry_count })}${warnings}`
+          : t('worlds.import_failed'),
       );
       setBusy(false);
     };
@@ -158,7 +158,7 @@ const WorldsShellPanel = ({ socket }) => {
       }));
     };
     const onError = (payload) => {
-      setNotice(payload?.error || 'Operacja lorebooka nie powiodła się.');
+      setNotice(payload?.error || t('worlds.operation_failed'));
       setBusy(false);
     };
     const refresh = () => socket.emit('lore_state_get', {});
@@ -178,7 +178,7 @@ const WorldsShellPanel = ({ socket }) => {
       socket.off('lore_error', onError);
       socket.off('connect', refresh);
     };
-  }, [socket]);
+  }, [socket, t]);
 
   const activeIds = state.world_stack?.lorebook_ids || [];
   const activeSet = useMemo(() => new Set(activeIds), [activeIds]);
@@ -198,7 +198,7 @@ const WorldsShellPanel = ({ socket }) => {
       },
       (response) => {
         if (response?.ok === false) {
-          setNotice(response.error || 'Nie udało się zapisać World Stacka.');
+          setNotice(response.error || t('worlds.save_stack_failed'));
           setBusy(false);
         }
       },
@@ -226,7 +226,7 @@ const WorldsShellPanel = ({ socket }) => {
     event.target.value = '';
     if (!file || !socket) return;
     if (file.size > 10 * 1024 * 1024) {
-      setNotice('Plik jest większy niż 10 MiB.');
+      setNotice(t('worlds.file_too_large'));
       return;
     }
     setBusy(true);
@@ -242,7 +242,7 @@ const WorldsShellPanel = ({ socket }) => {
         },
         (response) => {
           if (response?.ok === false) {
-            setNotice(response.error || 'Import nie powiódł się.');
+            setNotice(response.error || t('worlds.import_failed'));
             setBusy(false);
           }
         },
@@ -260,7 +260,7 @@ const WorldsShellPanel = ({ socket }) => {
       { book_id: bookId, format: 'json' },
       (response) => {
         if (!response?.ok) {
-          setNotice(response?.error || 'Eksport nie powiódł się.');
+          setNotice(response?.error || t('worlds.export_failed'));
           return;
         }
         const blob = new Blob([response.content], {
@@ -293,7 +293,7 @@ const WorldsShellPanel = ({ socket }) => {
       },
       (response) => {
         if (response?.ok === false) {
-          setNotice(response.error || 'Nie udało się ocenić propozycji.');
+          setNotice(response.error || t('worlds.review_failed'));
           setBusy(false);
         }
       },
@@ -304,7 +304,7 @@ const WorldsShellPanel = ({ socket }) => {
     <ShellPanelFrame
       icon={Globe}
       title={t('worlds.title')}
-      subtitle={state.conversation_id ? `Rozmowa: ${state.conversation_id}` : ''}
+      subtitle={state.conversation_id ? t('worlds.conversation_label', { id: state.conversation_id }) : ''}
       actions={(
         <>
           <input
@@ -335,45 +335,33 @@ const WorldsShellPanel = ({ socket }) => {
         ) : null}
 
         <section>
-          <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#9f8878]">
-            {t('worlds.mode')}
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {MODES.map(([id, label, description]) => {
+          <SectionLabel>{t('worlds.mode')}</SectionLabel>
+          <ListContainer>
+            {MODES.map(([id, labelKey]) => {
               const selected = state.world_stack?.reality_mode === id;
               return (
-                <button
-                  type="button"
+                <ListRow
                   key={id}
                   disabled={busy}
                   onClick={() => saveStack({ reality_mode: id })}
-                  className={`rounded-xl border p-3 text-left transition ${
-                    selected
-                      ? 'border-[#d69b58] bg-[#d69b58]/10'
-                      : 'border-[#3b2a20] bg-black/15 hover:border-[#5b412d]'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 text-sm font-semibold text-[#f5e6d3]">
-                    <span className={`flex h-5 w-5 items-center justify-center rounded-full border ${
+                  className={selected ? 'bg-[#de9d50]/[0.06]' : ''}
+                  title={t(`${labelKey}.label`)}
+                  description={t(`${labelKey}.desc`)}
+                  trailing={(
+                    <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
                       selected ? 'border-[#d69b58] bg-[#d69b58] text-[#20160f]' : 'border-[#5a4638]'
                     }`}>
                       {selected ? <Check size={12} /> : null}
                     </span>
-                    {label}
-                  </div>
-                  <div className="mt-1 pl-7 text-xs leading-relaxed text-[#9f8878]">
-                    {description}
-                  </div>
-                </button>
+                  )}
+                />
               );
             })}
-          </div>
+          </ListContainer>
         </section>
 
         <section>
-          <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#9f8878]">
-            Propozycje Moniki
-          </div>
+          <SectionLabel>{t('worlds.candidates_section')}</SectionLabel>
           <div className="space-y-2">
             {state.candidates?.length ? state.candidates.map((candidate) => (
               <CandidateCard
@@ -384,151 +372,143 @@ const WorldsShellPanel = ({ socket }) => {
                 onReview={reviewCandidate}
               />
             )) : (
-              <div className="rounded-xl border border-dashed border-[#3b2a20] p-4 text-center text-xs text-[#77675c]">
-                Brak faktów oczekujących na ocenę.
-              </div>
+              <EmptyState>{t('worlds.no_candidates')}</EmptyState>
             )}
           </div>
         </section>
 
         <section>
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[#9f8878]">
-                {t('worlds.books')}
-              </div>
-              <div className="mt-1 text-xs text-[#77675c]">
-                Import nie aktywuje świata automatycznie.
-              </div>
-            </div>
-            <label className="flex items-center gap-2 text-xs text-[#9f8878]">
-              Budżet
-              <input
-                key={state.world_stack?.token_budget ?? 'auto'}
-                type="number"
-                min="100"
-                max="12000"
-                step="100"
-                defaultValue={state.world_stack?.token_budget || ''}
-                placeholder="auto"
-                onBlur={(event) => saveStack({
-                  token_budget: event.target.value || null,
-                })}
-                className="w-24 rounded-md border border-[#3b2a20] bg-black/25 px-2 py-1.5 text-[#e8d6c4] outline-none focus:border-[#8e643d]"
-              />
-            </label>
+          <SectionLabel
+            action={(
+              <label className="flex items-center gap-2 text-xs text-[#8c7769]">
+                {t('worlds.token_budget')}
+                <input
+                  key={state.world_stack?.token_budget ?? 'auto'}
+                  type="number"
+                  min="100"
+                  max="12000"
+                  step="100"
+                  defaultValue={state.world_stack?.token_budget || ''}
+                  placeholder={t('worlds.budget_auto')}
+                  onBlur={(event) => saveStack({
+                    token_budget: event.target.value || null,
+                  })}
+                  className="w-24 rounded-md border border-[#3c2e26] bg-[#1e1612] px-2 py-1.5 text-[#f5e6d3] outline-none focus:border-[#de9d50]"
+                />
+              </label>
+            )}
+          >
+            {t('worlds.books')}
+          </SectionLabel>
+          <div className="mb-2 text-xs text-[#8c7769]">
+            {t('worlds.import_hint')}
           </div>
 
-          <div className="space-y-2">
-            {state.lorebooks?.length ? state.lorebooks.map((book) => {
-              const active = activeSet.has(book.id);
-              return (
-                <div
-                  key={book.id}
-                  className={`flex items-center gap-3 rounded-xl border p-3 ${
-                    active
-                      ? 'border-[#765333] bg-[#d69b58]/[0.07]'
-                      : 'border-[#33251d] bg-black/15'
-                  }`}
-                >
-                  <button
-                    type="button"
-                    disabled={busy || !book.enabled}
-                    onClick={() => toggleBook(book.id)}
-                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border ${
-                      active
-                        ? 'border-[#d69b58] bg-[#d69b58] text-[#20160f]'
-                        : 'border-[#5a4638] text-transparent'
-                    }`}
-                    aria-label={`${active ? 'Dezaktywuj' : 'Aktywuj'} ${book.name}`}
-                  >
-                    <Check size={14} />
-                  </button>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="truncate text-sm font-semibold text-[#f5e6d3]">{book.name}</span>
-                      <span className="rounded-full border border-[#49362a] px-2 py-0.5 text-[10px] uppercase tracking-wide text-[#a98f7d]">
-                        {book.kind}
+          {state.lorebooks?.length ? (
+            <ListContainer>
+              {state.lorebooks.map((book) => {
+                const active = activeSet.has(book.id);
+                return (
+                  <ListRow
+                    key={book.id}
+                    leading={(
+                      <button
+                        type="button"
+                        disabled={busy || !book.enabled}
+                        onClick={() => toggleBook(book.id)}
+                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border ${
+                          active
+                            ? 'border-[#d69b58] bg-[#d69b58] text-[#20160f]'
+                            : 'border-[#5a4638] text-transparent'
+                        }`}
+                        aria-label={active ? t('worlds.toggle_deactivate', { name: book.name }) : t('worlds.toggle_activate', { name: book.name })}
+                      >
+                        <Check size={14} />
+                      </button>
+                    )}
+                    title={(
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="truncate font-semibold">{book.name}</span>
+                        <Badge tone="neutral">{book.kind}</Badge>
+                        {book.trusted ? <Badge tone="green">{t('worlds.trusted_badge')}</Badge> : null}
                       </span>
-                      {book.trusted ? (
-                        <span className="text-[10px] uppercase tracking-wide text-[#91b878]">trusted</span>
-                      ) : null}
-                    </div>
-                    <div className="mt-1 text-xs text-[#8f7b6d]">
-                      {book.entry_count} wpisów · ID: {book.id}
-                    </div>
-                  </div>
-                  {active ? (
-                    <div className="flex flex-col">
-                      <button
-                        type="button"
-                        disabled={busy || activeIds.indexOf(book.id) === 0}
-                        onClick={() => moveBook(book.id, -1)}
-                        className="rounded p-0.5 text-[#8f7b6d] hover:text-[#efd4b5] disabled:opacity-20"
-                        aria-label={`Przesuń ${book.name} wyżej`}
-                      >
-                        <ChevronUp size={14} />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy || activeIds.indexOf(book.id) === activeIds.length - 1}
-                        onClick={() => moveBook(book.id, 1)}
-                        className="rounded p-0.5 text-[#8f7b6d] hover:text-[#efd4b5] disabled:opacity-20"
-                        aria-label={`Przesuń ${book.name} niżej`}
-                      >
-                        <ChevronDown size={14} />
-                      </button>
-                    </div>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => exportBook(book.id)}
-                    className="rounded-md border border-[#3b2a20] px-2.5 py-1.5 text-xs text-[#bca18d] hover:border-[#6a4b34] hover:text-[#efd4b5]"
-                  >
-                    JSON
-                  </button>
-                </div>
-              );
-            }) : (
-              <div className="rounded-xl border border-dashed border-[#3b2a20] p-6 text-center text-sm text-[#8f7b6d]">
-                {t('worlds.empty')}
-              </div>
-            )}
-          </div>
+                    )}
+                    description={t('worlds.book_meta', { count: book.entry_count, id: book.id })}
+                    trailing={(
+                      <div className="flex shrink-0 items-center gap-1">
+                        {active ? (
+                          <div className="flex flex-col">
+                            <button
+                              type="button"
+                              disabled={busy || activeIds.indexOf(book.id) === 0}
+                              onClick={() => moveBook(book.id, -1)}
+                              className="rounded p-0.5 text-[#8c7769] hover:text-[#efd4b5] disabled:opacity-20"
+                              aria-label={t('worlds.move_up', { name: book.name })}
+                            >
+                              <ChevronUp size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busy || activeIds.indexOf(book.id) === activeIds.length - 1}
+                              onClick={() => moveBook(book.id, 1)}
+                              className="rounded p-0.5 text-[#8c7769] hover:text-[#efd4b5] disabled:opacity-20"
+                              aria-label={t('worlds.move_down', { name: book.name })}
+                            >
+                              <ChevronDown size={14} />
+                            </button>
+                          </div>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => exportBook(book.id)}
+                          className="rounded-md border border-[#3c2e26] px-2.5 py-1.5 text-xs text-[#8c7769] hover:border-[#5b412d] hover:text-[#efd4b5]"
+                        >
+                          JSON
+                        </button>
+                      </div>
+                    )}
+                  />
+                );
+              })}
+            </ListContainer>
+          ) : (
+            <EmptyState>{t('worlds.empty')}</EmptyState>
+          )}
         </section>
 
         <section>
-          <div className="mb-2 flex items-center justify-between">
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[#9f8878]">
-              {t('worlds.diagnostics')}
-            </div>
-            <button
-              type="button"
-              onClick={refreshDiagnostics}
-              className="flex items-center gap-1.5 text-xs text-[#aa8d77] hover:text-[#efd4b5]"
-            >
-              <RefreshCw size={13} />
-              Odśwież
-            </button>
-          </div>
-          <div className="overflow-hidden rounded-xl border border-[#33251d]">
+          <SectionLabel
+            action={(
+              <button
+                type="button"
+                onClick={refreshDiagnostics}
+                className="flex items-center gap-1.5 text-xs text-[#8c7769] hover:text-[#efd4b5]"
+              >
+                <RefreshCw size={13} />
+                {t('worlds.refresh')}
+              </button>
+            )}
+          >
+            {t('worlds.diagnostics')}
+          </SectionLabel>
+          <ListContainer>
             {state.diagnostics?.length ? state.diagnostics.map((item, index) => (
               <div
                 key={`${item.created_at}-${item.entry_uid}-${index}`}
-                className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 border-b border-[#2c2019] px-3 py-2 text-xs last:border-b-0"
+                className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 px-4 py-2.5 text-xs"
               >
-                <div className="truncate text-[#d7c1ae]">{item.entry_uid}</div>
-                <div className="text-[#927a69]">{item.reason}</div>
-                <div className={item.included ? 'text-[#91b878]' : 'text-[#c77d6d]'}>
-                  {item.included ? 'użyty' : 'pominięty'} · {item.score.toFixed(1)}
+                <div className="truncate text-[#8c7769]">{item.entry_uid}</div>
+                <div className="text-[#8c7769]">{item.reason}</div>
+                <div className={item.included ? 'text-[#a8c896]' : 'text-[#df8978]'}>
+                  {item.included ? t('worlds.status_used') : t('worlds.status_skipped')} · {item.score.toFixed(1)}
                 </div>
               </div>
             )) : (
-              <div className="p-5 text-center text-xs text-[#77675c]">
-                Brak aktywacji w tej rozmowie.
+              <div className="p-5 text-center text-xs text-[#8c7769]/70">
+                {t('worlds.no_diagnostics')}
               </div>
             )}
-          </div>
+          </ListContainer>
         </section>
       </div>
     </ShellPanelFrame>

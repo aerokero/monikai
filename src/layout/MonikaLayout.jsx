@@ -7,7 +7,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import useLayoutMode from '../hooks/useLayoutMode';
 import { useMonika } from '../contexts/MonikaContext';
-import { useSettings } from '../contexts/SettingsContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { getPanelById } from '../config/panelRegistry';
 import MonikaSprite from './MonikaSprite';
 import MASClock from './MASClock';
@@ -92,18 +92,17 @@ const MonikaLayout = ({
   const {
     layoutMode,
     monikaConfig,
-    viewport
+    isPortrait
   } = useLayoutMode();
 
   const { activeContext, setActiveContext } = useMonika();
-  const { openSettings } = useSettings();
+  const { t } = useLanguage();
   const isElectron = typeof window !== 'undefined' && typeof window.require === 'function';
 
   const [isExpanded, setIsExpanded] = useState(false);
   const activePanel = getPanelById(activeContext);
   const resolvedContext = activePanel ? activeContext : 'chat';
   const hasUtilityPanel = resolvedContext !== 'chat';
-  const isPortraitViewport = viewport.height > viewport.width;
 
   useEffect(() => {
     if (!activePanel) {
@@ -117,9 +116,9 @@ const MonikaLayout = ({
       'monika-layout',
       `monika-layout--${layoutMode}`,
       hasUtilityPanel ? 'monika-layout--panel-open' : '',
-      isPortraitViewport ? 'monika-layout--portrait-viewport' : '',
+      isPortrait ? 'monika-layout--portrait-viewport' : '',
     ].filter(Boolean).join(' ');
-  }, [layoutMode, hasUtilityPanel, isPortraitViewport]);
+  }, [layoutMode, hasUtilityPanel, isPortrait]);
 
   // Monika sprite scale based on layout mode
   const monikaScale = useMemo(() => {
@@ -156,7 +155,7 @@ const MonikaLayout = ({
 
         {/* Non-Chat Panel Container (Study, Tasks, Media, etc.) - Hidden when chat is selected */}
         {resolvedContext !== 'chat' && (
-          <div className={panelContainerClassName} role="region" aria-live="polite" aria-label="Content panel">
+          <div className={panelContainerClassName} role="region" aria-live="polite" aria-label={t('layout.content_panel_aria')}>
             <PanelRouter
               messages={messages}
               inputValue={inputValue}
@@ -166,20 +165,11 @@ const MonikaLayout = ({
               userSpeaking={userSpeaking}
               micAudioData={micAudioData}
               language={language}
-              personalityState={personalityState}
               studyCatalog={studyCatalog}
               studySelection={studySelection}
               onSelectStudy={onSelectStudy}
               onRefreshCatalog={onRefreshCatalog}
               shareRef={shareRef}
-              sessionActive={sessionActive}
-              onToggleSession={onToggleSession}
-              eatTogetherActive={eatTogetherActive}
-              onStartEatTogether={onStartEatTogether}
-              onStopEatTogether={onStopEatTogether}
-              onHeadpat={onHeadpat}
-              onToggleMinecraft={onToggleMinecraft}
-              showMinecraftWindow={showMinecraftWindow}
               excludeChat={true}
               micDevices={micDevices}
               speakerDevices={speakerDevices}
@@ -214,7 +204,7 @@ const MonikaLayout = ({
         <div
           className={`${chatWindowClassName} ${isExpanded ? 'is-expanded' : ''}`}
           role="region"
-          aria-label="Chat"
+          aria-label={t('layout.chat_panel_aria')}
           style={{ transform: 'translateX(-50%)' }}
         >
           <ChatPanel
@@ -231,29 +221,19 @@ const MonikaLayout = ({
             onMinimizedChange={onChatMinimizedChange}
             onSizeChange={onChatSizeChange}
             sessionActive={sessionActive}
+            onToggleSession={onToggleSession}
+            eatTogetherActive={eatTogetherActive}
+            onStartEatTogether={onStartEatTogether}
+            onStopEatTogether={onStopEatTogether}
+            onHeadpat={onHeadpat}
+            onToggleMinecraft={onToggleMinecraft}
+            showMinecraftWindow={showMinecraftWindow}
+            studyCatalog={studyCatalog}
+            studySelection={studySelection}
+            onOpenStudy={onOpenStudy}
           />
         </div>
       </div>
-
-      {/* Debug info (development only) */}
-      {import.meta.env.DEV && false && (
-        <div style={{
-          position: 'fixed',
-          bottom: 80,
-          right: 10,
-          fontSize: '10px',
-          color: 'rgba(255,255,255,0.3)',
-          fontFamily: 'monospace',
-          background: 'rgba(0,0,0,0.5)',
-          padding: '5px',
-          borderRadius: '4px',
-          zIndex: 999
-        }}>
-          <div>Mode: {layoutMode}</div>
-          <div>Size: {viewport.width}x{viewport.height}</div>
-          <div>Context: {activeContext}</div>
-        </div>
-      )}
     </div>
   );
 };

@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { getLayoutMode, getMonikaConfig, getRailConfig, getPanelConfig } from '../config/layoutConfig';
+import { getLayoutMode, getMonikaConfig } from '../config/layoutConfig';
 
 const RESIZE_DEBOUNCE_MS = 100;
 
@@ -85,27 +85,23 @@ export const useLayoutMode = () => {
 
   // Get configuration objects for current layout mode
   const monikaConfig = getMonikaConfig(layoutMode, viewport.width, viewport.height);
-  const railConfig = getRailConfig(layoutMode);
-  const panelConfig = getPanelConfig(layoutMode);
 
   return {
     // Viewport dimensions
     viewport,
     width: viewport.width,
     height: viewport.height,
-    
+
     // Layout mode
     layoutMode,
     isPortrait,
     isDesktop: layoutMode === 'desktop' || layoutMode === 'desktop-wide',
     isTablet: layoutMode === 'tablet',
     isPhone: layoutMode === 'portrait' || layoutMode === 'landscape-phone',
-    
+
     // Configuration objects
     monikaConfig,
-    railConfig,
-    panelConfig,
-    
+
     // Utility functions
     getLayoutMode: () => layoutMode,
     getIsPortrait: () => isPortrait

@@ -69,13 +69,23 @@ async def test_happy_path_delivers_response_brief():
 
 async def test_backchannels_are_skipped_but_short_meaningful_text_is_authored():
     thinker, calls, _, _ = make_thinker()
-    for text in [
-        "mhm", "no dobra", "okej", "tak tak",
-        "Halo słyszymy się?", "halo halo", "słyszysz mnie?", "jesteś tam?",
-    ]:
+    for text in ["mhm", "no dobra", "okej", "tak tak"]:
         assert await run_voice_turn(thinker, text) is False
     assert await run_voice_turn(thinker, "za krótkie") is True
     assert calls["generated"] == ["za krótkie"]
+
+
+async def test_greetings_and_link_checks_are_authored_not_skipped():
+    # dedicated_speech ma Thinkera jako jedyny kanał odpowiedzi — odrzucenie
+    # tu oznacza całkowitą ciszę, więc powitania i kontrola łącza muszą
+    # zawsze trafiać do generacji. min_interval_sec=0 bo inaczej rate-limiter
+    # zamaskowałby wynik po pierwszym udanym strzale w pętli.
+    thinker, calls, _, _ = make_thinker(settings={"min_interval_sec": 0.0})
+    for text in ["Hej", "hej!", "cześć", "siema", "Halo słyszymy się?", "słyszysz mnie?", "jesteś tam?"]:
+        assert await run_voice_turn(thinker, text) is True
+    assert calls["generated"] == [
+        "Hej", "hej!", "cześć", "siema", "Halo słyszymy się?", "słyszysz mnie?", "jesteś tam?"
+    ]
 
 
 async def test_min_interval_between_shots():
@@ -263,53 +273,6 @@ async def test_context_is_compiled_once_and_reused_for_retry():
     assert len(compile_calls) == 1
     assert len(attempts) == 2
     assert thinker.last_trace["context"]["conversation_id"] == "sess"
-
-
-async def test_response_candidates_share_one_compiled_context_and_stay_uncommitted():
-    thinker, calls, _, _ = make_thinker(settings={"min_interval_sec": 0.0})
-    compile_calls = []
-    generated = iter(
-        [
-            brief("Pierwszy kierunek.", "Brzmi jak spokojny poranek."),
-            brief("Drugi kierunek.", "Czyli rano po prostu łapiesz rytm."),
-            brief("Trzeci kierunek.", "Nie potrzebujesz specjalnego rozruchu."),
-        ]
-    )
-
-    class FakeCompiled:
-        conversation_id = "sess"
-        turn_id = "turn-candidates"
-        reality_mode = "grounded"
-        activated_lore = []
-        system_instruction = "SYSTEM"
-        user_prompt = "IMMUTABLE PROMPT"
-
-    class FakeCompiler:
-        async def compile(self, **kwargs):
-            compile_calls.append(kwargs)
-            return FakeCompiled()
-
-    async def generate(_user_text):
-        return next(generated)
-
-    thinker._context_compiler = FakeCompiler()
-    thinker._get_conversation_id = lambda: "sess"
-    thinker._generate = generate
-
-    candidates = await thinker.prepare_reply_candidates(
-        "Rano zwykle od razu jestem skupiony.",
-        count=3,
-    )
-
-    assert candidates == (
-        "Brzmi jak spokojny poranek.",
-        "Czyli rano po prostu łapiesz rytm.",
-        "Nie potrzebujesz specjalnego rozruchu.",
-    )
-    assert len(compile_calls) == 1
-    assert thinker.last_trace["context"]["user_prompt_sha256"]
-    assert thinker.last_trace["status"] == "candidates_ready"
-    assert calls["delivered"] == []
 
 
 async def test_failed_quality_gate_gets_one_controlled_revision():

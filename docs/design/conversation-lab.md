@@ -1,9 +1,16 @@
-# Conversation Lab
+# Conversation Probe
 
-Conversation Lab extends `scripts/conversation_probe.py` instead of creating a
-second response path. A probe turn goes through the real session, context
-compiler, lore activation, tool planner, text author, validator, transcript,
-and speech configuration.
+`scripts/conversation_probe.py` is an automated dialogue-quality regression
+harness. It does not create a second response path: a probe turn goes through
+the real session, context compiler, lore activation, tool planner, text
+author, validator, transcript, and speech configuration — the same code a
+live user turn takes.
+
+(The interactive "Conversation Lab" swipe/draft UI that used to sit in the
+chat footer — sample several uncommitted replies, swipe between them, pick
+one — was removed 2026-08-02 as unneeded product surface. It reused this same
+probe infrastructure but is gone; this doc now covers only the regression
+harness below.)
 
 ## Scenario v2
 
@@ -61,28 +68,6 @@ lore is recorded by namespaced UID, reason, and score.
 Deterministic failures are release regressions. A future blind model judge may
 add Polish naturalness and character scores, but it must not override concrete
 failures such as false memory claims, world leakage, or question pressure.
-
-## Interactive swipe mode
-
-The sparkle button in the chat footer enables Conversation Lab for typed,
-tool-free turns. In this mode:
-
-1. the user turn is recorded once;
-2. the text author compiles one immutable context and samples up to three
-   response drafts from it;
-3. drafts stay outside the transcript, speech renderer, memory and lore
-   learning;
-4. the user swipes between variants and explicitly selects one;
-5. only the selected variant is delivered, spoken and made eligible for lore
-   learning.
-
-Pending response sets are kept in memory for at most 15 minutes and are bound
-to the originating Socket.IO client. A repeated or cross-client selection
-cannot commit a second answer.
-
-The UI now reports context compilation, model generation and completed
-candidate counts. It stops waiting after 35 seconds and reports backend
-disconnects instead of leaving a permanent spinner.
 
 ## Safety and observability
 

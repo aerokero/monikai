@@ -1,4 +1,7 @@
 import React from 'react';
+import { X } from '../icons';
+import { useMonika } from '../../contexts/MonikaContext';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 const ShellPanelFrame = ({
   icon: Icon = null,
@@ -9,8 +12,11 @@ const ShellPanelFrame = ({
   actions = null,
   children,
   className = '',
-  bodyClassName = '',
+  bodyClassName = 'flex flex-col h-full overflow-hidden',
 }) => {
+  const { setActiveContext } = useMonika();
+  const { t } = useLanguage();
+
   return (
     <section
       className={`flex h-full min-h-0 flex-col overflow-hidden rounded-none border-0 bg-[linear-gradient(180deg,rgba(28,18,12,0.96),rgba(10,7,4,0.98))] backdrop-blur-xl ${className}`}
@@ -34,7 +40,18 @@ const ShellPanelFrame = ({
             </div>
           )}
         </div>
-        {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+        <div className="flex shrink-0 items-center gap-2">
+          {actions}
+          <button
+            type="button"
+            onClick={() => setActiveContext('chat')}
+            title={t('navigation.close_panel')}
+            aria-label={t('navigation.close_panel')}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#3c2e26] bg-[#1e1612] text-[#8c7769] transition hover:border-[#4c3a2e] hover:bg-[#2a1f18] hover:text-[#f5e6d3]"
+          >
+            <X size={15} />
+          </button>
+        </div>
       </div>
 
       <div className={`min-h-0 flex-1 ${bodyClassName}`}>{children}</div>

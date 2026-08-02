@@ -7,6 +7,7 @@
 
 import React from 'react';
 import useMonikaState from '../hooks/useMonikaState';
+import { useLanguage } from '../contexts/LanguageContext';
 
 /**
  * MonikaSprite
@@ -34,6 +35,7 @@ const MonikaSprite = ({
     monikaState,
     activeContext,
   } = useMonikaState(personalityState);
+  const { t } = useLanguage();
 
   const containerStyle = {
     transform: `scale(${scale})`,
@@ -52,7 +54,7 @@ const MonikaSprite = ({
       data-context={activeContext}
       data-state={monikaState?.outfit}
       role="img"
-      aria-label={`Monika in ${activeContext} context`}
+      aria-label={t('layout.monika_sprite_aria', { context: activeContext })}
     >
       {/* Actual character is rendered by Visualizer behind this layout */}
       {/* This container reserves space and provides responsive positioning */}
