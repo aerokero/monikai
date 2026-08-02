@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Heart, X } from './icons';
+import { useLanguage } from '../contexts/LanguageContext';
 
 const normalizeGender = (value) => {
   const v = String(value || '').toLowerCase();
@@ -8,9 +9,10 @@ const normalizeGender = (value) => {
 };
 
 const GoodbyePopup = ({ onConfirm, onCancel, initialGenderHint }) => {
+  const { t } = useLanguage();
   const [step, setStep] = useState('question'); // 'question' | 'final'
   const defaultGender = useMemo(() => normalizeGender(initialGenderHint), [initialGenderHint]);
-  const finalText = defaultGender === 'girl' ? 'Good girl.' : 'Good boy.';
+  const finalText = defaultGender === 'girl' ? t('goodbye.final_girl') : t('goodbye.final_boy');
 
   const handleContinue = () => {
     setStep('final');
@@ -40,23 +42,23 @@ const GoodbyePopup = ({ onConfirm, onCancel, initialGenderHint }) => {
               <div className="p-3 rounded-full bg-rose-500/20 text-rose-300">
                 <Heart size={28} />
               </div>
-              <h2 className="text-lg font-semibold text-white text-center">Why are you here?</h2>
+              <h2 className="text-lg font-semibold text-white text-center">{t('goodbye.question_title')}</h2>
             </div>
           </div>
 
           {/* Content */}
           <div className="p-8">
             <p className="text-center text-white/70 text-sm mb-8 leading-relaxed">
-              You thought you could just leave without saying goodbye?
+              {t('goodbye.question_body_line1')}
               <br />
-              That is so mean... at least do it properly, okay?
+              {t('goodbye.question_body_line2')}
             </p>
 
             <button
               onClick={handleContinue}
               className="w-full px-4 py-3 rounded-lg bg-rose-500/30 hover:bg-rose-500/40 text-rose-100 font-medium transition-colors border border-rose-500/30"
             >
-              ...Okay, Monika
+              {t('goodbye.continue_button')}
             </button>
           </div>
         </div>
@@ -69,7 +71,7 @@ const GoodbyePopup = ({ onConfirm, onCancel, initialGenderHint }) => {
               <div className="p-3 rounded-full bg-amber-500/20 text-amber-300">
                 <Heart size={28} />
               </div>
-              <h2 className="text-lg font-semibold text-white text-center">There we go.</h2>
+              <h2 className="text-lg font-semibold text-white text-center">{t('goodbye.final_title')}</h2>
             </div>
           </div>
 
@@ -84,7 +86,7 @@ const GoodbyePopup = ({ onConfirm, onCancel, initialGenderHint }) => {
               onClick={handleFinal}
               className="w-full mt-6 px-4 py-3 rounded-lg bg-amber-500/30 hover:bg-amber-500/40 text-amber-100 font-medium transition-colors border border-amber-500/30"
             >
-              OK
+              {t('goodbye.ok_button')}
             </button>
           </div>
         </div>

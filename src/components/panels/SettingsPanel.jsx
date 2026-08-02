@@ -31,10 +31,10 @@ const CONFIGURABLE_TOOLS = [
   'write_file'
 ];
 
-const skillStatus = (skill) => {
-  if (skill.enabled === false) return { tone: 'red', label: 'wyłączone' };
-  if (skill.eligible) return { tone: 'green', label: 'gotowe' };
-  return { tone: 'amber', label: 'wymaga zal.' };
+const skillStatus = (skill, t) => {
+  if (skill.enabled === false) return { tone: 'red', label: t('settings.skill_status_disabled') };
+  if (skill.eligible) return { tone: 'green', label: t('settings.skill_status_ready') };
+  return { tone: 'amber', label: t('settings.skill_status_needs_deps') };
 };
 
 const SettingsPanel = ({
@@ -113,8 +113,8 @@ const SettingsPanel = ({
     <ShellPanelFrame icon={Icons.Settings} title={t('settings.title') || 'Settings'}>
       <div className="flex-1 overflow-y-auto px-6 py-4 custom-scrollbar text-sm pb-10">
 
-        <SectionLabel className="pt-2">{t('settings.language')} i model</SectionLabel>
-        <FieldRow title="Język aplikacji" description="Wybierz język interfejsu Moniki">
+        <SectionLabel className="pt-2">{t('settings.language_and_model')}</SectionLabel>
+        <FieldRow title={t('settings.language')} description={t('settings.language_desc')}>
           <SelectField
             value={language}
             onChange={(e) => setLanguage(e.target.value)}
@@ -127,7 +127,7 @@ const SettingsPanel = ({
             ]}
           />
         </FieldRow>
-        <FieldRow title="Preset modelu AI" description="Wybierz wersję modelu sztucznej inteligencji">
+        <FieldRow title={t('settings.model_preset')} description={t('settings.model_preset_desc')}>
           <SelectField
             value={geminiModelPreset}
             onChange={(e) => onModelPresetChange?.(e.target.value)}
@@ -138,7 +138,7 @@ const SettingsPanel = ({
             ]}
           />
         </FieldRow>
-        <FieldRow title="Głos" description="Wybierz głos lektora sztucznej inteligencji">
+        <FieldRow title={t('settings.voice')} description={t('settings.voice_desc')}>
           <SelectField
             value={geminiVoice}
             onChange={(e) => onVoiceChange?.(e.target.value)}
@@ -147,41 +147,41 @@ const SettingsPanel = ({
           />
         </FieldRow>
 
-        <SectionLabel className="pt-6">Urządzenia</SectionLabel>
-        <FieldRow title="Mikrofon" description="Urządzenie wejściowe audio">
+        <SectionLabel className="pt-6">{t('settings.devices_section')}</SectionLabel>
+        <FieldRow title={t('settings.microphone')} description={t('settings.microphone_desc')}>
           <SelectField
             value={selectedMicId}
             onChange={(e) => setSelectedMicId(e.target.value)}
             wrapperClassName="w-[220px]"
             options={micDevices.map(device => ({
               value: device.deviceId,
-              label: device.label || `Mikrofon ${device.deviceId.slice(0, 5)}...`
+              label: device.label || t('settings.unnamed_microphone', { id: device.deviceId.slice(0, 5) })
             }))}
           />
         </FieldRow>
-        <FieldRow title="Głośnik" description="Urządzenie wyjściowe audio">
+        <FieldRow title={t('settings.speaker')} description={t('settings.speaker_desc')}>
           <SelectField
             value={selectedSpeakerId}
             onChange={(e) => setSelectedSpeakerId(e.target.value)}
             wrapperClassName="w-[220px]"
             options={speakerDevices.map(device => ({
               value: device.deviceId,
-              label: device.label || `Głośnik ${device.deviceId.slice(0, 5)}...`
+              label: device.label || t('settings.unnamed_speaker', { id: device.deviceId.slice(0, 5) })
             }))}
           />
         </FieldRow>
-        <FieldRow title="Kamera" description="Urządzenie wideo">
+        <FieldRow title={t('settings.camera')} description={t('settings.camera_desc')}>
           <SelectField
             value={selectedWebcamId}
             onChange={(e) => setSelectedWebcamId(e.target.value)}
             wrapperClassName="w-[220px]"
             options={webcamDevices.map(device => ({
               value: device.deviceId,
-              label: device.label || `Kamera ${device.deviceId.slice(0, 5)}...`
+              label: device.label || t('settings.unnamed_camera', { id: device.deviceId.slice(0, 5) })
             }))}
           />
         </FieldRow>
-        <FieldRow title="Odbicie lustrzane kamery" description="Odwróć obraz wideo w poziomie">
+        <FieldRow title={t('settings.mirror_vision')} description={t('settings.mirror_vision_desc')}>
           <Toggle checked={isCameraFlipped} onChange={setIsCameraFlipped} />
         </FieldRow>
 
@@ -191,23 +191,23 @@ const SettingsPanel = ({
           return (
             <FieldRow
               key={key}
-              title={`Narzędzie: ${key.replace(/_/g, ' ')}`}
-              description={`Zezwól modelowi na automatyczne uruchamianie funkcji ${key}`}
+              title={t('settings.tool_label', { name: key.replace(/_/g, ' ') })}
+              description={t('settings.tool_permission_desc', { name: key })}
             >
               <Toggle checked={val} onChange={() => onTogglePermission && onTogglePermission(key)} />
             </FieldRow>
           );
         })}
 
-        <SectionLabel className="pt-6">Rozszerzenia (Skills)</SectionLabel>
+        <SectionLabel className="pt-6">{t('settings.skills_section')}</SectionLabel>
         <div className="border-b border-[#2c1e15] py-4 space-y-4">
           <div className="flex flex-col gap-2.5">
-            <span className="text-[13px] font-semibold text-[#f5e6d3]">Zainstaluj nowe rozszerzenie</span>
+            <span className="text-[13px] font-semibold text-[#f5e6d3]">{t('settings.install_new_skill')}</span>
             <div className="flex gap-2">
               <TextField
                 value={skillSource}
                 onChange={(e) => setSkillSource(e.target.value)}
-                placeholder="Adres URL z repozytorium GitHub dla rozszerzenia"
+                placeholder={t('settings.skill_url_placeholder')}
                 disabled={skillsActionBusy}
                 size="sm"
                 wrapperClassName="flex-1"
@@ -218,14 +218,14 @@ const SettingsPanel = ({
                 disabled={skillsActionBusy || !skillSource.trim()}
                 className="shrink-0 rounded-lg bg-[#de9d50] px-4 py-1.5 text-xs font-semibold text-[#20160f] transition-all hover:brightness-110 disabled:opacity-50"
               >
-                Instaluj
+                {t('settings.install')}
               </button>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <TextField
                 value={skillNameFilter}
                 onChange={(e) => setSkillNameFilter(e.target.value)}
-                placeholder="Nazwa rozszerzenia (opcjonalnie)"
+                placeholder={t('settings.skill_name_placeholder')}
                 disabled={skillsActionBusy}
                 size="sm"
                 className="disabled:opacity-50"
@@ -235,8 +235,8 @@ const SettingsPanel = ({
                 onChange={(e) => setSkillAgent(e.target.value)}
                 size="sm"
                 options={[
-                  { value: 'codex', label: 'Agent: Codex' },
-                  { value: 'openclaw', label: 'Agent: OpenClaw' }
+                  { value: 'codex', label: t('settings.agent_codex') },
+                  { value: 'openclaw', label: t('settings.agent_openclaw') }
                 ]}
               />
             </div>
@@ -244,7 +244,7 @@ const SettingsPanel = ({
               checked={skillGlobalScope}
               onChange={setSkillGlobalScope}
               disabled={skillsActionBusy}
-              label="Zainstaluj globalnie"
+              label={t('settings.install_globally')}
             />
           </div>
 
@@ -267,13 +267,13 @@ const SettingsPanel = ({
             }`}
           >
             <div className="flex flex-col items-center justify-center gap-2">
-              <p className="text-[11px] text-[#8c7769]">Przeciągnij plik ZIP lub wybierz z komputera</p>
+              <p className="text-[11px] text-[#8c7769]">{t('settings.skill_dropzone_hint')}</p>
               <button
                 onClick={() => skillFileInputRef.current?.click()}
                 disabled={skillsActionBusy}
                 className="rounded border border-[#3c2e26] px-3 py-1 text-[10px] text-[#f5e6d3] hover:bg-white/5"
               >
-                Wybierz plik
+                {t('settings.choose_file')}
               </button>
             </div>
             <input
@@ -288,24 +288,24 @@ const SettingsPanel = ({
 
         <div className="py-4 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-[13px] font-semibold text-[#f5e6d3]">Zainstalowane rozszerzenia ({skills.length})</span>
+            <span className="text-[13px] font-semibold text-[#f5e6d3]">{t('settings.installed_skills', { count: skills.length })}</span>
             <button
               onClick={() => onRefreshSkills && onRefreshSkills()}
               disabled={skillsLoading || skillsActionBusy}
               className="flex items-center gap-1 rounded border border-[#3c2e26] p-1 text-[10px] text-[#8c7769] hover:bg-white/5 disabled:opacity-50"
             >
               <Icons.RefreshCw size={10} />
-              Odśwież
+              {t('settings.refresh')}
             </button>
           </div>
 
           <div className="max-h-48 overflow-y-auto custom-scrollbar">
-            {skillsLoading && <div className="text-[11px] text-[#8c7769]">Wczytywanie...</div>}
-            {!skillsLoading && skills.length === 0 && <EmptyState>Brak rozszerzeń.</EmptyState>}
+            {skillsLoading && <div className="text-[11px] text-[#8c7769]">{t('settings.loading')}</div>}
+            {!skillsLoading && skills.length === 0 && <EmptyState>{t('settings.no_skills')}</EmptyState>}
             {!skillsLoading && skills.length > 0 && (
               <ListContainer>
                 {skills.map((skill) => {
-                  const status = skillStatus(skill);
+                  const status = skillStatus(skill, t);
                   return (
                     <ListRow
                       key={`${skill.name}-${skill.path}`}
@@ -323,7 +323,7 @@ const SettingsPanel = ({
                           disabled={skillsActionBusy || !skill.managed}
                           className="shrink-0 rounded border border-[rgba(202,104,85,0.3)] px-2 py-0.5 text-[10px] text-[#df8978] hover:bg-[rgba(166,72,58,0.1)] disabled:opacity-30"
                         >
-                          Usuń
+                          {t('settings.uninstall')}
                         </button>
                       )}
                     />
@@ -358,14 +358,14 @@ const SettingsPanel = ({
             className="flex flex-1 items-center justify-center gap-2 rounded-full border border-[#3c2e26] bg-[#1e1612] px-4 py-3 text-xs font-semibold text-[#f5e6d3] transition-all hover:brightness-110 focus:outline-none"
           >
             <Icons.LogOut size={14} />
-            Quit the App
+            {t('settings.quit_app')}
           </button>
           <button
             onClick={() => setActiveContext('chat')}
             className="flex flex-1 items-center justify-center gap-2 rounded-full bg-[#de9d50] px-4 py-3 text-xs font-bold text-[#16100d] shadow-[0_4px_16px_rgba(222,157,80,0.15)] transition-all hover:brightness-110 focus:outline-none"
           >
             <Icons.Check size={14} />
-            Save
+            {t('settings.save')}
           </button>
         </div>
 

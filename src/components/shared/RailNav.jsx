@@ -154,7 +154,7 @@ const RailNav = () => {
   }[layoutMode] || 'monika-rail--left-vertical';
 
   return (
-    <nav className={`monika-rail ${railClassName} ${isExpanded ? 'monika-rail--expanded' : ''}`} role="navigation" aria-label="Panel navigation">
+    <nav className={`monika-rail ${railClassName} ${isExpanded ? 'monika-rail--expanded' : ''}`} role="navigation" aria-label={t('navigation.aria_label')}>
       <div className="rail-buttons">
         {canExpandRail && (
           <RailButton
@@ -189,7 +189,7 @@ const RailNav = () => {
               variant={isActive ? 'active' : 'idle'}
               canExpandRail={canExpandRail}
               isExpanded={isExpanded}
-              ariaLabel={isActive ? t('navigation.close_panel') : panel.ariaLabel}
+              ariaLabel={isActive ? t('navigation.close_panel') : label}
               ariaCurrent={isActive ? 'page' : undefined}
             />
           );
@@ -207,7 +207,7 @@ const RailNav = () => {
           variant={isConnected ? 'on' : 'warn'}
           canExpandRail={canExpandRail}
           isExpanded={isExpanded}
-          ariaLabel="AI Power"
+          ariaLabel={t('navigation.ai_power')}
         />
 
         {/* Camera Button */}
@@ -219,7 +219,7 @@ const RailNav = () => {
           variant={isVideoOn ? 'on' : 'idle'}
           canExpandRail={canExpandRail}
           isExpanded={isExpanded}
-          ariaLabel="Camera"
+          ariaLabel={t('navigation.camera')}
         />
 
         {/* Screen Share Button */}
@@ -231,7 +231,7 @@ const RailNav = () => {
           variant={visionMode === 'screen' ? 'on' : 'idle'}
           canExpandRail={canExpandRail}
           isExpanded={isExpanded}
-          ariaLabel="Screen Share"
+          ariaLabel={t('navigation.share')}
         />
 
         {/* Divider line */}
@@ -246,7 +246,7 @@ const RailNav = () => {
           variant={activeContext === 'settings' ? 'active' : 'idle'}
           canExpandRail={canExpandRail}
           isExpanded={isExpanded}
-          ariaLabel={activeContext === 'settings' ? t('navigation.close_panel') : 'Settings'}
+          ariaLabel={activeContext === 'settings' ? t('navigation.close_panel') : t('tools.settings')}
           className="mt-auto"
         />
 
@@ -261,7 +261,7 @@ const RailNav = () => {
           tooltipLabel={isQuitHovered ? t('tools.dont_leave_me') : t('tools.logout')}
           canExpandRail={canExpandRail}
           isExpanded={isExpanded}
-          ariaLabel="Logout"
+          ariaLabel={t('tools.logout')}
           className="transition-all duration-100 pointer-events-auto cursor-pointer hover:bg-[rgba(166,72,58,0.18)] hover:text-[#f0ad9d]"
           style={{
             transform: `translate(${quitHoverOffset.x}px, ${quitHoverOffset.y}px)`,

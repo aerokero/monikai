@@ -241,11 +241,11 @@ const ChatPanel = ({
 
       for (const file of incoming) {
         if (next.length >= MAX_FILES) {
-          setAttachError(`You can attach up to ${MAX_FILES} files.`);
+          setAttachError(t('chat.attachment_limit', { max: MAX_FILES }));
           break;
         }
         if (file.size > MAX_FILE_BYTES) {
-          setAttachError(`${file.name} exceeds the 12 MB file limit.`);
+          setAttachError(t('chat.file_too_large', { name: file.name, size: Math.round(MAX_FILE_BYTES / (1024 * 1024)) }));
           continue;
         }
         const alreadyAdded = next.some(
@@ -269,7 +269,7 @@ const ChatPanel = ({
 
       const nextTotal = next.reduce((sum, item) => sum + (item?.file?.size || 0), 0);
       if (nextTotal > MAX_TOTAL_BYTES) {
-        setAttachError('Total attachments cannot exceed 30 MB.');
+        setAttachError(t('chat.total_size_exceeded', { size: Math.round(MAX_TOTAL_BYTES / (1024 * 1024)) }));
         createdPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
         return current;
       }
@@ -294,7 +294,7 @@ const ChatPanel = ({
       try {
         payloadAttachments = await Promise.all(attachments.map((item) => fileToAttachmentPayload(item.file)));
       } catch {
-        setAttachError('Failed to prepare attachments.');
+        setAttachError(t('chat.prepare_failed'));
         return;
       }
     }
@@ -324,7 +324,7 @@ const ChatPanel = ({
       {sessionActive && (
         <div className="flex items-center justify-center shrink-0 -mb-1 z-20">
           <span className="rounded-full bg-amber-500/15 border border-amber-400/20 px-3 py-0.5 text-[11px] font-medium tracking-wide text-amber-200/90">
-            {t('companion.session.title') || 'Sesja'}
+            {t('companion.session.title')}
           </span>
         </div>
       )}
@@ -333,7 +333,7 @@ const ChatPanel = ({
           <button
             onClick={onToggleExpand}
             className="rounded-lg border border-[rgba(232,178,102,0.12)] bg-black/25 p-1.5 text-[rgba(255,224,190,0.38)] transition hover:bg-[rgba(232,178,102,0.08)] hover:text-[rgba(255,240,218,0.74)]"
-            title={isExpanded ? 'Collapse' : 'Expand'}
+            title={isExpanded ? t('chat.collapse') : t('chat.expand')}
           >
             <Maximize2 size={15} />
           </button>
@@ -358,11 +358,11 @@ const ChatPanel = ({
               <div className="mb-3 max-h-32 overflow-hidden rounded-[12px] border border-[rgba(232,178,102,0.14)] bg-black/45 shadow-[0_10px_28px_rgba(0,0,0,0.32)]">
                 <div className="flex items-center gap-2 border-b border-[rgba(232,178,102,0.14)] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.16em] text-[rgba(232,178,102,0.72)]">
                   <Terminal size={12} />
-                  Agent Log
+                  {t('chat.agent_log_title')}
                 </div>
                 <div className="max-h-24 space-y-1 overflow-y-auto px-3 py-2 font-mono text-[12px] text-[rgba(255,240,218,0.58)] custom-scrollbar">
                   {visibleAgenticLogs.length === 0 ? (
-                    <div>Thinking...</div>
+                    <div>{t('chat.agent_thinking')}</div>
                   ) : (
                     visibleAgenticLogs.map((entry, index) => (
                       <div key={`agentic-${index}`} className="break-words">
@@ -445,7 +445,7 @@ const ChatPanel = ({
                   <button
                     type="button"
                     onClick={() => setShowAgenticLog(!showAgenticLog)}
-                    title="Agent logs"
+                    title={t('chat.agent_logs_tooltip')}
                     aria-pressed={showAgenticLog}
                     className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition ${
                       showAgenticLog
@@ -488,7 +488,7 @@ const ChatPanel = ({
                       ? 'bg-[rgba(232,178,102,0.95)] text-[#20160f] shadow-[0_8px_18px_rgba(232,178,102,0.24)] hover:bg-[rgba(255,205,128,1)]'
                       : 'cursor-not-allowed bg-[rgba(255,224,190,0.08)] text-[rgba(255,224,190,0.24)]'
                   }`}
-                  title="Send message"
+                  title={t('chat.send')}
                 >
                   <Upload size={19} />
                 </button>
@@ -516,7 +516,7 @@ const ChatPanel = ({
                         type="button"
                         onClick={() => removeAttachment(item.id)}
                         className="text-white/50 transition hover:text-white/80"
-                        title="Remove"
+                        title={t('chat.remove_attachment')}
                       >
                         <X size={12} />
                       </button>

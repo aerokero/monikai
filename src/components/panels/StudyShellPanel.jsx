@@ -14,6 +14,7 @@ import workerSrc from 'pdfjs-dist/legacy/build/pdf.worker.mjs?url';
 import NoteWorkspace from '../NoteWorkspace';
 import ShellPanelFrame from '../shared/ShellPanelFrame';
 import useElementSize from '../../hooks/useElementSize';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 GlobalWorkerOptions.workerSrc = workerSrc;
 
@@ -38,6 +39,7 @@ const StudyShellPanel = ({
   onRefreshCatalog,
   shareRef,
 }) => {
+  const { t } = useLanguage();
   const [selectedFolder, setSelectedFolder] = useState(selection?.folder || '');
   const [selectedFile, setSelectedFile] = useState(selection?.file || '');
   const [fields, setFields] = useState([]);
@@ -176,7 +178,7 @@ const StudyShellPanel = ({
           if (Number.isFinite(pageIndex)) {
             const indent = depth > 0 ? `${'-'.repeat(Math.min(depth, 3))} ` : '';
             items.push({
-              title: `${indent}${titleRaw || `Section ${pageIndex + 1}`}`.trim(),
+              title: `${indent}${titleRaw || t('study.section_fallback', { index: pageIndex + 1 })}`.trim(),
               page: pageIndex + 1,
             });
           }
@@ -190,7 +192,7 @@ const StudyShellPanel = ({
     } catch {
       return [];
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (!socket) return undefined;
@@ -201,7 +203,7 @@ const StudyShellPanel = ({
         incoming.map((field, index) => ({
           id: field.key || `f_${index}_${Date.now()}`,
           key: field.key || `field_${index + 1}`,
-          label: field.label || field.key || `Field ${index + 1}`,
+          label: field.label || field.key || t('study.field_fallback', { index: index + 1 }),
           type: field.type === 'textarea' ? 'textarea' : 'text',
           placeholder: field.placeholder || '',
           value: field.value || '',
@@ -244,7 +246,7 @@ const StudyShellPanel = ({
       socket.off('study_notes', onNotes);
       socket.off('study_page', onPage);
     };
-  }, [scratchBase, scratchPath, socket]);
+  }, [scratchBase, scratchPath, socket, t]);
 
   useEffect(() => {
     if (!activeFile?.path) {
@@ -633,7 +635,7 @@ const StudyShellPanel = ({
       if (shareNoticeTimerRef.current) {
         clearTimeout(shareNoticeTimerRef.current);
       }
-      setShareNotice('Sharing this page with Monika');
+      setShareNotice(t('study.sharing_notice'));
       shareNoticeTimerRef.current = setTimeout(() => {
         setShareNotice('');
         shareNoticeTimerRef.current = null;
@@ -654,7 +656,7 @@ const StudyShellPanel = ({
     } catch {
       // ignore share failures
     }
-  }, [page, pageLabel, selectedFile, selectedFolder, socket, viewerSize.width]);
+  }, [page, pageLabel, selectedFile, selectedFolder, socket, t, viewerSize.width]);
 
   useEffect(() => {
     if (!shareRef) return undefined;
@@ -673,16 +675,16 @@ const StudyShellPanel = ({
   return (
     <ShellPanelFrame
       icon={BookOpen}
-      title="Japanese Study"
-      subtitle={activeFile?.name ? prettifyTitle(activeFile.name) : 'Open a study file and keep notes beside it.'}
+      title={t('study.title')}
+      subtitle={activeFile?.name ? prettifyTitle(activeFile.name) : t('study.subtitle_empty')}
       actions={(
         <button
           onClick={refreshCatalog}
           className="inline-flex items-center gap-1.5 rounded-xl border border-white/12 bg-white/[0.06] px-3 py-2 text-xs text-white/78 transition-colors hover:bg-white/[0.11]"
-          title="Refresh study catalog"
+          title={t('study.refresh_catalog')}
         >
           <RefreshCw size={13} />
-          Refresh
+          {t('study.refresh')}
         </button>
       )}
       bodyClassName="min-h-0"
@@ -732,7 +734,7 @@ const StudyShellPanel = ({
                   }}
                   className="min-w-[150px] rounded-xl border border-white/12 bg-black/30 px-3 py-2 text-xs text-white/82 outline-none"
                 >
-                  <option value="">Chapters</option>
+                  <option value="">{t('study.chapters')}</option>
                   {outlineItems.map((item, index) => (
                     <option key={`${item.page}-${index}`} value={item.page}>
                       {item.title} · p. {item.page}
@@ -748,7 +750,7 @@ const StudyShellPanel = ({
                   onClick={() => changePage(page - 1)}
                   disabled={page <= 1}
                   className="rounded-xl border border-white/10 bg-white/[0.05] px-2.5 py-2 text-white/72 transition-colors hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-35"
-                  title="Previous page"
+                  title={t('study.previous_page')}
                 >
                   <ChevronLeft size={14} />
                 </button>
@@ -763,18 +765,18 @@ const StudyShellPanel = ({
                         applyPageInput();
                       }
                     }}
-                    placeholder="Go to"
+                    placeholder={t('study.go_to_page')}
                     className="w-16 bg-transparent outline-none"
                   />
                   <span className="text-white/28">|</span>
                   <span>{pageCount > 0 ? `${page}/${pageCount}` : page}</span>
-                  {pageLabel ? <span className="text-white/45">Book {pageLabel}</span> : null}
+                  {pageLabel ? <span className="text-white/45">{t('study.book_page_label', { label: pageLabel })}</span> : null}
                 </div>
                 <button
                   onClick={() => changePage(page + 1)}
                   disabled={pageCount > 0 ? page >= pageCount : false}
                   className="rounded-xl border border-white/10 bg-white/[0.05] px-2.5 py-2 text-white/72 transition-colors hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-35"
-                  title="Next page"
+                  title={t('study.next_page')}
                 >
                   <ChevronRight size={14} />
                 </button>
@@ -786,7 +788,7 @@ const StudyShellPanel = ({
                   className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 text-xs text-white/78 transition-colors hover:bg-white/[0.1]"
                 >
                   <ZoomOut size={13} />
-                  Out
+                  {t('study.zoom_out')}
                 </button>
                 <button
                   onClick={() => setZoom(1)}
@@ -799,7 +801,7 @@ const StudyShellPanel = ({
                   className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 text-xs text-white/78 transition-colors hover:bg-white/[0.1]"
                 >
                   <ZoomIn size={13} />
-                  In
+                  {t('study.zoom_in')}
                 </button>
                 <button
                   onClick={shareWithMonika}
@@ -807,7 +809,7 @@ const StudyShellPanel = ({
                   className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs text-cyan-100 transition-colors hover:bg-cyan-400/16 disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <Share2 size={13} />
-                  Share
+                  {t('study.share')}
                 </button>
               </div>
             </div>
@@ -829,7 +831,7 @@ const StudyShellPanel = ({
                 </div>
               ) : (
                 <div className="flex h-full items-center justify-center px-6 text-center text-sm text-white/42">
-                  {loadError ? `Failed to load PDF: ${loadError}` : (isLoading ? 'Loading document…' : 'No study file selected.')}
+                  {loadError ? t('study.load_failed', { error: loadError }) : (isLoading ? t('study.loading_document') : t('study.no_file_selected'))}
                 </div>
               )}
             </div>
@@ -862,21 +864,21 @@ const StudyShellPanel = ({
               shellMode
               shellWidth={notesShellWidth}
               singlePage
-              titleOverride="Study Scratchpad"
+              titleOverride={t('study.scratchpad_title')}
             />
           </section>
 
           <section className="overflow-hidden rounded-[18px] border border-white/10 bg-black/20">
             <div className="border-b border-white/10 px-3 py-2.5">
               <div className="text-[11px] uppercase tracking-[0.2em] text-white/45">
-                {fieldsTitle || 'Tasks / Answers'}
+                {fieldsTitle || t('study.tasks_answers')}
               </div>
             </div>
 
             <div className="space-y-3 p-3">
               {fields.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-4 py-5 text-sm text-white/38">
-                  Assignment fields will appear here when the backend sends them.
+                  {t('study.fields_empty')}
                 </div>
               ) : (
                 fields.map((field) => (
@@ -909,7 +911,7 @@ const StudyShellPanel = ({
                   className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/12 bg-white/[0.08] px-4 py-3 text-sm text-white/88 transition-colors hover:bg-white/[0.14]"
                 >
                   <Send size={15} />
-                  Submit answers to Monika
+                  {t('study.submit_answers')}
                 </button>
               </div>
             ) : null}

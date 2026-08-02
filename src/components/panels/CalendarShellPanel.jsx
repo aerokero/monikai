@@ -168,14 +168,14 @@ const CalendarShellPanel = ({ socket = null }) => {
       return {
         type: 'birthday',
         id: `birthday-${idx}-${b.date}`,
-        title: b.label || 'Birthday',
+        title: b.label || t('schedule.birthday'),
         time: Number.isNaN(date.getTime()) ? new Date() : date,
       };
     });
     return [...mappedReminders, ...mappedEvents, ...mappedBirthdays]
       .filter(item => (item.endTime && !Number.isNaN(item.endTime.getTime()) ? item.endTime > today : item.time >= today))
       .sort((a, b) => a.time - b.time);
-  }, [birthdays, events, reminders]);
+  }, [birthdays, events, reminders, t]);
 
   // Helper to translate holiday and special event titles
   const getDisplayTitle = (title) => {
@@ -189,8 +189,8 @@ const CalendarShellPanel = ({ socket = null }) => {
   const getDisplayDescription = (description, itemType) => {
     if (!description) return '';
     // Translate backend's hardcoded descriptions
-    if (description === 'Holiday') return forceTextEmojiPresentation('Holiday');
-    if (description === 'Happy Birthday!' || itemType === 'birthday') return forceTextEmojiPresentation('Happy Birthday!');
+    if (description === 'Holiday') return forceTextEmojiPresentation(t('schedule.holiday'));
+    if (description === 'Happy Birthday!' || itemType === 'birthday') return forceTextEmojiPresentation(t('schedule.happy_birthday'));
     return forceTextEmojiPresentation(description);
   };
 

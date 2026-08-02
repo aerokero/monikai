@@ -12,13 +12,14 @@ import { useLanguage } from '../../contexts/LanguageContext';
 import { SectionLabel, Card, Badge, TextField, TextAreaField, SelectField, EmptyState, ListContainer, ListRow } from '../shared/panelPrimitives';
 
 const MODES = [
-  ['grounded', 'Rzeczywistość', 'Fakty realne mają pierwszeństwo.'],
-  ['crossover', 'Crossover', 'Aktywne światy mogą się przenikać.'],
-  ['roleplay', 'Roleplay', 'Scenariusz i fikcja prowadzą scenę.'],
-  ['ambiguous', 'Niejednoznaczny', 'Monika zachowuje kilka interpretacji.'],
+  ['grounded', 'worlds.modes.grounded'],
+  ['crossover', 'worlds.modes.crossover'],
+  ['roleplay', 'worlds.modes.roleplay'],
+  ['ambiguous', 'worlds.modes.ambiguous'],
 ];
 
 const CandidateCard = ({ candidate, lorebooks, busy, onReview }) => {
+  const { t } = useLanguage();
   const [title, setTitle] = useState(candidate.title);
   const [content, setContent] = useState(candidate.content);
   const [targetBook, setTargetBook] = useState(candidate.target_lorebook_id || '');
@@ -27,15 +28,15 @@ const CandidateCard = ({ candidate, lorebooks, busy, onReview }) => {
   const needsWorld = candidate.target_type !== 'personal_memory';
 
   const bookOptions = candidate.target_type === 'world_lore'
-    ? [{ value: 'reality', label: 'Rzeczywistość' }]
+    ? [{ value: 'reality', label: t('worlds.reality_option') }]
     : lorebooks
       .filter((book) => ['imported_fiction', 'scenario', 'custom'].includes(book.kind))
       .map((book) => ({ value: book.id, label: book.name }));
 
   const conflictOptions = [
-    { value: '', label: 'Rozwiąż konflikt…' },
-    ...conflicts.map((uid) => ({ value: uid, label: `Zastąp ${uid}` })),
-    { value: 'keep_both', label: 'Zachowaj oba fakty' },
+    { value: '', label: t('worlds.resolve_conflict') },
+    ...conflicts.map((uid) => ({ value: uid, label: t('worlds.replace_uid', { uid }) })),
+    { value: 'keep_both', label: t('worlds.keep_both') },
   ];
 
   return (
@@ -43,10 +44,10 @@ const CandidateCard = ({ candidate, lorebooks, busy, onReview }) => {
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <Badge tone="amber">{candidate.target_type}</Badge>
         <span className="text-[11px] text-[#8c7769]">
-          pewność {Math.round(candidate.confidence * 100)}%
+          {t('worlds.confidence', { percent: Math.round(candidate.confidence * 100) })}
         </span>
         {conflicts.length ? (
-          <Badge tone="red">konflikt: {conflicts.length}</Badge>
+          <Badge tone="red">{t('worlds.conflict_count', { count: conflicts.length })}</Badge>
         ) : null}
       </div>
       <TextField value={title} onChange={(event) => setTitle(event.target.value)} className="font-semibold" />
@@ -59,11 +60,11 @@ const CandidateCard = ({ candidate, lorebooks, busy, onReview }) => {
         wrapperClassName="mt-2"
       />
       <div className="mt-2 text-[11px] leading-relaxed text-[#8c7769]">
-        Źródło: {candidate.source_excerpt || 'brak fragmentu'}
+        {t('worlds.source_label')}{candidate.source_excerpt || t('worlds.no_excerpt')}
       </div>
       {candidate.rationale ? (
         <div className="mt-1 text-[11px] leading-relaxed text-[#8c7769]">
-          Powód: {candidate.rationale}
+          {t('worlds.reason_label')}{candidate.rationale}
         </div>
       ) : null}
       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -92,7 +93,7 @@ const CandidateCard = ({ candidate, lorebooks, busy, onReview }) => {
           onClick={() => onReview(candidate.id, false)}
           className="rounded-md border border-[#59372e] px-3 py-1.5 text-xs text-[#cb8b7c] hover:bg-[#4a2922]/40 disabled:opacity-50"
         >
-          Odrzuć
+          {t('worlds.reject')}
         </button>
         <button
           type="button"
@@ -108,7 +109,7 @@ const CandidateCard = ({ candidate, lorebooks, busy, onReview }) => {
           })}
           className="rounded-md border border-[#627c4e] bg-[#526942]/30 px-3 py-1.5 text-xs font-medium text-[#bad39f] hover:bg-[#526942]/45 disabled:opacity-40"
         >
-          Zaakceptuj
+          {t('worlds.accept')}
         </button>
       </div>
     </Card>
@@ -145,8 +146,8 @@ const WorldsShellPanel = ({ socket }) => {
         : '';
       setNotice(
         payload?.ok
-          ? `Zaimportowano ${payload.entry_count} wpisów.${warnings}`
-          : 'Import nie powiódł się.',
+          ? `${t('worlds.import_success', { count: payload.entry_count })}${warnings}`
+          : t('worlds.import_failed'),
       );
       setBusy(false);
     };
@@ -157,7 +158,7 @@ const WorldsShellPanel = ({ socket }) => {
       }));
     };
     const onError = (payload) => {
-      setNotice(payload?.error || 'Operacja lorebooka nie powiodła się.');
+      setNotice(payload?.error || t('worlds.operation_failed'));
       setBusy(false);
     };
     const refresh = () => socket.emit('lore_state_get', {});
@@ -177,7 +178,7 @@ const WorldsShellPanel = ({ socket }) => {
       socket.off('lore_error', onError);
       socket.off('connect', refresh);
     };
-  }, [socket]);
+  }, [socket, t]);
 
   const activeIds = state.world_stack?.lorebook_ids || [];
   const activeSet = useMemo(() => new Set(activeIds), [activeIds]);
@@ -197,7 +198,7 @@ const WorldsShellPanel = ({ socket }) => {
       },
       (response) => {
         if (response?.ok === false) {
-          setNotice(response.error || 'Nie udało się zapisać World Stacka.');
+          setNotice(response.error || t('worlds.save_stack_failed'));
           setBusy(false);
         }
       },
@@ -225,7 +226,7 @@ const WorldsShellPanel = ({ socket }) => {
     event.target.value = '';
     if (!file || !socket) return;
     if (file.size > 10 * 1024 * 1024) {
-      setNotice('Plik jest większy niż 10 MiB.');
+      setNotice(t('worlds.file_too_large'));
       return;
     }
     setBusy(true);
@@ -241,7 +242,7 @@ const WorldsShellPanel = ({ socket }) => {
         },
         (response) => {
           if (response?.ok === false) {
-            setNotice(response.error || 'Import nie powiódł się.');
+            setNotice(response.error || t('worlds.import_failed'));
             setBusy(false);
           }
         },
@@ -259,7 +260,7 @@ const WorldsShellPanel = ({ socket }) => {
       { book_id: bookId, format: 'json' },
       (response) => {
         if (!response?.ok) {
-          setNotice(response?.error || 'Eksport nie powiódł się.');
+          setNotice(response?.error || t('worlds.export_failed'));
           return;
         }
         const blob = new Blob([response.content], {
@@ -292,7 +293,7 @@ const WorldsShellPanel = ({ socket }) => {
       },
       (response) => {
         if (response?.ok === false) {
-          setNotice(response.error || 'Nie udało się ocenić propozycji.');
+          setNotice(response.error || t('worlds.review_failed'));
           setBusy(false);
         }
       },
@@ -303,7 +304,7 @@ const WorldsShellPanel = ({ socket }) => {
     <ShellPanelFrame
       icon={Globe}
       title={t('worlds.title')}
-      subtitle={state.conversation_id ? `Rozmowa: ${state.conversation_id}` : ''}
+      subtitle={state.conversation_id ? t('worlds.conversation_label', { id: state.conversation_id }) : ''}
       actions={(
         <>
           <input
@@ -336,7 +337,7 @@ const WorldsShellPanel = ({ socket }) => {
         <section>
           <SectionLabel>{t('worlds.mode')}</SectionLabel>
           <ListContainer>
-            {MODES.map(([id, label, description]) => {
+            {MODES.map(([id, labelKey]) => {
               const selected = state.world_stack?.reality_mode === id;
               return (
                 <ListRow
@@ -344,8 +345,8 @@ const WorldsShellPanel = ({ socket }) => {
                   disabled={busy}
                   onClick={() => saveStack({ reality_mode: id })}
                   className={selected ? 'bg-[#de9d50]/[0.06]' : ''}
-                  title={label}
-                  description={description}
+                  title={t(`${labelKey}.label`)}
+                  description={t(`${labelKey}.desc`)}
                   trailing={(
                     <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
                       selected ? 'border-[#d69b58] bg-[#d69b58] text-[#20160f]' : 'border-[#5a4638]'
@@ -360,7 +361,7 @@ const WorldsShellPanel = ({ socket }) => {
         </section>
 
         <section>
-          <SectionLabel>Propozycje Moniki</SectionLabel>
+          <SectionLabel>{t('worlds.candidates_section')}</SectionLabel>
           <div className="space-y-2">
             {state.candidates?.length ? state.candidates.map((candidate) => (
               <CandidateCard
@@ -371,7 +372,7 @@ const WorldsShellPanel = ({ socket }) => {
                 onReview={reviewCandidate}
               />
             )) : (
-              <EmptyState>Brak faktów oczekujących na ocenę.</EmptyState>
+              <EmptyState>{t('worlds.no_candidates')}</EmptyState>
             )}
           </div>
         </section>
@@ -380,7 +381,7 @@ const WorldsShellPanel = ({ socket }) => {
           <SectionLabel
             action={(
               <label className="flex items-center gap-2 text-xs text-[#8c7769]">
-                Budżet
+                {t('worlds.token_budget')}
                 <input
                   key={state.world_stack?.token_budget ?? 'auto'}
                   type="number"
@@ -388,7 +389,7 @@ const WorldsShellPanel = ({ socket }) => {
                   max="12000"
                   step="100"
                   defaultValue={state.world_stack?.token_budget || ''}
-                  placeholder="auto"
+                  placeholder={t('worlds.budget_auto')}
                   onBlur={(event) => saveStack({
                     token_budget: event.target.value || null,
                   })}
@@ -400,7 +401,7 @@ const WorldsShellPanel = ({ socket }) => {
             {t('worlds.books')}
           </SectionLabel>
           <div className="mb-2 text-xs text-[#8c7769]">
-            Import nie aktywuje świata automatycznie.
+            {t('worlds.import_hint')}
           </div>
 
           {state.lorebooks?.length ? (
@@ -420,7 +421,7 @@ const WorldsShellPanel = ({ socket }) => {
                             ? 'border-[#d69b58] bg-[#d69b58] text-[#20160f]'
                             : 'border-[#5a4638] text-transparent'
                         }`}
-                        aria-label={`${active ? 'Dezaktywuj' : 'Aktywuj'} ${book.name}`}
+                        aria-label={active ? t('worlds.toggle_deactivate', { name: book.name }) : t('worlds.toggle_activate', { name: book.name })}
                       >
                         <Check size={14} />
                       </button>
@@ -429,10 +430,10 @@ const WorldsShellPanel = ({ socket }) => {
                       <span className="flex flex-wrap items-center gap-2">
                         <span className="truncate font-semibold">{book.name}</span>
                         <Badge tone="neutral">{book.kind}</Badge>
-                        {book.trusted ? <Badge tone="green">trusted</Badge> : null}
+                        {book.trusted ? <Badge tone="green">{t('worlds.trusted_badge')}</Badge> : null}
                       </span>
                     )}
-                    description={`${book.entry_count} wpisów · ID: ${book.id}`}
+                    description={t('worlds.book_meta', { count: book.entry_count, id: book.id })}
                     trailing={(
                       <div className="flex shrink-0 items-center gap-1">
                         {active ? (
@@ -442,7 +443,7 @@ const WorldsShellPanel = ({ socket }) => {
                               disabled={busy || activeIds.indexOf(book.id) === 0}
                               onClick={() => moveBook(book.id, -1)}
                               className="rounded p-0.5 text-[#8c7769] hover:text-[#efd4b5] disabled:opacity-20"
-                              aria-label={`Przesuń ${book.name} wyżej`}
+                              aria-label={t('worlds.move_up', { name: book.name })}
                             >
                               <ChevronUp size={14} />
                             </button>
@@ -451,7 +452,7 @@ const WorldsShellPanel = ({ socket }) => {
                               disabled={busy || activeIds.indexOf(book.id) === activeIds.length - 1}
                               onClick={() => moveBook(book.id, 1)}
                               className="rounded p-0.5 text-[#8c7769] hover:text-[#efd4b5] disabled:opacity-20"
-                              aria-label={`Przesuń ${book.name} niżej`}
+                              aria-label={t('worlds.move_down', { name: book.name })}
                             >
                               <ChevronDown size={14} />
                             </button>
@@ -484,7 +485,7 @@ const WorldsShellPanel = ({ socket }) => {
                 className="flex items-center gap-1.5 text-xs text-[#8c7769] hover:text-[#efd4b5]"
               >
                 <RefreshCw size={13} />
-                Odśwież
+                {t('worlds.refresh')}
               </button>
             )}
           >
@@ -499,12 +500,12 @@ const WorldsShellPanel = ({ socket }) => {
                 <div className="truncate text-[#8c7769]">{item.entry_uid}</div>
                 <div className="text-[#8c7769]">{item.reason}</div>
                 <div className={item.included ? 'text-[#a8c896]' : 'text-[#df8978]'}>
-                  {item.included ? 'użyty' : 'pominięty'} · {item.score.toFixed(1)}
+                  {item.included ? t('worlds.status_used') : t('worlds.status_skipped')} · {item.score.toFixed(1)}
                 </div>
               </div>
             )) : (
               <div className="p-5 text-center text-xs text-[#8c7769]/70">
-                Brak aktywacji w tej rozmowie.
+                {t('worlds.no_diagnostics')}
               </div>
             )}
           </ListContainer>

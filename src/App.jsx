@@ -799,15 +799,15 @@ function AppContent() {
         if (source) {
           pushToast(
             count > 0
-              ? `Installed ${count} skill(s) from source.`
-              : 'Skill source install finished.',
+              ? t('system.skill_install_source_success', { count })
+              : t('system.skill_install_source_success_empty'),
             'system'
           );
         } else {
-          pushToast(`Installed ${count} skill(s).`, 'system');
+          pushToast(t('system.skill_install_zip_success', { count }), 'system');
         }
       } else {
-        pushToast(`Skill install failed: ${payload?.error || 'unknown error'}`, 'error');
+        pushToast(t('system.skill_install_failed', { error: payload?.error || t('system.unknown_error') }), 'error');
       }
       setSkillsActionBusy(false);
       setSkillsLoading(false);
@@ -815,9 +815,9 @@ function AppContent() {
 
     socket.on('skill_uninstall_result', (payload) => {
       if (payload?.ok) {
-        pushToast('Skill uninstalled.', 'system');
+        pushToast(t('system.skill_uninstalled'), 'system');
       } else {
-        pushToast(`Skill uninstall failed: ${payload?.error || 'unknown error'}`, 'error');
+        pushToast(t('system.skill_uninstall_failed', { error: payload?.error || t('system.unknown_error') }), 'error');
       }
       setSkillsActionBusy(false);
       setSkillsLoading(false);
@@ -825,7 +825,7 @@ function AppContent() {
 
     socket.on('error', (data) => {
       console.error("Socket Error:", data);
-      pushToast(`Something feels off... (${data.msg})`, 'error');
+      pushToast(t('system.generic_error', { msg: data.msg }), 'error');
     });
 
     socket.on('browser_frame', (data) => {
@@ -924,7 +924,7 @@ function AppContent() {
       if (!active) {
         clearSessionPrompts();
       }
-      pushToast(active ? `Session mode: ${kind}` : 'Session mode ended', 'system');
+      pushToast(active ? t('system.session_mode_started', { kind }) : t('system.session_mode_ended'), 'system');
     });
 
     socket.on('session_prompt', (payload) => {
@@ -935,7 +935,7 @@ function AppContent() {
       const summary = (data && data.summary) ? String(data.summary) : '';
       if (!summary) return;
       const trimmed = summary.length > 280 ? summary.slice(0, 280).trimEnd() + '…' : summary;
-      pushToast(`Podsumowanie sesji: ${trimmed}`, 'system', 12000);
+      pushToast(t('system.session_summary', { summary: trimmed }), 'system', 12000);
     });
 
     navigator.mediaDevices.enumerateDevices().then(devs => {
@@ -1493,7 +1493,7 @@ function AppContent() {
       .join(', ');
 
     const attachLine = names
-      ? `\n\n[Załączniki: ${names}${attachments.length > 8 ? ', …' : ''}]`
+      ? `\n\n[${t('chat.attachments')}: ${names}${attachments.length > 8 ? ', …' : ''}]`
       : `\n\n[${t('chat.attachments')}: ${attachments.length}]`;
 
     addMessage(t('chat.you'), (text || `(${t('chat.sent_attachments')})`) + attachLine);
@@ -1551,7 +1551,7 @@ function AppContent() {
     if (!file || !socket || !socket.connected) return;
     const lower = String(file.name || '').toLowerCase();
     if (!lower.endsWith('.zip')) {
-      pushToast('Please drop a .zip file for skill install.', 'error');
+      pushToast(t('system.skill_zip_required'), 'error');
       return;
     }
     try {
@@ -1565,7 +1565,7 @@ function AppContent() {
       });
     } catch (err) {
       console.error('Skill ZIP upload failed:', err);
-      pushToast('Failed to read skill ZIP file.', 'error');
+      pushToast(t('system.skill_zip_read_failed'), 'error');
       setSkillsActionBusy(false);
     }
   };
@@ -1576,7 +1576,7 @@ function AppContent() {
     const skillName = String(payload?.skillName || '').trim();
     const agent = String(payload?.agent || 'codex').trim() || 'codex';
     if (!source) {
-      pushToast('Skill source is required.', 'error');
+      pushToast(t('system.skill_source_required'), 'error');
       return;
     }
     setSkillsActionBusy(true);
@@ -1592,7 +1592,7 @@ function AppContent() {
 
   const handleUninstallSkill = (name) => {
     if (!name || !socket || !socket.connected) return;
-    if (!window.confirm(`Uninstall skill "${name}"?`)) return;
+    if (!window.confirm(t('system.confirm_uninstall_skill', { name }))) return;
     setSkillsActionBusy(true);
     socket.emit('uninstall_skill', { name });
   };

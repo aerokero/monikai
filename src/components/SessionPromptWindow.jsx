@@ -1,17 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { X, ClipboardList, HelpCircle, Info, PenTool, Sparkles, Check } from './icons';
+import { useLanguage } from '../contexts/LanguageContext';
 
 const KIND_META = {
-  exercise: { icon: ClipboardList, label: 'Exercise' },
-  question: { icon: HelpCircle, label: 'Question' },
-  info: { icon: Info, label: 'Info' },
-  sketch: { icon: PenTool, label: 'Sketch' },
+  exercise: { icon: ClipboardList, labelKey: 'session_prompt.kind_exercise' },
+  question: { icon: HelpCircle, labelKey: 'session_prompt.kind_question' },
+  info: { icon: Info, labelKey: 'session_prompt.kind_info' },
+  sketch: { icon: PenTool, labelKey: 'session_prompt.kind_sketch' },
 };
 
-const normalizeField = (field, index) => {
+const normalizeField = (field, index, t) => {
   const type = String(field?.type || 'text').toLowerCase();
   const id = field?.key || field?.label || `field_${index + 1}`;
-  const label = field?.label || field?.key || `Field ${index + 1}`;
+  const label = field?.label || field?.key || t('session_prompt.field_fallback', { index: index + 1 });
   return {
     id,
     label,
@@ -31,6 +32,7 @@ const SessionPromptWindow = ({
   onSketchSave,
   zIndex = 70,
 }) => {
+  const { t } = useLanguage();
   if (!prompt) return null;
 
   const kind = String(prompt.kind || 'exercise').toLowerCase();
@@ -42,20 +44,21 @@ const SessionPromptWindow = ({
   const effectiveFields = useMemo(() => {
     if (!showForm) return [];
     if (rawFields.length) {
-      return rawFields.map(normalizeField);
+      return rawFields.map((field, index) => normalizeField(field, index, t));
     }
     return [
       normalizeField(
         {
           key: 'response',
-          label: 'Response',
+          label: t('session_prompt.default_response_label'),
           type: 'textarea',
-          placeholder: 'Write your response here...',
+          placeholder: t('session_prompt.default_response_placeholder'),
         },
-        0
+        0,
+        t
       ),
     ];
-  }, [showForm, rawFields, promptKey]);
+  }, [showForm, rawFields, promptKey, t]);
 
   const notesEnabled =
     typeof prompt.notes_enabled === 'boolean' ? prompt.notes_enabled : showForm;
@@ -133,7 +136,7 @@ const SessionPromptWindow = ({
     });
     onSubmit({
       exercise_id: prompt.exercise_id || promptKey,
-      title: prompt.title || 'Session Prompt',
+      title: prompt.title || t('session_prompt.title_fallback'),
       fields: payloadFields,
       notes: notes || '',
     });
@@ -197,7 +200,7 @@ const SessionPromptWindow = ({
     });
   };
 
-  const title = prompt.title || 'Session';
+  const title = prompt.title || t('session_prompt.title_fallback');
   const text = prompt.text || '';
 
   const anchorX = position?.x ?? window.innerWidth / 2;
@@ -228,11 +231,11 @@ const SessionPromptWindow = ({
               <Icon size={18} />
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-[0.2em] text-white/50">Session</div>
+              <div className="text-[10px] uppercase tracking-[0.2em] text-white/50">{t('session_prompt.kicker')}</div>
               <div className="text-sm font-semibold text-white/90 flex items-center gap-2">
                 {title}
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-400/10 text-amber-200/80 border border-amber-200/20">
-                  {meta.label}
+                  {t(meta.labelKey)}
                 </span>
               </div>
             </div>
@@ -240,7 +243,7 @@ const SessionPromptWindow = ({
           <button
             onClick={onClose}
             className="p-1.5 hover:bg-white/10 rounded-lg transition-colors text-white/50 hover:text-white"
-            title="Close"
+            title={t('session_prompt.close')}
           >
             <X size={16} />
           </button>
@@ -258,7 +261,7 @@ const SessionPromptWindow = ({
 
           {kind === 'info' && (
             <div className="flex items-center gap-2 text-xs text-white/50">
-              <Check size={14} /> Acknowledge and continue
+              <Check size={14} /> {t('session_prompt.acknowledge')}
             </div>
           )}
 
@@ -321,13 +324,13 @@ const SessionPromptWindow = ({
               {notesEnabled && (
                 <div className="space-y-1">
                   <label className="text-xs uppercase tracking-wider text-white/50">
-                    Notes
+                    {t('session_prompt.notes_label')}
                   </label>
                   <textarea
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     rows={2}
-                    placeholder="Optional notes or reflections..."
+                    placeholder={t('session_prompt.notes_placeholder')}
                     className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white/85 placeholder:text-white/30 focus:outline-none focus:border-white/40 resize-none"
                   />
                 </div>
@@ -338,7 +341,7 @@ const SessionPromptWindow = ({
           {kind === 'sketch' && (
             <div className="space-y-3">
               <div className="text-xs text-white/50">
-                Use the space below to sketch how you feel. Simple shapes are enough.
+                {t('session_prompt.sketch_instructions')}
               </div>
               <div className="border border-white/10 rounded-xl bg-black/40 overflow-hidden">
                 <canvas
@@ -355,7 +358,7 @@ const SessionPromptWindow = ({
                   onClick={clearCanvas}
                   className="px-3 py-1.5 rounded-lg border border-white/15 text-xs text-white/60 hover:text-white hover:bg-white/10 transition-colors"
                 >
-                  Clear
+                  {t('session_prompt.clear')}
                 </button>
                 <button
                   onClick={handleSketchSave}
@@ -366,7 +369,7 @@ const SessionPromptWindow = ({
                       : 'bg-white/5 text-white/30 cursor-not-allowed'
                   }`}
                 >
-                  Save Sketch
+                  {t('session_prompt.save_sketch')}
                 </button>
               </div>
             </div>
@@ -379,14 +382,14 @@ const SessionPromptWindow = ({
               onClick={onClose}
               className="px-4 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-medium transition-colors"
             >
-              Got it
+              {t('session_prompt.got_it')}
             </button>
           ) : kind === 'sketch' ? (
             <button
               onClick={onClose}
               className="px-3 py-1.5 rounded-lg border border-white/15 text-xs text-white/60 hover:text-white hover:bg-white/10 transition-colors"
             >
-              Close
+              {t('session_prompt.close')}
             </button>
           ) : (
             <>
@@ -394,13 +397,13 @@ const SessionPromptWindow = ({
                 onClick={onClose}
                 className="px-3 py-1.5 rounded-lg border border-white/15 text-xs text-white/60 hover:text-white hover:bg-white/10 transition-colors"
               >
-                Later
+                {t('session_prompt.later')}
               </button>
               <button
                 onClick={handleSubmit}
                 className="px-4 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white text-xs font-medium transition-colors"
               >
-                Submit
+                {t('session_prompt.submit')}
               </button>
             </>
           )}

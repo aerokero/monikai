@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { Lock, Unlock, User } from './icons';
+import { useLanguage } from '../contexts/LanguageContext';
 
 const AuthLock = ({ socket, onAuthenticated, onAnimationComplete }) => {
+    const { t } = useLanguage();
     const [frameSrc, setFrameSrc] = useState(null);
-    const [message, setMessage] = useState("Initializing Security...");
+    const [messageKey, setMessageKey] = useState('auth_lock.initializing');
     const [isUnlocking, setIsUnlocking] = useState(false);
 
     useEffect(() => {
@@ -14,14 +16,14 @@ const AuthLock = ({ socket, onAuthenticated, onAnimationComplete }) => {
             if (data.authenticated && !isUnlocking) {
                 // Start Unlock Sequence
                 setIsUnlocking(true);
-                setMessage("Identity Verified. Access Granted.");
+                setMessageKey('auth_lock.granted');
 
                 // Wait for animation then notify parent
                 setTimeout(() => {
                     onAuthenticated(true);
                 }, 2000); // 2 seconds animation
             } else if (!data.authenticated && !isUnlocking) {
-                setMessage("Look at the camera to unlock.");
+                setMessageKey('auth_lock.prompt');
             }
         };
 
@@ -56,7 +58,7 @@ const AuthLock = ({ socket, onAuthenticated, onAnimationComplete }) => {
             <div className={`relative flex flex-col items-center gap-6 p-10 border ${borderColor}/30 rounded-lg bg-black/80 backdrop-blur-xl ${shadowColor} transition-all duration-[1500ms]`}>
                 <div className={`text-3xl font-bold tracking-[0.3em] uppercase drop-shadow-[0_0_10px_currentColor] flex items-center gap-4 ${themeColor} transition-colors duration-1000`}>
                     {isUnlocking ? <Unlock size={32} /> : <Lock size={32} />}
-                    {isUnlocking ? "SYSTEM UNLOCKED" : "SYSTEM LOCKED"}
+                    {isUnlocking ? t('auth_lock.unlocked') : t('auth_lock.locked')}
                 </div>
 
                 {/* Camera Feed Frame */}
@@ -64,7 +66,7 @@ const AuthLock = ({ socket, onAuthenticated, onAnimationComplete }) => {
                     {frameSrc ? (
                         <img
                             src={frameSrc}
-                            alt="Auth Camera"
+                            alt={t('auth_lock.camera_alt')}
                             className={`w-full h-full object-cover transform scale-x-[-1] transition-opacity duration-500 ${isUnlocking ? 'opacity-50 grayscale' : 'opacity-100'}`}
                         />
                     ) : (
@@ -87,7 +89,7 @@ const AuthLock = ({ socket, onAuthenticated, onAnimationComplete }) => {
                 </div>
 
                 <div className={`text-sm tracking-widest ${isUnlocking ? 'text-green-300' : 'text-white/80'} animate-pulse transition-colors duration-500`}>
-                    {message}
+                    {t(messageKey)}
                 </div>
             </div>
 

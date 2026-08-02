@@ -17,16 +17,15 @@ const Section = ({ title, icon: Icon, children }) => (
   </div>
 );
 
-const GENDER_OPTIONS = [
-  { value: '', label: '—' },
-  { value: 'M', label: 'Male' },
-  { value: 'F', label: 'Female' },
-  { value: 'Other', label: 'Other' },
-  { value: 'Prefer not to say', label: 'Prefer not to say' },
-];
-
 const ProfileShellPanel = ({ socket = null }) => {
   const { t } = useLanguage();
+  const GENDER_OPTIONS = [
+    { value: '', label: '—' },
+    { value: 'M', label: t('profile.gender_male') },
+    { value: 'F', label: t('profile.gender_female') },
+    { value: 'Other', label: t('profile.gender_other') },
+    { value: 'Prefer not to say', label: t('profile.gender_prefer_not_say') },
+  ];
   const [panelRef] = useElementSize();
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -78,33 +77,33 @@ const ProfileShellPanel = ({ socket = null }) => {
   /* ── Edit mode ─────────────────────────────────────────────────── */
   if (isEditing) {
     return (
-      <ShellPanelFrame icon={User} title="Edit Profile">
+      <ShellPanelFrame icon={User} title={t('profile.edit_title')}>
         <div ref={panelRef} className="flex-1 overflow-y-auto px-6 py-4 pb-10 custom-scrollbar">
           <div className="flex flex-col gap-5">
-            <Section title="Personal" icon={User}>
+            <Section title={t('profile.section_personal')} icon={User}>
               <div className="space-y-3.5 py-4">
-                <TextField label="Name" value={formData.user_name} onChange={set('user_name')} placeholder="Your name" />
-                <SelectField label="Gender" value={formData.gender} onChange={set('gender')} options={GENDER_OPTIONS} />
-                <TextField label="Birthday" type="date" value={formData.birthday} onChange={set('birthday')} />
-                <TextField label="Location" value={formData.location} onChange={set('location')} placeholder="City, Country" />
-                <TextField label="Occupation" value={formData.occupation} onChange={set('occupation')} placeholder="Your job or profession" />
+                <TextField label={t('profile.name')} value={formData.user_name} onChange={set('user_name')} placeholder={t('profile.name_placeholder')} />
+                <SelectField label={t('profile.gender')} value={formData.gender} onChange={set('gender')} options={GENDER_OPTIONS} />
+                <TextField label={t('profile.birthday')} type="date" value={formData.birthday} onChange={set('birthday')} />
+                <TextField label={t('profile.location')} value={formData.location} onChange={set('location')} placeholder={t('profile.location_placeholder')} />
+                <TextField label={t('profile.occupation')} value={formData.occupation} onChange={set('occupation')} placeholder={t('profile.occupation_placeholder')} />
               </div>
             </Section>
 
-            <Section title="About you" icon={Heart}>
+            <Section title={t('profile.section_about')} icon={Heart}>
               <div className="space-y-3.5 py-4">
                 <TextAreaField
-                  label="Interests"
+                  label={t('profile.interests')}
                   value={formData.interests}
                   onChange={set('interests')}
-                  placeholder="Your hobbies and interests..."
+                  placeholder={t('profile.interests_placeholder')}
                   className="h-20"
                 />
                 <TextAreaField
-                  label="Personality"
+                  label={t('profile.personality')}
                   value={formData.personality_traits}
                   onChange={set('personality_traits')}
-                  placeholder="Describe your personality..."
+                  placeholder={t('profile.personality_placeholder')}
                   className="h-20"
                 />
               </div>
@@ -116,14 +115,14 @@ const ProfileShellPanel = ({ socket = null }) => {
                 className="flex-1 rounded-full bg-[#de9d50] py-2.5 text-xs font-bold text-[#16100d] transition-all hover:brightness-110"
               >
                 <Save size={12} className="mr-1.5 inline" />
-                Save Changes
+                {t('profile.save_changes')}
               </button>
               <button
                 onClick={handleEditToggle}
                 className="flex-1 rounded-full border border-[#3c2e26] bg-[#1e1612] py-2.5 text-xs font-semibold text-[#8c7769] transition-colors hover:text-[#f5e6d3]"
               >
                 <X size={12} className="mr-1.5 inline" />
-                Cancel
+                {t('common.cancel')}
               </button>
             </div>
           </div>
@@ -136,21 +135,21 @@ const ProfileShellPanel = ({ socket = null }) => {
   return (
     <ShellPanelFrame
       icon={User}
-      title={profile.user_name || 'Profile'}
+      title={profile.user_name || t('panels.profile')}
       actions={(
         <button
           onClick={handleEditToggle}
           className="rounded-full border border-[#3c2e26] bg-[#1e1612] px-3 py-1.5 text-xs text-[#8c7769] transition-colors hover:border-[#de9d50] hover:text-[#de9d50]"
         >
           <Edit2 size={11} className="mr-1.5 inline" />
-          Edit
+          {t('profile.edit')}
         </button>
       )}
     >
       <div ref={panelRef} className="flex-1 overflow-y-auto px-6 py-4 pb-10 custom-scrollbar">
         {isLoading && (
           <div className="flex items-center justify-center py-12 text-sm text-[#8c7769]/50">
-            Loading…
+            {t('profile.loading')}
           </div>
         )}
         {!isLoading && !socket && (
@@ -160,30 +159,30 @@ const ProfileShellPanel = ({ socket = null }) => {
         )}
         {!isLoading && socket && (
           <div className="flex flex-col gap-5">
-            <Section title="Personal" icon={User}>
-              {profile.user_name && <SummaryField label="Name" value={profile.user_name} />}
-              {profile.gender && <SummaryField label="Gender" value={profile.gender} />}
+            <Section title={t('profile.section_personal')} icon={User}>
+              {profile.user_name && <SummaryField label={t('profile.name')} value={profile.user_name} />}
+              {profile.gender && <SummaryField label={t('profile.gender')} value={profile.gender} />}
               {profile.birthday && (
                 <SummaryField
-                  label={<span className="flex items-center gap-1"><Cake size={11} />Birthday</span>}
+                  label={<span className="flex items-center gap-1"><Cake size={11} />{t('profile.birthday')}</span>}
                   value={new Date(profile.birthday).toLocaleDateString()}
                 />
               )}
-              {profile.location && <SummaryField label="Location" value={profile.location} />}
-              {profile.occupation && <SummaryField label="Occupation" value={profile.occupation} />}
+              {profile.location && <SummaryField label={t('profile.location')} value={profile.location} />}
+              {profile.occupation && <SummaryField label={t('profile.occupation')} value={profile.occupation} />}
               {!profile.user_name && !profile.birthday && !profile.location && !profile.occupation && (
-                <p className="py-4 text-sm text-[#8c7769]/70">No information yet.</p>
+                <p className="py-4 text-sm text-[#8c7769]/70">{t('profile.no_information')}</p>
               )}
             </Section>
 
             {profile.interests && (
-              <Section title="Interests" icon={Heart}>
+              <Section title={t('profile.interests')} icon={Heart}>
                 <p className="py-4 text-sm leading-relaxed text-[#8c7769]">{profile.interests}</p>
               </Section>
             )}
 
             {profile.personality_traits && (
-              <Section title="Personality" icon={Heart}>
+              <Section title={t('profile.personality')} icon={Heart}>
                 <p className="py-4 text-sm leading-relaxed text-[#8c7769]">{profile.personality_traits}</p>
               </Section>
             )}

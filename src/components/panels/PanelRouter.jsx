@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { useMonika } from '../../contexts/MonikaContext';
+import { useLanguage } from '../../contexts/LanguageContext';
 import ChatPanel from './ChatPanel';
 import CompanionWindow from '../CompanionWindow';
 import StudyShellPanel from './StudyShellPanel';
@@ -93,7 +94,8 @@ const PanelRouter = ({
   onVoiceChange = () => {},
 }) => {
   const { activeContext, setActiveContext } = useMonika();
-  
+  const { t } = useLanguage();
+
   // If excludeChat is true and activeContext is chat, show study panel instead
   // (chat is rendered as persistent window in MonikaLayout)
   const panelContext = excludeChat && activeContext === 'chat' ? 'study' : activeContext;
@@ -102,7 +104,7 @@ const PanelRouter = ({
   if (!PanelComponent) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-white/50 text-sm">Panel not found: {panelContext}</div>
+        <div className="text-white/50 text-sm">{t('errors.panel_not_found', { context: panelContext })}</div>
       </div>
     );
   }

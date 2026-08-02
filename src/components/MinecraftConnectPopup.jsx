@@ -69,7 +69,7 @@ const MinecraftConnectPopup = ({ socket, isOpen, onClose, onConnected }) => {
     const trimmedHost = host.trim();
     setIsConnecting(true);
     setStatusType('pending');
-    setStatusText(t('minecraft.connecting') || 'Connecting...');
+    setStatusText(t('minecraft.connecting'));
 
     socket.emit(
       'minecraft_connect_to_server',
@@ -77,7 +77,7 @@ const MinecraftConnectPopup = ({ socket, isOpen, onClose, onConnected }) => {
       (result) => {
         setIsConnecting(false);
         const ok = Boolean(result && result.success);
-        const message = String(result?.message || (ok ? 'Connected.' : 'Connection failed.'));
+        const message = String(result?.message || (ok ? t('minecraft.connected') : t('minecraft.connection_failed')));
 
         if (ok) {
           setStatusType('success');
@@ -118,13 +118,13 @@ const MinecraftConnectPopup = ({ socket, isOpen, onClose, onConnected }) => {
               <Gamepad2 size={18} />
             </div>
             <div>
-              <div className="text-sm font-semibold text-white/95">{t('minecraft.connect_to_server') || 'Connect to Server'}</div>
+              <div className="text-sm font-semibold text-white/95">{t('minecraft.connect_to_server')}</div>
             </div>
           </div>
           <button
             onClick={onClose}
             className="rounded-lg p-1.5 text-white/50 transition hover:bg-red-500/20 hover:text-red-300"
-            aria-label="Close"
+            aria-label={t('common.close')}
           >
             <X size={16} />
           </button>
@@ -132,7 +132,7 @@ const MinecraftConnectPopup = ({ socket, isOpen, onClose, onConnected }) => {
 
         <div className="space-y-4 px-5 py-5">
           <div className="space-y-1.5">
-            <label className="text-xs uppercase tracking-[0.14em] text-white/55">Server</label>
+            <label className="text-xs uppercase tracking-[0.14em] text-white/55">{t('minecraft.server_label')}</label>
             <div className="relative">
               <Server size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/35" />
               <input
@@ -148,7 +148,7 @@ const MinecraftConnectPopup = ({ socket, isOpen, onClose, onConnected }) => {
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs uppercase tracking-[0.14em] text-white/55">Port</label>
+            <label className="text-xs uppercase tracking-[0.14em] text-white/55">{t('minecraft.port_label')}</label>
             <input
               type="text"
               value={port}
@@ -160,7 +160,7 @@ const MinecraftConnectPopup = ({ socket, isOpen, onClose, onConnected }) => {
               className="w-full rounded-xl border border-white/15 bg-black/35 px-3 py-2.5 text-sm text-white placeholder:text-white/30 outline-none transition focus:border-emerald-300/40 focus:bg-black/45 disabled:opacity-60"
             />
             {!isPortValid && port !== '' ? (
-              <p className="text-xs text-red-300/90">Port must be between 1 and 65535.</p>
+              <p className="text-xs text-red-300/90">{t('minecraft.port_invalid')}</p>
             ) : null}
           </div>
 
@@ -176,7 +176,7 @@ const MinecraftConnectPopup = ({ socket, isOpen, onClose, onConnected }) => {
               disabled={isConnecting}
               className="flex-1 rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm text-white/80 transition hover:bg-white/10 disabled:opacity-50"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               onClick={handleConnect}
@@ -184,7 +184,7 @@ const MinecraftConnectPopup = ({ socket, isOpen, onClose, onConnected }) => {
               className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-emerald-300/30 bg-emerald-400/15 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/22 disabled:cursor-not-allowed disabled:opacity-45"
             >
               {isConnecting ? <Loader2 size={14} className="animate-spin" /> : null}
-              {isConnecting ? (t('minecraft.connecting') || 'Connecting...') : (t('minecraft.connect_to_server') || 'Connect to Server')}
+              {isConnecting ? t('minecraft.connecting') : t('minecraft.connect_to_server')}
             </button>
           </div>
         </div>

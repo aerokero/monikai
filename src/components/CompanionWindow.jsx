@@ -29,19 +29,19 @@ const CompanionWindow = ({
       case 'eat':
         if (eatTogetherActive) {
           if (onStopEatTogether) onStopEatTogether();
-          text = "That was nice. Let's wrap up our little meal together.";
+          text = t('companion.activities.eat_stop_message');
         } else {
           if (onStartEatTogether) onStartEatTogether();
-          text = "Let's eat together for a bit. I want something cozy and low-key.";
+          text = t('companion.activities.eat_start_message');
         }
         break;
       case 'headpat':
-        text = 'headpat for you';
+        text = t('companion.activities.headpat_message');
         if (onHeadpat) onHeadpat();
         break;
       case 'gift': {
         const gift = prompt(t('companion.activities.gift_prompt'));
-        if (gift) text = `I brought you a little gift: ${gift}.`;
+        if (gift) text = t('companion.activities.gift_message', { gift });
         break;
       }
       default:
@@ -113,7 +113,7 @@ const CompanionWindow = ({
               onClick={() => {
                 if (onToggleSession) onToggleSession();
               }}
-              trailing={sessionActive ? <Badge tone="green">Active</Badge> : null}
+              trailing={sessionActive ? <Badge tone="green">{t('common.active')}</Badge> : null}
               showChevron={!sessionActive}
             />
           </ListContainer>
@@ -126,7 +126,7 @@ const CompanionWindow = ({
               title={t('companion.activities.eat')}
               description={t('companion.activities.eat_desc')}
               onClick={() => handleAction('eat')}
-              trailing={eatTogetherActive ? <Badge tone="green">Active</Badge> : null}
+              trailing={eatTogetherActive ? <Badge tone="green">{t('common.active')}</Badge> : null}
               showChevron={!eatTogetherActive}
             />
             <ListRow
@@ -146,12 +146,12 @@ const CompanionWindow = ({
             {allowMinecraft && (
               <ListRow
                 icon={Gamepad2}
-                title={t('companion.activities.minecraft') || 'Minecraft'}
-                description={t('companion.activities.minecraft_desc') || 'Open the Minecraft companion activity panel.'}
+                title={t('companion.activities.minecraft')}
+                description={t('companion.activities.minecraft_desc')}
                 onClick={() => {
                   if (onToggleMinecraft) onToggleMinecraft();
                 }}
-                trailing={showMinecraftWindow ? <Badge tone="green">Active</Badge> : null}
+                trailing={showMinecraftWindow ? <Badge tone="green">{t('common.active')}</Badge> : null}
                 showChevron={!showMinecraftWindow}
               />
             )}

@@ -7,6 +7,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import useLayoutMode from '../hooks/useLayoutMode';
 import { useMonika } from '../contexts/MonikaContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { getPanelById } from '../config/panelRegistry';
 import MonikaSprite from './MonikaSprite';
 import MASClock from './MASClock';
@@ -95,6 +96,7 @@ const MonikaLayout = ({
   } = useLayoutMode();
 
   const { activeContext, setActiveContext } = useMonika();
+  const { t } = useLanguage();
   const isElectron = typeof window !== 'undefined' && typeof window.require === 'function';
 
   const [isExpanded, setIsExpanded] = useState(false);
@@ -153,7 +155,7 @@ const MonikaLayout = ({
 
         {/* Non-Chat Panel Container (Study, Tasks, Media, etc.) - Hidden when chat is selected */}
         {resolvedContext !== 'chat' && (
-          <div className={panelContainerClassName} role="region" aria-live="polite" aria-label="Content panel">
+          <div className={panelContainerClassName} role="region" aria-live="polite" aria-label={t('layout.content_panel_aria')}>
             <PanelRouter
               messages={messages}
               inputValue={inputValue}
@@ -211,7 +213,7 @@ const MonikaLayout = ({
         <div
           className={`${chatWindowClassName} ${isExpanded ? 'is-expanded' : ''}`}
           role="region"
-          aria-label="Chat"
+          aria-label={t('layout.chat_panel_aria')}
           style={{ transform: 'translateX(-50%)' }}
         >
           <ChatPanel

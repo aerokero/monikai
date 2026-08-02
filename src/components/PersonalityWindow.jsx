@@ -2,8 +2,18 @@ import React from 'react';
 import { Heart, Activity, Moon, Zap } from './icons';
 import { useLanguage } from '../contexts/LanguageContext';
 
+const KNOWN_MOOD_KEYS = new Set([
+    'neutral', 'excited', 'happy', 'calm', 'angry',
+    'intensely_protective', 'protective', 'sad', 'tired',
+]);
+
 const PersonalityWindow = ({ state }) => {
     const { t } = useLanguage();
+
+    const moodLabel = (mood) => {
+        const key = String(mood || 'neutral').trim().toLowerCase().replace(/[\s-]+/g, '_');
+        return KNOWN_MOOD_KEYS.has(key) ? t(`mas_clock.mood.${key}`) : mood;
+    };
     const viewState = {
         affection: 0.0,
         affection_hearts: '',
@@ -59,7 +69,7 @@ const PersonalityWindow = ({ state }) => {
                         </div>
                         <span className="text-xs font-medium tracking-wide">{t('personality.mood')}</span>
                     </div>
-                    <span className={`text-xs font-bold uppercase tracking-wider ${getMoodColor(viewState.mood)}`}>{viewState.mood}</span>
+                    <span className={`text-xs font-bold uppercase tracking-wider ${getMoodColor(viewState.mood)}`}>{moodLabel(viewState.mood)}</span>
                 </div>
 
                 {/* Energy */}
