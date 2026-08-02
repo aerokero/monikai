@@ -1,16 +1,26 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
+  Book,
+  Coffee,
+  Gamepad2,
+  Gift,
+  Heart,
   Maximize2,
   Mic,
   MicOff,
+  Paperclip,
   Plus,
   Terminal,
   Upload,
+  Utensils,
   X,
 } from '../icons';
 import AudioBar from '../AudioBar';
 import { useAudioVideo } from '../../contexts/AudioVideoContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { useMonika } from '../../contexts/MonikaContext';
+import { createCompanionAction } from '../../utils/companionActions';
 
 const MAX_FILES = 6;
 const MAX_FILE_BYTES = 12 * 1024 * 1024;
@@ -125,6 +135,7 @@ const ChatPanel = ({
   inputValue = '',
   setInputValue = () => {},
   handleSend = () => {},
+  socket = null,
   userSpeaking = false,
   micAudioData = null,
   isExpanded = false,
@@ -133,18 +144,33 @@ const ChatPanel = ({
   onMinimizedChange = null,
   onSizeChange = null,
   sessionActive = false,
+  onToggleSession = () => {},
+  eatTogetherActive = false,
+  onStartEatTogether = () => {},
+  onStopEatTogether = () => {},
+  onHeadpat = () => {},
+  onToggleMinecraft = () => {},
+  showMinecraftWindow = false,
+  studyCatalog = { folders: [] },
+  studySelection = { folder: '', file: '', path: '' },
+  onOpenStudy = () => {},
   compactDock = false,
 }) => {
   const { t } = useLanguage();
   const { isMuted, toggleMute } = useAudioVideo();
+  const { setActiveContext } = useMonika();
   const rootRef = useRef(null);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
+  const attachButtonRef = useRef(null);
+  const attachMenuRef = useRef(null);
 
   const [attachments, setAttachments] = useState([]);
   const [attachError, setAttachError] = useState('');
   const [prevAgenticLogLength, setPrevAgenticLogLength] = useState(0);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [attachMenuPosition, setAttachMenuPosition] = useState(null);
 
   // Auto-show agentic log when there's new agent activity (context-based)
   const hasAgenticActivity = useMemo(() => agenticLogs && agenticLogs.length > 0, [agenticLogs]);
@@ -194,6 +220,40 @@ const ChatPanel = ({
     });
   }, [attachments]);
 
+  useLayoutEffect(() => {
+    if (!showAttachMenu) return undefined;
+    const updatePosition = () => {
+      const button = attachButtonRef.current;
+      if (!button) return;
+      const rect = button.getBoundingClientRect();
+      setAttachMenuPosition({
+        left: rect.left,
+        bottom: window.innerHeight - rect.top + 8,
+      });
+    };
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    return () => window.removeEventListener('resize', updatePosition);
+  }, [showAttachMenu]);
+
+  useEffect(() => {
+    if (!showAttachMenu) return undefined;
+    const onPointerDown = (event) => {
+      const clickedButton = attachButtonRef.current?.contains(event.target);
+      const clickedMenu = attachMenuRef.current?.contains(event.target);
+      if (!clickedButton && !clickedMenu) setShowAttachMenu(false);
+    };
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setShowAttachMenu(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [showAttachMenu]);
+
   const visibleMessages = useMemo(() => {
     const list = Array.isArray(messages) ? messages : [];
     return list.filter((message) => !String(message?.sender || '').includes('(Thought)')).slice(-40);
@@ -208,6 +268,7 @@ const ChatPanel = ({
     () => attachments.reduce((sum, item) => sum + (item?.file?.size || 0), 0),
     [attachments]
   );
+  const hasStudyFiles = Array.isArray(studyCatalog?.folders) && studyCatalog.folders.length > 0;
   const canSend = Boolean((inputValue || '').trim()) || attachments.length > 0;
   const dialogueMessages = visibleMessages.slice(-8);
   const userSenderAliases = useMemo(() => {
@@ -284,6 +345,26 @@ const ChatPanel = ({
       if (item?.previewUrl) URL.revokeObjectURL(item.previewUrl);
       return current.filter((entry) => entry.id !== id);
     });
+  };
+
+  const runCompanionAction = createCompanionAction({
+    t,
+    socket,
+    eatTogetherActive,
+    onStartEatTogether,
+    onStopEatTogether,
+    onHeadpat,
+  });
+
+  const openStudyQuick = () => {
+    const folders = Array.isArray(studyCatalog?.folders) ? studyCatalog.folders : [];
+    const folder = folders.find((f) => f.name === studySelection?.folder) || folders[0];
+    if (!folder) return;
+    const visibleFiles = (folder.files || []).filter((f) => !f.is_answer_key);
+    const file = visibleFiles.find((f) => f.name === studySelection?.file) || visibleFiles[0];
+    if (!file) return;
+    onOpenStudy({ folder: folder.name, file: file.name, path: file.path });
+    setActiveContext('study');
   };
 
   const handleSendMessage = async () => {
@@ -428,19 +509,136 @@ const ChatPanel = ({
                   onChange={(event) => addFiles(event.target.files)}
                   className="hidden"
                 />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  title={t('chat.attach_file_tab') || 'Attach file'}
-                  className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[rgba(255,240,218,0.78)] transition hover:bg-[rgba(255,238,212,0.08)] hover:text-[rgba(255,248,235,0.95)]"
-                >
-                  <Plus size={24} />
-                  {attachments.length > 0 && (
-                    <span className="absolute right-0 top-0 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[rgba(232,178,102,0.95)] text-[9px] font-bold text-[#20160f]">
-                      {attachments.length}
-                    </span>
-                  )}
-                </button>
+                <div className="shrink-0">
+                  <button
+                    ref={attachButtonRef}
+                    type="button"
+                    onClick={() => setShowAttachMenu((current) => !current)}
+                    title={t('chat.attach_file_tab')}
+                    aria-expanded={showAttachMenu}
+                    className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[rgba(255,240,218,0.78)] transition hover:bg-[rgba(255,238,212,0.08)] hover:text-[rgba(255,248,235,0.95)]"
+                  >
+                    {showAttachMenu ? <X size={22} /> : <Plus size={24} />}
+                    {!showAttachMenu && attachments.length > 0 && (
+                      <span className="absolute right-0 top-0 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[rgba(232,178,102,0.95)] text-[9px] font-bold text-[#20160f]">
+                        {attachments.length}
+                      </span>
+                    )}
+                  </button>
+
+                  {showAttachMenu && attachMenuPosition && createPortal((
+                    <div
+                      ref={attachMenuRef}
+                      style={{ position: 'fixed', left: attachMenuPosition.left, bottom: attachMenuPosition.bottom }}
+                      className="z-50 w-72 rounded-2xl border border-[rgba(232,178,102,0.16)] bg-[rgba(20,15,11,0.97)] p-1.5 shadow-[0_20px_50px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          fileInputRef.current?.click();
+                          setShowAttachMenu(false);
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[rgba(255,246,233,0.92)] transition hover:bg-[rgba(255,238,212,0.08)]"
+                      >
+                        <Paperclip size={17} className="shrink-0 text-[rgba(255,224,190,0.6)]" />
+                        {t('chat.attach_file_tab')}
+                      </button>
+
+                      <div className="my-1.5 h-px bg-[rgba(232,178,102,0.12)]" />
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onToggleSession();
+                          setShowAttachMenu(false);
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[rgba(255,246,233,0.92)] transition hover:bg-[rgba(255,238,212,0.08)]"
+                      >
+                        <Coffee size={17} className="shrink-0 text-[rgba(255,224,190,0.6)]" />
+                        <span className="flex-1">{sessionActive ? t('companion.session.end') : t('companion.session.start')}</span>
+                        {sessionActive && (
+                          <span className="rounded-full bg-[rgba(126,166,104,0.15)] px-2 py-0.5 text-[10px] font-medium text-[#a8c896]">
+                            {t('common.active')}
+                          </span>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          runCompanionAction('eat');
+                          setShowAttachMenu(false);
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[rgba(255,246,233,0.92)] transition hover:bg-[rgba(255,238,212,0.08)]"
+                      >
+                        <Utensils size={17} className="shrink-0 text-[rgba(255,224,190,0.6)]" />
+                        <span className="flex-1">{t('companion.activities.eat')}</span>
+                        {eatTogetherActive && (
+                          <span className="rounded-full bg-[rgba(126,166,104,0.15)] px-2 py-0.5 text-[10px] font-medium text-[#a8c896]">
+                            {t('common.active')}
+                          </span>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          runCompanionAction('headpat');
+                          setShowAttachMenu(false);
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[rgba(255,246,233,0.92)] transition hover:bg-[rgba(255,238,212,0.08)]"
+                      >
+                        <Heart size={17} className="shrink-0 text-[rgba(255,224,190,0.6)]" />
+                        {t('companion.activities.headpat')}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          runCompanionAction('gift');
+                          setShowAttachMenu(false);
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[rgba(255,246,233,0.92)] transition hover:bg-[rgba(255,238,212,0.08)]"
+                      >
+                        <Gift size={17} className="shrink-0 text-[rgba(255,224,190,0.6)]" />
+                        {t('companion.activities.gift')}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onToggleMinecraft();
+                          setShowAttachMenu(false);
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[rgba(255,246,233,0.92)] transition hover:bg-[rgba(255,238,212,0.08)]"
+                      >
+                        <Gamepad2 size={17} className="shrink-0 text-[rgba(255,224,190,0.6)]" />
+                        <span className="flex-1">{t('companion.activities.minecraft')}</span>
+                        {showMinecraftWindow && (
+                          <span className="rounded-full bg-[rgba(126,166,104,0.15)] px-2 py-0.5 text-[10px] font-medium text-[#a8c896]">
+                            {t('common.active')}
+                          </span>
+                        )}
+                      </button>
+
+                      {hasStudyFiles && (
+                        <>
+                          <div className="my-1.5 h-px bg-[rgba(232,178,102,0.12)]" />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              openStudyQuick();
+                              setShowAttachMenu(false);
+                            }}
+                            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[rgba(255,246,233,0.92)] transition hover:bg-[rgba(255,238,212,0.08)]"
+                          >
+                            <Book size={17} className="shrink-0 text-[rgba(255,224,190,0.6)]" />
+                            {t('companion.study.japanese_together')}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ), document.body)}
+                </div>
                 {hasAgenticActivity && (
                   <button
                     type="button"

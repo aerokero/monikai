@@ -36,15 +36,6 @@ export const MONIKA_STATES = {
     spriteName: 'monika_think',
     description: 'Writing notes - reflective and organized'
   },
-  companion: {
-    outfit: 'casual',
-    pose: 'relaxed',
-    expression: 'happy',
-    animationIdle: 'fidget',
-    spriteFolder: 'vn/monika/casual',
-    spriteName: 'monika_relax',
-    description: 'Companion activities - warm and playful'
-  },
   idle: {
     outfit: 'day',
     pose: 'idle',

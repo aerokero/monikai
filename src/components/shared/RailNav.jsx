@@ -139,7 +139,6 @@ const RailNav = () => {
     conversations: t('navigation.conversations'),
     worlds: t('navigation.worlds'),
     notes: t('navigation.journal'),
-    companion: t('companion.tabs.activities'),
     calendar: t('navigation.calendar'),
     profile: t('navigation.her_profile'),
   };

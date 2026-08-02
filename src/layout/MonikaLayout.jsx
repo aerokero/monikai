@@ -165,20 +165,11 @@ const MonikaLayout = ({
               userSpeaking={userSpeaking}
               micAudioData={micAudioData}
               language={language}
-              personalityState={personalityState}
               studyCatalog={studyCatalog}
               studySelection={studySelection}
               onSelectStudy={onSelectStudy}
               onRefreshCatalog={onRefreshCatalog}
               shareRef={shareRef}
-              sessionActive={sessionActive}
-              onToggleSession={onToggleSession}
-              eatTogetherActive={eatTogetherActive}
-              onStartEatTogether={onStartEatTogether}
-              onStopEatTogether={onStopEatTogether}
-              onHeadpat={onHeadpat}
-              onToggleMinecraft={onToggleMinecraft}
-              showMinecraftWindow={showMinecraftWindow}
               excludeChat={true}
               micDevices={micDevices}
               speakerDevices={speakerDevices}
@@ -230,6 +221,16 @@ const MonikaLayout = ({
             onMinimizedChange={onChatMinimizedChange}
             onSizeChange={onChatSizeChange}
             sessionActive={sessionActive}
+            onToggleSession={onToggleSession}
+            eatTogetherActive={eatTogetherActive}
+            onStartEatTogether={onStartEatTogether}
+            onStopEatTogether={onStopEatTogether}
+            onHeadpat={onHeadpat}
+            onToggleMinecraft={onToggleMinecraft}
+            showMinecraftWindow={showMinecraftWindow}
+            studyCatalog={studyCatalog}
+            studySelection={studySelection}
+            onOpenStudy={onOpenStudy}
           />
         </div>
       </div>

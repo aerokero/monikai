@@ -45,13 +45,6 @@ export const PANELS = {
     order: 3,
     ariaLabel: 'Notes workspace',
   },
-  companion: {
-    id: 'companion',
-    name: 'Activities',
-    icon: 'Zap',
-    order: 4,
-    ariaLabel: 'Activities and companion actions',
-  },
   calendar: {
     id: 'calendar',
     name: 'Calendar',

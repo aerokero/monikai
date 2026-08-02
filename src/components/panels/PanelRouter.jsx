@@ -8,7 +8,6 @@ import React from 'react';
 import { useMonika } from '../../contexts/MonikaContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import ChatPanel from './ChatPanel';
-import CompanionWindow from '../CompanionWindow';
 import StudyShellPanel from './StudyShellPanel';
 import NotesShellPanel from './NotesShellPanel';
 import CalendarShellPanel from './CalendarShellPanel';
@@ -23,7 +22,6 @@ const PANEL_COMPONENTS = {
   worlds: WorldsShellPanel,
   study: StudyShellPanel,
   notes: NotesShellPanel,
-  companion: CompanionWindow,
   calendar: CalendarShellPanel,
   profile: ProfileShellPanel,
   settings: SettingsPanel,
@@ -52,20 +50,11 @@ const PanelRouter = ({
   userSpeaking = false,
   micAudioData = null,
   language = 'en',
-  personalityState = {},
   studyCatalog = { folders: [] },
   studySelection = { folder: '', file: '', path: '' },
   onSelectStudy = () => {},
   onRefreshCatalog = () => {},
   shareRef = null,
-  sessionActive = false,
-  onToggleSession = () => {},
-  eatTogetherActive = false,
-  onStartEatTogether = () => {},
-  onStopEatTogether = () => {},
-  onHeadpat = () => {},
-  onToggleMinecraft = () => {},
-  showMinecraftWindow = false,
   excludeChat = true,
   micDevices = [],
   speakerDevices = [],
@@ -133,25 +122,6 @@ const PanelRouter = ({
       case 'notes':
         return {
           socket,
-        };
-      case 'companion':
-        return {
-          socket,
-          studyCatalog,
-          studySelection,
-          onOpenStudy: onSelectStudy,
-          onShowStudy: () => setActiveContext('study'),
-          onHeadpat,
-          sessionActive,
-          onToggleSession,
-          eatTogetherActive,
-          onStartEatTogether,
-          onStopEatTogether,
-          personalityState,
-          onToggleMinecraft,
-          showMinecraftWindow,
-          allowMinecraft: true,
-          embedded: true,
         };
       case 'calendar':
         return {
