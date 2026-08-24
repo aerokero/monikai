@@ -34,11 +34,11 @@ except Exception:
 
 
 _WAKE_WORD_RE = re.compile(
-    r"^\s*(?:hej\s+|hey\s+|droga\s+|okej\s+|ok\s+)?monik(?:a|o|e|ą|i)\b[\s,\.!\?]*",
+    r"^\s*(?:hej\s+|hey\s+|droga\s+|okej\s+|ok\s+)?(?:monik(?:a|o|e|ą|i|ę|u)|moni(?:a|o|e|ą|i|ę|ś|u)|moniczk(?:a|o|e|ą|i|ę)|helk(?:a|o|e|ą|i)|kocha\b)[\s,\.!\?]*",
     re.IGNORECASE,
 )
 _ANYWHERE_WAKE_WORD_RE = re.compile(
-    r"\bmonik(?:a|o|e|ą|i)\b",
+    r"\b(?:monik(?:a|o|e|ą|i|ę|u)|moni(?:a|o|e|ą|i|ę|ś|u)|moniczk(?:a|o|e|ą|i|ę)|helk(?:a|o))\b",
     re.IGNORECASE,
 )
 
@@ -50,10 +50,10 @@ class AdaptiveEnergyVAD:
         self,
         sample_rate: int = 16000,
         frame_duration_ms: int = 30,
-        energy_threshold_ratio: float = 3.0,
-        min_speech_duration_ms: int = 300,
-        trailing_silence_duration_ms: int = 850,
-        pre_roll_duration_ms: int = 350,
+        energy_threshold_ratio: float = 2.2,
+        min_speech_duration_ms: int = 200,
+        trailing_silence_duration_ms: int = 800,
+        pre_roll_duration_ms: int = 550,
     ):
         self.sample_rate = int(sample_rate)
         self.frame_duration_ms = int(frame_duration_ms)
@@ -61,11 +61,11 @@ class AdaptiveEnergyVAD:
         self.frame_bytes = self.frame_size * 2  # 16-bit PCM
 
         self.energy_threshold_ratio = float(energy_threshold_ratio)
-        self.min_speech_frames = max(3, int(min_speech_duration_ms / self.frame_duration_ms))
+        self.min_speech_frames = max(2, int(min_speech_duration_ms / self.frame_duration_ms))
         self.trailing_silence_frames = max(4, int(trailing_silence_duration_ms / self.frame_duration_ms))
         self.pre_roll_frames = max(3, int(pre_roll_duration_ms / self.frame_duration_ms))
 
-        self.noise_floor: float = 160.0
+        self.noise_floor: float = 80.0
         self.noise_alpha: float = 0.05
 
         self.pre_roll_buffer: Deque[bytes] = collections.deque(maxlen=self.pre_roll_frames)
@@ -85,12 +85,12 @@ class AdaptiveEnergyVAD:
 
     def is_frame_voiced(self, frame_bytes: bytes) -> Tuple[bool, float]:
         rms = self.compute_rms(frame_bytes)
-        threshold = max(320.0, self.noise_floor * self.energy_threshold_ratio)
+        threshold = max(180.0, self.noise_floor * self.energy_threshold_ratio)
         voiced = rms > threshold
 
         if not voiced and not self.is_speech_active:
             # Update ambient noise floor estimate
-            self.noise_floor = (1.0 - self.noise_alpha) * self.noise_floor + self.noise_alpha * max(60.0, rms)
+            self.noise_floor = (1.0 - self.noise_alpha) * self.noise_floor + self.noise_alpha * max(30.0, rms)
 
         return voiced, rms
 
@@ -169,8 +169,8 @@ class AudioDenoiseProcessor:
         sample_rate: int = 16000,
         n_fft: int = 512,
         hop_length: int = 256,
-        noise_reduction_db: float = 14.0,
-        hp_cutoff_hz: float = 95.0,
+        noise_reduction_db: float = 9.0,
+        hp_cutoff_hz: float = 90.0,
     ):
         self.sample_rate = sample_rate
         self.n_fft = n_fft
@@ -254,7 +254,7 @@ class AudioDenoiseProcessor:
 
             # Spectral subtraction with soft spectral floor to prevent musical noise
             noise_est = self.noise_profile * self.reduction_factor
-            subtracted = np.maximum(magnitude - (noise_est * 1.4), 0.18 * magnitude)
+            subtracted = np.maximum(magnitude - (noise_est * 1.0), 0.25 * magnitude)
             clean_fft = subtracted * np.exp(1j * phase)
             reconstructed = np.fft.irfft(clean_fft) * self.window
 
@@ -275,7 +275,7 @@ class AudioDenoiseProcessor:
         return np.clip(clean_samples, -32768, 32767).astype(np.int16).tobytes()
 
 
-def optimize_alsa_mic_gain(percent: int = 55):
+def optimize_alsa_mic_gain(percent: int = 65):
     """Set ALSA capture volume on USB mic to prevent hardware noise floor amplification."""
     for card in [2, 1, 0]:
         try:
@@ -470,10 +470,11 @@ class ServerMicListenerService:
 
             client = genai.Client(api_key=self.gemini_api_key)
             prompt = (
-                "Transcribe this voice audio as plain text. "
-                "Preserve the original language. "
+                "Transcribe this voice audio accurately in Polish as plain text. "
+                "The speaker is addressing an AI assistant named Monika (common wake words: 'Hej Monika', 'Monika', 'Moniko', 'Okej Monika', 'Monia'). "
+                "Preserve original spoken words accurately. "
                 "Do not add commentary, labels, quotes, timestamps, or markdown. "
-                "If the audio is unintelligible, return an empty string."
+                "If the audio is completely silent or unintelligible, return an empty string."
             )
 
             last_exc = None
@@ -597,14 +598,16 @@ class ServerMicListenerService:
         if self._is_muted or self._is_speaking:
             return
 
-        min_bytes = int(self.sample_rate * 2 * 0.5)
+        min_bytes = int(self.sample_rate * 2 * 0.4)
         if len(raw_pcm) < min_bytes:
             return
 
         samples = np.frombuffer(raw_pcm, dtype=np.int16)
         rms = float(math.sqrt(np.mean(samples.astype(np.float64) ** 2)))
-        if rms < 260.0:
+        if rms < 140.0:
             return
+
+        print(f"[SERVER MIC] [VAD] Detected speech segment ({len(raw_pcm)/32000.0:.2f}s, rms={rms:.1f}). Transcribing...")
 
         wav_bytes = _raw_pcm_to_wav(raw_pcm, sample_rate=self.sample_rate)
         transcript = await self.transcribe_speech(wav_bytes)
