@@ -2,10 +2,13 @@ services:
   monikai:
     build:
       context: .
-    image: monikai:local
+    image: ghcr.io/aerokero/monikai:latest
     container_name: monikai
     restart: unless-stopped
     init: true
+
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
 
     env_file:
       - .env
@@ -34,3 +37,20 @@ services:
       start_period: 90s
 
     stop_grace_period: 30s
+
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: monikai-watchtower
+    restart: unless-stopped
+    environment:
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_POLL_INTERVAL: 600
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_HTTP_API_UPDATE: "true"
+      WATCHTOWER_HTTP_API_TOKEN: "monikai-update-secret"
+      WATCHTOWER_HTTP_API_PERIODIC: "true"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "127.0.0.1:8089:8080"
+
