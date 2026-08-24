@@ -161,6 +161,134 @@ def resample_pcm16(pcm_bytes: bytes, src_rate: int, dst_rate: int) -> bytes:
     return resampled.tobytes()
 
 
+class AudioDenoiseProcessor:
+    """Real-time audio denoiser with high-pass filtering, dynamic spectral subtraction, and AGC."""
+
+    def __init__(
+        self,
+        sample_rate: int = 16000,
+        n_fft: int = 512,
+        hop_length: int = 256,
+        noise_reduction_db: float = 14.0,
+        hp_cutoff_hz: float = 95.0,
+    ):
+        self.sample_rate = sample_rate
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        self.window = np.hanning(n_fft).astype(np.float32)
+        self.noise_profile = np.zeros(n_fft // 2 + 1, dtype=np.float32)
+        self.has_noise_profile = False
+        self.noise_alpha = 0.08
+        self.reduction_factor = 1.0 - 10.0 ** (-noise_reduction_db / 20.0)
+
+        # 1st-order IIR High-Pass Filter (removes rumble, desk vibrations, fan 50Hz hum)
+        rc = 1.0 / (2.0 * math.pi * hp_cutoff_hz)
+        dt = 1.0 / sample_rate
+        self.hp_alpha = float(rc / (rc + dt))
+        self.hp_prev_in = 0.0
+        self.hp_prev_out = 0.0
+
+    def apply_high_pass(self, samples: np.ndarray) -> np.ndarray:
+        if len(samples) == 0:
+            return samples
+        out = np.empty(len(samples), dtype=np.float32)
+        prev_in = self.hp_prev_in
+        prev_out = self.hp_prev_out
+        alpha = self.hp_alpha
+        for i in range(len(samples)):
+            cur_in = float(samples[i])
+            cur_out = alpha * (prev_out + cur_in - prev_in)
+            out[i] = cur_out
+            prev_in = cur_in
+            prev_out = cur_out
+        self.hp_prev_in = prev_in
+        self.hp_prev_out = prev_out
+        return out
+
+    def update_noise_profile(self, pcm_chunk: bytes | np.ndarray):
+        """Update background stationary noise estimate during non-speech frames."""
+        if isinstance(pcm_chunk, bytes):
+            samples = np.frombuffer(pcm_chunk, dtype=np.int16)
+        else:
+            samples = pcm_chunk
+
+        if len(samples) < self.n_fft:
+            return
+
+        filtered = self.apply_high_pass(samples[:self.n_fft])
+        spec = np.abs(np.fft.rfft(filtered * self.window))
+        if not self.has_noise_profile:
+            self.noise_profile = spec
+            self.has_noise_profile = True
+        else:
+            self.noise_profile = (1.0 - self.noise_alpha) * self.noise_profile + self.noise_alpha * spec
+
+    def denoise_segment(self, raw_pcm: bytes) -> bytes:
+        """Denoise a complete speech segment and normalize volume for crisp transcription."""
+        if not raw_pcm:
+            return raw_pcm
+
+        samples = np.frombuffer(raw_pcm, dtype=np.int16)
+        if len(samples) < self.n_fft:
+            return raw_pcm
+
+        filtered = self.apply_high_pass(samples)
+        if not self.has_noise_profile:
+            return np.clip(filtered, -32768, 32767).astype(np.int16).tobytes()
+
+        num_frames = max(1, (len(filtered) - self.n_fft) // self.hop_length + 1)
+        out_len = (num_frames - 1) * self.hop_length + self.n_fft
+        out = np.zeros(out_len, dtype=np.float32)
+        window_sum = np.zeros(out_len, dtype=np.float32)
+
+        for i in range(num_frames):
+            start = i * self.hop_length
+            end = start + self.n_fft
+            frame = filtered[start:end]
+            if len(frame) < self.n_fft:
+                break
+
+            fft_frame = np.fft.rfft(frame * self.window)
+            magnitude = np.abs(fft_frame)
+            phase = np.angle(fft_frame)
+
+            # Spectral subtraction with soft spectral floor to prevent musical noise
+            noise_est = self.noise_profile * self.reduction_factor
+            subtracted = np.maximum(magnitude - (noise_est * 1.4), 0.18 * magnitude)
+            clean_fft = subtracted * np.exp(1j * phase)
+            reconstructed = np.fft.irfft(clean_fft) * self.window
+
+            out[start:end] += reconstructed
+            window_sum[start:end] += self.window ** 2
+
+        mask = window_sum > 1e-4
+        out[mask] /= window_sum[mask]
+        clean_samples = out[:len(samples)]
+
+        # Automatic Gain Control / Normalization
+        peak = float(np.max(np.abs(clean_samples))) if len(clean_samples) > 0 else 0.0
+        if peak > 200.0:
+            target_peak = 22000.0
+            gain = min(target_peak / peak, 4.0)
+            clean_samples = clean_samples * gain
+
+        return np.clip(clean_samples, -32768, 32767).astype(np.int16).tobytes()
+
+
+def optimize_alsa_mic_gain(percent: int = 55):
+    """Set ALSA capture volume on USB mic to prevent hardware noise floor amplification."""
+    for card in [2, 1, 0]:
+        try:
+            subprocess.run(
+                ["amixer", "-c", str(card), "set", "Mic", f"{percent}%"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except Exception:
+            pass
+
+
 def find_best_input_device(
     preferred_index: Optional[int] = None,
     preferred_name: Optional[str] = None,
@@ -269,6 +397,7 @@ class ServerMicListenerService:
         self.on_turn_finished = on_turn_finished
 
         self.vad = AdaptiveEnergyVAD(sample_rate=self.sample_rate)
+        self.denoiser = AudioDenoiseProcessor(sample_rate=self.sample_rate)
         self._last_transcribe_time = 0.0
         self._is_running = False
         self._is_muted = False
@@ -498,6 +627,12 @@ class ServerMicListenerService:
         pyaudio_inst = None
 
         try:
+            try:
+                mic_gain = int(os.getenv("SERVER_MIC_GAIN_PERCENT", "55"))
+                optimize_alsa_mic_gain(mic_gain)
+            except Exception:
+                pass
+
             if _SOUNDDEVICE_AVAILABLE:
                 dev_idx, dev_name, dev_sr = find_best_input_device(
                     self.input_device_index,
@@ -516,7 +651,7 @@ class ServerMicListenerService:
                 stream = sd.RawInputStream(**kwargs)
                 stream.start()
 
-                print(f"[SERVER MIC] [OK] Listening stream started on '{dev_name}' (device={dev_idx}, rate={dev_sr}Hz, wake_word={self.require_wake_word}).")
+                print(f"[SERVER MIC] [OK] Listening stream started on '{dev_name}' (device={dev_idx}, rate={dev_sr}Hz, wake_word={self.require_wake_word}, denoise=True).")
                 while self._is_running:
                     if self._is_muted or self._is_speaking:
                         await asyncio.sleep(0.05)
@@ -534,7 +669,11 @@ class ServerMicListenerService:
 
                     segment = self.vad.process_frame(frame_data)
                     if segment:
-                        asyncio.create_task(self._handle_speech_segment(segment))
+                        denoised = self.denoiser.denoise_segment(segment)
+                        asyncio.create_task(self._handle_speech_segment(denoised))
+                    else:
+                        if not self.vad.is_speech_active:
+                            self.denoiser.update_noise_profile(frame_data)
                     await asyncio.sleep(0.001)
 
             elif _PYAUDIO_AVAILABLE:
