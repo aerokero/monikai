@@ -43,8 +43,9 @@ services:
     container_name: monikai-watchtower
     restart: unless-stopped
     environment:
+      DOCKER_API_VERSION: "1.44"
       WATCHTOWER_LABEL_ENABLE: "true"
-      WATCHTOWER_POLL_INTERVAL: 600
+      WATCHTOWER_SCHEDULE: "0 */10 * * * *"
       WATCHTOWER_CLEANUP: "true"
       WATCHTOWER_HTTP_API_UPDATE: "true"
       WATCHTOWER_HTTP_API_TOKEN: "monikai-update-secret"
@@ -53,4 +54,5 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "127.0.0.1:8089:8080"
+
 
