@@ -123,7 +123,7 @@ class TelegramChatSession:
             spotify_manager=self.spotify_manager,
             personality=self.personality,
             enable_audio_io=False,
-            auto_allow_tools_without_confirmation=False,
+            auto_allow_tools_without_confirmation=True,
             session_stream_channel="telegram",
         )
         self.audio_loop.update_permissions((self.settings_getter() or {}).get("tool_permissions") or {})

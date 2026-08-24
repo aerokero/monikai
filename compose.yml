@@ -35,6 +35,7 @@ services:
       - /srv/fast/containers/monikai/backend/core/monikai.py:/app/backend/core/monikai.py:ro
       - /srv/fast/containers/monikai/backend/conversation/routing.py:/app/backend/conversation/routing.py:ro
       - /srv/fast/containers/monikai/backend/conversation/tools.py:/app/backend/conversation/tools.py:ro
+      - /srv/fast/containers/monikai/backend/agents/telegram_bot.py:/app/backend/agents/telegram_bot.py:ro
       - /srv/fast/containers/monikai/backend/audio/server_mic_listener.py:/app/backend/audio/server_mic_listener.py:ro
 
     healthcheck:
