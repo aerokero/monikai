@@ -149,8 +149,6 @@ class SessionManager:
             try:
                 for line in log_file.read_text(encoding="utf-8", errors="ignore").splitlines():
                     if not line.strip():
-                        continue
-                    try:
                         entry = json.loads(line)
                         if isinstance(entry, dict):
                             turns.append(entry)
