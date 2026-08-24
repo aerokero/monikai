@@ -333,18 +333,21 @@ _WEATHER_RE = re.compile(
 )
 _LIST_REMINDERS_RE = re.compile(
     r"\b(jakie|pokaż|pokaz|wylistuj|lista|czy\s+mam).{0,28}\b"
-    r"(przypomnienia|przypomnień|przypomnien)\b|"
-    r"\b(list|show|what).{0,20}\breminders?\b",
+    r"(przypomnienia|przypomnień|przypomnien|budziki|budzików|alarmy|alarmów)\b|"
+    r"\b(list|show|what).{0,20}\b(reminders?|alarms?)\b",
     re.IGNORECASE,
 )
 _CREATE_REMINDER_INTENT_RE = re.compile(
-    r"\b(przypomnij\s+mi|ustaw.{0,24}przypomn|dodaj.{0,24}przypomn|"
-    r"remind\s+me|set.{0,24}reminder|create.{0,24}reminder)\b",
+    r"\b(przypomnij\s+mi|ustaw.{0,28}(przypomn\w*|reminder|budzik\w*|alarm\w*)|"
+    r"dodaj.{0,28}(przypomn\w*|reminder|budzik\w*|alarm\w*)|"
+    r"(przypomn\w*|reminder|budzik\w*|alarm\w*).{0,28}(ustaw\w*|dodaj\w*|zrób\w*|zrob\w*)|"
+    r"obudź\s+mnie|obudz\s+mnie|jako\s+(reminder|przypomn\w*|budzik\w*|alarm\w*)|"
+    r"remind\s+me|set.{0,28}(reminder|alarm)|create.{0,28}(reminder|alarm))\b",
     re.IGNORECASE,
 )
 _CANCEL_REMINDER_INTENT_RE = re.compile(
-    r"\b(anuluj|usuń|usun|skasuj|cancel|delete|remove).{0,32}\b"
-    r"(przypomn\w*|reminder)\b",
+    r"\b(anuluj|usuń|usun|skasuj|wyłącz|wylacz|cancel|delete|remove).{0,32}\b"
+    r"(przypomn\w*|reminder|budzik\w*|alarm\w*)\b",
     re.IGNORECASE,
 )
 _NEGATED_MUTATION_RE = re.compile(
