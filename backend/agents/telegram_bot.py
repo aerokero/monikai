@@ -3,6 +3,9 @@ import base64
 import io
 import json
 import os
+import re
+import shutil
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -30,6 +33,7 @@ TELEGRAM_COMMANDS = [
     {"command": "profile", "description": "Pokaż profil użytkownika"},
     {"command": "mood", "description": "Pokaż nastrój Moniki"},
     {"command": "voice", "description": "Odpowiedzi głosowe (/voice on|off|auto)"},
+    {"command": "mic", "description": "Mikrofon serwera (/mic on|off|status|wake)"},
     {"command": "status", "description": "Pokaż status sesji"},
     {"command": "reset", "description": "Zresetuj bieżącą sesję"},
 ]
@@ -51,6 +55,36 @@ def _pcm_to_wav_bytes(pcm_data: bytes, sample_rate: int = 24000, channels: int =
         wav_file.setframerate(sample_rate)
         wav_file.writeframes(pcm_data)
     return buf.getvalue()
+
+
+def _wav_to_ogg_opus(wav_bytes: bytes) -> Tuple[bytes, str]:
+    """Convert WAV audio bytes to OGG Opus for native Telegram voice bubbles."""
+    ffmpeg_bin = shutil.which("ffmpeg")
+    if not ffmpeg_bin:
+        return wav_bytes, "voice.wav"
+    try:
+        proc = subprocess.run(
+            [
+                ffmpeg_bin,
+                "-y",
+                "-f", "wav",
+                "-i", "pipe:0",
+                "-c:a", "libopus",
+                "-b:a", "32k",
+                "-vbr", "on",
+                "-f", "ogg",
+                "pipe:1",
+            ],
+            input=wav_bytes,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        if proc.stdout and proc.stdout.startswith(b"OggS"):
+            return proc.stdout, "voice.ogg"
+    except Exception as exc:
+        print(f"[TELEGRAM] ffmpeg ogg opus conversion failed: {exc}")
+    return wav_bytes, "voice.wav"
 
 
 class TelegramChatSession:
@@ -465,6 +499,7 @@ class TelegramBotService:
         reminder_manager=None,
         spotify_manager=None,
         personality=None,
+        server_mic_listener=None,
         allowed_chat_id: Optional[int] = None,
         allowed_chat_ids: Optional[List[int]] = None,
         allow_groups: bool = False,
@@ -476,6 +511,7 @@ class TelegramBotService:
         self.reminder_manager = reminder_manager
         self.spotify_manager = spotify_manager
         self.personality = personality
+        self.server_mic_listener = server_mic_listener
         normalized_ids = set()
         if allowed_chat_id is not None:
             normalized_ids.add(int(allowed_chat_id))
@@ -501,6 +537,7 @@ class TelegramBotService:
         reminder_manager=None,
         spotify_manager=None,
         personality=None,
+        server_mic_listener=None,
     ):
         token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
         if not token:
@@ -529,6 +566,7 @@ class TelegramBotService:
             reminder_manager=reminder_manager,
             spotify_manager=spotify_manager,
             personality=personality,
+            server_mic_listener=server_mic_listener,
             allowed_chat_id=allowed_chat_id,
             allowed_chat_ids=allowed_chat_ids,
             allow_groups=_env_flag("TELEGRAM_ALLOW_GROUPS", False),
@@ -563,7 +601,10 @@ class TelegramBotService:
         return data
 
     async def _send_voice_file(self, chat_id: int, wav_bytes: bytes, caption: Optional[str] = None):
-        """Upload raw audio bytes to Telegram sendVoice endpoint."""
+        """Upload raw audio bytes to Telegram sendVoice endpoint in OGG Opus format."""
+        audio_bytes, filename = _wav_to_ogg_opus(wav_bytes)
+        content_type = "audio/ogg" if filename.endswith(".ogg") else "audio/wav"
+
         boundary = f"----WebKitFormBoundary{uuid.uuid4().hex}"
         body = bytearray()
 
@@ -584,7 +625,7 @@ class TelegramBotService:
         add_field("chat_id", str(chat_id))
         if caption:
             add_field("caption", caption[:1024])
-        add_file("voice", "voice.wav", wav_bytes, "audio/wav")
+        add_file("voice", filename, audio_bytes, content_type)
         body.extend(f"--{boundary}--\r\n".encode("utf-8"))
 
         url = f"{TELEGRAM_API_BASE}/bot{self.token}/sendVoice"
@@ -600,9 +641,10 @@ class TelegramBotService:
                 return json.loads(resp.read().decode("utf-8"))
 
         try:
-            await asyncio.to_thread(_do_request)
+            return await asyncio.to_thread(_do_request)
         except Exception as exc:
             print(f"[TELEGRAM] Failed to send voice message: {exc}")
+            raise
 
     async def _synthesize_voice(self, text: str) -> Optional[bytes]:
         """Synthesize text into WAV audio bytes using Gemini TTS."""
@@ -992,17 +1034,28 @@ class TelegramBotService:
             ask = lambda: session.ask(effective_text)
         reply = await self._ask_with_retry(chat_id, session, ask)
 
+        voice_intent_re = re.compile(
+            r"\b(odpowiedz\s+(mi\s+)?(głosem|głosówką|glosowka|głosowo|audio)|"
+            r"wyślij\s+(mi\s+)?(głosówkę|glosowke|audio|notatkę\s+głosową)|"
+            r"powiedz\s+(mi\s+)?to\s+(na\s+głos|głosem)|"
+            r"potrafisz\s+odpowiedzieć\s+głosówką|"
+            r"reply\s+with\s+(voice|audio)|send\s+(a\s+)?voice\s+note|speak\s+to\s+me)\b",
+            re.IGNORECASE,
+        )
         should_voice = False
         if session.voice_mode == "on":
             should_voice = True
-        elif session.voice_mode == "auto" and is_voice_input:
+        elif session.voice_mode == "auto" and (is_voice_input or voice_intent_re.search(effective_text)):
             should_voice = True
 
         if should_voice and reply and not reply.startswith("("):
-            voice_bytes = await self._synthesize_voice(reply)
-            if voice_bytes:
-                await self._send_voice_file(chat_id, voice_bytes, caption=reply[:1024] if len(reply) <= 1024 else None)
-                return
+            try:
+                voice_bytes = await self._synthesize_voice(reply)
+                if voice_bytes:
+                    await self._send_voice_file(chat_id, voice_bytes, caption=reply[:1024] if len(reply) <= 1024 else None)
+                    return
+            except Exception as exc:
+                print(f"[TELEGRAM] Voice delivery failed, sending text fallback: {exc}")
 
         await self._send_message(chat_id, reply)
 
@@ -1139,6 +1192,33 @@ class TelegramBotService:
             session = await self._get_session(chat_id, user_label)
             await session.ensure_started()
             await self._send_message(chat_id, session.set_voice_mode(args))
+            return
+        if command == "mic":
+            if not self.server_mic_listener:
+                await self._send_message(chat_id, "ℹ️ Usługa nasłuchu mikrofonu serwera nie jest zainicjalizowana.")
+                return
+            arg_lower = str(args or "").strip().lower()
+            if arg_lower in {"on", "start", "unmute"}:
+                self.server_mic_listener.set_muted(False)
+                if not self.server_mic_listener.is_running:
+                    self.server_mic_listener.start()
+                await self._send_message(chat_id, "🎙️ Włączono nasłuch mikrofonu serwera (VAD 24/7).")
+            elif arg_lower in {"off", "stop", "mute"}:
+                self.server_mic_listener.set_muted(True)
+                await self._send_message(chat_id, "🔇 Wyciszono mikrofon serwera.")
+            elif arg_lower in {"wake on", "wake_on", "wake"}:
+                self.server_mic_listener.set_wake_word_required(True)
+                await self._send_message(chat_id, "🗣️ Włączono wymóg wywoływania Moniki (*Hej Monika*).")
+            elif arg_lower in {"wake off", "wake_off", "pure", "open"}:
+                self.server_mic_listener.set_wake_word_required(False)
+                await self._send_message(chat_id, "🗣️ Wyłączono wymóg wywoływania (czysty tryb VAD).")
+            else:
+                status_txt = "🔴 Wyciszony" if self.server_mic_listener.is_muted else "🟢 Aktywny"
+                wake_txt = "Wymagane (*Hej Monika*)" if self.server_mic_listener.require_wake_word else "Brak (VAD na każdy głos)"
+                await self._send_message(
+                    chat_id,
+                    f"🎙️ *Status mikrofonu serwera:*\n• Nasłuch: {status_txt}\n• Wywoływanie: {wake_txt}\n\nUżycie: `/mic on|off|wake on|wake off`",
+                )
             return
         if command == "reset":
             await self._drop_session(chat_id)

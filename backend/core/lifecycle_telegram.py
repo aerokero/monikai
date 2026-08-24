@@ -10,6 +10,7 @@ def start_telegram_service(
     reminder_manager,
     spotify_manager,
     personality,
+    server_mic_listener=None,
 ):
     telegram_service = TelegramBotService.from_env(
         settings_getter,
@@ -17,6 +18,7 @@ def start_telegram_service(
         reminder_manager=reminder_manager,
         spotify_manager=spotify_manager,
         personality=personality,
+        server_mic_listener=server_mic_listener,
     )
     telegram_task = None
     if telegram_service:

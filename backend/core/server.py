@@ -219,6 +219,38 @@ async def lifespan(app: FastAPI):
         if not registered:
             minecraft_bot_manager = None
 
+    global server_mic_listener
+    try:
+        from backend.audio.server_mic_listener import ServerMicListenerService
+        from backend.agents.telegram_bot import TelegramChatSession
+
+        mic_session = TelegramChatSession(
+            chat_id=0,
+            user_label="local_server_user",
+            settings_getter=lambda: SETTINGS,
+            calendar_manager=calendar_manager,
+            reminder_manager=reminder_manager,
+            spotify_manager=spotify_manager,
+            personality=personality_system,
+        )
+
+        input_dev = SETTINGS.get("server_mic_device_index", None)
+        output_dev = SETTINGS.get("server_mic_output_index", None)
+        wake_req = str(os.getenv("SERVER_MIC_WAKE_WORD_REQUIRED", "false")).lower() in {"1", "true", "yes"}
+
+        server_mic_listener = ServerMicListenerService(
+            conversation_handler=lambda text: mic_session.ask(text),
+            input_device_index=input_dev,
+            output_device_index=output_dev,
+            require_wake_word=wake_req,
+            gemini_voice=SETTINGS.get("gemini_voice", "Leda") or "Leda",
+        )
+        if str(os.getenv("SERVER_MIC_LISTENER_ENABLED", "true")).lower() in {"1", "true", "yes"}:
+            server_mic_listener.start()
+    except Exception as exc:
+        print(f"[SERVER] ServerMicListenerService initialization notice: {exc}")
+        server_mic_listener = None
+
     global telegram_service, telegram_task
     telegram_service, telegram_task = start_telegram_service(
         lambda: SETTINGS,
@@ -226,6 +258,7 @@ async def lifespan(app: FastAPI):
         reminder_manager=reminder_manager,
         spotify_manager=spotify_manager,
         personality=personality_system,
+        server_mic_listener=server_mic_listener,
     )
 
     global discord_service, discord_task
@@ -251,6 +284,14 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        global server_mic_listener
+        if server_mic_listener:
+            try:
+                server_mic_listener.stop()
+            except Exception:
+                pass
+            server_mic_listener = None
+
         global minecraft_autonomy_task
         _, minecraft_autonomy_task = await stop_minecraft_runtime(
             minecraft_bot_manager,
@@ -333,6 +374,7 @@ telegram_service = None
 telegram_task = None
 discord_service = None
 discord_task = None
+server_mic_listener = None
 DAILY_BRIEFING_RUNTIME = DailyBriefingRuntime(
     SETTINGS,
     get_audio_loop=lambda: audio_loop,
