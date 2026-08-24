@@ -85,17 +85,40 @@ class GeminiTextProvider:
             )
             for item in request.tools
         ]
-        response = await self._client.aio.models.generate_content(
-            model=request.model,
-            contents=request.prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=request.system_instruction,
-                tools=[types.Tool(function_declarations=declarations)],
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                    disable=True
-                ),
-            ),
-        )
+
+        models_to_try = [request.model]
+        for fb in ("gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash"):
+            if fb not in models_to_try:
+                models_to_try.append(fb)
+
+        response = None
+        last_exc = None
+        for model_name in models_to_try:
+            try:
+                response = await self._client.aio.models.generate_content(
+                    model=model_name,
+                    contents=request.prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=request.system_instruction,
+                        tools=[types.Tool(function_declarations=declarations)],
+                        automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                            disable=True
+                        ),
+                    ),
+                )
+                if response:
+                    break
+            except Exception as exc:
+                last_exc = exc
+                if "429" in str(exc) or "RESOURCE_EXHAUSTED" in str(exc) or "404" in str(exc):
+                    continue
+                break
+
+        if response is None:
+            if last_exc:
+                print(f"[THINKER] plan_tools nie powiodło się na żadnym modelu: {last_exc}")
+            return ()
+
         calls = []
         for call in list(getattr(response, "function_calls", None) or []):
             name = str(getattr(call, "name", "") or "").strip()

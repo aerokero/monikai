@@ -35,15 +35,15 @@ from backend.conversation.validator import (
 
 THINKER_MODEL = os.getenv(
     "MONIKAI_CONVERSATION_MODEL",
-    os.getenv("MONIKAI_THINKER_MODEL", "gemini-3.5-flash"),
+    os.getenv("MONIKAI_THINKER_MODEL", "gemini-3.5-flash-lite"),
 )
 THINKER_FALLBACK_MODEL = os.getenv(
     "MONIKAI_CONVERSATION_FALLBACK_MODEL",
-    os.getenv("MONIKAI_THINKER_FALLBACK_MODEL", "gemini-3.1-pro-preview"),
+    os.getenv("MONIKAI_THINKER_FALLBACK_MODEL", "gemini-3.6-flash"),
 )
 THINKER_EMERGENCY_MODEL = os.getenv(
     "MONIKAI_CONVERSATION_EMERGENCY_MODEL",
-    "gemini-3.5-flash-lite",
+    "gemini-2.5-flash",
 )
 MAX_THOUGHT_CHARS = 600
 MAX_HISTORY_TURNS = 8
