@@ -353,19 +353,25 @@ def find_best_input_device(
 
 
 def find_best_output_device(preferred_index: Optional[int] = None) -> Optional[int]:
-    """Find best output device index."""
+    """Find best output device index with max_output_channels > 0."""
     if not _SOUNDDEVICE_AVAILABLE:
         return preferred_index
     try:
         devices = sd.query_devices()
         output_devices = [idx for idx, d in enumerate(devices) if d.get("max_output_channels", 0) > 0]
+        if not output_devices:
+            return None
         if preferred_index is not None and preferred_index in output_devices:
             return preferred_index
         for idx in output_devices:
             name_lower = devices[idx].get("name", "").lower()
-            if any(kw in name_lower for kw in ["analog", "speaker", "headphone", "alc", "usb"]):
+            if any(kw in name_lower for kw in ["speaker", "headphone", "analog", "alc", "usb"]):
                 return idx
-        return output_devices[0] if output_devices else None
+        for idx in output_devices:
+            name_lower = devices[idx].get("name", "").lower()
+            if "hdmi" in name_lower:
+                return idx
+        return output_devices[0]
     except Exception:
         return preferred_index
 
@@ -498,61 +504,84 @@ class ServerMicListenerService:
             return ""
 
     async def play_audio_locally(self, pcm_bytes: bytes, sample_rate: int = 24000):
-        """Play synthesized audio out of server speakers/headphones with automatic resampling."""
+        """Play synthesized audio out of server speakers/headphones with automatic resampling and stereo expansion."""
         if not pcm_bytes:
             return
 
         self._is_speaking = True
         try:
             out_idx = find_best_output_device(self.output_device_index)
+            if out_idx is None:
+                print("[SERVER MIC] No valid audio output device available.")
+                return
 
-            # Determine best supported output sample rate (prefer device native 48kHz or 44.1kHz)
-            target_sr = sample_rate
+            dev_info = sd.query_devices(out_idx) if _SOUNDDEVICE_AVAILABLE else {}
+            dev_name = dev_info.get("name", f"device_{out_idx}")
+
+            # Check supported sample rate and channels
+            target_sr = 48000
+            target_channels = 2
             if _SOUNDDEVICE_AVAILABLE:
-                for candidate in [sample_rate, 48000, 44100]:
-                    try:
-                        sd.check_output_settings(device=out_idx, samplerate=candidate, channels=1)
-                        target_sr = candidate
+                found = False
+                for sr_cand in [48000, 44100, sample_rate]:
+                    for ch_cand in [2, 1]:
+                        try:
+                            sd.check_output_settings(device=out_idx, samplerate=sr_cand, channels=ch_cand)
+                            target_sr = sr_cand
+                            target_channels = ch_cand
+                            found = True
+                            break
+                        except Exception:
+                            continue
+                    if found:
                         break
-                    except Exception:
-                        continue
 
-            playback_bytes = resample_pcm16(pcm_bytes, sample_rate, target_sr)
+            # Resample mono audio to target rate
+            resampled = resample_pcm16(pcm_bytes, sample_rate, target_sr)
+            mono_samples = np.frombuffer(resampled, dtype=np.int16)
+
+            if target_channels == 2:
+                stereo_samples = np.column_stack([mono_samples, mono_samples]).flatten().astype(np.int16)
+                playback_bytes = stereo_samples.tobytes()
+            else:
+                playback_bytes = resampled
+
+            duration_sec = len(mono_samples) / float(target_sr)
 
             if _SOUNDDEVICE_AVAILABLE:
                 try:
                     kwargs = {
                         "samplerate": target_sr,
-                        "channels": 1,
+                        "channels": target_channels,
                         "dtype": "int16",
+                        "device": out_idx,
                     }
-                    if out_idx is not None:
-                        kwargs["device"] = out_idx
                     stream = await asyncio.to_thread(sd.RawOutputStream, **kwargs)
                     stream.start()
                     await asyncio.to_thread(stream.write, playback_bytes)
-                    await asyncio.sleep(len(playback_bytes) / (target_sr * 2.0) + 0.1)
+                    await asyncio.sleep(duration_sec + 0.1)
                     stream.stop()
                     stream.close()
+                    print(f"[SERVER MIC] [AUDIO OUT] Played {duration_sec:.2f}s on '{dev_name}' (device={out_idx}, {target_sr}Hz, ch={target_channels}).")
                     return
                 except Exception as exc:
-                    print(f"[SERVER MIC] SoundDevice playback failed, falling back: {exc}")
+                    print(f"[SERVER MIC] SoundDevice playback failed on '{dev_name}': {exc}")
 
             if _PYAUDIO_AVAILABLE:
                 p = pyaudio.PyAudio()
                 try:
                     kwargs = {
                         "format": pyaudio.paInt16,
-                        "channels": 1,
+                        "channels": target_channels,
                         "rate": target_sr,
                         "output": True,
+                        "output_device_index": out_idx,
                     }
-                    if out_idx is not None:
-                        kwargs["output_device_index"] = out_idx
                     stream = p.open(**kwargs)
                     stream.write(playback_bytes)
                     stream.stop_stream()
                     stream.close()
+                    print(f"[SERVER MIC] [AUDIO OUT] Played {duration_sec:.2f}s via PyAudio on '{dev_name}'.")
                 finally:
                     p.terminate()
         except Exception as exc:
