@@ -50,8 +50,8 @@ class AdaptiveEnergyVAD:
         self,
         sample_rate: int = 16000,
         frame_duration_ms: int = 30,
-        energy_threshold_ratio: float = 2.4,
-        min_speech_duration_ms: int = 180,
+        energy_threshold_ratio: float = 3.0,
+        min_speech_duration_ms: int = 300,
         trailing_silence_duration_ms: int = 850,
         pre_roll_duration_ms: int = 350,
     ):
@@ -61,11 +61,11 @@ class AdaptiveEnergyVAD:
         self.frame_bytes = self.frame_size * 2  # 16-bit PCM
 
         self.energy_threshold_ratio = float(energy_threshold_ratio)
-        self.min_speech_frames = max(2, int(min_speech_duration_ms / self.frame_duration_ms))
+        self.min_speech_frames = max(3, int(min_speech_duration_ms / self.frame_duration_ms))
         self.trailing_silence_frames = max(4, int(trailing_silence_duration_ms / self.frame_duration_ms))
         self.pre_roll_frames = max(3, int(pre_roll_duration_ms / self.frame_duration_ms))
 
-        self.noise_floor: float = 120.0
+        self.noise_floor: float = 160.0
         self.noise_alpha: float = 0.05
 
         self.pre_roll_buffer: Deque[bytes] = collections.deque(maxlen=self.pre_roll_frames)
@@ -85,12 +85,12 @@ class AdaptiveEnergyVAD:
 
     def is_frame_voiced(self, frame_bytes: bytes) -> Tuple[bool, float]:
         rms = self.compute_rms(frame_bytes)
-        threshold = max(200.0, self.noise_floor * self.energy_threshold_ratio)
+        threshold = max(320.0, self.noise_floor * self.energy_threshold_ratio)
         voiced = rms > threshold
 
         if not voiced and not self.is_speech_active:
             # Update ambient noise floor estimate
-            self.noise_floor = (1.0 - self.noise_alpha) * self.noise_floor + self.noise_alpha * max(40.0, rms)
+            self.noise_floor = (1.0 - self.noise_alpha) * self.noise_floor + self.noise_alpha * max(60.0, rms)
 
         return voiced, rms
 
@@ -145,6 +145,20 @@ def _raw_pcm_to_wav(pcm_bytes: bytes, sample_rate: int = 16000, channels: int = 
         wf.setframerate(sample_rate)
         wf.writeframes(pcm_bytes)
     return buf.getvalue()
+
+
+def resample_pcm16(pcm_bytes: bytes, src_rate: int, dst_rate: int) -> bytes:
+    """Resample 16-bit mono PCM bytes from src_rate to dst_rate."""
+    if not pcm_bytes or src_rate == dst_rate:
+        return pcm_bytes
+    samples = np.frombuffer(pcm_bytes, dtype=np.int16)
+    if len(samples) == 0:
+        return pcm_bytes
+    target_len = int(round(len(samples) * dst_rate / src_rate))
+    x_old = np.linspace(0, 1, len(samples), endpoint=False)
+    x_new = np.linspace(0, 1, target_len, endpoint=False)
+    resampled = np.interp(x_new, x_old, samples).astype(np.int16)
+    return resampled.tobytes()
 
 
 def find_best_input_device(
@@ -255,6 +269,7 @@ class ServerMicListenerService:
         self.on_turn_finished = on_turn_finished
 
         self.vad = AdaptiveEnergyVAD(sample_rate=self.sample_rate)
+        self._last_transcribe_time = 0.0
         self._is_running = False
         self._is_muted = False
         self._is_speaking = False
@@ -301,6 +316,19 @@ class ServerMicListenerService:
         """Transcribe speech audio segment using Gemini API."""
         if not wav_bytes:
             return ""
+
+        now = time.time()
+        if (now - self._last_transcribe_time) < 0.6:
+            return ""
+        self._last_transcribe_time = now
+
+        preferred = os.getenv("GEMINI_TRANSCRIBE_MODEL", "gemini-2.5-flash")
+        candidates = [preferred, "gemini-2.5-flash", "gemini-3.5-flash-lite", "gemini-3.6-flash"]
+        models_to_try = []
+        for m in candidates:
+            if m not in models_to_try:
+                models_to_try.append(m)
+
         try:
             from google import genai
             from google.genai import types
@@ -312,33 +340,60 @@ class ServerMicListenerService:
                 "Do not add commentary, labels, quotes, timestamps, or markdown. "
                 "If the audio is unintelligible, return an empty string."
             )
-            response = await client.aio.models.generate_content(
-                model=os.getenv("GEMINI_TRANSCRIBE_MODEL", "gemini-2.5-flash"),
-                contents=[
-                    prompt,
-                    types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav"),
-                ],
-            )
-            text = str(getattr(response, "text", "") or "").strip()
-            if text.lower() in {"", "unintelligible", "[unintelligible]"}:
-                return ""
-            return text
+
+            last_exc = None
+            for model_name in models_to_try:
+                try:
+                    response = await client.aio.models.generate_content(
+                        model=model_name,
+                        contents=[
+                            prompt,
+                            types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav"),
+                        ],
+                    )
+                    text = str(getattr(response, "text", "") or "").strip()
+                    if text.lower() in {"", "unintelligible", "[unintelligible]"}:
+                        return ""
+                    return text
+                except Exception as exc:
+                    last_exc = exc
+                    if "429" in str(exc) or "RESOURCE_EXHAUSTED" in str(exc):
+                        continue
+                    break
+
+            if last_exc:
+                print(f"[SERVER MIC] Transcription notice: {last_exc}")
+            return ""
         except Exception as exc:
             print(f"[SERVER MIC] Transcription failed: {exc}")
             return ""
 
     async def play_audio_locally(self, pcm_bytes: bytes, sample_rate: int = 24000):
-        """Play synthesized audio out of server speakers/headphones."""
+        """Play synthesized audio out of server speakers/headphones with automatic resampling."""
         if not pcm_bytes:
             return
 
         self._is_speaking = True
         try:
+            out_idx = find_best_output_device(self.output_device_index)
+
+            # Determine best supported output sample rate (prefer device native 48kHz or 44.1kHz)
+            target_sr = sample_rate
+            if _SOUNDDEVICE_AVAILABLE:
+                for candidate in [sample_rate, 48000, 44100]:
+                    try:
+                        sd.check_output_settings(device=out_idx, samplerate=candidate, channels=1)
+                        target_sr = candidate
+                        break
+                    except Exception:
+                        continue
+
+            playback_bytes = resample_pcm16(pcm_bytes, sample_rate, target_sr)
+
             if _SOUNDDEVICE_AVAILABLE:
                 try:
-                    out_idx = find_best_output_device(self.output_device_index)
                     kwargs = {
-                        "samplerate": sample_rate,
+                        "samplerate": target_sr,
                         "channels": 1,
                         "dtype": "int16",
                     }
@@ -346,8 +401,8 @@ class ServerMicListenerService:
                         kwargs["device"] = out_idx
                     stream = await asyncio.to_thread(sd.RawOutputStream, **kwargs)
                     stream.start()
-                    await asyncio.to_thread(stream.write, pcm_bytes)
-                    await asyncio.sleep(len(pcm_bytes) / (sample_rate * 2.0) + 0.1)
+                    await asyncio.to_thread(stream.write, playback_bytes)
+                    await asyncio.sleep(len(playback_bytes) / (target_sr * 2.0) + 0.1)
                     stream.stop()
                     stream.close()
                     return
@@ -357,17 +412,16 @@ class ServerMicListenerService:
             if _PYAUDIO_AVAILABLE:
                 p = pyaudio.PyAudio()
                 try:
-                    out_idx = find_best_output_device(self.output_device_index)
                     kwargs = {
                         "format": pyaudio.paInt16,
                         "channels": 1,
-                        "rate": sample_rate,
+                        "rate": target_sr,
                         "output": True,
                     }
                     if out_idx is not None:
                         kwargs["output_device_index"] = out_idx
                     stream = p.open(**kwargs)
-                    stream.write(pcm_bytes)
+                    stream.write(playback_bytes)
                     stream.stop_stream()
                     stream.close()
                 finally:
@@ -376,13 +430,22 @@ class ServerMicListenerService:
             print(f"[SERVER MIC] Audio playback error: {exc}")
         finally:
             # Short grace period for echo tail dissipation
-            await asyncio.sleep(0.35)
+            await asyncio.sleep(0.4)
             self._is_speaking = False
             self.vad.reset_segment()
 
     async def _handle_speech_segment(self, raw_pcm: bytes):
         """Process recorded speech segment."""
         if self._is_muted or self._is_speaking:
+            return
+
+        min_bytes = int(self.sample_rate * 2 * 0.5)
+        if len(raw_pcm) < min_bytes:
+            return
+
+        samples = np.frombuffer(raw_pcm, dtype=np.int16)
+        rms = float(math.sqrt(np.mean(samples.astype(np.float64) ** 2)))
+        if rms < 260.0:
             return
 
         wav_bytes = _raw_pcm_to_wav(raw_pcm, sample_rate=self.sample_rate)
