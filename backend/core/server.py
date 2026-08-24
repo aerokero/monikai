@@ -135,12 +135,19 @@ def _request_shutdown_from_signal(sig):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global MAIN_LOOP
+    global hue_agent, home_assistant_agent
+    global calendar_manager, reminder_manager, personality_system, spotify_manager
+    global minecraft_bot_manager, minecraft_autonomy_task, minecraft_autonomy_state
+    global server_mic_listener
+    global telegram_service, telegram_task
+    global discord_service, discord_task
+
     # Code to run on startup
     print(f"[SERVER DEBUG] Startup Event Triggered")
     print(f"[SERVER DEBUG] Python Version: {sys.version}")
     try:
         loop = asyncio.get_running_loop()
-        global MAIN_LOOP
         MAIN_LOOP = loop
         print(f"[SERVER DEBUG] Running Loop: {type(loop)}")
         policy = asyncio.get_event_loop_policy()
@@ -148,14 +155,12 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[SERVER DEBUG] Error checking loop: {e}")
 
-    global hue_agent, home_assistant_agent
     hue_agent, home_assistant_agent = await initialize_smart_home_agents(
         kasa_agent,
         SETTINGS,
     )
 
     # Initialize Global Managers (Persistent across AI sessions)
-    global calendar_manager, reminder_manager, personality_system, spotify_manager
     data_dir = DATA_DIR
     user_memory_dir = data_dir / "user_memory"
     user_memory_dir.mkdir(parents=True, exist_ok=True)
@@ -188,7 +193,6 @@ async def lifespan(app: FastAPI):
     spotify_manager = initialize_spotify_manager(data_dir)
 
     # 5. Minecraft Bot Manager
-    global minecraft_bot_manager
     minecraft_bot_manager = initialize_minecraft_bot_manager(Path(__file__).resolve())
     if minecraft_bot_manager:
         def _get_audio_loop():
@@ -219,7 +223,6 @@ async def lifespan(app: FastAPI):
         if not registered:
             minecraft_bot_manager = None
 
-    global server_mic_listener
     try:
         from backend.audio.server_mic_listener import ServerMicListenerService
         from backend.agents.telegram_bot import TelegramChatSession
@@ -251,7 +254,6 @@ async def lifespan(app: FastAPI):
         print(f"[SERVER] ServerMicListenerService initialization notice: {exc}")
         server_mic_listener = None
 
-    global telegram_service, telegram_task
     telegram_service, telegram_task = start_telegram_service(
         lambda: SETTINGS,
         calendar_manager=calendar_manager,
@@ -261,7 +263,6 @@ async def lifespan(app: FastAPI):
         server_mic_listener=server_mic_listener,
     )
 
-    global discord_service, discord_task
     discord_service, discord_task = start_discord_service(
         lambda: SETTINGS,
         calendar_manager=calendar_manager,
@@ -284,7 +285,6 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        global server_mic_listener
         if server_mic_listener:
             try:
                 server_mic_listener.stop()
@@ -292,7 +292,6 @@ async def lifespan(app: FastAPI):
                 pass
             server_mic_listener = None
 
-        global minecraft_autonomy_task
         _, minecraft_autonomy_task = await stop_minecraft_runtime(
             minecraft_bot_manager,
             minecraft_autonomy_task,
