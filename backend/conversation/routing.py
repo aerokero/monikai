@@ -8,20 +8,17 @@ import re
 _CAPABILITY_REQUEST_RE = re.compile(
     r"\b("
     r"ustaw|dodaj|dopisz|zanotuj|nadpisz|usuń|usun|anuluj|przypomnij|zapisz|otwórz|otworz|zamknij|"
-    r"włącz|wlacz|wyłącz|wylacz|uruchom|wyślij|wyslij|stwórz|stworz|"
     r"włącz|wlacz|wyłącz|wylacz|uruchom|wyślij|wyslij|stwórz|stworz|zrób|zrob|weź|wez|"
     r"sprawdź|sprawdz|wyszukaj|znajdź|znajdz|pobierz|przeczytaj|"
     r"set|add|delete|remove|cancel|remind|save|open|close|turn\s+on|"
-    r"turn\s+off|start|launch|send|create|check|search|find|download|read"
     r"turn\s+off|start|launch|send|create|check|search|find|download|read|take|write"
     r")\b.*\b("
-    r"przypomn\w*|kalendar\w*|wydarzen\w*|notat\w*|plik\w*|folder\w*|"
+    r"przypomn\w*|kalendar\w*|wydarzen\w*|plan\w*|notat\w*|plik\w*|folder\w*|"
     r"spotify|muzyk\w*|playlist\w*|pogod\w*|internet\w*|web|stron\w*|"
     r"przeglądark\w*|przegladark\w*|mail\w*|gmail|outlook|światł\w*|"
     r"swiatl\w*|lamp\w*|urządzen\w*|urzadzen\w*|pamięci|pamieci|wspomn\w*|"
     r"rozmow\w*|minecraft|program\w*|komputer\w*|"
-    r"reminder|calendar|event|note|file|folder|music|weather|browser|"
-    r"reminder|calendar|event|note|notes|file|folder|music|weather|browser|"
+    r"reminder|calendar|event|schedule|plan|note|notes|file|folder|music|weather|browser|"
     r"email|light|device|playlist|website|computer"
     r")\b",
     re.IGNORECASE,
@@ -31,9 +28,9 @@ _DIRECT_OPERATION_RE = re.compile(
     r"\b(zanotuj|zanotujmy|zrób\s+notatk\w*|zrob\s+notatk\w*|nowa\s+notatka|"
     r"zapisz\s+(to\s+)?(mi\s+)?(w|do)\s+notat\w*|dopisz\s+(to\s+)?(mi\s+)?(w|do)\s+notat\w*|"
     r"take\s+a\s+note|note\s+down|write\s+down|add\s+(this\s+)?to\s+(my\s+)?notes?)\b|"
-    r"\b(co|jakie|pokaż|pokaz).{0,24}\b(kalendar\w*|wydarzen\w*)\b|"
-    r"\b(co|pokaż|pokaz|przeczytaj).{0,24}\b(notat\w*)\b|"
+    r"\b(co|jakie|jaki|pokaż|pokaz).{0,24}\b(kalendar\w*|wydarzen\w*|plan(\s+na\s+dziś|\s+dnia)?)\b|"
     r"\b(co|jakie|pokaż|pokaz|przeczytaj|odczytaj|wyświetl|wyswietl|show|read|list).{0,24}\b(notat\w*|notes?)\b|"
+    r"\b(jaka\s+jest\s+pogoda|jaka\s+pogoda|sprawdź\s+pogodę|sprawdz\s+pogode|weather)\b|"
     r"\b(pamiętasz|pamietasz|co\s+pamiętasz|co\s+pamietasz|"
     r"zapamiętaj|zapamietaj|przypomnij\s+sobie)\b|"
     r"\b(remember|recall|what\s+do\s+you\s+remember)\b|"
@@ -41,7 +38,7 @@ _DIRECT_OPERATION_RE = re.compile(
     r"\b(now\s+playing|recently\s+played|playlists?).{0,20}\bspotify\b|"
     r"\b(jakie|pokaż|pokaz|wylistuj|lista|what|show|list).{0,28}\b"
     r"(urządzen\w*|urzadzen\w*|światł\w*|swiatl\w*|lamp\w*|devices?|lights?|lamps?)\b|"
-    r"\b(what|show).{0,20}\b(calendar|events?)\b",
+    r"\b(what|show).{0,20}\b(calendar|events?|schedule)\b",
     re.IGNORECASE,
 )
 

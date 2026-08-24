@@ -34,11 +34,15 @@ def test_smart_home_requests_are_operational_but_casual_mention_is_not():
     assert not requires_capability_runtime("Lubię tę lampę.")
 
 
-def test_natural_notes_requests_are_operational():
+def test_natural_phrasing_requests_are_operational():
     assert requires_capability_runtime("Zanotuj: kupić mleko i chleb.")
     assert requires_capability_runtime("Zrób notatkę: spotkanie jutro o 14.")
     assert requires_capability_runtime("Zapisz w notatkach, żeby sprawdzić pocztę.")
     assert requires_capability_runtime("Co mam w notatkach?")
     assert requires_capability_runtime("Pokaż notatki.")
-    assert requires_capability_runtime("Take a note: meeting tomorrow.")
-    assert requires_capability_runtime("Show my notes.")
+    assert requires_capability_runtime("Jaki mam plan na dziś?")
+    assert requires_capability_runtime("Co mam w kalendarzu?")
+    assert requires_capability_runtime("Jaka jest pogoda?")
+    assert requires_capability_runtime("Zapamiętaj, że lubię kawę.")
+    assert requires_capability_runtime("Pamiętasz jaki jest mój ulubiony kolor?")
+

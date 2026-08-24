@@ -199,7 +199,6 @@ class CoreConversationToolExecutor:
                 self._notes_path.write_text(content, encoding="utf-8")
                 rendered = "Notes have been replaced."
             elif request.name == "memory_search":
-                from backend.soul.memory.retrieval import retrieve
                 from backend.soul.memory import store as memory_store
 
                 query = str(request.arguments.get("query") or "").strip()
@@ -209,7 +208,6 @@ class CoreConversationToolExecutor:
                     1,
                     min(10, int(request.arguments.get("limit", 5) or 5)),
                 )
-                results = await retrieve(
                 results = await memory_store.search_fts(
                     query,
                     limit=limit,
@@ -219,8 +217,6 @@ class CoreConversationToolExecutor:
                     rendered = "No memory entries found."
                 else:
                     lines = []
-                    for result in results:
-                        entry = result.entry
                     for entry, _score in results:
                         when = entry.created_at.strftime("%Y-%m-%d")
                         lines.append(

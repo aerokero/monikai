@@ -1,11 +1,14 @@
 import asyncio
 import base64
+import io
 import json
 import os
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime
+import uuid
+import wave
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -18,13 +21,17 @@ TELEGRAM_TRANSCRIBE_MODEL = os.getenv("GEMINI_TRANSCRIBE_MODEL", "gemini-2.5-fla
 TELEGRAM_COMMANDS = [
     {"command": "start", "description": "Start rozmowy z Moniką"},
     {"command": "help", "description": "Pokaż listę komend"},
-    {"command": "reset", "description": "Zresetuj bieżącą sesję"},
-    {"command": "status", "description": "Pokaż status sesji"},
-    {"command": "memory", "description": "Pokaż ostatnie wpisy pamięci"},
-    {"command": "forget", "description": "Usuń ostatni wpis pamięci"},
-    {"command": "mood", "description": "Pokaż nastrój Moniki"},
+    {"command": "today", "description": "Pokaż plan dnia i kalendarz"},
+    {"command": "weather", "description": "Pokaż aktualną pogodę"},
     {"command": "notes", "description": "Pokaż lub dopisz do notatek"},
     {"command": "remind", "description": "Utwórz przypomnienie"},
+    {"command": "memory", "description": "Pokaż ostatnie wpisy pamięci"},
+    {"command": "forget", "description": "Usuń ostatni wpis pamięci"},
+    {"command": "profile", "description": "Pokaż profil użytkownika"},
+    {"command": "mood", "description": "Pokaż nastrój Moniki"},
+    {"command": "voice", "description": "Odpowiedzi głosowe (/voice on|off|auto)"},
+    {"command": "status", "description": "Pokaż status sesji"},
+    {"command": "reset", "description": "Zresetuj bieżącą sesję"},
 ]
 
 
@@ -33,6 +40,17 @@ def _env_flag(name: str, default: bool = False) -> bool:
     if raw is None:
         return bool(default)
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _pcm_to_wav_bytes(pcm_data: bytes, sample_rate: int = 24000, channels: int = 1, sampwidth: int = 2) -> bytes:
+    """Wrap raw 16-bit PCM bytes into a standard RIFF/WAV container."""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wav_file:
+        wav_file.setnchannels(channels)
+        wav_file.setsampwidth(sampwidth)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm_data)
+    return buf.getvalue()
 
 
 class TelegramChatSession:
@@ -54,6 +72,7 @@ class TelegramChatSession:
         self.reminder_manager = reminder_manager
         self.spotify_manager = spotify_manager
         self.personality = personality
+        self.voice_mode = "auto"
         self.audio_loop = None
         self.run_task = None
         self.lock = asyncio.Lock()
@@ -71,8 +90,6 @@ class TelegramChatSession:
             personality=self.personality,
             enable_audio_io=False,
             auto_allow_tools_without_confirmation=False,
-            # v3 Phase G: Telegram is a continuous stream, not conversations —
-            # turns land in sessions/<day>/stream_telegram/ (daily recap digest).
             session_stream_channel="telegram",
         )
         self.audio_loop.update_permissions((self.settings_getter() or {}).get("tool_permissions") or {})
@@ -138,9 +155,11 @@ class TelegramChatSession:
         active = self.is_active()
         last_age = max(0, int(time.monotonic() - self.last_activity_ts))
         return (
-            f"Sesja: {'aktywna' if active else 'nieaktywna'}\n"
-            f"Czat: {self.chat_id}\n"
-            f"Ostatnia aktywność: {last_age}s temu"
+            f"ℹ️ *Status sesji:*\n"
+            f"• Stan: {'🟢 aktywna' if active else '⚪ nieaktywna'}\n"
+            f"• Czat ID: `{self.chat_id}`\n"
+            f"• Tryb głosowy: `{self.voice_mode}`\n"
+            f"• Ostatnia aktywność: {last_age}s temu"
         )
 
     def get_mood_summary(self) -> str:
@@ -151,10 +170,80 @@ class TelegramChatSession:
         energy = max(0.0, min(1.0, float(getattr(state, "energy", 0.0) or 0.0)))
         mood = str(getattr(state, "mood", "neutral") or "neutral")
         return (
-            f"Nastrój: {mood}\n"
-            f"Energia: {int(round(energy * 100))}%\n"
-            f"Bliskość: {affection:.1f}/100"
+            f"💖 *Stan Moniki:*\n"
+            f"• Nastrój: {mood}\n"
+            f"• Energia: {int(round(energy * 100))}%\n"
+            f"• Bliskość: {affection:.1f}/100"
         )
+
+    def get_today_summary(self) -> str:
+        if not self.calendar_manager:
+            return "Kalendarz nie jest teraz dostępny."
+        now = datetime.now()
+        start_iso = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        end_iso = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        events = self.calendar_manager.list_events(start_range_iso=start_iso, end_range_iso=end_iso)
+        day_str = now.strftime("%Y-%m-%d")
+        if not events:
+            return f"📅 *Plan na dziś ({day_str})*:\nBrak zaplanowanych wydarzeń w kalendarzu."
+        lines = [f"📅 *Plan na dziś ({day_str})*:"]
+        for ev in events:
+            start_t = ev.start_iso[11:16] if len(ev.start_iso) >= 16 else ""
+            end_t = ev.end_iso[11:16] if len(ev.end_iso) >= 16 else ""
+            time_span = f"`{start_t}-{end_t}`" if start_t and end_t else f"`{start_t}`"
+            lines.append(f"• {time_span} {ev.summary}")
+        return "\n".join(lines)
+
+    def get_weather_summary(self) -> str:
+        weather_state = getattr(getattr(self, "personality", None), "state", None)
+        w_val = getattr(weather_state, "weather", None) if weather_state else None
+        if not w_val:
+            try:
+                from backend.core.runtimes.v2_runtime import get_cached_weather
+                cached = asyncio.run(get_cached_weather())
+                if cached:
+                    w_val = cached.get("weather") or cached.get("summary")
+            except Exception:
+                pass
+        if not w_val:
+            return "Pogoda nie jest teraz dostępna."
+        return f"🌤 *Aktualna pogoda*: {w_val}"
+
+    def get_profile_summary(self) -> str:
+        try:
+            from backend.services.user_profile import UserProfileManager
+            upm = UserProfileManager()
+            prof = upm.get_profile()
+            if not prof:
+                return "Profil użytkownika jest obecnie pusty."
+            lines = ["👤 *Profil użytkownika*:"]
+            if prof.name:
+                lines.append(f"• Imię: *{prof.name}*")
+            if prof.birthday:
+                lines.append(f"• Urodziny: `{prof.birthday}`")
+            if prof.interests:
+                lines.append(f"• Zainteresowania: {', '.join(prof.interests)}")
+            if prof.preferences:
+                lines.append("• Preferencje:")
+                for k, v in list(prof.preferences.items())[:6]:
+                    lines.append(f"  - {k}: {v}")
+            return "\n".join(lines)
+        except Exception as exc:
+            return f"Nie udało się odczytać profilu: {exc}"
+
+    def set_voice_mode(self, mode: str) -> str:
+        normalized = str(mode or "").strip().lower()
+        if normalized in {"on", "1", "true", "yes", "włącz", "wlacz"}:
+            self.voice_mode = "on"
+            return "🎙️ Włączono tryb głosowy: Monika będzie odpowiadać notatkami głosowymi."
+        elif normalized in {"off", "0", "false", "no", "wyłącz", "wylacz"}:
+            self.voice_mode = "off"
+            return "💬 Wyłączono tryb głosowy: Monika będzie odpowiadać wyłącznie tekstem."
+        elif normalized in {"auto", "default", "automatyczny"}:
+            self.voice_mode = "auto"
+            return "✨ Tryb automatyczny: Monika odpowie głosem, gdy wyślesz jej notatkę głosową."
+        else:
+            return f"Aktualny tryb głosowy: `{self.voice_mode}`\nUżycie: `/voice on`, `/voice off`, `/voice auto`"
 
     def get_memory_summary(self, limit: int = 5) -> str:
         engine = getattr(self.audio_loop, "memory_engine", None) if self.audio_loop else None
@@ -163,12 +252,12 @@ class TelegramChatSession:
         items = engine.list_recent(limit=max(1, min(int(limit or 5), 10)))
         if not items:
             return "Nie mam jeszcze zapisanych świeżych wpisów pamięci."
-        lines = ["Ostatnie wpisy pamięci:"]
+        lines = ["🧠 *Ostatnie wpisy pamięci:*"]
         for item in items:
             content = str(item.get("content") or "").strip().replace("\n", " ")
             if len(content) > 140:
                 content = content[:137].rstrip() + "..."
-            lines.append(f"- [{item.get('type')}] {content} (id={item.get('id')})")
+            lines.append(f"• [{item.get('type')}] {content}")
         return "\n".join(lines)
 
     def forget_last_memory(self) -> str:
@@ -200,7 +289,7 @@ class TelegramChatSession:
         except Exception as exc:
             return f"Nie udało się odczytać notatek: {exc}"
         if not content:
-            return "Notatki są puste."
+            return "(Brak zapisanych notatek)"
         if len(content) > max_chars:
             content = content[: max(0, max_chars - 3)].rstrip() + "..."
         return content
@@ -233,27 +322,24 @@ class TelegramChatSession:
     def get_notes_summary(self, max_chars: int = 1800) -> str:
         text = self.get_notes_text(max_chars=max_chars)
         pages = self._list_note_pages(limit=12)
-        lines = [f"Notatki (notes.md):\n{text}"]
+        lines = [f"📝 *Notatki (notes.md):*\n{text}"]
         other_pages = [p for p in pages if p != "notes.md"]
         if other_pages:
-            lines.append("\nInne strony notatek:\n" + "\n".join(f"- {p}" for p in other_pages))
-            lines.append("\nAby wyświetlić inną stronę: /notes <ścieżka>")
+            lines.append("\n*Inne strony notatek:*\n" + "\n".join(f"• `{p}`" for p in other_pages))
+            lines.append("\nAby wyświetlić stronę: `/notes <ścieżka>`")
         return "\n".join(lines)
 
     def list_notes_catalog(self, limit: int = 24) -> str:
         paths = self._list_note_pages(limit=limit)
         if not paths:
             return "Nie mam jeszcze żadnych stron notatek."
-        lines = ["Dostępne notatki/strony:", *[f"- {path}" for path in paths]]
+        lines = ["📚 *Dostępne notatki/strony:*", *[f"• `{path}`" for path in paths]]
         lines.append("")
-        lines.append("Użycie:")
-        lines.append("/notes <ścieżka> - pokaż stronę")
-        lines.append("/notes add <tekst> - dopisz do notes.md")
-        lines.append("/notes add <ścieżka> | <tekst> - dopisz do wybranej strony")
-        lines.append("/notes - pokaż główne notatki")
-        lines.append("/notes <tekst> - dopisz do notes.md")
-        lines.append("/notes <ścieżka> - pokaż wybraną stronę")
-        lines.append("/notes <ścieżka> | <tekst> - dopisz do wybranej strony")
+        lines.append("*Użycie:*")
+        lines.append("• `/notes` - pokaż główne notatki")
+        lines.append("• `/notes <tekst>` - dopisz do notes.md")
+        lines.append("• `/notes <ścieżka>` - pokaż wybraną stronę")
+        lines.append("• `/notes <ścieżka> | <tekst>` - dopisz do wybranej strony")
         return "\n".join(lines)
 
     def _resolve_note_selector(self, selector: str) -> Optional[str]:
@@ -295,10 +381,10 @@ class TelegramChatSession:
         except Exception as exc:
             return f"Nie udało się odczytać notatki: {exc}"
         if not content:
-            return f"Strona {resolved} jest pusta."
+            return f"Strona `{resolved}` jest pusta."
         if len(content) > max_chars:
             content = content[: max(0, max_chars - 3)].rstrip() + "..."
-        return f"[{resolved}]\n\n{content}"
+        return f"📄 *[{resolved}]*\n\n{content}"
 
     def append_notes(self, text: str) -> str:
         if not self.audio_loop:
@@ -308,7 +394,7 @@ class TelegramChatSession:
             return "Notatki nie są teraz dostępne."
         payload = str(text or "").strip()
         if not payload:
-            return "Podaj tekst do dopisania, np. /notes kupić herbatę"
+            return "Podaj tekst do dopisania, np. `/notes kupić herbatę`"
         try:
             existing_size = notes_path.stat().st_size if notes_path.exists() else 0
             with notes_path.open("a", encoding="utf-8") as handle:
@@ -317,7 +403,7 @@ class TelegramChatSession:
                 handle.write(payload)
         except Exception as exc:
             return f"Nie udało się dopisać notatki: {exc}"
-        return "Dopisałam to do notatek."
+        return "✍️ Dopisałam to do notatek."
 
     def append_note_page(self, selector: str, text: str) -> str:
         if not self.audio_loop:
@@ -335,24 +421,26 @@ class TelegramChatSession:
             engine.append_page(resolved, payload)
         except Exception as exc:
             return f"Nie udało się dopisać do notatki: {exc}"
-        return f"Dopisałam to do {resolved}."
+        return f"✍️ Dopisałam to do `{resolved}`."
 
-    def create_reminder_from_command(self, args: str) -> str:
+    def create_reminder_from_command(self, args: str) -> Tuple[str, Optional[Any]]:
         if not self.reminder_manager:
-            return "Przypomnienia nie są teraz dostępne."
+            return "Przypomnienia nie są teraz dostępne.", None
         raw = str(args or "").strip()
         if not raw or "|" not in raw:
             return (
                 "Użycie:\n"
                 "/remind zadzwoń do mamy | 45m\n"
-                "/remind wyjść z psem | 2026-03-15 18:30"
+                "/remind wyjść z psem | 2026-03-15 18:30",
+                None,
             )
         message, when_raw = [part.strip() for part in raw.split("|", 1)]
         if not message or not when_raw:
             return (
                 "Użycie:\n"
                 "/remind zadzwoń do mamy | 45m\n"
-                "/remind wyjść z psem | 2026-03-15 18:30"
+                "/remind wyjść z psem | 2026-03-15 18:30",
+                None,
             )
         try:
             if when_raw.lower().endswith("m") and when_raw[:-1].strip().isdigit():
@@ -363,8 +451,8 @@ class TelegramChatSession:
                 datetime.strptime(when_raw, "%Y-%m-%d %H:%M")
                 reminder = self.reminder_manager.create(message=message, at=when_raw)
         except Exception as exc:
-            return f"Nie udało się utworzyć przypomnienia: {exc}"
-        return f"Ustawiłam przypomnienie na {reminder.when_iso}: {reminder.message}"
+            return f"Nie udało się utworzyć przypomnienia: {exc}", None
+        return f"⏰ Ustawiłam przypomnienie na `{reminder.when_iso}`:\n*{reminder.message}*", reminder
 
 
 class TelegramBotService:
@@ -474,14 +562,119 @@ class TelegramBotService:
             raise RuntimeError(f"Telegram API error: {data}")
         return data
 
-    async def _send_message(self, chat_id: int, text: str):
+    async def _send_voice_file(self, chat_id: int, wav_bytes: bytes, caption: Optional[str] = None):
+        """Upload raw audio bytes to Telegram sendVoice endpoint."""
+        boundary = f"----WebKitFormBoundary{uuid.uuid4().hex}"
+        body = bytearray()
+
+        def add_field(name: str, value: str):
+            body.extend(f"--{boundary}\r\n".encode("utf-8"))
+            body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"))
+            body.extend(f"{value}\r\n".encode("utf-8"))
+
+        def add_file(name: str, filename: str, content: bytes, content_type: str):
+            body.extend(f"--{boundary}\r\n".encode("utf-8"))
+            body.extend(
+                f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'.encode("utf-8")
+            )
+            body.extend(f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"))
+            body.extend(content)
+            body.extend(b"\r\n")
+
+        add_field("chat_id", str(chat_id))
+        if caption:
+            add_field("caption", caption[:1024])
+        add_file("voice", "voice.wav", wav_bytes, "audio/wav")
+        body.extend(f"--{boundary}--\r\n".encode("utf-8"))
+
+        url = f"{TELEGRAM_API_BASE}/bot{self.token}/sendVoice"
+
+        def _do_request():
+            req = urllib.request.Request(
+                url,
+                data=bytes(body),
+                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=35.0) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+
+        try:
+            await asyncio.to_thread(_do_request)
+        except Exception as exc:
+            print(f"[TELEGRAM] Failed to send voice message: {exc}")
+
+    async def _synthesize_voice(self, text: str) -> Optional[bytes]:
+        """Synthesize text into WAV audio bytes using Gemini TTS."""
+        try:
+            from backend.conversation.speech import GeminiSpeechSynthesizer, SpeechSynthesisRequest
+            synthesizer = GeminiSpeechSynthesizer(api_key=os.getenv("GEMINI_API_KEY"))
+            voice_name = (self.settings_getter() or {}).get("gemini_voice", "Leda") or "Leda"
+            res = await synthesizer.synthesize(SpeechSynthesisRequest(text=text, voice=voice_name))
+            if res and res.audio:
+                return _pcm_to_wav_bytes(res.audio, sample_rate=res.sample_rate)
+        except Exception as exc:
+            print(f"[TELEGRAM] Voice synthesis failed: {exc}")
+        return None
+
+    async def _send_message(
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        parse_mode: Optional[str] = "Markdown",
+        reply_markup: Optional[Dict[str, Any]] = None,
+    ):
         message = str(text or "").strip() or "..."
         chunks = []
         while message:
             chunks.append(message[:TELEGRAM_MESSAGE_LIMIT])
             message = message[TELEGRAM_MESSAGE_LIMIT:]
-        for chunk in chunks or ["..."]:
-            await self._api_call("sendMessage", {"chat_id": chat_id, "text": chunk})
+        for i, chunk in enumerate(chunks or ["..."]):
+            payload: Dict[str, Any] = {"chat_id": chat_id, "text": chunk}
+            if parse_mode:
+                payload["parse_mode"] = parse_mode
+            if reply_markup and i == len(chunks) - 1:
+                payload["reply_markup"] = reply_markup
+            try:
+                await self._api_call("sendMessage", payload)
+            except Exception as exc:
+                if parse_mode and ("can't parse entities" in str(exc).lower() or "bad request" in str(exc).lower()):
+                    payload.pop("parse_mode", None)
+                    try:
+                        await self._api_call("sendMessage", payload)
+                    except Exception as fallback_exc:
+                        print(f"[TELEGRAM] Fallback sendMessage failed: {fallback_exc}")
+                else:
+                    raise
+
+    async def broadcast_notification(
+        self,
+        text: str,
+        *,
+        reply_markup: Optional[Dict[str, Any]] = None,
+        voice_bytes: Optional[bytes] = None,
+    ):
+        """Send a proactive message or alert to all authorized chats."""
+        targets = set(self.allowed_chat_ids)
+        if not targets:
+            async with self._sessions_lock:
+                targets = set(self._sessions.keys())
+        for cid in targets:
+            try:
+                await self._send_message(cid, text, parse_mode="Markdown", reply_markup=reply_markup)
+                if voice_bytes:
+                    await self._send_voice_file(cid, voice_bytes)
+            except Exception as exc:
+                print(f"[TELEGRAM] Failed to broadcast notification to {cid}: {exc}")
+
+    def notify_reminder_fired(self, reminder: Any):
+        """Hook called when a scheduled reminder is triggered."""
+        msg = str(getattr(reminder, "message", "") or "").strip()
+        rid = str(getattr(reminder, "id", "") or "")
+        text = f"⏰ *Przypomnienie*: {msg}"
+        keyboard = [[{"text": "✅ Odznacz zrobione", "callback_data": f"rem_ack:{rid}"}]]
+        asyncio.create_task(self.broadcast_notification(text, reply_markup={"inline_keyboard": keyboard}))
 
     async def _register_bot_metadata(self):
         try:
@@ -580,22 +773,39 @@ class TelegramBotService:
                     )
 
         document = message.get("document") or {}
-        mime_type = str(document.get("mime_type") or "").strip().lower()
-        if document and mime_type.startswith("image/"):
+        if document:
             file_id = str(document.get("file_id") or "").strip()
+            file_name = str(document.get("file_name") or f"{file_id}.bin").strip()
+            mime_type = str(document.get("mime_type") or "").strip().lower()
             if file_id:
                 file_meta = await self._api_call("getFile", {"file_id": file_id}, timeout_sec=20.0)
                 file_path = str((file_meta.get("result") or {}).get("file_path") or "").strip()
                 if file_path:
                     raw = await self._download_telegram_file(file_path)
-                    attachments.append(
-                        {
-                            "name": str(document.get("file_name") or f"{file_id}.bin"),
-                            "mime_type": mime_type or "application/octet-stream",
-                            "data": base64.b64encode(raw).decode("utf-8"),
-                            "size": len(raw),
-                        }
-                    )
+                    if mime_type.startswith("image/"):
+                        attachments.append(
+                            {
+                                "name": file_name,
+                                "mime_type": mime_type or "image/jpeg",
+                                "data": base64.b64encode(raw).decode("utf-8"),
+                                "size": len(raw),
+                            }
+                        )
+                    else:
+                        text_content = ""
+                        try:
+                            text_content = raw.decode("utf-8", errors="replace")
+                        except Exception:
+                            text_content = ""
+                        attachments.append(
+                            {
+                                "name": file_name,
+                                "mime_type": mime_type or "text/plain",
+                                "data": base64.b64encode(raw).decode("utf-8"),
+                                "size": len(raw),
+                                "text_content": text_content,
+                            }
+                        )
 
         return attachments
 
@@ -663,11 +873,64 @@ class TelegramBotService:
             for chat_id in stale_ids:
                 await self._drop_session(chat_id)
 
-    async def _handle_text(self, chat_id: int, user_label: str, text: str):
-        session = await self._get_session(chat_id, user_label)
-        await self._send_typing(chat_id)
-        reply = await session.ask(text)
-        await self._send_message(chat_id, reply)
+    async def _proactivity_loop(self):
+        last_morning_date = None
+        last_evening_date = None
+        last_poke_ts = 0.0
+
+        while not self._stop_event.is_set():
+            await asyncio.sleep(60.0)
+            now = datetime.now()
+            today_str = now.strftime("%Y-%m-%d")
+
+            if now.hour == 8 and now.minute >= 30 and last_morning_date != today_str:
+                last_morning_date = today_str
+                try:
+                    await self._send_scheduled_briefing(kind="morning")
+                except Exception as exc:
+                    print(f"[TELEGRAM] Morning briefing failed: {exc}")
+
+            if now.hour == 21 and now.minute >= 0 and last_evening_date != today_str:
+                last_evening_date = today_str
+                try:
+                    await self._send_scheduled_briefing(kind="evening")
+                except Exception as exc:
+                    print(f"[TELEGRAM] Evening briefing failed: {exc}")
+
+            if (time.monotonic() - last_poke_ts) >= 1800.0:
+                last_poke_ts = time.monotonic()
+                try:
+                    from backend.soul import proactivity as soul_proactivity
+                    poke_msg = await soul_proactivity.maybe_poke()
+                    if poke_msg:
+                        await self.broadcast_notification(f"💬 {poke_msg}")
+                except Exception:
+                    pass
+
+    async def _send_scheduled_briefing(self, kind: str = "morning"):
+        now = datetime.now()
+        day_str = now.strftime("%Y-%m-%d")
+        if kind == "morning":
+            events_txt = ""
+            if self.calendar_manager:
+                start_iso = now.replace(hour=0, minute=0, second=0).isoformat()
+                end_iso = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0).isoformat()
+                evs = self.calendar_manager.list_events(start_range_iso=start_iso, end_range_iso=end_iso)
+                if evs:
+                    events_txt = "\n*Dzisiejsze wydarzenia:*\n" + "\n".join(f"• `{e.start_iso[11:16]}` {e.summary}" for e in evs)
+                else:
+                    events_txt = "\n*Kalendarz:* brak zaplanowanych wydarzeń na dziś."
+
+            weather_txt = ""
+            weather_state = getattr(getattr(self, "personality", None), "state", None)
+            if weather_state and getattr(weather_state, "weather", None):
+                weather_txt = f"\n*Pogoda:* {weather_state.weather}"
+
+            text = f"☀️ *Dzień dobry! Poranny briefing ({day_str}):*{weather_txt}{events_txt}\n\nMiłego dnia! Jeśli będziesz czegoś potrzebować, jestem tutaj."
+        else:
+            text = f"🌙 *Dobry wieczór! ({day_str})*\nPodsumowanie dnia dobiega końca. Pamiętaj o odpoczynku i spokojnej nocy!"
+
+        await self.broadcast_notification(text)
 
     async def _handle_turn(
         self,
@@ -675,14 +938,105 @@ class TelegramBotService:
         user_label: str,
         text: Optional[str],
         attachments: Optional[List[Dict[str, Any]]] = None,
+        is_voice_input: bool = False,
     ):
         session = await self._get_session(chat_id, user_label)
         await self._send_typing(chat_id)
+
+        effective_text = str(text or "").strip()
+        doc_texts = []
+        for att in (attachments or []):
+            if att.get("text_content"):
+                doc_texts.append(f"[Dokument {att.get('name')}]:\n{att['text_content'][:4000]}")
+        if doc_texts:
+            joined_docs = "\n\n".join(doc_texts)
+            effective_text = f"{effective_text}\n\n{joined_docs}".strip() if effective_text else joined_docs
+
         if attachments:
-            reply = await session.ask_with_attachments(text, attachments)
+            reply = await session.ask_with_attachments(effective_text, attachments)
         else:
-            reply = await session.ask(str(text or ""))
+            reply = await session.ask(effective_text)
+
+        should_voice = False
+        if session.voice_mode == "on":
+            should_voice = True
+        elif session.voice_mode == "auto" and is_voice_input:
+            should_voice = True
+
+        if should_voice and reply:
+            voice_bytes = await self._synthesize_voice(reply)
+            if voice_bytes:
+                await self._send_voice_file(chat_id, voice_bytes, caption=reply[:1024] if len(reply) <= 1024 else None)
+                return
+
         await self._send_message(chat_id, reply)
+
+    async def _handle_callback_query(self, callback_query: Dict[str, Any]):
+        cb_id = str(callback_query.get("id") or "")
+        data = str(callback_query.get("data") or "")
+        message = callback_query.get("message") or {}
+        chat_id = int((message.get("chat") or {}).get("id") or 0)
+        user = callback_query.get("from") or {}
+        user_label = str(user.get("username") or user.get("first_name") or f"telegram:{chat_id}")
+
+        answer_text = "Wykonano."
+        if data.startswith("del_rem:"):
+            rem_id = data.split(":", 1)[1]
+            if self.reminder_manager:
+                ok = self.reminder_manager.cancel(rem_id)
+                answer_text = "Usunięto przypomnienie." if ok else "Nie znaleziono przypomnienia."
+                try:
+                    msg_id = message.get("message_id")
+                    if msg_id:
+                        orig_text = str(message.get("text") or "")
+                        await self._api_call(
+                            "editMessageText",
+                            {
+                                "chat_id": chat_id,
+                                "message_id": msg_id,
+                                "text": f"{orig_text}\n\n*(Przypomnienie anulowane)*",
+                                "parse_mode": "Markdown",
+                            },
+                        )
+                except Exception:
+                    pass
+            else:
+                answer_text = "Brak menedżera przypomnień."
+        elif data.startswith("rem_ack:"):
+            answer_text = "Odznaczono jako zrobione!"
+            try:
+                msg_id = message.get("message_id")
+                if msg_id:
+                    orig_text = str(message.get("text") or "")
+                    await self._api_call(
+                        "editMessageText",
+                        {
+                            "chat_id": chat_id,
+                            "message_id": msg_id,
+                            "text": f"{orig_text}\n\n*(Odznaczone jako wykonane)*",
+                            "parse_mode": "Markdown",
+                        },
+                    )
+            except Exception:
+                pass
+        elif data == "notes_catalog":
+            session = await self._get_session(chat_id, user_label)
+            await session.ensure_started()
+            catalog = session.list_notes_catalog()
+            await self._send_message(chat_id, catalog)
+        elif data == "notes_help":
+            help_text = (
+                "ℹ️ *Jak zarządzać notatkami:*\n"
+                "• Napisz po prostu: `Monika, zanotuj: ...`\n"
+                "• Albo komendą: `/notes <treść>`\n"
+                "• Pokaż notatki: `Co mam w notatkach?` lub `/notes`"
+            )
+            await self._send_message(chat_id, help_text)
+
+        try:
+            await self._api_call("answerCallbackQuery", {"callback_query_id": cb_id, "text": answer_text})
+        except Exception:
+            pass
 
     async def _handle_message(self, message: Dict[str, Any]):
         chat = message.get("chat") or {}
@@ -700,13 +1054,15 @@ class TelegramBotService:
 
         text = str(message.get("text") or message.get("caption") or "").strip()
         command, args = self._parse_command(text)
+
         if command == "start":
             await self._send_message(
                 chat_id,
                 (
-                    "Monika jest gotowa na Telegramie.\n\n"
-                    "Komendy:\n"
-                    "/help\n/reset\n/status\n/memory\n/forget\n/mood\n/notes\n/remind"
+                    "✨ *Monika jest gotowa na Telegramie.*\n\n"
+                    "Możesz rozmawiać ze mną naturalnie głosem i tekstem, prosić o notatki, "
+                    "przypomnienia lub przesyłać dokumenty i zdjęcia!\n\n"
+                    "Wpisz `/help`, aby zobaczyć listę komend."
                 ),
             )
             return
@@ -714,31 +1070,49 @@ class TelegramBotService:
             await self._send_message(
                 chat_id,
                 (
-                    "Dostępne komendy:\n"
-                    "/start - start i krótki onboarding\n"
-                    "/help - lista komend\n"
-                    "/reset - reset sesji Telegram\n"
-                    "/status - status sesji\n"
-                    "/memory - ostatnie wpisy pamięci\n"
-                    "/forget - usuń ostatni wpis pamięci\n"
-                    "/mood - nastrój Moniki\n"
-                    "/notes - lista notatek i stron\n"
-                    "/notes <ścieżka> - pokaż wybraną notatkę\n"
-                    "/notes add <tekst> - dopisz do notes.md\n"
-                    "/notes add <ścieżka> | <tekst> - dopisz do wybranej strony\n"
-                    "/remind <wiadomość> | 45m\n"
-                    "/remind <wiadomość> | 2026-03-15 18:30"
+                    "📋 *Dostępne komendy:*\n"
+                    "• `/today` / `/calendar` - plan dnia i kalendarz\n"
+                    "• `/weather` - aktualna pogoda\n"
+                    "• `/notes` - Twoje notatki (lub `/notes <treść>`)\n"
+                    "• `/remind <treść> | <czas>` - ustaw przypomnienie\n"
+                    "• `/voice [on|off|auto]` - tryb odpowiedzi głosowych\n"
+                    "• `/profile` - profil użytkownika i preferencje\n"
+                    "• `/mood` - nastrój i energia Moniki\n"
+                    "• `/memory` - ostatnie wpisy z pamięci\n"
+                    "• `/forget` - usuń ostatni wpis z pamięci\n"
+                    "• `/status` - status sesji Telegram\n"
+                    "• `/reset` - zresetuj bieżącą sesję"
                 ),
             )
             return
+        if command in {"today", "calendar"}:
+            session = await self._get_session(chat_id, user_label)
+            await session.ensure_started()
+            await self._send_message(chat_id, session.get_today_summary())
+            return
+        if command == "weather":
+            session = await self._get_session(chat_id, user_label)
+            await session.ensure_started()
+            await self._send_message(chat_id, session.get_weather_summary())
+            return
+        if command == "profile":
+            session = await self._get_session(chat_id, user_label)
+            await session.ensure_started()
+            await self._send_message(chat_id, session.get_profile_summary())
+            return
+        if command == "voice":
+            session = await self._get_session(chat_id, user_label)
+            await session.ensure_started()
+            await self._send_message(chat_id, session.set_voice_mode(args))
+            return
         if command == "reset":
             await self._drop_session(chat_id)
-            await self._send_message(chat_id, "Zresetowalam biezaca sesje Telegram.")
+            await self._send_message(chat_id, "🔄 Zresetowałam bieżącą sesję Telegram.")
             return
         if command == "status":
             session = await self._peek_session(chat_id)
             if not session:
-                await self._send_message(chat_id, "Sesja: nieaktywna\nCzat: {0}\nOstatnia aktywność: brak".format(chat_id))
+                await self._send_message(chat_id, f"Sesja: nieaktywna\nCzat: {chat_id}\nOstatnia aktywność: brak")
             else:
                 await self._send_message(chat_id, session.get_status_summary())
             return
@@ -761,7 +1135,13 @@ class TelegramBotService:
             session = await self._get_session(chat_id, user_label)
             await session.ensure_started()
             if not args:
-                await self._send_message(chat_id, session.get_notes_summary())
+                keyboard = [
+                    [
+                        {"text": "📋 Cały katalog", "callback_data": "notes_catalog"},
+                        {"text": "❓ Pomoc", "callback_data": "notes_help"},
+                    ]
+                ]
+                await self._send_message(chat_id, session.get_notes_summary(), reply_markup={"inline_keyboard": keyboard})
             elif args.lower().strip() in {"list", "catalog", "pages", "ls"}:
                 await self._send_message(chat_id, session.list_notes_catalog())
             elif args.lower().startswith("add "):
@@ -772,7 +1152,6 @@ class TelegramBotService:
                 else:
                     await self._send_message(chat_id, session.append_notes(payload))
             else:
-                await self._send_message(chat_id, session.get_note_page(args))
                 resolved = session._resolve_note_selector(args)
                 if resolved:
                     await self._send_message(chat_id, session.get_note_page(resolved))
@@ -785,30 +1164,38 @@ class TelegramBotService:
         if command == "remind":
             session = await self._get_session(chat_id, user_label)
             await session.ensure_started()
-            await self._send_message(chat_id, session.create_reminder_from_command(args))
+            resp_txt, reminder = session.create_reminder_from_command(args)
+            reply_markup = None
+            if reminder:
+                reply_markup = {
+                    "inline_keyboard": [[{"text": "🗑 Anuluj przypomnienie", "callback_data": f"del_rem:{reminder.id}"}]]
+                }
+            await self._send_message(chat_id, resp_txt, reply_markup=reply_markup)
             return
 
+        is_voice_input = bool(message.get("voice") or message.get("audio"))
         if not text:
             try:
                 text = await self._build_audio_transcript(message)
             except Exception as exc:
-                await self._send_message(chat_id, f"Nie udało mi się odsłuchać voice note: {exc}")
+                await self._send_message(chat_id, f"Nie udało mi się odsłuchać wiadomości głosowej: {exc}")
                 return
-            if not text and (message.get("voice") or message.get("audio")):
-                await self._send_message(chat_id, "Nie udało mi się zrozumieć tego voice note.")
+            if not text and is_voice_input:
+                await self._send_message(chat_id, "Nie udało mi się zrozumieć tej wiadomości głosowej.")
                 return
 
         attachments = await self._build_message_attachments(message)
         if not text and not attachments:
-            await self._send_message(chat_id, "Na razie obsługiwany jest tekst, zdjęcia i voice notes.")
+            await self._send_message(chat_id, "Obsługiwany jest tekst, zdjęcia, dokumenty i wiadomości głosowe.")
             return
 
-        await self._handle_turn(chat_id, user_label, text, attachments)
+        await self._handle_turn(chat_id, user_label, text, attachments, is_voice_input=is_voice_input)
 
     async def run(self):
         await self._register_bot_metadata()
         await self._api_call("deleteWebhook", {"drop_pending_updates": False}, timeout_sec=15.0)
         cleanup_task = asyncio.create_task(self._cleanup_idle_sessions())
+        proactivity_task = asyncio.create_task(self._proactivity_loop())
         try:
             while not self._stop_event.is_set():
                 try:
@@ -817,7 +1204,7 @@ class TelegramBotService:
                         {
                             "offset": self._offset,
                             "timeout": 25,
-                            "allowed_updates": ["message"],
+                            "allowed_updates": ["message", "callback_query"],
                         },
                         timeout_sec=35.0,
                     )
@@ -825,6 +1212,15 @@ class TelegramBotService:
                         update_id = int(update.get("update_id", 0))
                         if update_id >= self._offset:
                             self._offset = update_id + 1
+
+                        cb = update.get("callback_query")
+                        if cb:
+                            try:
+                                await self._handle_callback_query(cb)
+                            except Exception as exc:
+                                print(f"[TELEGRAM] Callback query handling error: {exc}")
+                            continue
+
                         message = update.get("message")
                         if message:
                             try:
@@ -832,7 +1228,7 @@ class TelegramBotService:
                             except Exception as exc:
                                 chat_id = ((message.get("chat") or {}).get("id"))
                                 if chat_id:
-                                    await self._send_message(int(chat_id), f"Blad Telegram bridge: {exc}")
+                                    await self._send_message(int(chat_id), f"Błąd Telegram bridge: {exc}")
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
@@ -846,12 +1242,14 @@ class TelegramBotService:
                     await asyncio.sleep(3.0)
         finally:
             cleanup_task.cancel()
-            try:
-                await cleanup_task
-            except asyncio.CancelledError:
-                pass
-            except Exception:
-                pass
+            proactivity_task.cancel()
+            for t in (cleanup_task, proactivity_task):
+                try:
+                    await t
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    pass
             async with self._sessions_lock:
                 sessions = list(self._sessions.values())
                 self._sessions.clear()

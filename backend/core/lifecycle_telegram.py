@@ -20,6 +20,14 @@ def start_telegram_service(
     )
     telegram_task = None
     if telegram_service:
+        if reminder_manager:
+            orig_reminder_cb = getattr(reminder_manager, "on_reminder", None)
+            def _on_reminder_hook(rem):
+                telegram_service.notify_reminder_fired(rem)
+                if orig_reminder_cb:
+                    return orig_reminder_cb(rem)
+            reminder_manager.on_reminder = _on_reminder_hook
+
         telegram_task = asyncio.create_task(telegram_service.run())
         print("[SERVER] Telegram bot service started.")
     return telegram_service, telegram_task

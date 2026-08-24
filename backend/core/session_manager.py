@@ -133,13 +133,11 @@ class SessionManager:
         """Return up to ``limit`` most recent turns from the CURRENT session
         only (in-memory pending + this session's turns.jsonl), oldest first.
         Used for auto-finalizing a session summary."""
-        if limit <= 0 or not self.current_session_path:
         current_path = self.get_current_session_path()
         if limit <= 0 or not current_path:
             return []
 
         turns: List[Dict] = []
-        log_file = self.current_session_path / "turns.jsonl"
         log_file = current_path / "turns.jsonl"
         if log_file.exists():
             try:

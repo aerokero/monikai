@@ -372,10 +372,8 @@ _DELETE_EVENT_INTENT_RE = re.compile(
     re.IGNORECASE,
 )
 _APPEND_NOTES_INTENT_RE = re.compile(
-    r"\b(dopisz|dodaj|zapisz|zanotuj|append|add|note\s+down)"
     r"\b(dopisz|dodaj|zapisz|zanotuj|zrób|zrob|append|add|note\s+down|take|write)"
     r".{0,36}\b(notat\w*|notes?)\b|"
-    r"\b(zanotuj|note\s+down)\b",
     r"\b(zanotuj|zanotujmy|note\s+down|take\s+a\s+note|write\s+down)\b",
     re.IGNORECASE,
 )
