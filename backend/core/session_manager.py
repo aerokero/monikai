@@ -133,8 +133,14 @@ class SessionManager:
         """Return up to ``limit`` most recent turns from the CURRENT session
         only (in-memory pending + this session's turns.jsonl), oldest first.
         Used for auto-finalizing a session summary."""
+        if limit <= 0:
+            return []
+
+        if self.stream_channel:
+            return self.get_stream_turns(self.stream_channel, limit=limit)
+
         current_path = self.get_current_session_path()
-        if limit <= 0 or not current_path:
+        if not current_path:
             return []
 
         turns: List[Dict] = []
@@ -280,6 +286,35 @@ class SessionManager:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
         except Exception:
             pass
+
+    def get_stream_turns(self, channel: str, limit: int = 10) -> List[Dict]:
+        """Most recent turns of today's ``channel`` stream, oldest first.
+
+        Streams are the conversation of record for channels that never open a
+        session (Telegram), so this is what their history reads must use."""
+        if limit <= 0 or not channel:
+            return []
+
+        day_dir = self.sessions_dir / datetime.now().strftime("%Y-%m-%d")
+        log_file = day_dir / f"{STREAM_DIR_PREFIX}{channel}" / "turns.jsonl"
+        if not log_file.exists():
+            return []
+
+        turns: List[Dict] = []
+        try:
+            for line in log_file.read_text(encoding="utf-8", errors="ignore").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    entry = json.loads(line)
+                except Exception:
+                    continue
+                if isinstance(entry, dict):
+                    turns.append(entry)
+        except Exception:
+            return []
+
+        return turns[-limit:]
 
     # ------------------------------------------------------------------
     # History

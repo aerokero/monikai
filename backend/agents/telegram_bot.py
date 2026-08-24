@@ -932,6 +932,40 @@ class TelegramBotService:
 
         await self.broadcast_notification(text)
 
+    async def _ask_with_retry(self, chat_id: int, session, ask) -> str:
+        """Pusta odpowiedź silnika to nie jest treść do wysłania.
+
+        Zamiast niemego "..." próbujemy jeszcze raz, a gdy i to nie wyjdzie —
+        mówimy wprost, co się stało."""
+        try:
+            reply = str(await ask() or "").strip()
+        except Exception as exc:
+            print(f"[TELEGRAM] tura nieudana: {exc}")
+            reply = ""
+
+        if reply:
+            return reply
+
+        print("[TELEGRAM] pusta odpowiedź — ponawiam turę.")
+        await self._send_typing(chat_id)
+        try:
+            reply = str(await ask() or "").strip()
+        except Exception as exc:
+            print(f"[TELEGRAM] ponowiona tura nieudana: {exc}")
+            reply = ""
+
+        if reply:
+            return reply
+
+        print("[TELEGRAM] druga pusta odpowiedź — wysyłam komunikat zastępczy.")
+        return "(nie udało mi się teraz odpowiedzieć — napisz jeszcze raz)"
+
+    async def _handle_text(self, chat_id: int, user_label: str, text: str):
+        session = await self._get_session(chat_id, user_label)
+        await self._send_typing(chat_id)
+        reply = await self._ask_with_retry(chat_id, session, lambda: session.ask(text))
+        await self._send_message(chat_id, reply)
+
     async def _handle_turn(
         self,
         chat_id: int,
@@ -953,9 +987,10 @@ class TelegramBotService:
             effective_text = f"{effective_text}\n\n{joined_docs}".strip() if effective_text else joined_docs
 
         if attachments:
-            reply = await session.ask_with_attachments(effective_text, attachments)
+            ask = lambda: session.ask_with_attachments(effective_text, attachments)
         else:
-            reply = await session.ask(effective_text)
+            ask = lambda: session.ask(effective_text)
+        reply = await self._ask_with_retry(chat_id, session, ask)
 
         should_voice = False
         if session.voice_mode == "on":
@@ -963,7 +998,7 @@ class TelegramBotService:
         elif session.voice_mode == "auto" and is_voice_input:
             should_voice = True
 
-        if should_voice and reply:
+        if should_voice and reply and not reply.startswith("("):
             voice_bytes = await self._synthesize_voice(reply)
             if voice_bytes:
                 await self._send_voice_file(chat_id, voice_bytes, caption=reply[:1024] if len(reply) <= 1024 else None)

@@ -91,7 +91,7 @@ from .conversation_tool_executor import CoreConversationToolExecutor
 from .smart_home_tool_executor import SmartHomeToolExecutor
 from backend.llm.thinker import Thinker, THINKER_FALLBACK_MODEL
 from .tool_definitions import tools
-from .system_prompt import SYSTEM_PROMPT
+from .system_prompt import SYSTEM_PROMPT, current_system_prompt
 from backend.services.calendar_manager import CalendarEvent, CalendarManager
 from backend.services.reminder_manager import Reminder, ReminderManager
 from backend.services.memory_adapter import MemoryEngine
@@ -1185,7 +1185,15 @@ class AudioLoop:
             reply = (
                 tool_outcome.reply
                 if tool_outcome.handled
-                else await self.thinker.prepare_spoken_reply(cleaned)
+                else await self.thinker.prepare_spoken_reply(
+                    cleaned,
+                    # Czat tekstowy: każda wiadomość zasługuje na odpowiedź,
+                    # nie koliduje z mową i może spokojnie poczekać dłużej
+                    # niż tura głosowa.
+                    timeout_sec=max(20.0, float(timeout_sec or 0.0) * 0.25),
+                    drop_backchannel=False,
+                    require_idle_turn=False,
+                )
             )
             if reply:
                 await self.deliver_authored_reply(reply, speak=False)
@@ -1731,7 +1739,7 @@ class AudioLoop:
             # still herself, knowing this person, with the safety floor on top.
             system_instruction = build_therapy_system_instruction(
                 relationship_context=self._session_relationship_context,
-                base_persona=config.system_instruction,
+                base_persona=current_system_prompt(),
             )
             thinking_config = (
                 _build_voice_renderer_thinking_config()
@@ -4570,6 +4578,14 @@ class AudioLoop:
             print(f"Error in receive_audio: {e}")
             traceback.print_exc()
             raise e
+        finally:
+            # Tura Live jest otwierana przez output_transcription, a zamykana
+            # wyłącznie przez turn_complete. Gdy pętla padnie w środku tury,
+            # flaga zostałaby podniesiona na stałe i blokowała każdą kolejną
+            # odpowiedź (Telegram/Discord) aż do restartu kontenera.
+            if self._ai_turn_open:
+                print("[AI DEBUG] [RECOVERY] receive_audio zakończone w trakcie tury — zwalniam _ai_turn_open.")
+                self._ai_turn_open = False
 
     async def forward_audio(self):
         """Forward Gemini PCM to a remote client without using server audio."""

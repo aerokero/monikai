@@ -1,0 +1,12 @@
+.env
+.git
+.github
+.claude
+.venv
+node_modules
+dist
+dist_electron
+__pycache__
+*.py[cod]
+.pytest_cache
+tests
