@@ -637,10 +637,12 @@ class ServerMicListenerService:
         # Synthesize and play response
         if reply_text and not reply_text.startswith("("):
             try:
+                print(f"[SERVER MIC] [TTS] Synthesizing speech with voice '{self.gemini_voice}'...")
                 from backend.conversation.speech import GeminiSpeechSynthesizer, SpeechSynthesisRequest
                 synthesizer = GeminiSpeechSynthesizer(api_key=self.gemini_api_key)
                 res = await synthesizer.synthesize(SpeechSynthesisRequest(text=reply_text, voice=self.gemini_voice))
                 if res and res.audio:
+                    print(f"[SERVER MIC] [TTS] Audio ready ({len(res.audio)} bytes, {res.sample_rate}Hz). Starting playback...")
                     await self.play_audio_locally(res.audio, sample_rate=res.sample_rate)
             except Exception as exc:
                 print(f"[SERVER MIC] Błąd syntezy mowy: {exc}")
