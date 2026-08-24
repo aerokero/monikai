@@ -147,6 +147,87 @@ def _raw_pcm_to_wav(pcm_bytes: bytes, sample_rate: int = 16000, channels: int = 
     return buf.getvalue()
 
 
+def find_best_input_device(
+    preferred_index: Optional[int] = None,
+    preferred_name: Optional[str] = None,
+) -> Tuple[Optional[int], str, int]:
+    """Find the best audio input device index, name, and supported samplerate."""
+    if not _SOUNDDEVICE_AVAILABLE:
+        return preferred_index, "default", 16000
+
+    try:
+        devices = sd.query_devices()
+    except Exception:
+        return preferred_index, "default", 16000
+
+    input_devices = []
+    for idx, d in enumerate(devices):
+        if d.get("max_input_channels", 0) > 0:
+            input_devices.append((idx, d))
+
+    if not input_devices:
+        return None, "none", 16000
+
+    target_idx = None
+    target_info = None
+
+    if preferred_index is not None:
+        for idx, d in input_devices:
+            if idx == preferred_index:
+                target_idx = idx
+                target_info = d
+                break
+
+    if target_idx is None and preferred_name:
+        for idx, d in input_devices:
+            if preferred_name.lower() in d.get("name", "").lower():
+                target_idx = idx
+                target_info = d
+                break
+
+    # Prioritize dedicated external / USB / TONOR microphones over motherboard analog jacks
+    if target_idx is None:
+        for idx, d in input_devices:
+            name_lower = d.get("name", "").lower()
+            if any(kw in name_lower for kw in ["tonor", "usb", "mic", "headset", "capture"]):
+                target_idx = idx
+                target_info = d
+                break
+
+    if target_idx is None:
+        target_idx, target_info = input_devices[0]
+
+    # Test sample rates: 16000 preferred for VAD, else 44100, 48000
+    chosen_sr = 16000
+    for sr in [16000, 44100, 48000, int(target_info.get("default_samplerate", 16000))]:
+        try:
+            sd.check_input_settings(device=target_idx, samplerate=sr, channels=1)
+            chosen_sr = sr
+            break
+        except Exception:
+            continue
+
+    return target_idx, target_info.get("name", f"device_{target_idx}"), chosen_sr
+
+
+def find_best_output_device(preferred_index: Optional[int] = None) -> Optional[int]:
+    """Find best output device index."""
+    if not _SOUNDDEVICE_AVAILABLE:
+        return preferred_index
+    try:
+        devices = sd.query_devices()
+        output_devices = [idx for idx, d in enumerate(devices) if d.get("max_output_channels", 0) > 0]
+        if preferred_index is not None and preferred_index in output_devices:
+            return preferred_index
+        for idx in output_devices:
+            name_lower = devices[idx].get("name", "").lower()
+            if any(kw in name_lower for kw in ["analog", "speaker", "headphone", "alc", "usb"]):
+                return idx
+        return output_devices[0] if output_devices else None
+    except Exception:
+        return preferred_index
+
+
 class ServerMicListenerService:
     """Background service that captures audio from the server mic and talks to Monika."""
 
@@ -255,13 +336,14 @@ class ServerMicListenerService:
         try:
             if _SOUNDDEVICE_AVAILABLE:
                 try:
+                    out_idx = find_best_output_device(self.output_device_index)
                     kwargs = {
                         "samplerate": sample_rate,
                         "channels": 1,
                         "dtype": "int16",
                     }
-                    if self.output_device_index is not None:
-                        kwargs["device"] = self.output_device_index
+                    if out_idx is not None:
+                        kwargs["device"] = out_idx
                     stream = await asyncio.to_thread(sd.RawOutputStream, **kwargs)
                     stream.start()
                     await asyncio.to_thread(stream.write, pcm_bytes)
@@ -275,14 +357,15 @@ class ServerMicListenerService:
             if _PYAUDIO_AVAILABLE:
                 p = pyaudio.PyAudio()
                 try:
+                    out_idx = find_best_output_device(self.output_device_index)
                     kwargs = {
                         "format": pyaudio.paInt16,
                         "channels": 1,
                         "rate": sample_rate,
                         "output": True,
                     }
-                    if self.output_device_index is not None:
-                        kwargs["output_device_index"] = self.output_device_index
+                    if out_idx is not None:
+                        kwargs["output_device_index"] = out_idx
                     stream = p.open(**kwargs)
                     stream.write(pcm_bytes)
                     stream.stop_stream()
@@ -348,36 +431,51 @@ class ServerMicListenerService:
 
     async def _listen_loop(self):
         """Main listening loop capturing chunks from the microphone."""
-        chunk_size = self.vad.frame_size
         stream = None
         pyaudio_inst = None
 
         try:
             if _SOUNDDEVICE_AVAILABLE:
+                dev_idx, dev_name, dev_sr = find_best_input_device(
+                    self.input_device_index,
+                    self.input_device_name,
+                )
+                chunk_size = int(dev_sr * (self.vad.frame_duration_ms / 1000.0))
+
                 kwargs = {
-                    "samplerate": self.sample_rate,
+                    "samplerate": dev_sr,
                     "channels": 1,
                     "dtype": "int16",
                     "blocksize": chunk_size,
                 }
-                if self.input_device_index is not None:
-                    kwargs["device"] = self.input_device_index
+                if dev_idx is not None:
+                    kwargs["device"] = dev_idx
                 stream = sd.RawInputStream(**kwargs)
                 stream.start()
 
-                print(f"[SERVER MIC] [OK] Listening stream started (VAD, rate={self.sample_rate}Hz).")
+                print(f"[SERVER MIC] [OK] Listening stream started on '{dev_name}' (device={dev_idx}, rate={dev_sr}Hz, wake_word={self.require_wake_word}).")
                 while self._is_running:
                     if self._is_muted or self._is_speaking:
                         await asyncio.sleep(0.05)
                         continue
 
                     data, overflowed = stream.read(chunk_size)
-                    segment = self.vad.process_frame(bytes(data))
+                    frame_data = bytes(data)
+                    if dev_sr != self.sample_rate:
+                        samples = np.frombuffer(frame_data, dtype=np.int16)
+                        target_len = self.vad.frame_size
+                        x_old = np.linspace(0, 1, len(samples), endpoint=False)
+                        x_new = np.linspace(0, 1, target_len, endpoint=False)
+                        resampled = np.interp(x_new, x_old, samples).astype(np.int16)
+                        frame_data = resampled.tobytes()
+
+                    segment = self.vad.process_frame(frame_data)
                     if segment:
                         asyncio.create_task(self._handle_speech_segment(segment))
                     await asyncio.sleep(0.001)
 
             elif _PYAUDIO_AVAILABLE:
+                chunk_size = self.vad.frame_size
                 pyaudio_inst = pyaudio.PyAudio()
                 kwargs = {
                     "format": pyaudio.paInt16,

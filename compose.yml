@@ -17,13 +17,22 @@ services:
       MONIKAI_HOST: 0.0.0.0
       MONIKAI_PORT: 8000
       WEB_AGENT_HEADLESS: "1"
+      SERVER_MIC_WAKE_WORD_REQUIRED: "true"
 
     ports:
       - "192.168.1.10:8000:8000"
 
+    devices:
+      - /dev/snd:/dev/snd
+
+    group_add:
+      - audio
+
     volumes:
       - /srv/fast/containers/monikai/data:/app/data
       - /srv/fast/containers/monikai/backend/data:/app/backend/data
+      - /srv/fast/containers/monikai/backend/core/server.py:/app/backend/core/server.py:ro
+      - /srv/fast/containers/monikai/backend/audio/server_mic_listener.py:/app/backend/audio/server_mic_listener.py:ro
 
     healthcheck:
       test:
