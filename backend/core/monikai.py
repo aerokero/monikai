@@ -1182,10 +1182,9 @@ class AudioLoop:
         # returns the text author's answer directly in dedicated-speech mode.
         if cleaned and not normalized_attachments and self._dedicated_speech_enabled():
             tool_outcome = await self.author_tool_turn(cleaned)
-            reply = (
-                tool_outcome.reply
-                if tool_outcome.handled
-                else await self.thinker.prepare_spoken_reply(
+            reply = tool_outcome.reply if (tool_outcome.handled and tool_outcome.reply) else None
+            if not reply:
+                reply = await self.thinker.prepare_spoken_reply(
                     cleaned,
                     # Czat tekstowy: każda wiadomość zasługuje na odpowiedź,
                     # nie koliduje z mową i może spokojnie poczekać dłużej
@@ -1194,7 +1193,6 @@ class AudioLoop:
                     drop_backchannel=False,
                     require_idle_turn=False,
                 )
-            )
             if reply:
                 await self.deliver_authored_reply(reply, speak=False)
                 self.thinker.mark_voice_delivered()
