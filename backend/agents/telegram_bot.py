@@ -230,6 +230,16 @@ class TelegramChatSession:
             paths.append(rel)
         return paths[: max(1, min(int(limit or 24), 100))]
 
+    def get_notes_summary(self, max_chars: int = 1800) -> str:
+        text = self.get_notes_text(max_chars=max_chars)
+        pages = self._list_note_pages(limit=12)
+        lines = [f"Notatki (notes.md):\n{text}"]
+        other_pages = [p for p in pages if p != "notes.md"]
+        if other_pages:
+            lines.append("\nInne strony notatek:\n" + "\n".join(f"- {p}" for p in other_pages))
+            lines.append("\nAby wyświetlić inną stronę: /notes <ścieżka>")
+        return "\n".join(lines)
+
     def list_notes_catalog(self, limit: int = 24) -> str:
         paths = self._list_note_pages(limit=limit)
         if not paths:
@@ -240,6 +250,10 @@ class TelegramChatSession:
         lines.append("/notes <ścieżka> - pokaż stronę")
         lines.append("/notes add <tekst> - dopisz do notes.md")
         lines.append("/notes add <ścieżka> | <tekst> - dopisz do wybranej strony")
+        lines.append("/notes - pokaż główne notatki")
+        lines.append("/notes <tekst> - dopisz do notes.md")
+        lines.append("/notes <ścieżka> - pokaż wybraną stronę")
+        lines.append("/notes <ścieżka> | <tekst> - dopisz do wybranej strony")
         return "\n".join(lines)
 
     def _resolve_note_selector(self, selector: str) -> Optional[str]:
@@ -747,6 +761,8 @@ class TelegramBotService:
             session = await self._get_session(chat_id, user_label)
             await session.ensure_started()
             if not args:
+                await self._send_message(chat_id, session.get_notes_summary())
+            elif args.lower().strip() in {"list", "catalog", "pages", "ls"}:
                 await self._send_message(chat_id, session.list_notes_catalog())
             elif args.lower().startswith("add "):
                 payload = args[4:].strip()
@@ -757,6 +773,14 @@ class TelegramBotService:
                     await self._send_message(chat_id, session.append_notes(payload))
             else:
                 await self._send_message(chat_id, session.get_note_page(args))
+                resolved = session._resolve_note_selector(args)
+                if resolved:
+                    await self._send_message(chat_id, session.get_note_page(resolved))
+                elif "|" in args:
+                    selector, note_text = [part.strip() for part in args.split("|", 1)]
+                    await self._send_message(chat_id, session.append_note_page(selector, note_text))
+                else:
+                    await self._send_message(chat_id, session.append_notes(args))
             return
         if command == "remind":
             session = await self._get_session(chat_id, user_label)

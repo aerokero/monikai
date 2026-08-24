@@ -529,3 +529,110 @@ async def test_spotify_unavailable_returns_error_evidence():
 
     assert result.ok is False
     assert "unavailable" in result.result.lower()
+
+
+async def test_notes_get_returns_file_content(tmp_path):
+    notes_file = tmp_path / "notes.md"
+    notes_file.write_text("kupić mleko\nprzeczytać książkę", encoding="utf-8")
+
+    executor = CoreConversationToolExecutor(
+        reminder_manager=None,
+        calendar_manager=None,
+        notes_path=notes_file,
+        memory_engine=None,
+        session_manager=None,
+        spotify_manager=None,
+        smart_home_executor=None,
+        get_memory_db_path=lambda: None,
+        get_time_context_fn=lambda: {},
+        get_personality=lambda: None,
+    )
+
+    result = await executor.execute(ConversationToolRequest("notes_get"))
+    assert result.ok is True
+    assert "kupić mleko" in result.result
+
+
+async def test_session_manager_stream_channel_returns_turns(tmp_path):
+    from backend.core.session_manager import SessionManager
+    sm = SessionManager(tmp_path, stream_channel="telegram")
+    sm.log_chat("User", "Cześć Monika!")
+    sm.log_chat("Monika", "Hej! Jak się masz?")
+
+    turns = sm.get_current_session_turns(limit=10)
+    assert len(turns) == 2
+    assert turns[0]["sender"] == "User"
+    assert turns[0]["text"] == "Cześć Monika!"
+    assert turns[1]["sender"] == "Monika"
+    assert turns[1]["text"] == "Hej! Jak się masz?"
+    assert sm.get_current_session_id().startswith("stream_telegram")
+
+
+async def test_memory_adapter_update_and_delete(tmp_path):
+    from backend.services.memory_adapter import MemoryEngine
+    from backend.soul.db import init_db
+
+    db_file = tmp_path / "monika.db"
+    await init_db(db_file)
+
+    engine = MemoryEngine(base_dir=tmp_path)
+    entry_id, status = engine.add_entry(type="semantic", content="Lubi kawę bez cukru")
+    assert status == "ok"
+    assert entry_id.startswith("mem_")
+
+    recent = engine.list_recent(limit=5)
+    assert len(recent) == 1
+    assert recent[0]["content"] == "Lubi kawę bez cukru"
+
+    # Test update
+    up_status = engine.update_entry(entry_id, {"content": "Lubi kawę z mlekiem owsianym"})
+    assert up_status == "ok"
+    recent = engine.list_recent(limit=5)
+    assert recent[0]["content"] == "Lubi kawę z mlekiem owsianym"
+
+    # Test delete via status archived
+    arch_status = engine.update_entry(entry_id, {"status": "archived"})
+    assert arch_status == "ok"
+    recent = engine.list_recent(limit=5)
+    assert len(recent) == 0
+
+
+async def test_memory_search_executor(tmp_path):
+    from backend.soul.db import init_db
+    from backend.soul.memory import store as memory_store
+    from backend.soul.models import MemoryEntry
+
+    db_file = tmp_path / "monika.db"
+    await init_db(db_file)
+
+    await memory_store.add(
+        MemoryEntry(
+            id="mem_1",
+            type="semantic",
+            content="Ulubiony kolor to butelkowa zieleń",
+            importance=5.0,
+        ),
+        db_path=db_file,
+    )
+
+    executor = CoreConversationToolExecutor(
+        reminder_manager=None,
+        calendar_manager=None,
+        notes_path=None,
+        memory_engine=None,
+        session_manager=None,
+        spotify_manager=None,
+        smart_home_executor=None,
+        get_memory_db_path=lambda: db_file,
+        get_time_context_fn=lambda: {},
+        get_personality=lambda: None,
+    )
+
+    result = await executor.execute(
+        ConversationToolRequest("memory_search", {"query": "kolor"})
+    )
+    assert result.ok is True
+    assert "butelkowa zieleń" in result.result
+
+
+

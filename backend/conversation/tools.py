@@ -373,8 +373,10 @@ _DELETE_EVENT_INTENT_RE = re.compile(
 )
 _APPEND_NOTES_INTENT_RE = re.compile(
     r"\b(dopisz|dodaj|zapisz|zanotuj|append|add|note\s+down)"
+    r"\b(dopisz|dodaj|zapisz|zanotuj|zrób|zrob|append|add|note\s+down|take|write)"
     r".{0,36}\b(notat\w*|notes?)\b|"
     r"\b(zanotuj|note\s+down)\b",
+    r"\b(zanotuj|zanotujmy|note\s+down|take\s+a\s+note|write\s+down)\b",
     re.IGNORECASE,
 )
 _SET_NOTES_INTENT_RE = re.compile(
@@ -416,6 +418,10 @@ _LIGHT_SET_INTENT_RE = re.compile(
     r"(jasnoś\w*|jasnos\w*|kolor\w*|brightness|colo(?:u)?r)\b",
     re.IGNORECASE,
 )
+_GET_NOTES_RE = re.compile(
+    r"\b(co|jakie|pokaż|pokaz|przeczytaj|odczytaj|wyświetl|wyswietl|show|read|list).{0,24}\b(notat\w*|notes?)\b",
+    re.IGNORECASE,
+)
 
 
 def plan_read_only_tool(text: str) -> ConversationToolRequest | None:
@@ -427,6 +433,8 @@ def plan_read_only_tool(text: str) -> ConversationToolRequest | None:
         return ConversationToolRequest("list_reminders")
     if _WEATHER_RE.search(value):
         return ConversationToolRequest("get_weather")
+    if _GET_NOTES_RE.search(value):
+        return ConversationToolRequest("notes_get")
     return None
 
 

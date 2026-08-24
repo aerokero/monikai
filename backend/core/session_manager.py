@@ -134,10 +134,13 @@ class SessionManager:
         only (in-memory pending + this session's turns.jsonl), oldest first.
         Used for auto-finalizing a session summary."""
         if limit <= 0 or not self.current_session_path:
+        current_path = self.get_current_session_path()
+        if limit <= 0 or not current_path:
             return []
 
         turns: List[Dict] = []
         log_file = self.current_session_path / "turns.jsonl"
+        log_file = current_path / "turns.jsonl"
         if log_file.exists():
             try:
                 for line in log_file.read_text(encoding="utf-8", errors="ignore").splitlines():
@@ -159,9 +162,19 @@ class SessionManager:
         return turns[-limit:]
 
     def get_current_session_id(self) -> Optional[str]:
+        if self.stream_channel:
+            try:
+                return self.get_stream_path(self.stream_channel).name
+            except Exception:
+                return f"{STREAM_DIR_PREFIX}{self.stream_channel}"
         return self.current_session_id
 
     def get_current_session_path(self) -> Optional[Path]:
+        if self.stream_channel:
+            try:
+                return self.get_stream_path(self.stream_channel)
+            except Exception:
+                return None
         return self.current_session_path
 
     def get_session_path(self, session_id: str) -> Optional[Path]:

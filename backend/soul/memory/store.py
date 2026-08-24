@@ -218,10 +218,16 @@ async def get_stm(
 
 def _fts_query(query: str) -> str:
     """Quote plain search terms for SQLite FTS syntax safety."""
+    """Quote plain search terms for SQLite FTS syntax safety with prefix matching."""
     import re
 
     raw_tokens = re.findall(r"[\w\-]+", query or "", re.UNICODE)
     return " OR ".join(f'"{token}"' for token in raw_tokens)
+    raw_tokens = [t for t in re.findall(r"[\w\-]+", query or "", re.UNICODE) if len(t) >= 2]
+    if not raw_tokens:
+        return ""
+    return " OR ".join(f'{token}*' for token in raw_tokens)
+
 
 
 async def search_fts(

@@ -10,6 +10,8 @@ def test_read_only_planner_recognizes_supported_queries():
     assert plan_read_only_tool("Która jest godzina?").name == "get_time_context"
     assert plan_read_only_tool("Jakie mam przypomnienia?").name == "list_reminders"
     assert plan_read_only_tool("Sprawdź pogodę.").name == "get_weather"
+    assert plan_read_only_tool("Co mam w notatkach?").name == "notes_get"
+    assert plan_read_only_tool("Pokaż notatki.").name == "notes_get"
 
 
 def test_read_only_planner_does_not_claim_mutating_requests():
@@ -79,6 +81,18 @@ def test_notes_append_and_overwrite_have_distinct_intents():
 
     assert validate_planned_tool_request(
         "Dopisz do notatek: kup mleko.",
+        append,
+    )
+    assert validate_planned_tool_request(
+        "Zanotuj: kup mleko.",
+        append,
+    )
+    assert validate_planned_tool_request(
+        "Zrób notatkę: kup mleko.",
+        append,
+    )
+    assert validate_planned_tool_request(
+        "Zapisz w notatkach: kup mleko.",
         append,
     )
     assert not validate_planned_tool_request(

@@ -198,6 +198,64 @@ class MemoryEngine:
         except Exception as e:
             print(f"[MemoryAdapter] Error listing recent: {e}")
             return []
+    def delete_entry(self, entry_id: str) -> bool:
+        if not entry_id:
+            return False
+        conn = self._connect()
+        try:
+            cur = conn.execute("DELETE FROM memory_entries WHERE id = ?", (str(entry_id),))
+            conn.commit()
+            return bool(cur.rowcount > 0)
+        except Exception as e:
+            print(f"[MemoryAdapter] Error deleting entry: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def update_entry(self, entry_id: str, patch: dict) -> str:
+        if not entry_id or not isinstance(patch, dict):
+            return "error"
+        status = str(patch.get("status") or "").strip().lower()
+        if status in {"archived", "deleted"}:
+            deleted = self.delete_entry(entry_id)
+            return "ok" if deleted else "not_found"
+
+        fields = []
+        params = []
+        if "content" in patch:
+            fields.append("content = ?")
+            params.append(str(patch["content"]))
+        if "type" in patch:
+            fields.append("type = ?")
+            params.append(str(patch["type"]))
+        if "importance" in patch:
+            fields.append("importance = ?")
+            params.append(float(patch["importance"]))
+        elif "importance_score" in patch:
+            fields.append("importance = ?")
+            params.append(max(1.0, min(10.0, float(patch["importance_score"]) * 10.0)))
+        if "tags" in patch:
+            fields.append("tags = ?")
+            params.append(json.dumps(patch["tags"]))
+        if "entities" in patch:
+            fields.append("entities = ?")
+            params.append(json.dumps(patch["entities"]))
+
+        if not fields:
+            return "ok"
+
+        params.append(str(entry_id))
+        conn = self._connect()
+        try:
+            cur = conn.execute(
+                f"UPDATE memory_entries SET {', '.join(fields)} WHERE id = ?",
+                params,
+            )
+            conn.commit()
+            return "ok" if cur.rowcount > 0 else "not_found"
+        except Exception as e:
+            print(f"[MemoryAdapter] Error updating entry: {e}")
+            return "error"
         finally:
             conn.close()
 
