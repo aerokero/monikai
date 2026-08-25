@@ -408,6 +408,8 @@ class ServerMicListenerService:
         self._is_running = False
         self._is_muted = False
         self._is_speaking = False
+        self._is_busy = False
+        self._turn_lock = asyncio.Lock()
         self._task: Optional[asyncio.Task] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
 
@@ -595,7 +597,7 @@ class ServerMicListenerService:
 
     async def _handle_speech_segment(self, raw_pcm: bytes):
         """Process recorded speech segment."""
-        if self._is_muted or self._is_speaking:
+        if self._is_muted or self._is_speaking or self._is_busy:
             return
 
         min_bytes = int(self.sample_rate * 2 * 0.4)
@@ -604,7 +606,7 @@ class ServerMicListenerService:
 
         samples = np.frombuffer(raw_pcm, dtype=np.int16)
         rms = float(math.sqrt(np.mean(samples.astype(np.float64) ** 2)))
-        if rms < 140.0:
+        if rms < 160.0:
             return
 
         print(f"[SERVER MIC] [VAD] Detected speech segment ({len(raw_pcm)/32000.0:.2f}s, rms={rms:.1f}). Transcribing...")
@@ -620,40 +622,48 @@ class ServerMicListenerService:
             print(f"[SERVER MIC] [IGNORED] No wake word in: \"{transcript}\"")
             return
 
-        reply_text = ""
-        if self.conversation_handler:
+        async with self._turn_lock:
+            self._is_busy = True
             try:
-                res = self.conversation_handler(prompt)
-                if asyncio.iscoroutine(res):
-                    reply_text = await res
-                else:
-                    reply_text = str(res or "")
-            except Exception as exc:
-                print(f"[SERVER MIC] Error processing reply: {exc}")
-                reply_text = "Przepraszam, coś poszło nie tak przy przetwarzaniu."
+                reply_text = ""
+                if self.conversation_handler:
+                    try:
+                        res = self.conversation_handler(prompt)
+                        if asyncio.iscoroutine(res):
+                            reply_text = await res
+                        else:
+                            reply_text = str(res or "")
+                    except Exception as exc:
+                        print(f"[SERVER MIC] Error processing reply: {exc}")
+                        reply_text = "Przepraszam, coś poszło nie tak przy przetwarzaniu."
 
-        print(f"[SERVER MIC] [REPLY] \"{reply_text}\"")
+                print(f"[SERVER MIC] [REPLY] \"{reply_text}\"")
 
-        # Synthesize and play response
-        if reply_text and not reply_text.startswith("("):
-            try:
-                print(f"[SERVER MIC] [TTS] Synthesizing speech with voice '{self.gemini_voice}'...")
-                from backend.conversation.speech import GeminiSpeechSynthesizer, SpeechSynthesisRequest
-                synthesizer = GeminiSpeechSynthesizer(api_key=self.gemini_api_key)
-                res = await synthesizer.synthesize(SpeechSynthesisRequest(text=reply_text, voice=self.gemini_voice))
-                if res and res.audio:
-                    print(f"[SERVER MIC] [TTS] Audio ready ({len(res.audio)} bytes, {res.sample_rate}Hz). Starting playback...")
-                    await self.play_audio_locally(res.audio, sample_rate=res.sample_rate)
-            except Exception as exc:
-                print(f"[SERVER MIC] Błąd syntezy mowy: {exc}")
+                # Synthesize and play response
+                if reply_text and not reply_text.startswith("("):
+                    try:
+                        print(f"[SERVER MIC] [TTS] Synthesizing speech with voice '{self.gemini_voice}'...")
+                        from backend.conversation.speech import GeminiSpeechSynthesizer, SpeechSynthesisRequest
+                        synthesizer = GeminiSpeechSynthesizer(api_key=self.gemini_api_key)
+                        res = await synthesizer.synthesize(SpeechSynthesisRequest(text=reply_text, voice=self.gemini_voice))
+                        if res and res.audio:
+                            print(f"[SERVER MIC] [TTS] Audio ready ({len(res.audio)} bytes, {res.sample_rate}Hz). Starting playback...")
+                            await self.play_audio_locally(res.audio, sample_rate=res.sample_rate)
+                    except Exception as exc:
+                        print(f"[SERVER MIC] Błąd syntezy mowy: {exc}")
 
-        if self.on_turn_finished:
-            try:
-                cb = self.on_turn_finished(transcript, reply_text)
-                if asyncio.iscoroutine(cb):
-                    await cb
-            except Exception:
-                pass
+                if self.on_turn_finished:
+                    try:
+                        cb = self.on_turn_finished(transcript, reply_text)
+                        if asyncio.iscoroutine(cb):
+                            await cb
+                    except Exception:
+                        pass
+            finally:
+                # Generous echo dissipation delay after full response and playback
+                await asyncio.sleep(0.8)
+                self.vad.reset_segment()
+                self._is_busy = False
 
     async def _listen_loop(self):
         """Main listening loop capturing chunks from the microphone."""
@@ -687,7 +697,7 @@ class ServerMicListenerService:
 
                 print(f"[SERVER MIC] [OK] Listening stream started on '{dev_name}' (device={dev_idx}, rate={dev_sr}Hz, wake_word={self.require_wake_word}, denoise=True).")
                 while self._is_running:
-                    if self._is_muted or self._is_speaking:
+                    if self._is_muted or self._is_speaking or self._is_busy:
                         await asyncio.sleep(0.05)
                         continue
 
@@ -726,7 +736,7 @@ class ServerMicListenerService:
 
                 print(f"[SERVER MIC] [OK] PyAudio listening stream started (VAD, rate={self.sample_rate}Hz).")
                 while self._is_running:
-                    if self._is_muted or self._is_speaking:
+                    if self._is_muted or self._is_speaking or self._is_busy:
                         await asyncio.sleep(0.05)
                         continue
 
