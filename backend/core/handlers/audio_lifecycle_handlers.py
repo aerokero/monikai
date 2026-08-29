@@ -350,8 +350,23 @@ def register_audio_lifecycle_handlers(
     async def connect(sid, environ, auth=None):
         expected_token = str(os.getenv("MONIKAI_SOCKET_TOKEN") or "").strip()
         if expected_token:
-            supplied_token = str((auth or {}).get("token") or "").strip()
-            if not hmac.compare_digest(supplied_token, expected_token):
+            supplied_token = ""
+            if isinstance(auth, dict) and auth.get("token"):
+                supplied_token = str(auth.get("token")).strip()
+            if not supplied_token and environ:
+                supplied_token = str(environ.get("HTTP_X_MONIKAI_TOKEN") or "").strip()
+                if not supplied_token:
+                    auth_header = str(environ.get("HTTP_AUTHORIZATION") or "").strip()
+                    if auth_header.lower().startswith("bearer "):
+                        supplied_token = auth_header[7:].strip()
+                if not supplied_token:
+                    query_string = str(environ.get("QUERY_STRING") or "")
+                    for param in query_string.split("&"):
+                        if param.startswith("token="):
+                            supplied_token = param.split("=", 1)[1].strip()
+                            break
+
+            if not supplied_token or not hmac.compare_digest(supplied_token, expected_token):
                 print(f"[SECURITY] Rejected unauthenticated Socket.IO client: {sid}")
                 return False
         print(f"[SYSTEM NOTIFICATION] Client connected: {sid}")

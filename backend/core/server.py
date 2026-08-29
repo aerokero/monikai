@@ -349,6 +349,10 @@ register_minecraft_http_routes(
 register_system_http_routes(
     app,
     get_spotify_manager=lambda: spotify_manager,
+    get_audio_loop=lambda: audio_loop,
+    get_minecraft_bot_manager=lambda: minecraft_bot_manager,
+    get_kasa_agent=lambda: kasa_agent,
+    get_settings=lambda: SETTINGS,
     emit_to_frontend=_emit_to_frontend,
 )
 
