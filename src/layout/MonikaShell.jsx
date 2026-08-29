@@ -4,7 +4,7 @@
  * Replaces AdaptiveShell as the main container for the Monika-First Adaptive UI
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Visualizer from '../components/Visualizer';
 import MonikaLayout from './MonikaLayout';
 import ScreenWindow from '../components/ScreenWindow';
