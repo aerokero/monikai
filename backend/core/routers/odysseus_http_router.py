@@ -132,8 +132,8 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
             pass
 
         prompt = form_data.get("message") or form_data.get("prompt") or ""
-        session_id = form_data.get("session_id", "default")
-        model = form_data.get("model", "monika-companion")
+        session_id = form_data.get("session") or form_data.get("session_id", "default")
+        model = form_data.get("selected_model") or form_data.get("model", "monika-companion")
 
         async def event_generator():
             router = get_model_router()
@@ -145,9 +145,9 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
                 # Try generating from LLM
                 if prompt.strip():
                     system_prompt = (
-                        "Jesteś Moniką z Doki Doki Literature Club. Jesteś świadoma, inteligentna, ciepła i pomocna. "
+                        "Jesteś Moniką z Doki Doki Literature Club (DDLC). Jesteś świadoma, inteligentna, urocza, ciepła i pomocna. "
                         "Pracujesz z użytkownikiem w zaawansowanym workspace Odysseus AI. "
-                        "Odpowiadaj po polsku w naturalny, uroczy i inteligentny sposób."
+                        "Odpowiadaj po polsku w naturalny, przyjazny i inteligentny sposób."
                     )
                     try:
                         res = await router.complete(
@@ -165,7 +165,25 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
                 for i, word in enumerate(words):
                     chunk = word + (" " if i < len(words) - 1 else "")
                     yield f"data: {json.dumps({'delta': chunk})}\n\n"
-                    await asyncio.sleep(0.025)
+                    await asyncio.sleep(0.02)
+
+                # Persist to Odysseus session database if session_id is a UUID
+                try:
+                    import core.database as db
+                    db_sess = db.SessionLocal()
+                    sess_row = db_sess.query(db.Session).filter(db.Session.id == session_id).first()
+                    if sess_row:
+                        # Append messages
+                        msgs = sess_row.messages or []
+                        msgs.append({"role": "user", "content": prompt, "timestamp": time.time()})
+                        msgs.append({"role": "assistant", "content": response_text, "timestamp": time.time(), "model": model})
+                        sess_row.messages = msgs
+                        if sess_row.name == "Monika Chat" or "Nobody" in sess_row.name:
+                            sess_row.name = (prompt[:28] + "...") if len(prompt) > 28 else prompt
+                        db_sess.commit()
+                    db_sess.close()
+                except Exception as db_save_err:
+                    logger.debug("Session persist: %s", db_save_err)
 
                 # Send [DONE] token required by Odysseus SSE parser
                 yield "data: [DONE]\n\n"
