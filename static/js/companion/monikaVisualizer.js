@@ -80,9 +80,6 @@ export class MonikaVisualizer {
         
         <!-- Layer 12: Desk / Table -->
         <img class="m-layer" src="/static/vn/monika/t/table-def.png" />
-        
-        <!-- Layer 13: Coffee Mug -->
-        <img class="m-layer" src="/static/vn/monika/t/food/drink_coffee.png" />
       </div>
       <div class="monika-vn-atmosphere"></div>
     `;
@@ -110,24 +107,25 @@ export class MonikaVisualizer {
         inset: 0;
         background-image: url('/static/vn/location/bg_room.png');
         background-size: cover;
-        background-position: center 30%;
+        background-position: center 25%;
         filter: brightness(0.92) saturate(1.05);
         transition: background-image 1.2s ease-in-out;
       }
       .monika-vn-char-wrap {
         position: absolute;
-        bottom: -20px;
+        bottom: 0;
         left: 50%;
         transform: translateX(-50%);
-        width: min(880px, 95vw);
-        height: min(92vh, 900px);
+        width: min(920px, 98vw);
+        height: 98vh;
+        max-height: 960px;
         pointer-events: auto;
         cursor: pointer;
-        animation: monika-breathe 4s ease-in-out infinite alternate;
+        animation: monika-breathe 4.5s ease-in-out infinite alternate;
       }
       @keyframes monika-breathe {
         0% { transform: translateX(-50%) translateY(0); }
-        100% { transform: translateX(-50%) translateY(4px); }
+        100% { transform: translateX(-50%) translateY(5px); }
       }
       .m-layer {
         position: absolute;
