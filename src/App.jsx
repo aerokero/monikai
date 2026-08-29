@@ -51,7 +51,9 @@ import { useToasts } from './features/toasts/useToasts';
 const SOCKET_URL =
   localStorage.getItem('monikai_server_url') ||
   import.meta.env.VITE_MONIKAI_SERVER_URL ||
-  'http://127.0.0.1:8000';
+  (typeof window !== 'undefined' && window.location.hostname
+    ? `${window.location.protocol}//${window.location.hostname}:8000`
+    : 'http://127.0.0.1:8000');
 const SOCKET_TOKEN =
   localStorage.getItem('monikai_socket_token') ||
   import.meta.env.VITE_MONIKAI_SOCKET_TOKEN ||
