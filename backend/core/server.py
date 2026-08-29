@@ -364,6 +364,12 @@ register_research_http_routes(app, emit_to_frontend=_emit_to_frontend)
 register_voice_http_routes(app)
 register_odysseus_http_routes(app, emit_to_frontend=_emit_to_frontend)
 
+try:
+    from backend.odysseus_bridge import init_and_register_odysseus_backend
+    init_and_register_odysseus_backend(app)
+except Exception as _ody_err:
+    logger.warning("Odysseus backend bridge initialization: %s", _ody_err)
+
 _STATIC_DIR = Path(__file__).resolve().parent.parent.parent / "static"
 _DIST_DIR = Path(__file__).resolve().parent.parent.parent / "dist"
 

@@ -28,3 +28,13 @@ python-dotenv
 aiosqlite
 # Face & Hand tracking
 mediapipe
+# Odysseus AI Backend Dependencies
+SQLAlchemy
+bcrypt
+cryptography
+croniter
+icalendar
+caldav
+nh3
+pypdf
+beautifulsoup4
