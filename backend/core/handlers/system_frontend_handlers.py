@@ -11,19 +11,12 @@ def register_system_frontend_handlers(
     *,
     get_audio_loop,
     get_personality_system,
-    get_kasa_agent,
     get_spotify_manager,
     get_settings,
     save_settings,
     shutdown_and_exit,
     mark_user_activity,
 ):
-    def _serialize_kasa_devices():
-        kasa_agent = get_kasa_agent()
-        if not kasa_agent:
-            return []
-        return kasa_agent.serialize_devices()
-
     @sio.event
     async def get_personality_status(sid):
         try:
@@ -81,44 +74,6 @@ def register_system_frontend_handlers(
             pass
 
     @sio.event
-    async def discover_kasa(sid):
-        print("Received discover_kasa request")
-        kasa_agent = get_kasa_agent()
-        try:
-            if not kasa_agent:
-                await sio.emit("error", {"msg": "Kasa agent unavailable"}, room=sid)
-                return
-
-            devices = await kasa_agent.discover_devices()
-            await sio.emit("kasa_devices", devices, room=sid)
-            await sio.emit("status", {"msg": f"Found {len(devices)} Kasa devices"}, room=sid)
-
-            saved_devices = []
-            for device in devices:
-                saved_devices.append({
-                    "ip": device["ip"],
-                    "alias": device["alias"],
-                    "model": device["model"],
-                })
-
-            settings = get_settings()
-            if "smart_home" not in settings:
-                settings["smart_home"] = {}
-            if "kasa" not in settings["smart_home"]:
-                settings["smart_home"]["kasa"] = {}
-            settings["smart_home"]["kasa"]["devices"] = saved_devices
-            save_settings()
-            print(f"[SERVER] Saved {len(saved_devices)} Kasa devices to settings (smart_home.kasa.devices).")
-        except Exception as e:
-            print(f"Error discovering kasa: {e}")
-            await sio.emit("error", {"msg": f"Kasa Discovery Failed: {str(e)}"}, room=sid)
-
-    @sio.event
-    async def list_kasa(sid, data=None):
-        _ = data
-        await sio.emit("kasa_devices", _serialize_kasa_devices(), room=sid)
-
-    @sio.event
     async def spotify_get_status(sid, data=None):
         _ = data
         spotify_manager = get_spotify_manager()
@@ -155,48 +110,6 @@ def register_system_frontend_handlers(
             await sio.emit("spotify_status", {"ok": True, "status": st}, room=sid)
         except Exception as e:
             await sio.emit("spotify_status", {"ok": False, "error": str(e)}, room=sid)
-
-    @sio.event
-    async def control_kasa(sid, data):
-        kasa_agent = get_kasa_agent()
-        if not kasa_agent:
-            await sio.emit("error", {"msg": "Kasa agent unavailable"}, room=sid)
-            return
-
-        ip = data.get("ip")
-        action = data.get("action")
-        print(f"Kasa Control: {ip} -> {action}")
-
-        try:
-            success = False
-            if action == "on":
-                success = await kasa_agent.turn_on(ip)
-            elif action == "off":
-                success = await kasa_agent.turn_off(ip)
-            elif action == "brightness":
-                success = await kasa_agent.set_brightness(ip, data.get("value"))
-            elif action == "color":
-                value = data.get("value", {})
-                h = value.get("h", 0)
-                s = value.get("s", 100)
-                v = value.get("v", 100)
-                success = await kasa_agent.set_color(ip, (h, s, v))
-
-            if success:
-                await sio.emit(
-                    "kasa_update",
-                    {
-                        "ip": ip,
-                        "is_on": True if action == "on" else (False if action == "off" else None),
-                        "brightness": data.get("value") if action == "brightness" else None,
-                    },
-                    room=sid,
-                )
-            else:
-                await sio.emit("error", {"msg": f"Failed to control device {ip}"}, room=sid)
-        except Exception as e:
-            print(f"Error controlling kasa: {e}")
-            await sio.emit("error", {"msg": f"Kasa Control Error: {str(e)}"}, room=sid)
 
     @sio.event
     async def kill_server(sid, data=None):

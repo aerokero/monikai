@@ -12,7 +12,6 @@ def register_system_http_routes(
     get_spotify_manager: Optional[Callable[[], Any]] = None,
     get_audio_loop: Optional[Callable[[], Any]] = None,
     get_minecraft_bot_manager: Optional[Callable[[], Any]] = None,
-    get_kasa_agent: Optional[Callable[[], Any]] = None,
     get_settings: Optional[Callable[[], Any]] = None,
     emit_to_frontend: Optional[Callable[..., Any]] = None,
 ):
@@ -40,12 +39,6 @@ def register_system_http_routes(
                 except Exception:
                     spotify_status = "error"
 
-        kasa_devices_count = 0
-        if get_kasa_agent:
-            ka = get_kasa_agent()
-            if ka:
-                kasa_devices_count = len(ka.serialize_devices())
-
         minecraft_status = "disabled"
         if get_minecraft_bot_manager:
             mb = get_minecraft_bot_manager()
@@ -68,7 +61,6 @@ def register_system_http_routes(
             "subsystems": {
                 "audio_loop": audio_status,
                 "spotify": spotify_status,
-                "smart_home_kasa_devices": kasa_devices_count,
                 "minecraft": minecraft_status,
             },
         }

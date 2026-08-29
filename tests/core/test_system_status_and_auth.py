@@ -27,7 +27,6 @@ def test_api_v1_status_diagnostics():
         get_spotify_manager=lambda: None,
         get_audio_loop=lambda: None,
         get_minecraft_bot_manager=lambda: None,
-        get_kasa_agent=lambda: None,
     )
     client = TestClient(app)
 

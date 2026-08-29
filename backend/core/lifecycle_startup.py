@@ -8,14 +8,7 @@ from ..integrations.games.minecraft_agent import MinecraftBotManager
 from .runtimes.minecraft_runtime import load_minecraft_bot_config
 
 
-async def initialize_smart_home_agents(kasa_agent, settings: dict):
-    kasa_devices = settings.get("smart_home", {}).get("kasa", {}).get("devices", []) or settings.get("kasa_devices", [])
-    if kasa_devices and kasa_agent:
-        print("[SERVER] Startup: Initializing Kasa Agent...")
-        await kasa_agent.initialize()
-    else:
-        kasa_agent = None
-
+async def initialize_smart_home_agents(settings: dict):
     hue_config = settings.get("smart_home", {}).get("hue", {})
     if hue_config.get("bridge_ip") and hue_config.get("api_key"):
         print("[SERVER] Startup: Initializing Hue Agent...")

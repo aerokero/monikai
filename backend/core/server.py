@@ -90,7 +90,6 @@ from .routers.models_http_router import register_models_http_routes
 from .routers.study_http_router import register_study_http_routes
 from .handlers.study_socket_handlers import register_study_socket_handlers
 from .runtimes.vn_scene_runtime import VnSceneRuntime
-from ..agents.kasa_agent import KasaAgent
 from ..vn.activity_runtime import SharedActivityRuntime
 MAIN_LOOP = None
 minecraft_bot_manager = None
@@ -155,7 +154,6 @@ async def lifespan(app: FastAPI):
         print(f"[SERVER DEBUG] Error checking loop: {e}")
 
     hue_agent, home_assistant_agent = await initialize_smart_home_agents(
-        kasa_agent,
         SETTINGS,
     )
 
@@ -234,7 +232,6 @@ async def lifespan(app: FastAPI):
             reminder_manager=reminder_manager,
             spotify_manager=spotify_manager,
             personality=personality_system,
-            kasa_agent=kasa_agent,
             hue_agent=hue_agent,
             home_assistant_agent=home_assistant_agent,
         )
@@ -264,7 +261,6 @@ async def lifespan(app: FastAPI):
             output_device_index=output_dev,
             require_wake_word=wake_req,
             gemini_voice=SETTINGS.get("gemini_voice", "Leda") or "Leda",
-            kasa_agent=kasa_agent,
             hue_agent=hue_agent,
             home_assistant_agent=home_assistant_agent,
             voice_light_feedback=voice_light_feedback,
@@ -282,7 +278,6 @@ async def lifespan(app: FastAPI):
         spotify_manager=spotify_manager,
         personality=personality_system,
         server_mic_listener=server_mic_listener,
-        kasa_agent=kasa_agent,
         hue_agent=hue_agent,
         home_assistant_agent=home_assistant_agent,
     )
@@ -352,7 +347,6 @@ register_system_http_routes(
     get_spotify_manager=lambda: spotify_manager,
     get_audio_loop=lambda: audio_loop,
     get_minecraft_bot_manager=lambda: minecraft_bot_manager,
-    get_kasa_agent=lambda: kasa_agent,
     get_settings=lambda: SETTINGS,
     emit_to_frontend=_emit_to_frontend,
 )
@@ -395,7 +389,6 @@ personality_system = None
 spotify_manager = None
 loop_task = None
 authenticator = None
-kasa_agent = KasaAgent()
 DATA_DIR = CONFIG_DATA_DIR
 STUDY_DIR = DATA_DIR / "study"
 last_start_params = {}
@@ -478,7 +471,6 @@ register_system_frontend_handlers(
     sio,
     get_audio_loop=_get_audio_loop,
     get_personality_system=_get_personality_system,
-    get_kasa_agent=lambda: kasa_agent,
     get_spotify_manager=_get_spotify_manager,
     get_settings=lambda: SETTINGS,
     save_settings=save_settings,
@@ -557,7 +549,6 @@ register_audio_lifecycle_handlers(
     vn_scene_runtime=VN_SCENE_RUNTIME,
     data_dir=DATA_DIR,
     monikai_module=monikai,
-    kasa_agent=kasa_agent,
     get_calendar_manager=_get_calendar_manager,
     get_reminder_manager=_get_reminder_manager,
     get_spotify_manager=_get_spotify_manager,
@@ -726,13 +717,6 @@ _apply_model_settings(
 )
 
 authenticator = None
-# Initialize Kasa agent with devices from new smart_home structure
-kasa_devices = SETTINGS.get("smart_home", {}).get("kasa", {}).get("devices", [])
-# Fallback to old location for backward compatibility
-if not kasa_devices:
-    kasa_devices = SETTINGS.get("kasa_devices", [])
-kasa_agent = KasaAgent(known_devices=kasa_devices)
-# tool_permissions is now SETTINGS["tool_permissions"]
 
 
 if __name__ == "__main__":

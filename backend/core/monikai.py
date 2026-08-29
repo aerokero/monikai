@@ -289,7 +289,6 @@ config = _build_base_live_config()
 pya = pyaudio.PyAudio() if pyaudio is not None else None
 
 from ..agents.web_agent import WebAgent
-from ..agents.kasa_agent import KasaAgent
 
 
 class LiveReconnectRequested(Exception):
@@ -572,7 +571,6 @@ class AudioLoop:
         self.session = None
 
         self.web_agent = WebAgent()
-        self.kasa_agent = kasa_agent if kasa_agent else KasaAgent()
 
         self.session_mode = False
         self.session_mode_kind = "auto"
