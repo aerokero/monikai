@@ -198,7 +198,6 @@ function initRailHoverLabels() {
 // Search settings
 
 
-const el = uiModule.el;
 
 // Default chat config — refreshed on every new-chat action so settings
 // changes take effect immediately (previously cached once at page load and

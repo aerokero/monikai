@@ -17,10 +17,7 @@ if str(_ODY_ROOT) not in sys.path:
     sys.path.insert(0, str(_ODY_ROOT))
 
 # Ensure persistent data dir and auth settings are configured
-os.environ.setdefault("ODYSSEUS_DATA_DIR", "/app/data/odysseus")
 os.environ["AUTH_ENABLED"] = "false"
-os.environ["LOCALHOST_BYPASS"] = "true"
-
 
 def init_and_register_odysseus_backend(app: FastAPI):
     """Initializes all Odysseus components and mounts full native routers."""

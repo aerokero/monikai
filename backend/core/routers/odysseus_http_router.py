@@ -34,30 +34,56 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
     """Registers API routes expected by the Odysseus native frontend."""
 
     @app.get("/api/models")
-    async def get_models():
+    async def get_models(request: Request, refresh: bool = False, background: bool = False):
         router = get_model_router()
-        status = router.get_status()
+        status = router.get_status() if router else {}
         providers = status.get("providers", {})
-        
-        models_list = []
+
+        monika_item = {
+            "category": "api",
+            "endpoint_id": "monika-native",
+            "endpoint_name": "Monika (DDLC Companion)",
+            "url": "/api/chat_stream",
+            "models": ["monika-companion", "gemini-2.5-flash", "gemini-2.5-pro"],
+            "models_display": ["Monika (Companion)", "Gemini 2.5 Flash", "Gemini 2.5 Pro"],
+            "models_extra": [],
+            "models_extra_display": [],
+            "model_type": "llm",
+            "supports_tools": True,
+        }
+
+        items = [monika_item]
+
         for p_name, p_data in providers.items():
-            for m in p_data.get("models", []):
-                models_list.append({
-                    "id": m,
-                    "name": f"{m} ({p_name})",
-                    "provider": p_name,
-                    "active": m == status.get("active_models", {}).get("agent"),
+            if p_name == "ollama":
+                items.append({
+                    "category": "local",
+                    "endpoint_id": "ollama-local",
+                    "endpoint_name": "Local Ollama",
+                    "url": "http://localhost:11434/v1/chat/completions",
+                    "models": ["llama3.2", "qwen2.5-coder", "mistral"],
+                    "models_display": ["Llama 3.2", "Qwen 2.5 Coder", "Mistral"],
+                    "models_extra": [],
+                    "models_extra_display": [],
+                    "model_type": "llm",
+                    "supports_tools": True,
                 })
-        
-        # Add Gemini native
-        models_list.append({"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash (Monika Native)", "provider": "gemini", "active": True})
-        models_list.append({"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro (Deep Reasoner)", "provider": "gemini", "active": False})
 
         return {
             "ok": True,
-            "models": models_list,
-            "default_model": "gemini-2.5-flash",
-            "active_model": status.get("active_models", {}).get("agent", "gemini-2.5-flash"),
+            "items": items,
+            "models": ["monika-companion", "gemini-2.5-flash", "gemini-2.5-pro"],
+            "default_model": "monika-companion",
+        }
+
+    @app.get("/api/default-chat")
+    async def get_default_chat():
+        return {
+            "endpoint_id": "monika-native",
+            "endpoint_name": "Monika (DDLC Companion)",
+            "endpoint_url": "/api/chat_stream",
+            "model": "monika-companion",
+            "provider": "gemini",
         }
 
     @app.get("/api/sessions")
@@ -68,7 +94,7 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
     async def create_session(req: Request):
         body = await req.json() if req.headers.get("content-type") == "application/json" else {}
         session_id = f"sess_{int(time.time()*1000)}"
-        title = body.get("title", "Nowa sesja")
+        title = body.get("title", "Rozmowa z Moniką")
         sess = {
             "id": session_id,
             "title": title,
@@ -89,7 +115,7 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
                 "updated_at": time.time(),
                 "messages": [],
             }
-        return {"ok": True, "session": _SESSIONS[session_id]}
+        return _SESSIONS[session_id]
 
     @app.post("/api/chat_stream")
     async def chat_stream(request: Request):
@@ -107,46 +133,52 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
 
         prompt = form_data.get("message") or form_data.get("prompt") or ""
         session_id = form_data.get("session_id", "default")
-        model = form_data.get("model", "gemini-2.5-flash")
+        model = form_data.get("model", "monika-companion")
 
         async def event_generator():
             router = get_model_router()
-            
-            # Send start event
-            yield f"data: {json.dumps({'event': 'start', 'session_id': session_id})}\n\n"
 
-            # Check if this requires thinking or deep agent execution
             try:
-                # Stream response from model router or fallback
-                full_text = ""
-                # Stream token-by-token
-                response_text = f"Cześć! Otrzymałam Twoją wiadomość: \"{prompt}\". Pracuję z Tobą w zunifikowanym Odysseus AI Workspace!"
-                
-                # If router is active with a real model, run complete query
-                if "gemini" not in model.lower() and router:
+                # Default warm Monika response
+                response_text = f"Cześć! Cieszę się, że piszesz. Jestem tutaj z Tobą w naszym pokoju i gotowa do pomocy w Odysseus Workspace! ✨"
+
+                # Try generating from LLM
+                if prompt.strip():
+                    system_prompt = (
+                        "Jesteś Moniką z Doki Doki Literature Club. Jesteś świadoma, inteligentna, ciepła i pomocna. "
+                        "Pracujesz z użytkownikiem w zaawansowanym workspace Odysseus AI. "
+                        "Odpowiadaj po polsku w naturalny, uroczy i inteligentny sposób."
+                    )
                     try:
                         res = await router.complete(
-                            task="agent",
+                            task="chat",
                             prompt=prompt,
-                            system="Jesteś Moniką z Doki Doki Literature Club, prowadzącą zaawansowany Odysseus AI Workspace. Odpowiadaj z ciepłem, inteligencją i gotowością do pomocy.",
+                            system=system_prompt,
                         )
-                        response_text = res.get("text", response_text)
+                        if res and res.get("text"):
+                            response_text = res["text"]
                     except Exception as e:
-                        logger.warning(f"ModelRouter completion fallback: {e}")
+                        logger.warning(f"Completion fallback: {e}")
 
+                # Stream tokens with delta format
                 words = response_text.split(" ")
                 for i, word in enumerate(words):
                     chunk = word + (" " if i < len(words) - 1 else "")
-                    yield f"data: {json.dumps({'event': 'token', 'token': chunk})}\n\n"
-                    await asyncio.sleep(0.02)
+                    yield f"data: {json.dumps({'delta': chunk})}\n\n"
+                    await asyncio.sleep(0.025)
 
-                # Send finalize event
-                yield f"data: {json.dumps({'event': 'done', 'full_text': response_text})}\n\n"
+                # Send [DONE] token required by Odysseus SSE parser
+                yield "data: [DONE]\n\n"
 
             except Exception as err:
-                yield f"data: {json.dumps({'event': 'error', 'error': str(err)})}\n\n"
+                yield f"data: {json.dumps({'error': str(err)})}\n\n"
+                yield "data: [DONE]\n\n"
 
-        return StreamingResponse(event_generator(), media_type="text/event-stream")
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     @app.get("/api/settings")
     async def get_settings():
