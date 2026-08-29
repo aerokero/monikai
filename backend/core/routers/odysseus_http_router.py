@@ -133,8 +133,12 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
             pass
 
         prompt = form_data.get("message") or form_data.get("prompt") or ""
-        session_id = form_data.get("session") or form_data.get("session_id", "default")
-        model = form_data.get("selected_model") or form_data.get("model", "monika-companion")
+        custom_system_prompt = form_data.get("custom_system_prompt") or form_data.get("system_prompt") or form_data.get("persona_prompt") or ""
+        temperature_raw = form_data.get("temperature") or form_data.get("temp") or 0.8
+        try:
+            temperature = float(temperature_raw)
+        except Exception:
+            temperature = 0.8
 
         async def event_generator():
             router = get_model_router()
@@ -144,7 +148,12 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
                 # Load Monika's authentic system prompt with lore, memories, and integrations
                 from backend.core.system_prompt import current_system_prompt
                 from backend.conversation.providers import GeminiTextProvider, TextGenerationRequest
-                system_prompt = current_system_prompt()
+                
+                base_prompt = current_system_prompt()
+                if custom_system_prompt and custom_system_prompt.strip():
+                    system_prompt = f"{base_prompt}\n\n[AKTYWNA PERSONA / INSTRUKCJA SPECJALNA]:\n{custom_system_prompt.strip()}"
+                else:
+                    system_prompt = base_prompt
 
                 # Fetch past messages from session for full conversational memory
                 past_context = ""
