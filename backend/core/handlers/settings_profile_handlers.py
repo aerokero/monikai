@@ -396,3 +396,34 @@ def register_settings_profile_handlers(
             await sio.emit("status", {"msg": f"Model provider for {task} set to {provider}"}, room=sid)
         else:
             await sio.emit("error", {"msg": f"Failed to set provider {provider}"}, room=sid)
+
+    @sio.on("mcp_get_servers")
+    async def handle_mcp_get_servers(sid, data=None):
+        _ = data
+        from backend.mcp.hub import get_mcp_hub
+        hub = get_mcp_hub()
+        if not hub._initialized:
+            await hub.initialize()
+        await sio.emit("mcp_servers_status", hub.get_status(), room=sid)
+
+    @sio.on("mcp_call_tool")
+    async def handle_mcp_call_tool(sid, data):
+        from backend.mcp.hub import get_mcp_hub
+        hub = get_mcp_hub()
+        if not hub._initialized:
+            await hub.initialize()
+        name = (data or {}).get("name", "")
+        args = (data or {}).get("arguments", {})
+        approved = bool((data or {}).get("approved", False))
+        res = await hub.call_tool(name, args, approved=approved)
+        await sio.emit(
+            "mcp_tool_result",
+            {
+                "tool": name,
+                "ok": not res.is_error,
+                "content": res.content,
+                "is_error": res.is_error,
+                "raw": res.raw,
+            },
+            room=sid,
+        )

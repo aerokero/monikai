@@ -76,16 +76,23 @@ const SettingsPanel = ({
   const [skillGlobalScope, setSkillGlobalScope] = useState(false);
 
   const [modelsStatus, setModelsStatus] = useState(null);
+  const [mcpStatus, setMcpStatus] = useState(null);
 
   useEffect(() => {
     if (!socket) return;
     socket.emit('get_models');
+    socket.emit('mcp_get_servers');
     const onModelsStatus = (data) => {
       setModelsStatus(data);
     };
+    const onMcpStatus = (data) => {
+      setMcpStatus(data);
+    };
     socket.on('models_status', onModelsStatus);
+    socket.on('mcp_servers_status', onMcpStatus);
     return () => {
       socket.off('models_status', onModelsStatus);
+      socket.off('mcp_servers_status', onMcpStatus);
     };
   }, [socket]);
 
@@ -197,6 +204,30 @@ const SettingsPanel = ({
             ]}
           />
         </FieldRow>
+
+        <SectionLabel className="pt-6">Model Context Protocol (MCP Hub)</SectionLabel>
+        <div className="space-y-2 pt-2">
+          {mcpStatus?.servers ? (
+            Object.values(mcpStatus.servers).map((srv) => (
+              <div key={srv.name} className="flex items-center justify-between p-3 rounded-lg bg-black/20 border border-white/10">
+                <div>
+                  <div className="font-semibold text-white/90 flex items-center gap-2">
+                    <span>{srv.name}</span>
+                    <Badge tone={srv.connected ? "green" : "red"}>
+                      {srv.connected ? "Aktywny" : "Rozłączony"}
+                    </Badge>
+                    <Badge tone="blue">{srv.transport}</Badge>
+                  </div>
+                  <div className="text-xs text-white/50 mt-1">
+                    Narzędzia ({srv.tool_count}): {srv.tools.map(t => t.name).join(', ')}
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="text-xs text-white/40 italic">Ładowanie rejestru MCP...</div>
+          )}
+        </div>
 
         <SectionLabel className="pt-6">{t('settings.devices_section')}</SectionLabel>
         <FieldRow title={t('settings.microphone')} description={t('settings.microphone_desc')}>
