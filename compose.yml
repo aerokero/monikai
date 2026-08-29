@@ -53,23 +53,7 @@ services:
 
     volumes:
       - /srv/fast/containers/monikai/data:/app/data
-      - /srv/fast/containers/monikai/backend/data:/app/backend/data
-      - /srv/fast/containers/monikai/backend/core/server.py:/app/backend/core/server.py:ro
-      - /srv/fast/containers/monikai/backend/core/monikai.py:/app/backend/core/monikai.py:ro
-      - /srv/fast/containers/monikai/backend/core/smart_home_tool_executor.py:/app/backend/core/smart_home_tool_executor.py:ro
-      - /srv/fast/containers/monikai/backend/core/settings_store.py:/app/backend/core/settings_store.py:ro
-      - /srv/fast/containers/monikai/backend/core/tool_definitions.py:/app/backend/core/tool_definitions.py:ro
-      - /srv/fast/containers/monikai/backend/conversation/routing.py:/app/backend/conversation/routing.py:ro
-      - /srv/fast/containers/monikai/backend/conversation/author.py:/app/backend/conversation/author.py:ro
-      - /srv/fast/containers/monikai/backend/conversation/tools.py:/app/backend/conversation/tools.py:ro
-      - /srv/fast/containers/monikai/backend/conversation/providers.py:/app/backend/conversation/providers.py:ro
-      - /srv/fast/containers/monikai/backend/llm/thinker.py:/app/backend/llm/thinker.py:ro
-      - /srv/fast/containers/monikai/backend/agents/telegram_bot.py:/app/backend/agents/telegram_bot.py:ro
-      - /srv/fast/containers/monikai/backend/agents/home_assistant_agent.py:/app/backend/agents/home_assistant_agent.py:ro
-      - /srv/fast/containers/monikai/backend/conversation/speech.py:/app/backend/conversation/speech.py:ro
-      - /srv/fast/containers/monikai/backend/core/lifecycle_telegram.py:/app/backend/core/lifecycle_telegram.py:ro
-      - /srv/fast/containers/monikai/backend/core/lifecycle_startup.py:/app/backend/core/lifecycle_startup.py:ro
-      - /srv/fast/containers/monikai/backend/audio/server_mic_listener.py:/app/backend/audio/server_mic_listener.py:ro
+      - /srv/fast/containers/monikai/backend:/app/backend:ro
 
     healthcheck:
       test:
