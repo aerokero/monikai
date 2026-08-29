@@ -264,7 +264,7 @@ const StudyShellPanel = ({
     setLoadError('');
     startSpinner();
 
-    const backendBase = import.meta.env?.DEV ? '' : 'http://localhost:8000';
+    const backendBase = (typeof window !== 'undefined' && window.location.origin && !window.location.origin.includes('5173')) ? '' : (localStorage.getItem('monikai_server_url') || 'http://localhost:8000');
     const url = `${backendBase}/study/file?path=${encodeURIComponent(activeFile.path)}`;
     let cancelled = false;
 
