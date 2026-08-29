@@ -235,18 +235,3 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
-
-    @app.get("/api/settings")
-    async def get_settings():
-        return {
-            "ok": True,
-            "theme": "dark",
-            "brand_color": "#e06c75",
-            "font": "sans",
-            "voice": "Leda",
-            "tts_provider": "gemini",
-        }
-
-    @app.post("/api/settings")
-    async def update_settings(req: Request):
-        return {"ok": True}

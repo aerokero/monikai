@@ -11,7 +11,8 @@
           "red": "#e06c75"
         },
         "bgEffectColor": "#9cdef2"
-      }
+      },
+      "tasks_opened": true
     }
   }
 }
