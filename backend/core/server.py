@@ -21,8 +21,8 @@ if sys.platform == 'win32':
 
 import socketio
 import uvicorn
-from fastapi import FastAPI, HTTPException, Response
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Response, Request
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -376,19 +376,40 @@ _DIST_DIR = Path(__file__).resolve().parent.parent.parent / "dist"
 if _STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static_odysseus")
 
-@app.get("/")
-async def index_root():
-    if _STATIC_DIR.exists() and (_STATIC_DIR / "index.html").exists():
-        return FileResponse(str(_STATIC_DIR / "index.html"))
+def serve_spa_page(request: Request):
+    index_file = _STATIC_DIR / "index.html"
+    if index_file.exists():
+        with open(index_file, "r", encoding="utf-8") as f:
+            html = f.read()
+        nonce = getattr(request.state, "csp_nonce", "")
+        html = html.replace("{{CSP_NONCE}}", nonce)
+        return HTMLResponse(html)
     elif _DIST_DIR.exists() and (_DIST_DIR / "index.html").exists():
         return FileResponse(str(_DIST_DIR / "index.html"))
-    return Response(
-        content="<h1>Odysseus + MonikAI Workspace</h1>",
-        media_type="text/html",
-    )
+    return Response(content="<h1>Odysseus + MonikAI Workspace</h1>", media_type="text/html")
 
-if _DIST_DIR.exists() and (_DIST_DIR / "index.html").exists():
-    app.mount("/vn", StaticFiles(directory=str(_DIST_DIR), html=True), name="static_vn")
+# SPA routes — all render the full application shell and let frontend JS handle active view
+SPA_ROUTES = [
+    "/",
+    "/notes",
+    "/calendar",
+    "/email",
+    "/tasks",
+    "/library",
+    "/memory",
+    "/gallery",
+    "/cookbook",
+    "/compare",
+    "/research",
+    "/theme",
+    "/settings",
+    "/vault",
+    "/contacts",
+    "/backgrounds",
+]
+
+for _route in SPA_ROUTES:
+    app.add_api_route(_route, serve_spa_page, methods=["GET"], include_in_schema=False)
 
 app.add_middleware(
     CORSMiddleware,
