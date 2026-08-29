@@ -3918,171 +3918,35 @@ function startOdysseusApp() {
       _updateStreamingSubmitButton();
       return;
     }
-    // Don't override if recording
     if (sendBtn.dataset.mode === 'recording') return;
-    const prevMode = sendBtn.dataset.mode || '';
-    const hasText = messageInput && messageInput.value.trim().length > 0;
-    const hasFiles = _hasAttachments();
-    let newMode;
-    if (!hasText && !hasFiles && _isSttEnabled()) {
-      clearTimeout(sendBtn._collapseTimer);
-      sendBtn.innerHTML = _micIcon;
-      sendBtn.title = 'Record voice';
-      newMode = 'mic';
-      sendBtn.classList.add('mic-mode');
-      sendBtn.classList.remove('newchat-mode', 'newchat-expanded');
-    } else if (!hasText && !hasFiles && !_isSttEnabled()) {
-      clearTimeout(sendBtn._collapseTimer);
-      // Group chat: always show send button, never newchat mode
-      if (groupModule && groupModule.isActive()) {
-        sendBtn.innerHTML = _sendIcon;
-        sendBtn.title = 'Send to group';
-        newMode = 'idle';
-        sendBtn.classList.remove('mic-mode', 'newchat-mode', 'newchat-expanded');
-      } else {
-      // Check if we're already on a fresh empty session (welcome screen visible)
-      const isEmptySession = document.getElementById('chat-container')?.classList.contains('welcome-active');
-      if (isEmptySession) {
-        // Already on new chat — show arrow in muted style (ready to type)
-        sendBtn.innerHTML = _sendIcon;
-        sendBtn.title = 'Send message';
-        newMode = 'idle';
-        sendBtn.classList.add('newchat-mode'); // muted gray style
-        sendBtn.classList.remove('mic-mode', 'newchat-expanded');
-        clearTimeout(sendBtn._expandTimer);
-      } else {
-        sendBtn.innerHTML = _newChatIcon + '<span class="send-btn-label">+ New</span>';
-        sendBtn.title = 'New chat';
-        newMode = 'newchat';
-        sendBtn.classList.add('newchat-mode');
-        sendBtn.classList.remove('mic-mode');
-        // The button stays a 32px compact icon (no auto-expand to label —
-        // the "+ New" label inside is for screen readers only; sighted users
-        // see the spinning + on hover + the title tooltip).
-        clearTimeout(sendBtn._expandTimer);
-        sendBtn.classList.remove('newchat-expanded');
-      }
-      } // close group-else
-    } else {
-      newMode = 'send';
-      clearTimeout(sendBtn._expandTimer);
-      const wasExpanded = sendBtn.classList.contains('newchat-expanded');
-      const wasNewchat = prevMode === 'newchat' || prevMode === 'mic';
-      if (wasExpanded || wasNewchat) {
-        // Collapse pill if expanded, then spin arrow in (same as + spin-in)
-        if (wasExpanded) sendBtn.classList.remove('newchat-expanded');
-        const delay = wasExpanded ? 300 : 0;
-        setTimeout(() => {
-          if (sendBtn.dataset.mode !== 'send') return;
-          sendBtn.innerHTML = _sendIcon;
-          sendBtn.title = 'Send message';
-          sendBtn.classList.remove('mic-mode', 'newchat-mode', 'anim-spin-swap');
-          sendBtn.classList.add('anim-spin');
-          sendBtn.addEventListener('animationend', () => sendBtn.classList.remove('anim-spin'), { once: true });
-        }, delay);
-      } else {
-        sendBtn.innerHTML = _sendIcon;
-        sendBtn.title = 'Send message';
-        sendBtn.classList.remove('mic-mode', 'newchat-mode', 'newchat-expanded', 'anim-spin', 'anim-launch', 'anim-land');
-      }
-    }
-    // Animate icon spin — when switching TO newchat or mic (the + or mic
-    // appearing). The previous `prevMode && ...` guard skipped this after
-    // streaming ended (dataset.mode is reset to '' there, an empty falsy
-    // string), which let the lingering anim-land class from the stop icon's
-    // entry replay on the +, making it look like the + comes from below.
-    // Never animate into send mode (arrow) — it should just appear instantly.
-    if (newMode !== prevMode && (newMode === 'newchat' || newMode === 'mic')) {
-      if (!sendBtn.classList.contains('anim-spin')) {
-        sendBtn.classList.remove('anim-launch', 'anim-land');
-        sendBtn.classList.add('anim-spin');
-        sendBtn.addEventListener('animationend', () => sendBtn.classList.remove('anim-spin'), { once: true });
-      }
-    }
-    sendBtn.dataset.mode = newMode;
+
+    sendBtn.innerHTML = _sendIcon;
+    sendBtn.title = 'Send message (Enter)';
+    sendBtn.dataset.mode = 'send';
+    sendBtn.classList.remove('mic-mode', 'newchat-mode', 'newchat-expanded');
   }
 
   if (sendBtn) {
     sendBtn.addEventListener('click', (e) => {
       e.preventDefault();
-
-      // If recording, stop recording
       if (sendBtn.dataset.mode === 'recording' || voiceRecorderModule.getIsRecording()) {
         voiceRecorderModule.stopRecording();
         return;
       }
-
-      const hasText = messageInput && messageInput.value.trim().length > 0;
-      const hasFiles = _hasAttachments();
-
-      if (sendBtn.dataset.mode === 'streaming') {
-        if (hasText) window.__odysseusQueueStreamingSubmit = Date.now();
-        handleSubmit(e);
-        return;
-      }
-
-      // New chat mode — empty input, no attachments, no STT
-      if (!hasText && !hasFiles && sendBtn.dataset.mode === 'newchat') {
-        if (sessionModule) {
-          const sessions = sessionModule.getSessions();
-          const currentId = sessionModule.getCurrentSessionId();
-          const current = sessions.find(s => s.id === currentId);
-          if (current && current.endpoint_url && current.model) {
-            sessionModule.createDirectChat(current.endpoint_url, current.model, current.endpoint_id);
-          } else {
-            // Fallback to rail button
-            const railNew = el('rail-new-session');
-            if (railNew) railNew.click();
-          }
-        }
-        return;
-      }
-
-      // If input is empty and STT is enabled, start recording
-      if (!hasText && !hasFiles && _isSttEnabled()) {
-        sendBtn.innerHTML = _stopIcon;
-        sendBtn.title = 'Stop recording';
-        sendBtn.dataset.mode = 'recording';
-        sendBtn.classList.add('recording');
-        voiceRecorderModule.startRecording(
-          (audioFile) => fileHandlerModule.addFiles([audioFile]),
-          uiModule.showToast,
-          uiModule.showError
-        );
-        return;
-      }
-
-      // Otherwise, send message
       handleSubmit(e);
     });
   }
 
-  // Enter to send (shift+enter for newline), or new chat when empty
+  // Enter to send (shift+enter for newline)
   if (messageInput) {
     messageInput.addEventListener('keydown', (e) => {
       if (e.defaultPrevented) return;
-      const isMobile = _isMobileChatInput();
-
-      if (_shouldQueueFromMobileEnter(e, messageInput) || (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !isMobile)) {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
-        // Flush the debounced icon update so dataset.mode reflects the current
-        // text state. Without this, a fast type-and-Enter would still see the
-        // stale 'newchat' mode and open a new chat instead of sending.
-        try { _updateSendBtnIcon(); } catch {}
-        if (sendBtn && sendBtn.dataset.mode === 'newchat') {
-          const railNew = el('rail-new-session');
-          if (railNew) railNew.click();
-          return;
-        }
-        if (_isForegroundChatBusy() && messageInput.value && messageInput.value.trim()) {
-          if (chatModule && chatModule.queueStreamingComposerRequest && chatModule.queueStreamingComposerRequest()) {
-            return;
-          }
-          window.__odysseusQueueStreamingSubmit = Date.now();
-        }
         _submitChatFormDirect(document.getElementById('chat-form'));
       }
     });
+  }
   }
 
   // Toggle mic/send icon on input change + hide model picker after enough text
