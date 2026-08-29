@@ -44,6 +44,11 @@ data/spotify_tokens.json
 data/spotify_oauth_state.json
 # Vosk offline STT models
 data/vosk-model/
+# Workspace Documents, Email drafts, Research Reports
+data/documents/
+data/email/
+data/research_reports/
+data/mcp_servers.json
 
 # Monika After Story Directory (Large game files)
 Monika After Story/

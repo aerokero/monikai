@@ -45,11 +45,18 @@ export const PANELS = {
     order: 3,
     ariaLabel: 'Notes workspace',
   },
+  docs: {
+    id: 'docs',
+    name: 'Docs AI',
+    icon: 'FileText',
+    order: 4,
+    ariaLabel: 'Workspace documents and AI diffs',
+  },
   research: {
     id: 'research',
     name: 'Deep Research',
     icon: 'Search',
-    order: 4,
+    order: 5,
     ariaLabel: 'Autonomous deep web research',
   },
   calendar: {

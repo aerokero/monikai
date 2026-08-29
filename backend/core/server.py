@@ -89,6 +89,7 @@ from .routers.system_http_router import register_system_http_routes
 from .routers.models_http_router import register_models_http_routes
 from .routers.mcp_http_router import register_mcp_http_routes
 from .routers.research_http_router import register_research_http_routes
+from .routers.workspace_http_router import register_workspace_http_routes
 from .routers.study_http_router import register_study_http_routes
 from .handlers.study_socket_handlers import register_study_socket_handlers
 from .runtimes.vn_scene_runtime import VnSceneRuntime
@@ -356,6 +357,7 @@ register_system_http_routes(
 register_models_http_routes(app)
 register_mcp_http_routes(app)
 register_research_http_routes(app, emit_to_frontend=_emit_to_frontend)
+register_workspace_http_routes(app, emit_to_frontend=_emit_to_frontend)
 
 app.add_middleware(
     CORSMiddleware,

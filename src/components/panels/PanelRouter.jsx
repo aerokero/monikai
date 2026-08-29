@@ -16,6 +16,7 @@ import SettingsPanel from './SettingsPanel';
 import ConversationsShellPanel from './ConversationsShellPanel';
 import WorldsShellPanel from './WorldsShellPanel';
 import ResearchShellPanel from './ResearchShellPanel';
+import DocsShellPanel from './DocsShellPanel';
 
 const PANEL_COMPONENTS = {
   chat: ChatPanel,
@@ -23,6 +24,7 @@ const PANEL_COMPONENTS = {
   worlds: WorldsShellPanel,
   study: StudyShellPanel,
   notes: NotesShellPanel,
+  docs: DocsShellPanel,
   research: ResearchShellPanel,
   calendar: CalendarShellPanel,
   profile: ProfileShellPanel,
@@ -131,6 +133,7 @@ const PanelRouter = ({
         };
       case 'profile':
       case 'research':
+      case 'docs':
         return {
           socket,
         };
