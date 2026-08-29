@@ -476,16 +476,35 @@ list_smart_devices_tool = {
 
 control_light_tool = {
     "name": "control_light",
-    "description": "Controls a smart light device.",
+    "description": "Controls smart home devices (lights, lamps, switches).",
     "parameters": {
         "type": "OBJECT",
         "properties": {
-            "target": {"type": "STRING", "description": "The IP address of the device to control. Always prefer the IP address over the alias for reliability."},
+            "target": {"type": "STRING", "description": "The target device, room or entity name (e.g. 'salon', 'biurko', 'lampa', 'light.salon', or IP address)."},
             "action": {"type": "STRING", "description": "The action to perform: 'turn_on', 'turn_off', or 'set'."},
             "brightness": {"type": "INTEGER", "description": "Optional brightness level (0-100)."},
             "color": {"type": "STRING", "description": "Optional color name (e.g., 'red', 'cool white') or 'warm'."},
         },
         "required": ["target", "action"],
+    },
+}
+
+manage_shopping_list_tool = {
+    "name": "manage_shopping_list",
+    "description": "Read, add, or remove items from the shopping list (lista zakupów) in Home Assistant. Use action='get' to see current items, action='add' with item='...' to add an item, and action='remove' with item='...' to remove an item.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "action": {
+                "type": "STRING",
+                "description": "Action to perform: 'get' (lists current items), 'add' (adds an item), or 'remove' (removes an item).",
+            },
+            "item": {
+                "type": "STRING",
+                "description": "The item name to add or remove (e.g. 'mleko', 'chleb', 'jajka'). Not needed for 'get'.",
+            },
+        },
+        "required": ["action"],
     },
 }
 
@@ -589,6 +608,7 @@ tools = [
             run_skill_command_tool,
             list_smart_devices_tool,
             control_light_tool,
+            manage_shopping_list_tool,
             get_time_context_tool,
             create_reminder_tool,
             list_reminders_tool,

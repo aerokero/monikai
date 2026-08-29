@@ -98,6 +98,9 @@ class TelegramChatSession:
         reminder_manager=None,
         spotify_manager=None,
         personality=None,
+        kasa_agent=None,
+        hue_agent=None,
+        home_assistant_agent=None,
     ):
         self.chat_id = int(chat_id)
         self.user_label = str(user_label or f"telegram:{chat_id}")
@@ -106,6 +109,9 @@ class TelegramChatSession:
         self.reminder_manager = reminder_manager
         self.spotify_manager = spotify_manager
         self.personality = personality
+        self.kasa_agent = kasa_agent
+        self.hue_agent = hue_agent
+        self.home_assistant_agent = home_assistant_agent
         self.voice_mode = "auto"
         self.audio_loop = None
         self.run_task = None
@@ -126,6 +132,9 @@ class TelegramChatSession:
             auto_allow_tools_without_confirmation=True,
             session_stream_channel="telegram",
         )
+        self.audio_loop.kasa_agent = self.kasa_agent
+        self.audio_loop.hue_agent = self.hue_agent
+        self.audio_loop.home_assistant_agent = self.home_assistant_agent
         self.audio_loop.update_permissions((self.settings_getter() or {}).get("tool_permissions") or {})
         self.run_task = asyncio.create_task(
             self.audio_loop.run(
@@ -500,6 +509,9 @@ class TelegramBotService:
         spotify_manager=None,
         personality=None,
         server_mic_listener=None,
+        kasa_agent=None,
+        hue_agent=None,
+        home_assistant_agent=None,
         allowed_chat_id: Optional[int] = None,
         allowed_chat_ids: Optional[List[int]] = None,
         allow_groups: bool = False,
@@ -512,6 +524,9 @@ class TelegramBotService:
         self.spotify_manager = spotify_manager
         self.personality = personality
         self.server_mic_listener = server_mic_listener
+        self.kasa_agent = kasa_agent
+        self.hue_agent = hue_agent
+        self.home_assistant_agent = home_assistant_agent
         normalized_ids = set()
         if allowed_chat_id is not None:
             normalized_ids.add(int(allowed_chat_id))
@@ -538,6 +553,9 @@ class TelegramBotService:
         spotify_manager=None,
         personality=None,
         server_mic_listener=None,
+        kasa_agent=None,
+        hue_agent=None,
+        home_assistant_agent=None,
     ):
         token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
         if not token:
@@ -567,6 +585,9 @@ class TelegramBotService:
             spotify_manager=spotify_manager,
             personality=personality,
             server_mic_listener=server_mic_listener,
+            kasa_agent=kasa_agent,
+            hue_agent=hue_agent,
+            home_assistant_agent=home_assistant_agent,
             allowed_chat_id=allowed_chat_id,
             allowed_chat_ids=allowed_chat_ids,
             allow_groups=_env_flag("TELEGRAM_ALLOW_GROUPS", False),
@@ -889,6 +910,9 @@ class TelegramBotService:
                 reminder_manager=self.reminder_manager,
                 spotify_manager=self.spotify_manager,
                 personality=self.personality,
+                kasa_agent=self.kasa_agent,
+                hue_agent=self.hue_agent,
+                home_assistant_agent=self.home_assistant_agent,
             )
             self._sessions[chat_id] = session
             return session

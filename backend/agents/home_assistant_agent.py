@@ -30,7 +30,7 @@ class HomeAssistantAgent(BaseSmartHomeAgent):
         super().__init__(name="home_assistant")
         self.ha_url = ha_url.rstrip("/") if ha_url else None
         self.ha_token = ha_token
-        self.entities_filter = entities_filter or ["light.*", "switch.*"]
+        self.entities_filter = entities_filter or ["light.*", "switch.*", "scene.*"]
         self.session = None
         self.entities = {}  # Maps entity_id -> entity_state
         self._initialized = False
@@ -93,7 +93,7 @@ class HomeAssistantAgent(BaseSmartHomeAgent):
                 "Authorization": f"Bearer {self.ha_token}",
                 "Content-Type": "application/json"
             }
-            async with session.post(url, json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+            async with session.post(url, json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 if resp.status in (200, 201):
                     return True
                 else:
@@ -142,7 +142,7 @@ class HomeAssistantAgent(BaseSmartHomeAgent):
             return False
         
         domain = entity_id.split(".")[0]
-        service = f"{domain}/turn_on" if domain in ("light", "switch") else None
+        service = f"{domain}/turn_on" if domain in ("light", "switch", "scene") else None
         
         if not service:
             print(f"[HA Agent] Cannot control domain '{domain}' with turn_on")
@@ -156,18 +156,30 @@ class HomeAssistantAgent(BaseSmartHomeAgent):
         return success
 
     async def turn_off(self, target: str) -> bool:
-        """Turn off an entity (light or switch)."""
+        """Turn off an entity (light or switch) or activate off-scene."""
+        target_norm = self._normalize_text(target)
+        if any(w in target_norm for w in ["wszystk", "all", "every"]):
+            # Turn off all lights in HA and activate all-off scene
+            await self._post("/services/light/turn_off", {"entity_id": "all"})
+            if "scene.wszystko_wylaczone" in self.entities:
+                await self._post("/services/scene/turn_on", {"entity_id": "scene.wszystko_wylaczone"})
+            if "light.wszystkie_swiatla" in self.entities:
+                await self._post("/services/light/turn_off", {"entity_id": "light.wszystkie_swiatla"})
+            print(f"[HA Agent] Turned off all lights and devices: {target}")
+            return True
+
         entity_id = await self._resolve_entity_id(target)
         if not entity_id:
             print(f"[HA Agent] Entity not found: {target}")
             return False
         
         domain = entity_id.split(".")[0]
-        service = f"{domain}/turn_off" if domain in ("light", "switch") else None
-        
-        if not service:
-            print(f"[HA Agent] Cannot control domain '{domain}' with turn_off")
-            return False
+        if domain == "scene":
+            service = "scene/turn_on"
+        elif domain in ("light", "switch"):
+            service = f"{domain}/turn_off"
+        else:
+            service = "homeassistant/turn_off"
         
         success = await self._post(f"/services/{service}", {"entity_id": entity_id})
         if success:
@@ -188,16 +200,25 @@ class HomeAssistantAgent(BaseSmartHomeAgent):
             print(f"[HA Agent] Only light entities support brightness")
             return False
         
+        if entity_id == "light.sunset_lamp":
+            target_step = max(1, min(8, int(round((brightness / 100.0) * 7.0) + 1)))
+            success = await self._post("/services/script/set_sunset_lamp_brightness_step", {
+                "target_step": target_step
+            })
+            if success:
+                print(f"[HA Agent] Set Sunset lamp brightness step to {target_step}/8 ({brightness}%)")
+            return success
+
         # HA uses 0-255 for brightness
         ha_brightness = max(1, int((brightness / 100.0) * 255))
-        
         success = await self._post("/services/light/turn_on", {
             "entity_id": entity_id,
             "brightness": ha_brightness
         })
-        
-        if success:
-            print(f"[HA Agent] Set brightness to {brightness}%: {target}")
+        if success and entity_id in self.entities:
+            self.entities[entity_id]["state"] = "on"
+            if "attributes" in self.entities[entity_id]:
+                self.entities[entity_id]["attributes"]["brightness"] = ha_brightness
         return success
 
     async def set_color(self, target: str, color_input: Union[str, Tuple[int, int, int]]) -> bool:
@@ -287,20 +308,174 @@ class HomeAssistantAgent(BaseSmartHomeAgent):
             return 6500
         return max(2000, min(6500, int(1000000 / mirek)))
 
+    def _normalize_text(self, text: str) -> str:
+        """Remove Polish diacritics, punctuation, and extra whitespace for robust matching."""
+        text = str(text or "").lower().strip()
+        replacements = {
+            'ą': 'a', 'ć': 'c', 'ę': 'e', 'ł': 'l', 'ń': 'n',
+            'ó': 'o', 'ś': 's', 'ź': 'z', 'ż': 'z'
+        }
+        for k, v in replacements.items():
+            text = text.replace(k, v)
+        return "".join(c for c in text if c.isalnum() or c.isspace()).strip()
+
+    def _stem_polish(self, word: str) -> str:
+        """Strip standard Polish grammatical inflection endings."""
+        w = self._normalize_text(word)
+        for end in (
+            'iach', 'iami', 'iego', 'iemu', 'iej', 'ych', 'ymi',
+            'ach', 'ami', 'iem', 'iom', 'ow', 'ce', 'ci', 'ka', 'ke',
+            'ki', 'ko', 'ku', 'na', 'ne', 'ny', 'ni', 'no', 'nu',
+            'ia', 'ie', 'io', 'iu', 'em', 'ym', 'im', 'ej', 'om', 'am',
+            'a', 'e', 'y', 'i', 'o', 'u'
+        ):
+            if len(w) > 3 and w.endswith(end):
+                return w[:-len(end)]
+        return w
+
     async def _resolve_entity_id(self, target: str) -> Optional[str]:
-        """Resolve target name/id to entity_id."""
-        target = str(target or "").strip().lower()
-        
-        # Direct ID match
-        if target in self.entities:
-            return target
-        
-        # Friendly name match
+        """Resolve target name/id to entity_id with exact, normalized, stem, bilingual, and fuzzy matching."""
+        target_raw = str(target or "").strip().lower()
+        if not target_raw:
+            return None
+
+        # Auto-refresh entities if empty
+        if not self.entities:
+            await self.initialize()
+
+        # 0. Bilingual EN -> PL synonym mapping
+        bilingual_map = {
+            "kitchen": "kuchnia",
+            "cook": "gotowanie",
+            "cooking": "gotowanie",
+            "living room": "salon",
+            "livingroom": "salon",
+            "living": "salon",
+            "desk": "biurko",
+            "under desk": "pod biurkiem",
+            "couch": "kanapa",
+            "sofa": "kanapa",
+            "behind couch": "za kanapa",
+            "all": "wszystkie swiatla",
+            "all lights": "wszystkie swiatla",
+            "every light": "wszystkie swiatla",
+            "everywhere": "wszystkie swiatla",
+            "lights": "wszystkie swiatla",
+            "relax": "relaks",
+            "relaxation": "relaks",
+            "evening": "relaks i wieczor",
+            "movie": "kino i film",
+            "cinema": "kino i film",
+            "film": "kino i film",
+            "kino": "kino i film",
+            "tryb kina": "kino i film",
+            "tryb kinowy": "kino i film",
+            "projector": "projektor",
+            "rzutnik": "projektor",
+            "chromecast": "chromecast",
+            "circadian": "switch.swiatlo_cyrkadowe_adaptive_lighting_swiatlo_cyrkadowe",
+            "adaptive": "switch.swiatlo_cyrkadowe_adaptive_lighting_swiatlo_cyrkadowe",
+            "adaptive lighting": "switch.swiatlo_cyrkadowe_adaptive_lighting_swiatlo_cyrkadowe",
+            "cyrkadowe": "switch.swiatlo_cyrkadowe_adaptive_lighting_swiatlo_cyrkadowe",
+            "swiatlo cyrkadowe": "switch.swiatlo_cyrkadowe_adaptive_lighting_swiatlo_cyrkadowe",
+            "sleep mode": "switch.adaptive_lighting_swiatlo_cyrkadowe_adaptive_lighting_sleep_mode_swiatlo_cyrkadowe",
+            "sunset lamp": "light.sunset_lamp",
+            "lampa sunset": "light.sunset_lamp",
+            "sunset": "light.sunset_lamp",
+            "lampa zachodu slonca": "light.sunset_lamp",
+            "zachod slonca": "light.sunset_lamp",
+            "default": "scene.default_salon",
+            "domyslna": "scene.default_salon",
+            "domyslne": "scene.default_salon",
+            "domyslny": "scene.default_salon",
+            "standard": "scene.default_salon",
+            "standardowe": "scene.default_salon",
+            "swiatlo w salonie": "scene.default_salon",
+            "work": "praca i skupienie",
+            "focus": "praca i skupienie",
+            "night": "tryb nocny",
+            "night mode": "tryb nocny",
+            "everything off": "wszystko wylaczone",
+            "all off": "wszystko wylaczone",
+        }
+        mapped_target = bilingual_map.get(target_raw, target_raw)
+
+        # 1. Direct ID match
+        if target_raw in self.entities:
+            return target_raw
+        if mapped_target in self.entities:
+            return mapped_target
+
+        # 2. Friendly name exact match
         for entity_id, entity_state in self.entities.items():
-            friendly_name = entity_state.get("attributes", {}).get("friendly_name", "").lower()
-            if friendly_name == target:
+            friendly_name = str(entity_state.get("attributes", {}).get("friendly_name", "")).lower()
+            if friendly_name in (target_raw, mapped_target):
                 return entity_id
-        
+
+        # 3. Normalized match (without Polish diacritics)
+        target_norm = self._normalize_text(mapped_target)
+        norm_map = {}
+        for entity_id, entity_state in self.entities.items():
+            friendly_name = str(entity_state.get("attributes", {}).get("friendly_name", "")).lower()
+            fn_norm = self._normalize_text(friendly_name)
+            id_norm = self._normalize_text(entity_id.replace("_", " ").replace(".", " "))
+            if fn_norm == target_norm or id_norm == target_norm:
+                return entity_id
+            norm_map[entity_id] = (fn_norm, id_norm, friendly_name)
+
+        # 4. Polish Stemming & Keyword Overlap
+        stop_words = {
+            'w', 'na', 'pod', 'za', 'do', 'i', 'o', 'ze', 'z', 'swiatlo', 'swiatla',
+            'zarowka', 'zarowki', 'wlacz', 'zgas', 'wylacz', 'prosze', 'scena', 'scene',
+            'sceny', 'scenie', 'tryb', 'trybu', 'trybie', 'mode', 'scene'
+        }
+        target_stems = [
+            self._stem_polish(w)
+            for w in target_norm.split()
+            if len(w) >= 3 and self._normalize_text(w) not in stop_words
+        ]
+        if not target_stems:
+            target_stems = [self._stem_polish(w) for w in target_norm.split() if len(w) >= 3]
+
+        best_match = None
+        best_match_score = 0
+
+        for entity_id, (fn_norm, id_norm, friendly_name) in norm_map.items():
+            all_words = (id_norm + " " + fn_norm).split()
+            entity_stems = [self._stem_polish(w) for w in all_words if len(w) >= 3]
+
+            matches = 0
+            for ts in target_stems:
+                if any(ts == es or (len(ts) >= 3 and ts in es) or (len(es) >= 3 and es in ts) for es in entity_stems):
+                    matches += 1
+
+            if matches > 0:
+                # Prefer lights when target mentions light/światło, prefer exact entity domain
+                score = matches * 10
+                if entity_id.startswith("light.") and "zarowka" in id_norm:
+                    score += 2
+                if "child_lock" in entity_id:
+                    score -= 15
+                if score > best_match_score:
+                    best_match_score = score
+                    best_match = entity_id
+
+        if best_match:
+            return best_match
+
+        # 5. Fuzzy matching with difflib
+        import difflib
+        all_candidates = {}
+        for entity_id, (fn_norm, id_norm, friendly_name) in norm_map.items():
+            all_candidates[fn_norm] = entity_id
+            all_candidates[id_norm] = entity_id
+
+        close = difflib.get_close_matches(target_norm, list(all_candidates.keys()), n=1, cutoff=0.5)
+        if close:
+            return all_candidates[close[0]]
+
+        return None
+
         return None
 
     def serialize_devices(self) -> List[Dict[str, Any]]:
@@ -373,7 +548,91 @@ class HomeAssistantAgent(BaseSmartHomeAgent):
         s = 0 if max_c == 0 else (dc / max_c) * 100
         v = max_c * 100
         
-        return (h % 360, s, v)
+    async def get_shopping_list(self) -> List[str]:
+        """Get active items from Home Assistant shopping list (todo.shopping_list)."""
+        try:
+            session = await self._ensure_session()
+            url = f"{self.ha_url}/api/services/todo/get_items?return_response=true"
+            headers = {
+                "Authorization": f"Bearer {self.ha_token}",
+                "Content-Type": "application/json"
+            }
+            async with session.post(url, json={"entity_id": "todo.shopping_list"}, headers=headers, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                if resp.status in (200, 201):
+                    data = await resp.json()
+                    items_data = data.get("service_response", {}).get("todo.shopping_list", {}).get("items", [])
+                    return [it.get("summary", "") for it in items_data if it.get("status") == "needs_action" and it.get("summary")]
+        except Exception as exc:
+            print(f"[HA Agent] Error getting shopping list: {exc}")
+        return []
+
+    async def add_shopping_item(self, item: str) -> bool:
+        """Add item to shopping list."""
+        if not item:
+            return False
+        return await self._post("/services/todo/add_item", {"entity_id": "todo.shopping_list", "item": str(item).strip()})
+
+    async def remove_shopping_item(self, item: str) -> bool:
+        """Remove item from shopping list."""
+        if not item:
+            return False
+        return await self._post("/services/todo/remove_item", {"entity_id": "todo.shopping_list", "item": str(item).strip()})
+
+    async def get_entity_raw_state(self, entity_id: str) -> Optional[Dict[str, Any]]:
+        """Get live state and attributes of an entity directly from HA."""
+        resolved = await self._resolve_entity_id(entity_id) or entity_id
+        data = await self._get(f"/states/{resolved}")
+        return data if isinstance(data, dict) else None
+
+    async def set_light_state(
+        self,
+        target: str,
+        *,
+        rgb_color: Optional[Tuple[int, int, int]] = None,
+        brightness: Optional[int] = None,
+        transition: Optional[float] = None,
+        color_temp_kelvin: Optional[int] = None,
+    ) -> bool:
+        """Fine-grained light control with optional transitions and colors."""
+        entity_id = await self._resolve_entity_id(target) or target
+        payload: Dict[str, Any] = {"entity_id": entity_id}
+        if rgb_color is not None:
+            payload["rgb_color"] = list(rgb_color)
+        if brightness is not None:
+            # Clamped 1-255
+            payload["brightness"] = max(1, min(255, int(brightness)))
+        if transition is not None and transition > 0:
+            payload["transition"] = float(transition)
+        if color_temp_kelvin is not None:
+            payload["color_temp_kelvin"] = int(color_temp_kelvin)
+
+        return await self._post("/services/light/turn_on", payload)
+
+    async def restore_entity_state(self, entity_id: str, saved_state: Dict[str, Any]) -> bool:
+        """Restore light/switch to a previously captured state."""
+        resolved = await self._resolve_entity_id(entity_id) or entity_id
+        if not saved_state:
+            return False
+
+        state_val = str(saved_state.get("state", "off")).lower()
+        if state_val == "off":
+            domain = resolved.split(".")[0]
+            service = f"{domain}/turn_off" if domain in ("light", "switch") else "homeassistant/turn_off"
+            return await self._post(f"/services/{service}", {"entity_id": resolved, "transition": 1.0} if domain == "light" else {"entity_id": resolved})
+
+        # If it was on, restore attributes
+        attrs = saved_state.get("attributes", {})
+        payload: Dict[str, Any] = {"entity_id": resolved, "transition": 1.0}
+        if "brightness" in attrs and attrs["brightness"] is not None:
+            payload["brightness"] = attrs["brightness"]
+        if "color_temp_kelvin" in attrs and attrs["color_temp_kelvin"] is not None:
+            payload["color_temp_kelvin"] = attrs["color_temp_kelvin"]
+        elif "rgb_color" in attrs and attrs["rgb_color"] is not None:
+            payload["rgb_color"] = attrs["rgb_color"]
+        elif "xy_color" in attrs and attrs["xy_color"] is not None:
+            payload["xy_color"] = attrs["xy_color"]
+
+        return await self._post("/services/light/turn_on", payload)
 
     async def close(self):
         """Clean up aiohttp session."""

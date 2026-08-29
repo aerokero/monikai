@@ -42,7 +42,39 @@ class SmartHomeToolExecutor:
                 )
                 return ConversationToolResult(request.name, rendered)
 
-            if request.name != "control_light":
+            if request.name == "manage_shopping_list":
+                ha_agent = next(
+                    (a for a in self._agents if getattr(a, "platform", "") == "home_assistant" or "homeassistant" in type(a).__name__.lower()),
+                    None,
+                )
+                if not ha_agent:
+                    return ConversationToolResult(request.name, "Integracja Home Assistant jest niedostępna.", ok=False)
+                
+                args = request.arguments
+                action = str(args.get("action") or "get").lower().strip()
+                item = str(args.get("item") or "").strip()
+
+                if action in ("get", "list", "show", "read", "view"):
+                    items = await ha_agent.get_shopping_list()
+                    if not items:
+                        return ConversationToolResult(request.name, "Lista zakupów w Home Assistant jest obecnie pusta.")
+                    return ConversationToolResult(request.name, "Lista zakupów w Home Assistant:\n- " + "\n- ".join(items))
+                elif action in ("add", "insert", "create", "put"):
+                    if not item:
+                        return ConversationToolResult(request.name, "Podaj nazwę przedmiotu do dodania do listy zakupów.", ok=False)
+                    ok = await ha_agent.add_shopping_item(item)
+                    if ok:
+                        return ConversationToolResult(request.name, f"Dodano '{item}' do listy zakupów.")
+                    return ConversationToolResult(request.name, f"Nie udało się dodać '{item}' do listy zakupów.", ok=False)
+                elif action in ("remove", "delete", "clear"):
+                    if not item:
+                        return ConversationToolResult(request.name, "Podaj nazwę przedmiotu do usunięcia z listy zakupów.", ok=False)
+                    ok = await ha_agent.remove_shopping_item(item)
+                    if ok:
+                        return ConversationToolResult(request.name, f"Usunięto '{item}' z listy zakupów.")
+                    return ConversationToolResult(request.name, f"Nie udało się usunąć '{item}' z listy zakupów.", ok=False)
+
+            if request.name not in {"control_light", "control_device", "control_switch"}:
                 return ConversationToolResult(
                     request.name,
                     "Unsupported smart-home tool.",
@@ -56,8 +88,8 @@ class SmartHomeToolExecutor:
             color = args.get("color")
             if not target:
                 raise ValueError("Device target is required.")
-            if action not in {"turn_on", "turn_off", "set"}:
-                raise ValueError("Unsupported light action.")
+            if action not in {"turn_on", "turn_off", "toggle", "set"}:
+                raise ValueError("Unsupported device action.")
             if action == "set" and brightness is None and color is None:
                 raise ValueError("Set action requires brightness or color.")
             if brightness is not None:

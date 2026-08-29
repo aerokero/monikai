@@ -11,6 +11,9 @@ def start_telegram_service(
     spotify_manager,
     personality,
     server_mic_listener=None,
+    kasa_agent=None,
+    hue_agent=None,
+    home_assistant_agent=None,
 ):
     telegram_service = TelegramBotService.from_env(
         settings_getter,
@@ -19,6 +22,9 @@ def start_telegram_service(
         spotify_manager=spotify_manager,
         personality=personality,
         server_mic_listener=server_mic_listener,
+        kasa_agent=kasa_agent,
+        hue_agent=hue_agent,
+        home_assistant_agent=home_assistant_agent,
     )
     telegram_task = None
     if telegram_service:

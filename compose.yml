@@ -18,6 +18,29 @@ services:
       MONIKAI_PORT: 8000
       WEB_AGENT_HEADLESS: "1"
       SERVER_MIC_WAKE_WORD_REQUIRED: "true"
+      SERVER_MIC_WAKE_LISTEN_TIMEOUT_SECONDS: "10"
+      SERVER_MIC_USE_GEMINI_LIVE: "true"
+      SERVER_MIC_FOLLOWUP_TIMEOUT: "8.0"
+      SERVER_MIC_GEMINI_LIVE_MODEL: "models/gemini-2.5-flash-native-audio-preview-12-2025"
+      SERVER_MIC_LIVE_IDLE_TIMEOUT_SECONDS: "20"
+      SERVER_MIC_LIVE_MAX_SESSION_SECONDS: "60"
+      SERVER_MIC_VOSK_MODEL_PATH: "/app/data/vosk-model"
+      SERVER_MIC_WAKE_CONFIDENCE: "0.72"
+      SERVER_MIC_PARTIAL_WAKE_STABILITY_FRAMES: "3"
+      SERVER_MIC_TRAILING_SILENCE_MS: "850"
+      SERVER_MIC_PRE_ROLL_MS: "600"
+      SERVER_MIC_ENERGY_THRESHOLD_RATIO: "1.8"
+      SERVER_MIC_MIN_ENERGY_THRESHOLD: "60"
+      SERVER_MIC_MIN_SPEECH_DURATION_MS: "150"
+      GEMINI_TRANSCRIBE_MODEL: "gemini-3.5-flash-lite"
+      MONIKAI_CONVERSATION_MODEL: "gemini-3.5-flash-lite"
+      MONIKAI_CONVERSATION_FALLBACK_MODEL: "gemini-3.6-flash"
+      SESSION_SUMMARY_MODEL: "gemini-3.5-flash-lite"
+      PYTHONPATH: "/app/data/python-packages:/app"
+
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
 
     ports:
       - "192.168.1.10:8000:8000"
@@ -33,11 +56,19 @@ services:
       - /srv/fast/containers/monikai/backend/data:/app/backend/data
       - /srv/fast/containers/monikai/backend/core/server.py:/app/backend/core/server.py:ro
       - /srv/fast/containers/monikai/backend/core/monikai.py:/app/backend/core/monikai.py:ro
+      - /srv/fast/containers/monikai/backend/core/smart_home_tool_executor.py:/app/backend/core/smart_home_tool_executor.py:ro
+      - /srv/fast/containers/monikai/backend/core/settings_store.py:/app/backend/core/settings_store.py:ro
+      - /srv/fast/containers/monikai/backend/core/tool_definitions.py:/app/backend/core/tool_definitions.py:ro
       - /srv/fast/containers/monikai/backend/conversation/routing.py:/app/backend/conversation/routing.py:ro
+      - /srv/fast/containers/monikai/backend/conversation/author.py:/app/backend/conversation/author.py:ro
       - /srv/fast/containers/monikai/backend/conversation/tools.py:/app/backend/conversation/tools.py:ro
       - /srv/fast/containers/monikai/backend/conversation/providers.py:/app/backend/conversation/providers.py:ro
       - /srv/fast/containers/monikai/backend/llm/thinker.py:/app/backend/llm/thinker.py:ro
       - /srv/fast/containers/monikai/backend/agents/telegram_bot.py:/app/backend/agents/telegram_bot.py:ro
+      - /srv/fast/containers/monikai/backend/agents/home_assistant_agent.py:/app/backend/agents/home_assistant_agent.py:ro
+      - /srv/fast/containers/monikai/backend/conversation/speech.py:/app/backend/conversation/speech.py:ro
+      - /srv/fast/containers/monikai/backend/core/lifecycle_telegram.py:/app/backend/core/lifecycle_telegram.py:ro
+      - /srv/fast/containers/monikai/backend/core/lifecycle_startup.py:/app/backend/core/lifecycle_startup.py:ro
       - /srv/fast/containers/monikai/backend/audio/server_mic_listener.py:/app/backend/audio/server_mic_listener.py:ro
 
     healthcheck:
@@ -69,5 +100,3 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "127.0.0.1:8089:8080"
-
-

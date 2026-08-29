@@ -9,23 +9,30 @@ from .runtimes.minecraft_runtime import load_minecraft_bot_config
 
 
 async def initialize_smart_home_agents(kasa_agent, settings: dict):
-    print("[SERVER] Startup: Initializing Kasa Agent...")
-    await kasa_agent.initialize()
+    kasa_devices = settings.get("smart_home", {}).get("kasa", {}).get("devices", []) or settings.get("kasa_devices", [])
+    if kasa_devices and kasa_agent:
+        print("[SERVER] Startup: Initializing Kasa Agent...")
+        await kasa_agent.initialize()
+    else:
+        kasa_agent = None
 
-    print("[SERVER] Startup: Initializing Hue Agent...")
     hue_config = settings.get("smart_home", {}).get("hue", {})
-    hue_agent = HueAgent(
-        bridge_ip=hue_config.get("bridge_ip"),
-        api_key=hue_config.get("api_key"),
-    )
-    await hue_agent.initialize()
+    if hue_config.get("bridge_ip") and hue_config.get("api_key"):
+        print("[SERVER] Startup: Initializing Hue Agent...")
+        hue_agent = HueAgent(
+            bridge_ip=hue_config.get("bridge_ip"),
+            api_key=hue_config.get("api_key"),
+        )
+        await hue_agent.initialize()
+    else:
+        hue_agent = None
 
     print("[SERVER] Startup: Initializing Home Assistant Agent...")
     ha_config = settings.get("smart_home", {}).get("home_assistant", {})
     home_assistant_agent = HomeAssistantAgent(
         ha_url=ha_config.get("url"),
         ha_token=ha_config.get("token"),
-        entities_filter=ha_config.get("entities_filter", ["light.*", "switch.*"]),
+        entities_filter=ha_config.get("entities_filter", ["light.*", "switch.*", "scene.*"]),
     )
     await home_assistant_agent.initialize()
 

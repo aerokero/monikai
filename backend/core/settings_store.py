@@ -6,11 +6,9 @@ import json
 import os
 from copy import deepcopy
 
-from backend.services.daily_briefing import DEFAULT_SECTIONS, normalize_profile
 from .config import SETTINGS_PATH
 
 DEFAULT_SETTINGS = {
-    "face_auth_enabled": False,
     "show_internal_thoughts": False,
     "tool_permissions": {
         "cancel_reminder": True,
@@ -29,27 +27,20 @@ DEFAULT_SETTINGS = {
         "refresh_skills": False,
         "run_openclaw_skill_command": True,
         "run_skill_command": True,
-        "spotify_get_auth_url": False,
-        "spotify_get_status": False,
-        "spotify_get_now_playing": False,
-        "spotify_list_playlists": False,
-        "spotify_recently_played": False,
+        "spotify_get_auth_url": True,
+        "spotify_get_status": True,
+        "spotify_get_now_playing": True,
+        "spotify_list_playlists": True,
+        "spotify_recently_played": True,
         "write_file": True,
+        "list_smart_devices": True,
+        "manage_shopping_list": True,
     },
-    "kasa_devices": [],
     "smart_home": {
-        "kasa": {
-            "devices": [],
-        },
-        "hue": {
-            "bridge_ip": None,
-            "api_key": None,
-            "devices": [],
-        },
         "home_assistant": {
             "url": None,
             "token": None,
-            "entities_filter": ["light.*", "switch.*"],
+            "entities_filter": ["light.*", "switch.*", "scene.*"],
             "entities": [],
         },
     },
@@ -76,7 +67,7 @@ DEFAULT_SETTINGS = {
     },
     "proactivity": {
         "idle_nudges": {
-            "enabled": True,
+            "enabled": False,
             "threshold_sec": 900,
             "cooldown_sec": 1800,
             "min_ai_quiet_sec": 60,
@@ -99,21 +90,8 @@ DEFAULT_SETTINGS = {
             "min_user_messages_before_nudge": 2,
         },
         "reasoning": {
-            "enabled": True,
+            "enabled": False,
             "interval_sec": 120.0,
-        },
-    },
-    "daily_briefing": {
-        "enabled": True,
-        "cache_minutes": 20,
-        "use_v2_briefing": False,
-        "profile": {
-            "pinned_sections": ["weather"],
-            "preferred_sections": [],
-            "auto_slots": 1,
-            "candidate_pool": list(DEFAULT_SECTIONS.keys()),
-            "language_mode": "auto",
-            "max_items_per_section": 7,
         },
     },
     "vn": {
@@ -147,7 +125,7 @@ DEFAULT_SETTINGS = {
     # "live_renderer" only as an explicit compatibility rollback.
     "speech": {
         "delivery_mode": "dedicated_tts",
-        "model": "gemini-3.1-flash-tts-preview",
+        "model": "gemini-2.5-flash-preview-tts",
         "voice": None,
         "timeout_sec": 20.0,
     },
@@ -210,11 +188,6 @@ def load_settings() -> None:
                 new_settings = _deep_merge_dict(defaults_copy, loaded)
             else:
                 new_settings = defaults_copy
-
-            briefing = new_settings.get("daily_briefing") or {}
-            profile = briefing.get("profile") if isinstance(briefing, dict) else None
-            if isinstance(profile, dict):
-                new_settings["daily_briefing"]["profile"] = normalize_profile(profile)
 
             SETTINGS.clear()
             SETTINGS.update(new_settings)

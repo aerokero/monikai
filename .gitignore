@@ -42,6 +42,8 @@ data/reference.jpg
 # OAuth tokens and state (SECURITY: never commit)
 data/spotify_tokens.json
 data/spotify_oauth_state.json
+# Vosk offline STT models
+data/vosk-model/
 
 # Monika After Story Directory (Large game files)
 Monika After Story/
@@ -62,6 +64,7 @@ startup.log
 
 # Node.js
 node_modules/
+data/python-packages/
 dist/
 npm-debug.log*
 yarn-debug.log*

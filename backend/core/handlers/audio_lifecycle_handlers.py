@@ -47,13 +47,6 @@ def register_audio_lifecycle_handlers(
         audio_loop = get_audio_loop()
         last_start_params = {"sid": sid, "data": data}
 
-        if get_settings().get("face_auth_enabled", False):
-            authenticator = get_authenticator()
-            if authenticator and not authenticator.authenticated:
-                print("[SYSTEM ERROR] Blocked start_audio: Not authenticated.")
-                await sio.emit("error", {"msg": "Authentication Required"}, room=sid)
-                return
-
         print("[SYSTEM NOTIFICATION] Starting Audio Loop...")
 
         device_index = None
@@ -363,35 +356,7 @@ def register_audio_lifecycle_handlers(
                 return False
         print(f"[SYSTEM NOTIFICATION] Client connected: {sid}")
         await sio.emit("status", {"msg": "Connected to MonikAI Backend"}, room=sid)
-
-        authenticator = get_authenticator()
-
-        async def on_auth_status(is_auth):
-            print(f"[SERVER] Auth status change: {is_auth}")
-            await emit_to_frontend("auth_status", {"authenticated": is_auth})
-
-        async def on_auth_frame(frame_b64):
-            await emit_to_frontend("auth_frame", {"image": frame_b64})
-
-        if authenticator is None:
-            if get_settings().get("face_auth_enabled", False):
-                from backend.integrations.media.authenticator import FaceAuthenticator
-                authenticator = FaceAuthenticator(
-                    reference_image_path=str(data_dir / "reference.jpg"),
-                    on_status_change=on_auth_status,
-                    on_frame=on_auth_frame,
-                )
-                set_authenticator(authenticator)
-
-        if authenticator and authenticator.authenticated:
-            await sio.emit("auth_status", {"authenticated": True}, room=sid)
-        else:
-            if get_settings().get("face_auth_enabled", False):
-                await sio.emit("auth_status", {"authenticated": False}, room=sid)
-                asyncio.create_task(authenticator.start_authentication_loop())
-            else:
-                print("Face Auth Disabled. Auto-authenticating.")
-                await sio.emit("auth_status", {"authenticated": True}, room=sid)
+        await sio.emit("auth_status", {"authenticated": True}, room=sid)
 
     @sio.event
     async def disconnect(sid):

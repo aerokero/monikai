@@ -84,6 +84,7 @@ from backend.conversation.tools import (
     ConversationToolRequest,
     ConversationToolResult,
     ToolTurnOutcome,
+    plan_named_scene_tool,
     plan_read_only_tool,
     validate_planned_tool_request,
 )
@@ -1321,6 +1322,9 @@ class AudioLoop:
         self,
         text: str,
     ) -> ConversationToolRequest | None:
+        request = plan_named_scene_tool(text)
+        if request is not None:
+            return request
         request = plan_read_only_tool(text)
         if request is not None:
             return request
@@ -1328,9 +1332,16 @@ class AudioLoop:
             return None
         try:
             ctx = get_time_context()
+            smart_entities = []
+            if getattr(self, "home_assistant_agent", None):
+                smart_entities = [
+                    f"{e_id} ({e.get('attributes', {}).get('friendly_name', e_id)})"
+                    for e_id, e in getattr(self.home_assistant_agent, "entities", {}).items()
+                ]
             runtime_context = (
                 f"local_iso={ctx.get('iso')}; timezone={ctx.get('timezone')}; "
-                f"utc_offset={ctx.get('offset')}"
+                f"utc_offset={ctx.get('offset')}; "
+                f"known_smart_home_entities={smart_entities}"
             )
             timeout_sec = max(
                 0.5,
@@ -3469,6 +3480,7 @@ class AudioLoop:
                                 "read_file",
                                 "list_smart_devices",
                                 "control_light",
+                                "manage_shopping_list",
                                 "get_random_fact",
                                 "get_random_greeting",
                                 "get_random_farewell",
@@ -3989,13 +4001,7 @@ class AudioLoop:
                                     asyncio.create_task(self.handle_read_file(path))
                                     function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": "Reading file..."}))
 
-                                elif fc.name == "list_smart_devices":
-                                    result = await self._get_conversation_tool_executor().execute(
-                                        ConversationToolRequest(fc.name, dict(fc.args or {}))
-                                    )
-                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result.result}))
-
-                                elif fc.name == "control_light":
+                                elif fc.name in ("list_smart_devices", "control_light", "manage_shopping_list"):
                                     result = await self._get_conversation_tool_executor().execute(
                                         ConversationToolRequest(fc.name, dict(fc.args or {}))
                                     )

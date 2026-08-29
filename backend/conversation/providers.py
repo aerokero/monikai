@@ -58,15 +58,29 @@ class GeminiTextProvider:
                 thinking_budget=request.thinking_budget
             )
 
-        response = await self._client.aio.models.generate_content(
-            model=request.model,
-            contents=request.prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=request.system_instruction,
-                thinking_config=thinking_config,
-            ),
-        )
-        return response.text or ""
+        models_to_try = [request.model] if request.model in ("gemini-3.5-flash-lite", "gemini-3.6-flash") else ["gemini-3.5-flash-lite", "gemini-3.6-flash"]
+        for fb in ("gemini-3.5-flash-lite", "gemini-3.6-flash"):
+            if fb not in models_to_try:
+                models_to_try.append(fb)
+
+        response = None
+        for model_name in models_to_try:
+            try:
+                response = await self._client.aio.models.generate_content(
+                    model=model_name,
+                    contents=request.prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=request.system_instruction,
+                        thinking_config=thinking_config,
+                    ),
+                )
+                if response and response.text:
+                    return response.text
+            except Exception as exc:
+                if "429" in str(exc) or "RESOURCE_EXHAUSTED" in str(exc) or "404" in str(exc):
+                    continue
+                break
+        return response.text if response else ""
 
     async def plan_tools(
         self,
@@ -86,8 +100,8 @@ class GeminiTextProvider:
             for item in request.tools
         ]
 
-        models_to_try = [request.model]
-        for fb in ("gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash"):
+        models_to_try = [request.model] if request.model in ("gemini-3.5-flash-lite", "gemini-3.6-flash") else ["gemini-3.5-flash-lite", "gemini-3.6-flash"]
+        for fb in ("gemini-3.5-flash-lite", "gemini-3.6-flash"):
             if fb not in models_to_try:
                 models_to_try.append(fb)
 

@@ -636,3 +636,37 @@ async def test_memory_search_executor(tmp_path):
 
 
 
+async def test_named_scene_command_executes_without_model_planning():
+    executed = []
+
+    class FakeThinker:
+        async def plan_tool_calls(self, text, *, tools, runtime_context):
+            raise AssertionError("named scenes must not wait for model planning")
+
+        async def prepare_spoken_reply(self, text, *, turn_evidence=None):
+            assert "status=success" in turn_evidence
+            return "Włączyłam tryb relaksu."
+
+    class FakeExecutor:
+        async def execute(self, request):
+            executed.append(request)
+            return ConversationToolResult(request.name, "Activated scene: Relaks")
+
+    loop = AudioLoop.__new__(AudioLoop)
+    loop.permissions = {"control_light": False}
+    loop.thinker = FakeThinker()
+    loop._conversation_tool_executor = FakeExecutor()
+    loop._last_tool_trace = {}
+
+    outcome = await loop.author_tool_turn("tryb relaksu poprosze")
+
+    assert outcome.handled is True
+    assert outcome.reply == "Włączyłam tryb relaksu."
+    assert executed == [
+        ConversationToolRequest(
+            "control_light",
+            {"target": "relaks", "action": "turn_on"},
+        )
+    ]
+
+

@@ -29,11 +29,9 @@ from ..integrations.media.study_ocr import ocr_image_bytes
 
 from . import monikai
 from .config import DATA_DIR as CONFIG_DATA_DIR
-from .runtimes.daily_briefing_runtime import DailyBriefingRuntime
 from .handlers.calendar_reminder_handlers import register_calendar_reminder_handlers
 from .handlers.chat_input_handlers import register_chat_input_handlers
 from .handlers.control_handlers import register_control_handlers
-from .handlers.daily_briefing_handlers import register_daily_briefing_handlers
 from .handlers.audio_lifecycle_handlers import register_audio_lifecycle_handlers
 from .handlers.memory_page_handlers import register_memory_page_handlers
 from .handlers.lorebook_handlers import register_lorebook_handlers
@@ -235,11 +233,29 @@ async def lifespan(app: FastAPI):
             reminder_manager=reminder_manager,
             spotify_manager=spotify_manager,
             personality=personality_system,
+            kasa_agent=kasa_agent,
+            hue_agent=hue_agent,
+            home_assistant_agent=home_assistant_agent,
         )
 
         input_dev = SETTINGS.get("server_mic_device_index", None)
         output_dev = SETTINGS.get("server_mic_output_index", None)
         wake_req = str(os.getenv("SERVER_MIC_WAKE_WORD_REQUIRED", "false")).lower() in {"1", "true", "yes"}
+
+        vlf_cfg = SETTINGS.get("smart_home", {}).get("voice_light_feedback", {}) or SETTINGS.get("voice_light_feedback", {})
+        voice_light_feedback = None
+        if home_assistant_agent and vlf_cfg.get("enabled", True):
+            try:
+                from backend.agents.voice_light_feedback import VoiceLightFeedbackController
+                target_entity = vlf_cfg.get("entity_id", "light.kuchnia_zarowka_1_ts0505b")
+                voice_light_feedback = VoiceLightFeedbackController(
+                    ha_agent=home_assistant_agent,
+                    entity_id=target_entity,
+                    enabled=vlf_cfg.get("enabled", True),
+                )
+                print(f"[SERVER] VoiceLightFeedbackController initialized for '{target_entity}'.")
+            except Exception as e:
+                print(f"[SERVER] VoiceLightFeedbackController setup error: {e}")
 
         server_mic_listener = ServerMicListenerService(
             conversation_handler=lambda text: mic_session.ask(text),
@@ -247,6 +263,10 @@ async def lifespan(app: FastAPI):
             output_device_index=output_dev,
             require_wake_word=wake_req,
             gemini_voice=SETTINGS.get("gemini_voice", "Leda") or "Leda",
+            kasa_agent=kasa_agent,
+            hue_agent=hue_agent,
+            home_assistant_agent=home_assistant_agent,
+            voice_light_feedback=voice_light_feedback,
         )
         if str(os.getenv("SERVER_MIC_LISTENER_ENABLED", "true")).lower() in {"1", "true", "yes"}:
             server_mic_listener.start()
@@ -261,6 +281,9 @@ async def lifespan(app: FastAPI):
         spotify_manager=spotify_manager,
         personality=personality_system,
         server_mic_listener=server_mic_listener,
+        kasa_agent=kasa_agent,
+        hue_agent=hue_agent,
+        home_assistant_agent=home_assistant_agent,
     )
 
     discord_service, discord_task = start_discord_service(
@@ -374,11 +397,6 @@ telegram_task = None
 discord_service = None
 discord_task = None
 server_mic_listener = None
-DAILY_BRIEFING_RUNTIME = DailyBriefingRuntime(
-    SETTINGS,
-    get_audio_loop=lambda: audio_loop,
-    get_personality_system=lambda: personality_system,
-)
 
 
 def _get_audio_loop():
@@ -446,7 +464,7 @@ register_settings_profile_handlers(
     get_authenticator=lambda: authenticator,
     emit_to_frontend=_emit_to_frontend,
     data_dir=DATA_DIR,
-    daily_briefing_runtime=DAILY_BRIEFING_RUNTIME,
+    daily_briefing_runtime=None,
 )
 
 register_system_frontend_handlers(
@@ -483,14 +501,6 @@ register_study_socket_handlers(
     study_reader=STUDY_READER,
     safe_study_path=_safe_study_path,
     ocr_image_bytes_fn=ocr_image_bytes,
-)
-
-register_daily_briefing_handlers(
-    sio,
-    runtime=DAILY_BRIEFING_RUNTIME,
-    save_settings=save_settings,
-    emit_to_frontend=_emit_to_frontend,
-    settings=SETTINGS,
 )
 
 register_calendar_reminder_handlers(

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 
-DEFAULT_SPEECH_MODEL = "gemini-3.1-flash-tts-preview"
+DEFAULT_SPEECH_MODEL = "gemini-2.5-flash-preview-tts"
 DEFAULT_SAMPLE_RATE = 24_000
 
 
@@ -66,11 +66,14 @@ class GeminiSpeechSynthesizer:
     async def synthesize(self, request: SpeechSynthesisRequest) -> SynthesizedSpeech:
         from google.genai import types
 
+        prompt_content = (
+            f"Read the following text out loud:\n{request.text}"
+            if "tts" in str(request.model).lower()
+            else request.text
+        )
         response = await self._get_client().aio.models.generate_content(
             model=request.model,
-            # A TTS model is selected explicitly. The input is the final
-            # transcript, not a conversational instruction or response brief.
-            contents=request.text,
+            contents=prompt_content,
             config=types.GenerateContentConfig(
                 response_modalities=["AUDIO"],
                 speech_config=types.SpeechConfig(

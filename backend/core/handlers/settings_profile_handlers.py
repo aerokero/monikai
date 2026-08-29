@@ -37,13 +37,6 @@ def register_settings_profile_handlers(
         if "show_internal_thoughts" in data:
             settings["show_internal_thoughts"] = bool(data["show_internal_thoughts"])
 
-        if "face_auth_enabled" in data:
-            settings["face_auth_enabled"] = data["face_auth_enabled"]
-            if not data["face_auth_enabled"]:
-                await sio.emit("auth_status", {"authenticated": True}, room=sid)
-                if authenticator:
-                    authenticator.stop()
-
         if "camera_flipped" in data:
             settings["camera_flipped"] = data["camera_flipped"]
             print(f"[SERVER] Camera flip set to: {data['camera_flipped']}")
@@ -102,14 +95,15 @@ def register_settings_profile_handlers(
                     pass
 
         if "daily_briefing" in data and isinstance(data.get("daily_briefing"), dict):
-            incoming = data["daily_briefing"]
-            settings.setdefault("daily_briefing", {})
-            for k, v in incoming.items():
-                if k == "profile" and isinstance(v, dict):
-                    daily_briefing_runtime.set_profile(v)
-                else:
-                    settings["daily_briefing"][k] = v
-            daily_briefing_runtime.invalidate_cache()
+            if daily_briefing_runtime:
+                incoming = data["daily_briefing"]
+                settings.setdefault("daily_briefing", {})
+                for k, v in incoming.items():
+                    if k == "profile" and isinstance(v, dict):
+                        daily_briefing_runtime.set_profile(v)
+                    else:
+                        settings["daily_briefing"][k] = v
+                daily_briefing_runtime.invalidate_cache()
 
         _model_changed = False
         if "gemini_model_preset" in data or "gemini_voice" in data:

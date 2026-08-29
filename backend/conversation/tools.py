@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -293,10 +294,31 @@ CONVERSATION_TOOL_DEFINITIONS = (
         parameters_json_schema={"type": "object", "properties": {}},
     ),
     ConversationToolDefinition(
+        name="manage_shopping_list",
+        description="Manage the shopping list in Home Assistant. Action can be 'get' (read list), 'add' (add item), or 'remove' (remove item).",
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["get", "add", "remove"],
+                    "description": "Action to perform: get, add, or remove.",
+                },
+                "item": {
+                    "type": "string",
+                    "description": "Item name to add or remove (not required for 'get').",
+                },
+            },
+            "required": ["action"],
+        },
+    ),
+    ConversationToolDefinition(
         name="control_light",
         description=(
-            "Control a smart light or compatible device only after an explicit "
-            "user command. Preserve the requested action exactly."
+            "Control a smart light, compatible device, or named scene only after "
+            "an explicit user command. Phrases such as 'tryb relaksu' explicitly "
+            "request activation of that named scene. Preserve the requested "
+            "action exactly."
         ),
         parameters_json_schema={
             "type": "object",
@@ -304,7 +326,7 @@ CONVERSATION_TOOL_DEFINITIONS = (
                 "target": {"type": "string"},
                 "action": {
                     "type": "string",
-                    "enum": ["turn_on", "turn_off", "set"],
+                    "enum": ["turn_on", "turn_off", "toggle", "set"],
                 },
                 "brightness": {
                     "type": "integer",
@@ -403,15 +425,15 @@ _APPEND_MEMORY_PAGE_INTENT_RE = re.compile(
     re.IGNORECASE,
 )
 _LIGHT_TARGET_RE = re.compile(
-    r"\b(światł\w*|swiatl\w*|lamp\w*|żarów\w*|zarow\w*|light\w*|bulb\w*)\b",
+    r"\b(światł\w*|swiatl\w*|lamp\w*|żarów\w*|zarow\w*|light\w*|bulb\w*|tryb\w*|scen\w*|relaks\w*|wieczor\w*|kuchni\w*|salon\w*|biurk\w*|pokoj\w*|pokój\w*|wszystk\w*|all|projektor\w*|rzutnik\w*|kin\w*|film\w*|chromecast\w*|cyrkadow\w*|adaptacyjn\w*|projector|cinema|movie)\b",
     re.IGNORECASE,
 )
 _LIGHT_ON_INTENT_RE = re.compile(
-    r"\b(włącz|wlacz|zapal|turn\s+on|switch\s+on)\b",
+    r"\b(włącz\w*|wlacz\w*|zapal\w*|zaświeć\w*|zaswiec\w*|przełącz\w*|przelacz\w*|aktywuj\w*|odpal\w*|zmień\w*|zmien\w*|turn\s+on|switch\s+on|activate)\b",
     re.IGNORECASE,
 )
 _LIGHT_OFF_INTENT_RE = re.compile(
-    r"\b(wyłącz|wylacz|zgaś|zgas|turn\s+off|switch\s+off)\b",
+    r"\b(wyłącz\w*|wylacz\w*|zgaś\w*|zgas\w*|turn\s+off|switch\s+off)\b",
     re.IGNORECASE,
 )
 _LIGHT_SET_INTENT_RE = re.compile(
@@ -423,6 +445,67 @@ _GET_NOTES_RE = re.compile(
     r"\b(co|jakie|pokaż|pokaz|przeczytaj|odczytaj|wyświetl|wyswietl|show|read|list).{0,24}\b(notat\w*|notes?)\b",
     re.IGNORECASE,
 )
+_GET_SHOPPING_RE = re.compile(
+    r"\b(co|jakie|pokaż|pokaz|przeczytaj|odczytaj|wyświetl|wyswietl|read|show|czy\s+mam)\b.{0,24}\b(zakup\w*|shopping)\b|"
+    r"^\s*(?:pokaż\s+|pokaz\s+|wyświetl\s+|wyswietl\s+)?(?:list[aęe]\s+zakup\w*|shopping\s+list)[\s\?\.]*$",
+    re.IGNORECASE,
+)
+
+
+_NAMED_SCENE_RE = re.compile(
+    r"^(?:(?:wlacz\w*|aktywuj\w*|odpal\w*|ustaw)\s+(?:mi\s+)?)?"
+    r"(?:tryb|scena?)\s+"
+    r"(?P<scene>relaks(?:u|acyjny)?|wieczorny|kino|kina|kinowy|filmowy|"
+    r"skupieni[ae]|pracy|roboczy|nocny|nocnego|gotowani[ae]|"
+    r"standard|standardowy|domyslny)"
+    r"(?:\s*,?\s*(?:prosze|poprosze))?[.!?]*$",
+    re.IGNORECASE,
+)
+
+_NAMED_SCENE_TARGETS = {
+    "relaks": "relaks",
+    "relaksu": "relaks",
+    "relaksacyjny": "relaks",
+    "wieczorny": "relaks",
+    "kino": "kino",
+    "kina": "kino",
+    "kinowy": "kino",
+    "filmowy": "kino",
+    "skupienia": "skupienie",
+    "skupienie": "skupienie",
+    "pracy": "skupienie",
+    "roboczy": "skupienie",
+    "nocny": "tryb nocny",
+    "nocnego": "tryb nocny",
+    "gotowania": "gotowanie",
+    "gotowanie": "gotowanie",
+    "standard": "standard",
+    "standardowy": "standard",
+    "domyslny": "standard",
+}
+
+
+def plan_named_scene_tool(text: str) -> ConversationToolRequest | None:
+    """Recognize an exact named-scene command without an LLM round trip."""
+    value = str(text or "").strip()
+    if not value or _NEGATED_MUTATION_RE.search(value):
+        return None
+    normalized = "".join(
+        char
+        for char in unicodedata.normalize("NFKD", value.casefold())
+        if not unicodedata.combining(char)
+    )
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    match = _NAMED_SCENE_RE.fullmatch(normalized)
+    if match is None:
+        return None
+    target = _NAMED_SCENE_TARGETS.get(match.group("scene"))
+    if target is None:
+        return None
+    return ConversationToolRequest(
+        "control_light",
+        {"target": target, "action": "turn_on"},
+    )
 
 
 def plan_read_only_tool(text: str) -> ConversationToolRequest | None:
@@ -436,6 +519,8 @@ def plan_read_only_tool(text: str) -> ConversationToolRequest | None:
         return ConversationToolRequest("get_weather")
     if _GET_NOTES_RE.search(value):
         return ConversationToolRequest("notes_get")
+    if _GET_SHOPPING_RE.search(value):
+        return ConversationToolRequest("manage_shopping_list", {"action": "get"})
     return None
 
 

@@ -8,6 +8,7 @@ google-genai
 opencv-python
 pyaudio
 sounddevice
+vosk
 pillow
 mss
 pywin32; sys_platform == "win32"
