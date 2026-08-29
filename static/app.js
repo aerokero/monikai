@@ -193,13 +193,10 @@ function initRailHoverLabels() {
   });
 }
 
-// Redirect to login on 401 from any fetch
+// Fetch wrapper
 const _origFetch = window.fetch;
 window.fetch = async function(...args) {
   const res = await _origFetch.apply(this, args);
-  if (res.status === 401 && !String(args[0]).includes('/api/auth/')) {
-    window.location.href = '/login';
-  }
   return res;
 };
 

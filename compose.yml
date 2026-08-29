@@ -37,6 +37,8 @@ services:
       MONIKAI_CONVERSATION_FALLBACK_MODEL: "gemini-3.6-flash"
       SESSION_SUMMARY_MODEL: "gemini-3.5-flash-lite"
       ODYSSEUS_DATA_DIR: "/app/data/odysseus"
+      AUTH_ENABLED: "false"
+      LOCALHOST_BYPASS: "true"
       PYTHONPATH: "/app/data/python-packages:/app:/app/backend/odysseus"
 
     dns:
