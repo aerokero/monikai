@@ -121,11 +121,6 @@ export class MonikaVisualizer {
         max-height: 960px;
         pointer-events: auto;
         cursor: pointer;
-        animation: monika-breathe 4.5s ease-in-out infinite alternate;
-      }
-      @keyframes monika-breathe {
-        0% { transform: translateX(-50%) translateY(0); }
-        100% { transform: translateX(-50%) translateY(5px); }
       }
       .m-layer {
         position: absolute;
