@@ -107,18 +107,18 @@ export class MonikaVisualizer {
         inset: 0;
         background-image: url('/static/vn/location/bg_room.png');
         background-size: cover;
-        background-position: center 25%;
-        filter: brightness(0.92) saturate(1.05);
+        background-position: center 30%;
+        filter: brightness(0.94) saturate(1.05);
         transition: background-image 1.2s ease-in-out;
       }
       .monika-vn-char-wrap {
         position: absolute;
         bottom: 0;
         left: 50%;
-        transform: translateX(-50%);
-        width: min(920px, 98vw);
-        height: 98vh;
-        max-height: 960px;
+        transform: translateX(-50%) scale(1.15);
+        transform-origin: center bottom;
+        width: min(1020px, 100vw);
+        height: min(1020px, 100vh);
         pointer-events: auto;
         cursor: pointer;
       }
@@ -135,8 +135,8 @@ export class MonikaVisualizer {
       .monika-vn-atmosphere {
         position: absolute;
         inset: 0;
-        background: radial-gradient(circle at 50% 40%, transparent 45%, rgba(10, 8, 14, 0.4) 85%),
-                    linear-gradient(to top, rgba(14, 12, 18, 0.82) 0%, transparent 40%);
+        background: radial-gradient(circle at 50% 35%, transparent 50%, rgba(10, 8, 14, 0.35) 85%),
+                    linear-gradient(to top, rgba(14, 12, 18, 0.75) 0%, transparent 35%);
         pointer-events: none;
       }
       
@@ -152,20 +152,24 @@ export class MonikaVisualizer {
         background: transparent !important;
       }
       #welcome-screen {
-        position: relative;
-        z-index: 10;
-        background: transparent !important;
+        display: none !important;
       }
-      .welcome-name, .welcome-sub, .welcome-tip {
-        text-shadow: 0 2px 10px rgba(0,0,0,0.8);
-      }
-      .chat-input-bar {
-        position: relative;
-        z-index: 20;
-        background: rgba(18, 16, 22, 0.82) !important;
+      .chat-container.welcome-active .chat-input-bar,
+      .chat-container .chat-input-bar {
+        position: absolute !important;
+        bottom: 24px !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        margin-bottom: 0 !important;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+        width: min(840px, calc(100% - 48px)) !important;
+        max-width: 840px !important;
+        z-index: 50 !important;
+        background: rgba(18, 16, 22, 0.84) !important;
         backdrop-filter: blur(24px) !important;
-        border: 1px solid rgba(244, 114, 182, 0.28) !important;
-        box-shadow: 0 15px 40px rgba(0, 0, 0, 0.65), 0 0 20px rgba(244, 114, 182, 0.12) !important;
+        border: 1px solid rgba(244, 114, 182, 0.3) !important;
+        box-shadow: 0 15px 40px rgba(0, 0, 0, 0.7), 0 0 20px rgba(244, 114, 182, 0.15) !important;
         border-radius: 18px !important;
       }
       .user-message, .assistant-message, .system-message {
