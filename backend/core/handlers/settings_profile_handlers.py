@@ -427,3 +427,53 @@ def register_settings_profile_handlers(
             },
             room=sid,
         )
+
+    @sio.on("research_start")
+    async def handle_research_start(sid, data):
+        from dataclasses import asdict
+        from backend.agents.deep_research import get_deep_research_engine
+        topic = (data or {}).get("topic", "").strip()
+        depth = (data or {}).get("depth", "standard")
+        if not topic:
+            await sio.emit("error", {"msg": "Pusty temat badania"}, room=sid)
+            return
+
+        engine = get_deep_research_engine()
+
+        async def _prog_cb(task):
+            await sio.emit(
+                "research_progress",
+                {
+                    "task_id": task.task_id,
+                    "topic": task.topic,
+                    "status": task.status,
+                    "progress": task.progress,
+                    "current_step": task.current_step,
+                    "sources_count": len(task.sources),
+                    "cost": asdict(task.cost_tracker),
+                    "report_markdown": task.report_markdown if task.status == "completed" else None,
+                },
+                room=sid,
+            )
+
+        asyncio.create_task(engine.execute_research(topic=topic, depth=depth, on_progress=_prog_cb))
+        await sio.emit("status", {"msg": f"Rozpoczęto Deep Research: '{topic}'"}, room=sid)
+
+    @sio.on("research_list")
+    async def handle_research_list(sid, data=None):
+        _ = data
+        from backend.agents.deep_research import get_deep_research_engine
+        engine = get_deep_research_engine()
+        tasks = [
+            {
+                "task_id": t.task_id,
+                "topic": t.topic,
+                "depth": t.depth,
+                "status": t.status,
+                "progress": t.progress,
+                "created_at": t.created_at,
+                "duration_s": t.duration_s,
+            }
+            for t in engine.list_tasks()
+        ]
+        await sio.emit("research_tasks_list", {"tasks": tasks}, room=sid)
