@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as Icons from '../icons';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useMonika } from '../../contexts/MonikaContext';
@@ -63,6 +63,7 @@ const SettingsPanel = ({
   onModelPresetChange = () => {},
   geminiVoice = 'Leda',
   onVoiceChange = () => {},
+  socket = null,
 }) => {
   const { t, language, setLanguage } = useLanguage();
   const { setActiveContext } = useMonika();
@@ -73,6 +74,25 @@ const SettingsPanel = ({
   const [skillNameFilter, setSkillNameFilter] = useState('');
   const [skillAgent, setSkillAgent] = useState('codex');
   const [skillGlobalScope, setSkillGlobalScope] = useState(false);
+
+  const [modelsStatus, setModelsStatus] = useState(null);
+
+  useEffect(() => {
+    if (!socket) return;
+    socket.emit('get_models');
+    const onModelsStatus = (data) => {
+      setModelsStatus(data);
+    };
+    socket.on('models_status', onModelsStatus);
+    return () => {
+      socket.off('models_status', onModelsStatus);
+    };
+  }, [socket]);
+
+  const handleSelectModelProvider = (task, provider) => {
+    if (!socket) return;
+    socket.emit('select_model', { task, provider });
+  };
 
   const skillFileInputRef = useRef(null);
   const memoryFileInputRef = useRef(null);
@@ -144,6 +164,37 @@ const SettingsPanel = ({
             onChange={(e) => onVoiceChange?.(e.target.value)}
             wrapperClassName="w-[220px]"
             options={GEMINI_VOICES}
+          />
+        </FieldRow>
+
+        <SectionLabel className="pt-6">Model Router (Odysseus Agent Hub)</SectionLabel>
+        <FieldRow 
+          title="Agent LLM Provider" 
+          description="Model używany do zadań agenta, pisania i myślenia w tle"
+        >
+          <SelectField
+            value={modelsStatus?.task_routing?.agent || modelsStatus?.default_provider || 'ollama'}
+            onChange={(e) => handleSelectModelProvider('agent', e.target.value)}
+            wrapperClassName="w-[220px]"
+            options={[
+              { value: 'ollama', label: 'Ollama (Local)' },
+              { value: 'openrouter', label: 'OpenRouter (Claude/DeepSeek/GPT)' },
+              { value: 'vllm', label: 'vLLM / llama.cpp (Local API)' },
+            ]}
+          />
+        </FieldRow>
+        <FieldRow 
+          title="Deep Research LLM Provider" 
+          description="Model dedykowany do wieloetapowego badania sieci i syntezy raportów"
+        >
+          <SelectField
+            value={modelsStatus?.task_routing?.research || 'openrouter'}
+            onChange={(e) => handleSelectModelProvider('research', e.target.value)}
+            wrapperClassName="w-[220px]"
+            options={[
+              { value: 'openrouter', label: 'OpenRouter (Cloud)' },
+              { value: 'ollama', label: 'Ollama (Local)' },
+            ]}
           />
         </FieldRow>
 

@@ -368,3 +368,31 @@ def register_settings_profile_handlers(
             result = {"success": False, "error": str(e)}
             await sio.emit("error", {"msg": f"Failed to update profile: {e}"}, room=sid)
             return result
+
+    @sio.on("get_models")
+    async def handle_get_models(sid, data=None):
+        _ = data
+        from backend.models.model_router import get_model_router
+        router = get_model_router()
+        health_info = await router.health_all()
+        await sio.emit("models_status", health_info, room=sid)
+
+    @sio.on("select_model")
+    async def handle_select_model(sid, data):
+        from backend.models.model_router import get_model_router
+        router = get_model_router()
+        task = (data or {}).get("task", "default")
+        provider = (data or {}).get("provider")
+        if not provider:
+            await sio.emit("error", {"msg": "Missing provider in select_model"}, room=sid)
+            return
+        if task == "default":
+            ok = router.set_default_provider(provider)
+        else:
+            ok = router.set_task_provider(task, provider)
+        if ok:
+            health_info = await router.health_all()
+            await sio.emit("models_status", health_info, room=sid)
+            await sio.emit("status", {"msg": f"Model provider for {task} set to {provider}"}, room=sid)
+        else:
+            await sio.emit("error", {"msg": f"Failed to set provider {provider}"}, room=sid)

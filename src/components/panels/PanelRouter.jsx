@@ -158,6 +158,7 @@ const PanelRouter = ({
           onModelPresetChange,
           geminiVoice,
           onVoiceChange,
+          socket,
         };
       case 'chat':
       default:
