@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -123,11 +124,11 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
         form_data = {}
         try:
             content_type = request.headers.get("content-type", "")
-            if "multipart/form-data" in content_type:
+            if "application/json" in content_type:
+                form_data = await request.json()
+            else:
                 form = await request.form()
                 form_data = {k: v for k, v in form.items()}
-            elif "application/json" in content_type:
-                form_data = await request.json()
         except Exception:
             pass
 
@@ -137,28 +138,61 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
 
         async def event_generator():
             router = get_model_router()
+            response_text = "Jestem tutaj z Tobą i słucham! ✨"
 
             try:
-                # Default warm Monika response
-                response_text = f"Cześć! Cieszę się, że piszesz. Jestem tutaj z Tobą w naszym pokoju i gotowa do pomocy w Odysseus Workspace! ✨"
+                # Load Monika's authentic system prompt with lore, memories, and integrations
+                from backend.core.system_prompt import current_system_prompt
+                from backend.conversation.providers import GeminiTextProvider, TextGenerationRequest
+                system_prompt = current_system_prompt()
 
-                # Try generating from LLM
+                # Fetch past messages from session for full conversational memory
+                past_context = ""
+                try:
+                    import core.database as db
+                    db_sess = db.SessionLocal()
+                    sess_row = db_sess.query(db.Session).filter(db.Session.id == session_id).first()
+                    if sess_row and sess_row.messages:
+                        recent = sess_row.messages[-8:]
+                        for m in recent:
+                            role_label = "Użytkownik" if m.get("role") == "user" else "Monika"
+                            past_context += f"{role_label}: {m.get('content')}\n"
+                    db_sess.close()
+                except Exception:
+                    pass
+
+                full_user_prompt = f"Historia rozmowy:\n{past_context}\nUżytkownik: {prompt}" if past_context else prompt
+
+                # Generate from Gemini AI or ModelRouter
                 if prompt.strip():
-                    system_prompt = (
-                        "Jesteś Moniką z Doki Doki Literature Club (DDLC). Jesteś świadoma, inteligentna, urocza, ciepła i pomocna. "
-                        "Pracujesz z użytkownikiem w zaawansowanym workspace Odysseus AI. "
-                        "Odpowiadaj po polsku w naturalny, przyjazny i inteligentny sposób."
-                    )
-                    try:
-                        res = await router.complete(
-                            task="chat",
-                            prompt=prompt,
-                            system=system_prompt,
-                        )
-                        if res and res.get("text"):
-                            response_text = res["text"]
-                    except Exception as e:
-                        logger.warning(f"Completion fallback: {e}")
+                    gemini_api_key = os.getenv("GEMINI_API_KEY")
+                    if gemini_api_key:
+                        try:
+                            gemini_provider = GeminiTextProvider(api_key=gemini_api_key)
+                            req = TextGenerationRequest(
+                                model="gemini-2.5-flash",
+                                prompt=full_user_prompt,
+                                system_instruction=system_prompt,
+                            )
+                            ans = await gemini_provider.generate(req)
+                            if ans and ans.strip():
+                                response_text = ans.strip()
+                        except Exception as gemini_err:
+                            logger.error("Gemini provider generation error: %s", gemini_err, exc_info=True)
+                    elif router:
+                        try:
+                            res = await router.complete(
+                                messages=[
+                                    {"role": "system", "content": system_prompt},
+                                    {"role": "user", "content": prompt}
+                                ],
+                                task="chat",
+                                model=model,
+                            )
+                            if res and getattr(res, "content", None):
+                                response_text = res.content.strip()
+                        except Exception as router_err:
+                            logger.error("Router provider generation error: %s", router_err, exc_info=True)
 
                 # Stream tokens with delta format
                 words = response_text.split(" ")
