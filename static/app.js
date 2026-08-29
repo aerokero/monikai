@@ -194,6 +194,7 @@ function initRailHoverLabels() {
 }
 
 // Fetch is native
+const el = uiModule.el || ((id) => document.getElementById(id));
 
 // Search settings
 
