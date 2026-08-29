@@ -167,25 +167,26 @@
 
 .monika-layout--desktop-wide .monika-panel-container {
   position: fixed;
-  left: 70px;
+  left: 86px;
   right: auto;
-  top: var(--monika-window-topbar-height);
-  bottom: 0;
-  width: min(420px, calc(100vw - 126px));
-  height: calc(100vh - var(--monika-window-topbar-height));
-  max-height: calc(100vh - var(--monika-window-topbar-height));
+  top: 20px;
+  bottom: 20px;
+  width: min(1200px, calc(100vw - 120px));
+  height: calc(100vh - 40px);
+  max-height: calc(100vh - 40px);
   z-index: 50;
-  background: linear-gradient(145deg, rgba(23, 16, 11, 0.72), rgba(45, 31, 20, 0.42));
-  backdrop-filter: blur(14px);
-  border-right: 1px solid var(--monika-line-warm);
-  border-left: none;
-  box-shadow: 12px 0 34px rgba(13, 9, 6, 0.46);
-  animation: vn-panel-slide-in var(--monika-transition-normal) cubic-bezier(0.4, 0, 0.2, 1);
+  background: rgba(16, 14, 18, 0.92);
+  backdrop-filter: blur(28px);
+  border: 1px solid rgba(244, 114, 182, 0.22);
+  border-radius: 20px;
+  box-shadow: 0 25px 65px -15px rgba(0, 0, 0, 0.85), 0 0 35px rgba(244, 114, 182, 0.1);
+  overflow: hidden;
+  animation: vn-panel-slide-in var(--monika-transition-normal) cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .monika-layout--desktop-wide:has(.monika-rail--expanded) .monika-panel-container {
-  left: 300px;
-  width: min(420px, calc(100vw - 340px));
+  left: 316px;
+  width: min(1200px, calc(100vw - 350px));
 }
 
 /* ============================================
@@ -220,25 +221,26 @@
 
 .monika-layout--desktop .monika-panel-container {
   position: fixed;
-  left: 70px;
+  left: 86px;
   right: auto;
-  top: var(--monika-window-topbar-height);
-  bottom: 0;
-  width: min(400px, calc(100vw - 106px));
-  height: calc(100vh - var(--monika-window-topbar-height));
-  max-height: calc(100vh - var(--monika-window-topbar-height));
+  top: 20px;
+  bottom: 20px;
+  width: min(1080px, calc(100vw - 110px));
+  height: calc(100vh - 40px);
+  max-height: calc(100vh - 40px);
   z-index: 50;
-  background: linear-gradient(145deg, rgba(23, 16, 11, 0.72), rgba(45, 31, 20, 0.42));
-  backdrop-filter: blur(14px);
-  border-right: 1px solid var(--monika-line-warm);
-  border-left: none;
-  box-shadow: 12px 0 34px rgba(13, 9, 6, 0.46);
-  animation: vn-panel-slide-in var(--monika-transition-normal) cubic-bezier(0.4, 0, 0.2, 1);
+  background: rgba(16, 14, 18, 0.92);
+  backdrop-filter: blur(28px);
+  border: 1px solid rgba(244, 114, 182, 0.22);
+  border-radius: 20px;
+  box-shadow: 0 25px 65px -15px rgba(0, 0, 0, 0.85), 0 0 35px rgba(244, 114, 182, 0.1);
+  overflow: hidden;
+  animation: vn-panel-slide-in var(--monika-transition-normal) cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .monika-layout--desktop:has(.monika-rail--expanded) .monika-panel-container {
-  left: 300px;
-  width: min(400px, calc(100vw - 320px));
+  left: 316px;
+  width: min(1080px, calc(100vw - 340px));
 }
 
 /* ============================================

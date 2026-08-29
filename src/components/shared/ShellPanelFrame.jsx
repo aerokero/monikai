@@ -7,39 +7,33 @@ const ShellPanelFrame = ({
   icon: Icon = null,
   title,
   subtitle = '',
-  titleClassName = 'font-serif text-[28px] text-[#f5e6d3] font-normal tracking-wide py-1',
-  headerClassName = 'flex items-start justify-between gap-4 border-b border-[#2c1e15] bg-transparent px-6 pt-6 pb-4',
+  titleClassName = 'text-xl font-semibold text-white/95 tracking-tight',
+  headerClassName = 'flex items-center justify-between gap-4 border-b border-white/10 bg-black/30 px-6 py-4 backdrop-blur-md shrink-0',
   actions = null,
   children,
   className = '',
-  bodyClassName = 'flex flex-col h-full overflow-hidden',
+  bodyClassName = 'flex flex-col h-full overflow-hidden min-h-0',
 }) => {
   const { setActiveContext } = useMonika();
   const { t } = useLanguage();
 
   return (
     <section
-      className={`flex h-full min-h-0 flex-col overflow-hidden rounded-none border-0 bg-[linear-gradient(180deg,rgba(28,18,12,0.96),rgba(10,7,4,0.98))] backdrop-blur-xl ${className}`}
+      className={`flex h-full min-h-0 flex-col overflow-hidden rounded-2xl bg-transparent ${className}`}
     >
       <div className={headerClassName}>
-        <div className="min-w-0">
-          {Icon ? (
-            <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#3c2e26] bg-[#1e1612] text-[#de9d50]">
-                <Icon size={15} />
-              </div>
-              <div className="min-w-0">
-                <div className={titleClassName}>{title}</div>
-                {subtitle ? <div className="mt-0.5 text-xs text-[#8c7769]">{subtitle}</div> : null}
-              </div>
-            </div>
-          ) : (
-            <div className="min-w-0">
-              <div className={titleClassName}>{title}</div>
-              {subtitle ? <div className="mt-0.5 text-xs text-[#8c7769]">{subtitle}</div> : null}
+        <div className="min-w-0 flex items-center gap-3">
+          {Icon && (
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-pink-500/30 bg-pink-950/40 text-pink-300 shadow-md">
+              <Icon className="w-4 h-4" />
             </div>
           )}
+          <div className="min-w-0">
+            <div className={titleClassName}>{title}</div>
+            {subtitle ? <div className="text-xs text-white/40 mt-0.5">{subtitle}</div> : null}
+          </div>
         </div>
+
         <div className="flex shrink-0 items-center gap-2">
           {actions}
           <button
@@ -47,9 +41,9 @@ const ShellPanelFrame = ({
             onClick={() => setActiveContext('chat')}
             title={t('navigation.close_panel')}
             aria-label={t('navigation.close_panel')}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#3c2e26] bg-[#1e1612] text-[#8c7769] transition hover:border-[#4c3a2e] hover:bg-[#2a1f18] hover:text-[#f5e6d3]"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/60 transition hover:border-pink-500/40 hover:bg-pink-950/30 hover:text-white"
           >
-            <X size={15} />
+            <X className="w-4 h-4" />
           </button>
         </div>
       </div>
