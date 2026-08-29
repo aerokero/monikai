@@ -22,6 +22,7 @@ if sys.platform == 'win32':
 import socketio
 import uvicorn
 from fastapi import FastAPI, HTTPException, Response
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -92,6 +93,7 @@ from .routers.mcp_http_router import register_mcp_http_routes
 from .routers.research_http_router import register_research_http_routes
 from .routers.workspace_http_router import register_workspace_http_routes
 from .routers.voice_http_router import register_voice_http_routes
+from .routers.odysseus_http_router import register_odysseus_http_routes
 from .routers.study_http_router import register_study_http_routes
 from .handlers.study_socket_handlers import register_study_socket_handlers
 from .runtimes.vn_scene_runtime import VnSceneRuntime
@@ -359,40 +361,28 @@ register_system_http_routes(
 register_models_http_routes(app)
 register_mcp_http_routes(app)
 register_research_http_routes(app, emit_to_frontend=_emit_to_frontend)
-register_workspace_http_routes(app, emit_to_frontend=_emit_to_frontend)
 register_voice_http_routes(app)
+register_odysseus_http_routes(app, emit_to_frontend=_emit_to_frontend)
 
+_STATIC_DIR = Path(__file__).resolve().parent.parent.parent / "static"
 _DIST_DIR = Path(__file__).resolve().parent.parent.parent / "dist"
+
+if _STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static_odysseus")
+
+@app.get("/")
+async def index_root():
+    if _STATIC_DIR.exists() and (_STATIC_DIR / "index.html").exists():
+        return FileResponse(str(_STATIC_DIR / "index.html"))
+    elif _DIST_DIR.exists() and (_DIST_DIR / "index.html").exists():
+        return FileResponse(str(_DIST_DIR / "index.html"))
+    return Response(
+        content="<h1>Odysseus + MonikAI Workspace</h1>",
+        media_type="text/html",
+    )
+
 if _DIST_DIR.exists() and (_DIST_DIR / "index.html").exists():
-    app.mount("/", StaticFiles(directory=str(_DIST_DIR), html=True), name="static_frontend")
-else:
-    @app.get("/")
-    async def index_web_status():
-        return Response(
-            content=(
-                "<!DOCTYPE html><html><head><meta charset='utf-8'><title>MonikAI Workspace</title>"
-                "<style>body{font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#f8fafc;padding:40px;line-height:1.6;}"
-                "h1{color:#f472b6;}a{color:#38bdf8;text-decoration:none;}a:hover{text-decoration:underline;}"
-                ".card{background:#1e293b;padding:24px;border-radius:12px;border:1px solid #334155;max-width:700px;margin-bottom:20px;}"
-                "code{background:#020617;padding:3px 6px;border-radius:4px;color:#a5b4fc;}"
-                "ul{padding-left:20px;}</style></head><body>"
-                "<div class='card'>"
-                "<h1>🌸 MonikAI Workspace Backend is Running</h1>"
-                "<p>Witaj w zunifikowanym serwerze <b>MonikAI + Odysseus AI Workspace</b>.</p>"
-                "<ul>"
-                "<li><b>Interaktywna dokumentacja Swagger API:</b> <a href='/docs'>/docs</a></li>"
-                "<li><b>Status serwera i podsystemów:</b> <a href='/api/v1/status'>/api/v1/status</a></li>"
-                "<li><b>Hub Modeli LLM (ModelRouter):</b> <a href='/api/v1/models'>/api/v1/models</a></li>"
-                "<li><b>Serwery i Narzędzia MCP:</b> <a href='/api/v1/mcp/servers'>/api/v1/mcp/servers</a></li>"
-                "<li><b>Silnik Deep Research:</b> <a href='/api/v1/research/list'>/api/v1/research/list</a></li>"
-                "<li><b>Dokumenty i Diff AI:</b> <a href='/api/v1/docs/list'>/api/v1/docs/list</a></li>"
-                "</ul>"
-                "<p>Wszystkie podsystemy (Ollama, MCP, Deep Research, Docs, Email, VN & Live Audio) są aktywne.</p>"
-                "</div>"
-                "</body></html>"
-            ),
-            media_type="text/html",
-        )
+    app.mount("/vn", StaticFiles(directory=str(_DIST_DIR), html=True), name="static_vn")
 
 app.add_middleware(
     CORSMiddleware,

@@ -495,6 +495,20 @@ class ModelRouter:
             return True
         return False
 
+    def get_status(self) -> Dict[str, Any]:
+        return {
+            "default_provider": self._default_provider_name,
+            "task_routing": self._task_routing,
+            "providers": {
+                name: {"name": name} for name in self._providers.keys()
+            },
+            "active_models": {
+                "agent": "gemini-2.5-flash",
+                "research": "gemini-2.5-flash",
+                "chat": "gemini-2.5-flash",
+            },
+        }
+
     async def complete(
         self,
         messages: Union[List[LLMMessage], List[Dict[str, str]]],
