@@ -3948,7 +3948,6 @@ function startOdysseusApp() {
       }
     });
   }
-  }
 
   // Toggle mic/send icon on input change + hide model picker after enough text
   if (messageInput) {
