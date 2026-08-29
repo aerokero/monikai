@@ -87,37 +87,6 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
             "provider": "gemini",
         }
 
-    @app.get("/api/sessions")
-    async def list_sessions():
-        return list(_SESSIONS.values())
-
-    @app.post("/api/sessions")
-    async def create_session(req: Request):
-        body = await req.json() if req.headers.get("content-type") == "application/json" else {}
-        session_id = f"sess_{int(time.time()*1000)}"
-        title = body.get("title", "Rozmowa z Moniką")
-        sess = {
-            "id": session_id,
-            "title": title,
-            "created_at": time.time(),
-            "updated_at": time.time(),
-            "messages": [],
-        }
-        _SESSIONS[session_id] = sess
-        return {"ok": True, "session": sess}
-
-    @app.get("/api/sessions/{session_id}")
-    async def get_session(session_id: str):
-        if session_id not in _SESSIONS:
-            _SESSIONS[session_id] = {
-                "id": session_id,
-                "title": "Rozmowa z Moniką",
-                "created_at": time.time(),
-                "updated_at": time.time(),
-                "messages": [],
-            }
-        return _SESSIONS[session_id]
-
     @app.post("/api/chat_stream")
     async def chat_stream(request: Request):
         """SSE endpoint for streaming responses into Odysseus UI."""
@@ -133,6 +102,8 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
             pass
 
         prompt = form_data.get("message") or form_data.get("prompt") or ""
+        session_id = form_data.get("session") or form_data.get("session_id", "default")
+        model = form_data.get("selected_model") or form_data.get("model", "monika-companion")
         custom_system_prompt = form_data.get("custom_system_prompt") or form_data.get("system_prompt") or form_data.get("persona_prompt") or ""
         temperature_raw = form_data.get("temperature") or form_data.get("temp") or 0.8
         try:
@@ -155,20 +126,20 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
                 else:
                     system_prompt = base_prompt
 
-                # Fetch past messages from session for full conversational memory
+                # Fetch past messages from real Odysseus database for full conversational memory
                 past_context = ""
                 try:
                     import core.database as db
                     db_sess = db.SessionLocal()
-                    sess_row = db_sess.query(db.Session).filter(db.Session.id == session_id).first()
-                    if sess_row and sess_row.messages:
-                        recent = sess_row.messages[-8:]
-                        for m in recent:
-                            role_label = "Użytkownik" if m.get("role") == "user" else "Monika"
-                            past_context += f"{role_label}: {m.get('content')}\n"
+                    from core.database import ChatMessage as DbMsg
+                    db_msgs = db_sess.query(DbMsg).filter(DbMsg.session_id == session_id).order_by(DbMsg.timestamp.asc()).all()
+                    if db_msgs:
+                        for m in db_msgs[-8:]:
+                            role_label = "Użytkownik" if m.role == "user" else "Monika"
+                            past_context += f"{role_label}: {m.content}\n"
                     db_sess.close()
-                except Exception:
-                    pass
+                except Exception as hist_err:
+                    logger.debug("History query error: %s", hist_err)
 
                 full_user_prompt = f"Historia rozmowy:\n{past_context}\nUżytkownik: {prompt}" if past_context else prompt
 
@@ -210,23 +181,47 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
                     yield f"data: {json.dumps({'delta': chunk})}\n\n"
                     await asyncio.sleep(0.02)
 
-                # Persist to Odysseus session database if session_id is a UUID
+                # Persist to Odysseus SQLite session & chat_messages tables
                 try:
+                    import uuid
                     import core.database as db
+                    from core.database import utcnow_naive, ChatMessage
                     db_sess = db.SessionLocal()
                     sess_row = db_sess.query(db.Session).filter(db.Session.id == session_id).first()
+                    now = utcnow_naive()
                     if sess_row:
-                        # Append messages
-                        msgs = sess_row.messages or []
-                        msgs.append({"role": "user", "content": prompt, "timestamp": time.time()})
-                        msgs.append({"role": "assistant", "content": response_text, "timestamp": time.time(), "model": model})
-                        sess_row.messages = msgs
-                        if sess_row.name == "Monika Chat" or "Nobody" in sess_row.name:
-                            sess_row.name = (prompt[:28] + "...") if len(prompt) > 28 else prompt
+                        user_msg = ChatMessage(
+                            id=str(uuid.uuid4()),
+                            session_id=session_id,
+                            role="user",
+                            content=prompt,
+                            timestamp=now,
+                        )
+                        db_sess.add(user_msg)
+
+                        asst_msg = ChatMessage(
+                            id=str(uuid.uuid4()),
+                            session_id=session_id,
+                            role="assistant",
+                            content=response_text,
+                            timestamp=now,
+                            meta_data=json.dumps({"model": model}),
+                        )
+                        db_sess.add(asst_msg)
+
+                        sess_row.last_accessed = now
+                        sess_row.last_message_at = now
+                        sess_row.updated_at = now
+                        sess_row.message_count = (sess_row.message_count or 0) + 2
+
+                        clean_title = prompt.strip().replace("\n", " ")
+                        if clean_title and (not sess_row.name or sess_row.name in ("Monika Chat", "Nobody", "New Chat") or sess_row.name.startswith("New Chat")):
+                            sess_row.name = (clean_title[:32] + "...") if len(clean_title) > 32 else clean_title
+
                         db_sess.commit()
                     db_sess.close()
                 except Exception as db_save_err:
-                    logger.debug("Session persist: %s", db_save_err)
+                    logger.error("Database message persist error: %s", db_save_err)
 
                 # Send [DONE] token required by Odysseus SSE parser
                 yield "data: [DONE]\n\n"
