@@ -4,11 +4,12 @@
  * Replaces AdaptiveShell as the main container for the Monika-First Adaptive UI
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import Visualizer from '../components/Visualizer';
 import MonikaLayout from './MonikaLayout';
 import ScreenWindow from '../components/ScreenWindow';
 import CameraWindow from '../components/CameraWindow';
+import MiniCompanionWindow from '../components/companion/MiniCompanionWindow';
 
 const MonikaShell = ({
   // Visualizer props (from App)
@@ -90,48 +91,77 @@ const MonikaShell = ({
   geminiVoice = 'Leda',
   onVoiceChange = () => {},
 }) => {
-  return (
-    <div className="monika-shell h-screen w-screen bg-black text-white/85 overflow-hidden relative">
-      {/* VN FULLSCREEN BACKGROUND + CHARACTER (behind UI) */}
-      <div className="fixed inset-0 z-0 pointer-events-none">
-        <Visualizer
-          audioData={audioData}
-          intensity={intensity}
-          width={width}
-          height={height}
-          backgroundSrc={backgroundSrc}
-          layers={layers}
-          sprites={sprites}
-          isAssistantSpeaking={isAssistantSpeaking}
-          isUserSpeaking={isUserSpeaking}
-          characterScale={characterScale}
-          characterY={characterY}
-          characterX={characterX}
-          characterAnchorBottom={characterAnchorBottom}
-          characterBottomOffset={characterBottomOffset}
-          characterTransitionMs={characterTransitionMs}
-          headpatActive={headpatActive}
-          petpetSrc={petpetSrc}
-        />
-        {/* Subtle VN vignette */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/20 to-black/55" />
-        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-15 mix-blend-overlay" />
-      </div>
+  const [companionMode, setCompanionMode] = useState(() => {
+    return localStorage.getItem('monikai_companion_mode') === 'true';
+  });
 
-      {/* NEW MONIKA-FIRST ADAPTIVE UI SHELL */}
-      <div className="relative z-10">
-        <MonikaLayout
-          personalityState={personalityState}
-          messages={messages}
-          inputValue={inputValue}
-          setInputValue={setInputValue}
-          handleSend={handleSend}
+  const toggleCompanionMode = () => {
+    setCompanionMode(prev => {
+      const next = !prev;
+      localStorage.setItem('monikai_companion_mode', String(next));
+      return next;
+    });
+  };
+
+  const lastMonikaMessage = useMemo(() => {
+    const assistantMsgs = (messages || []).filter(m => m.sender === 'assistant' || m.sender === 'monika' || m.type === 'model');
+    return assistantMsgs.length > 0 ? assistantMsgs[assistantMsgs.length - 1].text : 'Cześć! Jestem Twoim małym towarzyszem na pulpicie~ ✨';
+  }, [messages]);
+
+  return (
+    <div className={`monika-shell h-screen w-screen ${companionMode ? 'bg-transparent' : 'bg-black'} text-white/85 overflow-hidden relative`}>
+      {/* Mini Companion Window Mode */}
+      {companionMode ? (
+        <MiniCompanionWindow
+          onExpandToFull={() => toggleCompanionMode()}
+          lastMessage={lastMonikaMessage}
+          onSendMessage={handleSend}
+          isListening={userSpeaking}
+          onToggleMic={() => {}}
           socket={socket}
-          userSpeaking={userSpeaking}
-          micAudioData={micAudioData}
-          language={language}
-          studyCatalog={studyCatalog}
-          studySelection={studySelection}
+        />
+      ) : (
+        <>
+          {/* VN FULLSCREEN BACKGROUND + CHARACTER (behind UI) */}
+          <div className="fixed inset-0 z-0 pointer-events-none">
+            <Visualizer
+              audioData={audioData}
+              intensity={intensity}
+              width={width}
+              height={height}
+              backgroundSrc={backgroundSrc}
+              layers={layers}
+              sprites={sprites}
+              isAssistantSpeaking={isAssistantSpeaking}
+              isUserSpeaking={isUserSpeaking}
+              characterScale={characterScale}
+              characterY={characterY}
+              characterX={characterX}
+              characterAnchorBottom={characterAnchorBottom}
+              characterBottomOffset={characterBottomOffset}
+              characterTransitionMs={characterTransitionMs}
+              headpatActive={headpatActive}
+              petpetSrc={petpetSrc}
+            />
+            {/* Subtle VN vignette */}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/20 to-black/55" />
+          </div>
+
+          {/* NEW MONIKA-FIRST ADAPTIVE UI SHELL */}
+          <div className="relative z-10">
+            <MonikaLayout
+              personalityState={personalityState}
+              messages={messages}
+              inputValue={inputValue}
+              setInputValue={setInputValue}
+              handleSend={handleSend}
+              socket={socket}
+              userSpeaking={userSpeaking}
+              micAudioData={micAudioData}
+              language={language}
+              studyCatalog={studyCatalog}
+              studySelection={studySelection}
+              onToggleCompanionMode={toggleCompanionMode}
           onSelectStudy={onSelectStudy}
           onRefreshCatalog={onRefreshCatalog}
           shareRef={shareRef}
@@ -190,8 +220,10 @@ const MonikaShell = ({
           />
         )}
       </div>
-    </div>
-  );
+    </>
+    )}
+  </div>
+);
 };
 
 export default MonikaShell;

@@ -63,6 +63,7 @@ const MonikaLayout = ({
   onToggleMinecraft = () => {},
   showMinecraftWindow = false,
   onOpenStudy = () => {},
+  onToggleCompanionMode = () => {},
   micDevices = [],
   speakerDevices = [],
   webcamDevices = [],
@@ -139,7 +140,7 @@ const MonikaLayout = ({
       {isElectron && <WindowTopBar />}
 
       {/* Rail Navigation (Left/Bottom/Top depending on layout) */}
-      <RailNav />
+      <RailNav onToggleCompanionMode={onToggleCompanionMode} />
 
       {/* Main Workspace (Monika + Other Panels) */}
       <div className="monika-workspace" role="main">

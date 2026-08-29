@@ -173,6 +173,24 @@ const SettingsPanel = ({
             options={GEMINI_VOICES}
           />
         </FieldRow>
+        <FieldRow title="Modularny Silnik TTS" description="Wybierz provider syntezy mowy (Gemini Live lub ElevenLabs streaming)">
+          <SelectField
+            value={localStorage.getItem('monikai_tts_provider') || 'gemini'}
+            onChange={(e) => {
+              localStorage.setItem('monikai_tts_provider', e.target.value);
+              fetch('/api/v1/voice/select', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider: e.target.value }),
+              }).catch(() => {});
+            }}
+            wrapperClassName="w-[220px]"
+            options={[
+              { value: 'gemini', label: 'Gemini Live (Natywne dwukierunkowe audio)' },
+              { value: 'elevenlabs', label: 'ElevenLabs (Streaming Multilingual v2)' },
+            ]}
+          />
+        </FieldRow>
 
         <SectionLabel className="pt-6">Model Router (Odysseus Agent Hub)</SectionLabel>
         <FieldRow 

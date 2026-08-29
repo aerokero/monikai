@@ -91,7 +91,7 @@ const RailButton = React.forwardRef(({
   </button>
 ));
 
-const RailNav = () => {
+const RailNav = ({ onToggleCompanionMode }) => {
   const { activeContext, setActiveContext } = useMonika();
   const { isVideoOn, toggleVideo, visionMode, toggleScreenCapture, isConnected, togglePower, onLogout, onMonikaTemporaryMood } = useAudioVideo();
   const { layoutMode } = useLayoutMode();
@@ -231,6 +231,18 @@ const RailNav = () => {
           canExpandRail={canExpandRail}
           isExpanded={isExpanded}
           ariaLabel={t('navigation.share')}
+        />
+
+        {/* Mini Companion Toggle Button */}
+        <RailButton
+          onClick={onToggleCompanionMode}
+          icon={Icons.Minimize2}
+          label="Companion"
+          tooltipLabel="Przełącz na miniaturowego pływającego peta"
+          variant="idle"
+          canExpandRail={canExpandRail}
+          isExpanded={isExpanded}
+          ariaLabel="Mini Companion Mode"
         />
 
         {/* Divider line */}

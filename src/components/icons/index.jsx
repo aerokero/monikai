@@ -101,6 +101,7 @@ export const Play = pick('Play', 'Play');
 export const CheckCircle2 = pick('CircleCheck', 'CheckCircle2');
 export const Layers = pick('Stack', 'Layers');
 export const ArrowRight = pick('ArrowRight', 'ArrowRight');
+export const Move = pick('ArrowsOutCardinal', 'Move');
 
 export default {
   X,
