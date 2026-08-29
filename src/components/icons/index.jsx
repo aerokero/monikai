@@ -96,6 +96,11 @@ export const ZoomIn = pick('MagnifyingGlassPlus', 'ZoomIn');
 export const ZoomOut = pick('MagnifyingGlassMinus', 'ZoomOut');
 export const LogOut = pick('SignOut', 'LogOut');
 export const Leaf = pick('Leaf', 'Leaf');
+export const Search = pick('MagnifyingGlass', 'Search');
+export const Play = pick('Play', 'Play');
+export const CheckCircle2 = pick('CircleCheck', 'CheckCircle2');
+export const Layers = pick('Stack', 'Layers');
+export const ArrowRight = pick('ArrowRight', 'ArrowRight');
 
 export default {
   X,

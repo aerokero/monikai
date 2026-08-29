@@ -54,6 +54,7 @@ services:
     volumes:
       - /srv/fast/containers/monikai/data:/app/data
       - /srv/fast/containers/monikai/backend:/app/backend:ro
+      - /srv/fast/containers/monikai/dist:/app/dist:ro
 
     healthcheck:
       test:
