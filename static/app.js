@@ -193,12 +193,7 @@ function initRailHoverLabels() {
   });
 }
 
-// Fetch wrapper
-const _origFetch = window.fetch;
-window.fetch = async function(...args) {
-  const res = await _origFetch.apply(this, args);
-  return res;
-};
+// Fetch is native
 
 // Search settings
 

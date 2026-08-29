@@ -115,7 +115,7 @@ export class MonikaVisualizer {
         position: absolute;
         bottom: 0;
         left: 50%;
-        transform: translateX(-50%) scale(1.15);
+        transform: translateX(-50%) scale(1.38);
         transform-origin: center bottom;
         width: min(1020px, 100vw);
         height: min(1020px, 100vh);
