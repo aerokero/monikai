@@ -370,20 +370,37 @@ try:
 except Exception as _ody_err:
     logger.warning("Odysseus backend bridge initialization: %s", _ody_err)
 
+class _RevalidatingStatic(StaticFiles):
+    async def get_response(self, path, scope):
+        resp = await super().get_response(path, scope)
+        if path.endswith((".js", ".css", ".html")):
+            resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            resp.headers["Pragma"] = "no-cache"
+            resp.headers["Expires"] = "0"
+        return resp
+
 _STATIC_DIR = Path(__file__).resolve().parent.parent.parent / "static"
 _DIST_DIR = Path(__file__).resolve().parent.parent.parent / "dist"
 
 if _STATIC_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static_odysseus")
+    app.mount("/static", _RevalidatingStatic(directory=str(_STATIC_DIR)), name="static_odysseus")
 
 def serve_spa_page(request: Request):
+    import time
     index_file = _STATIC_DIR / "index.html"
     if index_file.exists():
         with open(index_file, "r", encoding="utf-8") as f:
             html = f.read()
         nonce = getattr(request.state, "csp_nonce", "")
         html = html.replace("{{CSP_NONCE}}", nonce)
-        return HTMLResponse(html)
+        # Inject dynamic cache busting for all scripts
+        now_ts = str(int(time.time()))
+        html = re.sub(r'(\.js|\.css)(\?v=[^"\'\s>]+)?', r'\1?v=' + now_ts, html)
+        resp = HTMLResponse(html)
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
     elif _DIST_DIR.exists() and (_DIST_DIR / "index.html").exists():
         return FileResponse(str(_DIST_DIR / "index.html"))
     return Response(content="<h1>Odysseus + MonikAI Workspace</h1>", media_type="text/html")

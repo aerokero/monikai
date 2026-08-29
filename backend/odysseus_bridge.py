@@ -26,30 +26,6 @@ def init_and_register_odysseus_backend(app: FastAPI):
         db.init_db()
         logger.info("Odysseus database initialized at %s", os.environ.get("ODYSSEUS_DATA_DIR"))
 
-        # Seed native Monika endpoint in Odysseus database
-        try:
-            import json
-            db_session = db.SessionLocal()
-            ep = db_session.query(db.ModelEndpoint).filter(db.ModelEndpoint.id == "monika-native").first()
-            if not ep:
-                ep = db.ModelEndpoint(
-                    id="monika-native",
-                    name="Monika (DDLC Companion)",
-                    base_url="http://127.0.0.1:8000/v1",
-                    cached_models=json.dumps(["monika-companion", "gemini-2.5-flash", "gemini-2.5-pro"]),
-                    pinned_models=json.dumps(["monika-companion"]),
-                    is_enabled=True,
-                    model_type="llm",
-                    endpoint_kind="api",
-                    supports_tools=True,
-                )
-                db_session.add(ep)
-                db_session.commit()
-                logger.info("Seeded default monika-native ModelEndpoint in database")
-            db_session.close()
-        except Exception as seed_err:
-            logger.warning("Failed to seed monika-native endpoint: %s", seed_err)
-
         from src.constants import BASE_DIR, REQUEST_TIMEOUT, OPENAI_API_KEY, SESSIONS_FILE
         from src.app_initializer import initialize_managers
         
