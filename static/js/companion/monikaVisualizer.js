@@ -1,18 +1,20 @@
 /**
- * Monika Visualizer for Odysseus AI Workspace
- * Renders the Visual Novel room scene and layered Monika sprite
- * directly into the main chat canvas behind messages.
+ * Pixel-Perfect Monika Visualizer for Odysseus AI Workspace
+ * Renders MAS layered Monika (Hair, Body, Outfit, Arms, Face, Eyes, Mouth, Ahoge, Table)
+ * with animated blinking, talking, breathing and time-of-day room transitions.
  */
 
 export class MonikaVisualizer {
   constructor() {
     this.stage = null;
-    this.characterContainer = null;
-    this.roomContainer = null;
     this.isBlinking = false;
-    this.mood = 'neutral';
-    this.currentPose = 'def';
-    this.outfit = 'bath_towel_white'; // default or school uniform
+    this.isSpeaking = false;
+    this.mood = 'neutral'; // 'neutral', 'happy', 'love', 'thinking'
+    this.hairStyle = 'down'; // 'down' or 'def'
+    this.outfit = 'bath_towel_white'; // 'bath_towel_white' or 'def'
+    this.pose = 'rest'; // 'rest', 'crossed', 'steepling', 'point'
+    this.ahoge = 'ahoge_curl'; // 'ahoge_curl' or null
+    
     this.init();
   }
 
@@ -20,6 +22,7 @@ export class MonikaVisualizer {
     this.mountStage();
     this.startBlinkLoop();
     this.updateBackground();
+    this.listenToOdysseusEvents();
   }
 
   mountStage() {
@@ -37,20 +40,54 @@ export class MonikaVisualizer {
     this.stage.innerHTML = `
       <div class="monika-vn-room" id="monika-vn-room"></div>
       <div class="monika-vn-char-wrap" id="monika-vn-char-wrap">
-        <img id="m-layer-hair-back" class="m-layer" src="/static/vn/monika/h/def/0.png" />
-        <img id="m-layer-body" class="m-layer" src="/static/vn/monika/b/body-def-0.png" />
-        <img id="m-layer-head" class="m-layer" src="/static/vn/monika/b/body-def-head.png" />
+        <!-- Layer 1: Chair -->
+        <img class="m-layer" src="/static/vn/monika/t/chair-def.png" />
+        
+        <!-- Layer 2: Hair Back -->
+        <img id="m-layer-hair-back" class="m-layer" src="/static/vn/monika/h/down/0.png" />
+        
+        <!-- Layer 3: Body Base -->
+        <img class="m-layer" src="/static/vn/monika/b/body-def-0.png" />
+        
+        <!-- Layer 4: Outfit Base -->
+        <img id="m-layer-outfit-0" class="m-layer" src="/static/vn/monika/c/bath_towel_white/body-def-0.png" />
+        
+        <!-- Layer 5: Body Upper -->
+        <img class="m-layer" src="/static/vn/monika/b/body-def-1.png" />
+        
+        <!-- Layer 6: Outfit Upper -->
+        <img id="m-layer-outfit-1" class="m-layer" src="/static/vn/monika/c/bath_towel_white/body-def-1.png" />
+        
+        <!-- Layer 7: Arms (Left & Right Rest Pose) -->
+        <img id="m-layer-arm-l" class="m-layer" src="/static/vn/monika/b/arms-left-rest-10.png" />
+        <img id="m-layer-arm-r" class="m-layer" src="/static/vn/monika/b/arms-right-restpoint-10.png" />
+        
+        <!-- Layer 8: Head Base -->
+        <img class="m-layer" src="/static/vn/monika/b/body-def-head.png" />
+        
+        <!-- Layer 9: Face Elements -->
+        <img class="m-layer" src="/static/vn/monika/f/face-nose-def.png" />
+        <img id="m-layer-blush" class="m-layer" src="/static/vn/monika/f/face-blush-shade.png" style="opacity:0.6" />
         <img id="m-layer-eyes" class="m-layer" src="/static/vn/monika/f/face-eyes-normal.png" />
         <img id="m-layer-brows" class="m-layer" src="/static/vn/monika/f/face-eyebrows-mid.png" />
-        <img id="m-layer-nose" class="m-layer" src="/static/vn/monika/f/face-nose-def.png" />
         <img id="m-layer-mouth" class="m-layer" src="/static/vn/monika/f/face-mouth-smile.png" />
-        <img id="m-layer-hair-front" class="m-layer" src="/static/vn/monika/h/def/def-0.png" />
-        <img id="m-layer-desk" class="m-layer m-desk" src="/static/vn/monika/t/table-def.png" onerror="this.style.display='none'" />
+        
+        <!-- Layer 10: Hair Front / Bangs -->
+        <img id="m-layer-hair-front" class="m-layer" src="/static/vn/monika/h/down/10.png" />
+        
+        <!-- Layer 11: Ahoge Accessory -->
+        <img id="m-layer-ahoge" class="m-layer" src="/static/vn/monika/a/ahoge_curl/0.png" />
+        
+        <!-- Layer 12: Desk / Table -->
+        <img class="m-layer" src="/static/vn/monika/t/table-def.png" />
+        
+        <!-- Layer 13: Coffee Mug -->
+        <img class="m-layer" src="/static/vn/monika/t/food/drink_coffee.png" />
       </div>
       <div class="monika-vn-atmosphere"></div>
     `;
 
-    // Insert at the beginning of chat container so it renders under messages & input
+    // Insert at the beginning of chat container so it renders under messages & composer
     chatContainer.insertBefore(this.stage, chatContainer.firstChild);
     this.applyStyles();
   }
@@ -75,22 +112,22 @@ export class MonikaVisualizer {
         background-size: cover;
         background-position: center 30%;
         filter: brightness(0.92) saturate(1.05);
-        transition: background-image 1s ease-in-out;
+        transition: background-image 1.2s ease-in-out;
       }
       .monika-vn-char-wrap {
         position: absolute;
-        bottom: 0;
+        bottom: -20px;
         left: 50%;
         transform: translateX(-50%);
-        width: min(780px, 95vw);
-        height: min(88vh, 860px);
+        width: min(880px, 95vw);
+        height: min(92vh, 900px);
         pointer-events: auto;
         cursor: pointer;
-        animation: monika-breathe 4.5s ease-in-out infinite alternate;
+        animation: monika-breathe 4s ease-in-out infinite alternate;
       }
       @keyframes monika-breathe {
         0% { transform: translateX(-50%) translateY(0); }
-        100% { transform: translateX(-50%) translateY(5px); }
+        100% { transform: translateX(-50%) translateY(4px); }
       }
       .m-layer {
         position: absolute;
@@ -105,8 +142,8 @@ export class MonikaVisualizer {
       .monika-vn-atmosphere {
         position: absolute;
         inset: 0;
-        background: radial-gradient(circle at 50% 40%, transparent 40%, rgba(12, 10, 16, 0.45) 85%),
-                    linear-gradient(to top, rgba(14, 12, 18, 0.85) 0%, transparent 40%);
+        background: radial-gradient(circle at 50% 40%, transparent 45%, rgba(10, 8, 14, 0.4) 85%),
+                    linear-gradient(to top, rgba(14, 12, 18, 0.82) 0%, transparent 40%);
         pointer-events: none;
       }
       
@@ -157,7 +194,9 @@ export class MonikaVisualizer {
       eyesEl.src = '/static/vn/monika/f/face-eyes-closedhappy.png';
       setTimeout(() => {
         if (eyesEl) {
-          eyesEl.src = '/static/vn/monika/f/face-eyes-normal.png';
+          eyesEl.src = this.mood === 'love' 
+            ? '/static/vn/monika/f/face-eyes-soft.png' 
+            : '/static/vn/monika/f/face-eyes-normal.png';
         }
       }, 160);
 
@@ -176,6 +215,23 @@ export class MonikaVisualizer {
     if (room) {
       const bg = isNight ? '/static/vn/location/bg_room_night.png' : '/static/vn/location/bg_room.png';
       room.style.backgroundImage = `url('${bg}')`;
+    }
+  }
+
+  listenToOdysseusEvents() {
+    // Interactive click on Monika triggers happy blush
+    const wrap = document.getElementById('monika-vn-char-wrap');
+    if (wrap) {
+      wrap.addEventListener('click', () => {
+        const mouth = document.getElementById('m-layer-mouth');
+        const blush = document.getElementById('m-layer-blush');
+        if (mouth) mouth.src = '/static/vn/monika/f/face-mouth-big.png';
+        if (blush) blush.style.opacity = '0.9';
+        setTimeout(() => {
+          if (mouth) mouth.src = '/static/vn/monika/f/face-mouth-smile.png';
+          if (blush) blush.style.opacity = '0.6';
+        }, 1500);
+      });
     }
   }
 }

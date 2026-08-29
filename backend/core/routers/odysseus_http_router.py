@@ -62,11 +62,7 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
 
     @app.get("/api/sessions")
     async def list_sessions():
-        return {
-            "ok": True,
-            "sessions": list(_SESSIONS.values()),
-            "current_session_id": "default",
-        }
+        return list(_SESSIONS.values())
 
     @app.post("/api/sessions")
     async def create_session(req: Request):
