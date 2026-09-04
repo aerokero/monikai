@@ -592,6 +592,7 @@ const IMAGE_PRICING = {
 export function shortModel(name) {
   if (!name) return '...';
   if (typeof name !== 'string') name = String(name);
+  if (name.toLowerCase() === 'monika-companion' || name.toLowerCase() === 'monika') return 'Monika';
   let short = name.split('/').pop();
   // Strip .gguf extension
   short = short.replace(/\.gguf$/i, '');
@@ -2622,6 +2623,7 @@ export function addMessage(role, content, modelName, metadata) {
             ? roundEndpointLabels[r]
             : pair.actualEndpointLabel;
           roleEl.textContent = modelRouteLabel(
+          let roundLabel = modelRouteLabel(
             pair.requestedModel,
             contModel,
             pair.requestedEndpointLabel,
@@ -2629,6 +2631,10 @@ export function addMessage(role, content, modelName, metadata) {
             pair.requestedEndpointId,
             contEndpointId,
           );
+          if (contModel === 'monika-companion' || roundLabel.toLowerCase() === 'monika-companion') {
+            roundLabel = 'Monika';
+          }
+          roleEl.textContent = roundLabel;
           if (
             pair.requestedModel
             && contModel
@@ -2801,6 +2807,9 @@ export function addMessage(role, content, modelName, metadata) {
       replyModels.requestedEndpointId,
       replyModels.actualEndpointId,
     );
+    if (role === 'assistant' && (resolvedModel === 'monika-companion' || replyModels.requestedModel === 'monika-companion' || _roleText.toLowerCase() === 'monika-companion')) {
+      _roleText = 'Monika';
+    }
     if (role === 'assistant' && (metadata?.research || metadata?.research_clarification)) {
       _roleText += ' (Research)';
     }

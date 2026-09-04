@@ -440,6 +440,9 @@ import { loadPanel } from './panels.js';
       opts.requestedEndpointId,
       opts.actualEndpointId,
     );
+    if (req === 'monika-companion' || actual === 'monika-companion' || label === 'monika-companion' || (typeof label === 'string' && label.toLowerCase() === 'monika-companion')) {
+      label = 'Monika';
+    }
     if (opts.suffix) label += ' (' + opts.suffix + ')';
     if (opts.characterName) label = opts.characterName;
     roleEl.textContent = label + ' ';
@@ -2029,6 +2032,9 @@ import { loadPanel } from './panels.js';
       }
 
       var roleLabel = _modelRouteLabel(modelName, modelName);
+      if (!roleLabel || roleLabel.toLowerCase() === 'monika-companion' || modelName === 'monika-companion') {
+        roleLabel = 'Monika';
+      }
       var _charNameInit = presetsModule.getCharacterName ? presetsModule.getCharacterName() : '';
       if (_charNameInit) roleLabel = _charNameInit;
       const roleTs = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});

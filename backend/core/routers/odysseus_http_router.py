@@ -6,11 +6,17 @@ import asyncio
 import json
 import logging
 import os
+import sys
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+_ODY_ROOT = Path(__file__).resolve().parents[2] / "odysseus"
+if str(_ODY_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ODY_ROOT))
 
 from backend.models.model_router import get_model_router
 from backend.services.docs_service import get_docs_service
@@ -19,16 +25,51 @@ from backend.audio.tts_router import get_tts_router
 
 logger = logging.getLogger(__name__)
 
-# In-memory session store for Odysseus sessions
-_SESSIONS: Dict[str, Dict[str, Any]] = {
-    "default": {
-        "id": "default",
-        "title": "Rozmowa z Moniką",
-        "created_at": time.time(),
-        "updated_at": time.time(),
-        "messages": [],
-    }
-}
+
+def _ensure_native_session(session_id: str, prompt: str = "", model: str = "monika-companion"):
+    """Ensure Odysseus session exists in the real SQLite database."""
+    try:
+        import core.database as db
+        from core.database import Session as DbSession, ChatMessage, utcnow_naive
+
+        session_id = str(session_id or "default").strip() or "default"
+        db_sess = db.SessionLocal()
+        try:
+            row = db_sess.query(DbSession).filter(DbSession.id == session_id).first()
+            now = utcnow_naive()
+            title = (prompt or "Rozmowa z Moniką").strip().replace("\n", " ")
+            if not title:
+                title = "Rozmowa z Moniką"
+            if row is None:
+                row = DbSession(
+                    id=session_id,
+                    name=(title[:32] + "...") if len(title) > 32 else title,
+                    endpoint_url="/api/chat_stream",
+                    model=model or "monika-companion",
+                    rag=False,
+                    archived=False,
+                    headers={},
+                    owner=None,
+                    created_at=now,
+                    updated_at=now,
+                    last_accessed=now,
+                    last_message_at=now,
+                    message_count=0,
+                )
+                db_sess.add(row)
+            else:
+                if not row.name or row.name in ("Monika Chat", "Nobody", "New Chat") or str(row.name).startswith("New Chat"):
+                    row.name = (title[:32] + "...") if len(title) > 32 else title
+                row.endpoint_url = row.endpoint_url or "/api/chat_stream"
+                row.model = model or row.model or "monika-companion"
+                row.updated_at = now
+                row.last_accessed = now
+            db_sess.commit()
+            return row
+        finally:
+            db_sess.close()
+    except Exception:
+        return None
 
 
 def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
@@ -141,6 +182,8 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
                 except Exception as hist_err:
                     logger.debug("History query error: %s", hist_err)
 
+                _ensure_native_session(session_id, prompt, model)
+
                 full_user_prompt = f"Historia rozmowy:\n{past_context}\nUżytkownik: {prompt}" if past_context else prompt
 
                 # Generate from Gemini AI or ModelRouter
@@ -188,6 +231,8 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
                     from core.database import utcnow_naive, ChatMessage
                     db_sess = db.SessionLocal()
                     sess_row = db_sess.query(db.Session).filter(db.Session.id == session_id).first()
+                    if sess_row is None:
+                        sess_row = _ensure_native_session(session_id, prompt, model)
                     now = utcnow_naive()
                     if sess_row:
                         user_msg = ChatMessage(
@@ -212,10 +257,11 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
                         sess_row.last_accessed = now
                         sess_row.last_message_at = now
                         sess_row.updated_at = now
+                        sess_row.model = model or sess_row.model or "monika-companion"
                         sess_row.message_count = (sess_row.message_count or 0) + 2
 
                         clean_title = prompt.strip().replace("\n", " ")
-                        if clean_title and (not sess_row.name or sess_row.name in ("Monika Chat", "Nobody", "New Chat") or sess_row.name.startswith("New Chat")):
+                        if clean_title and (not sess_row.name or sess_row.name in ("Monika Chat", "Nobody", "New Chat") or str(sess_row.name).startswith("New Chat")):
                             sess_row.name = (clean_title[:32] + "...") if len(clean_title) > 32 else clean_title
 
                         db_sess.commit()
