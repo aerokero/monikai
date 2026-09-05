@@ -27,10 +27,17 @@ function _basename(p) {
 }
 
 // Workspace only applies to agent mode (it scopes the file/shell tools), so the
-// pill + overflow entry are hidden in chat mode, like the bash toggle.
 function _isChatMode() {
   const b = document.getElementById('mode-chat-btn');
-  return !!(b && b.classList.contains('active'));
+  if (b && b.classList.contains('active')) return true;
+  const a = document.getElementById('mode-agent-btn');
+  if (a && a.classList.contains('active')) return false;
+  try {
+    const s = Storage.loadToggleState();
+    return (s && s.mode) !== 'agent';
+  } catch (_) {
+    return true;
+  }
 }
 
 export function syncWorkspaceIndicator(path) {
@@ -45,8 +52,11 @@ export function syncWorkspaceIndicator(path) {
   }
   if (name) name.textContent = path ? _basename(path) : '';
   if (overflow) {
-    overflow.style.display = chat ? 'none' : '';
-    overflow.classList.toggle('active', !!path);
+    overflow.style.display = '';
+    overflow.classList.toggle('active', !!path && !chat);
+    overflow.classList.toggle('agent-disabled', chat);
+    overflow.setAttribute('aria-disabled', String(chat));
+    overflow.title = chat ? 'Wymaga trybu agenta' : 'Workspace';
   }
   // Recompute the "+" overflow dot (app.js owns updatePlusDot via this event).
   try { document.dispatchEvent(new CustomEvent('overflow-state-change')); } catch (_) {}
@@ -183,6 +193,9 @@ function _getModal() {
 }
 
 export async function openWorkspaceBrowser() {
+  const overflow = document.getElementById('overflow-workspace-btn');
+  if (overflow && overflow.classList.contains('agent-disabled')) return;
+  if (_isChatMode()) return;
   const modal = _getModal();
   modal.style.display = 'flex';
   try {
@@ -200,7 +213,16 @@ export function initWorkspace() {
   // Restore persisted workspace into the pill on load.
   syncWorkspaceIndicator(getWorkspace());
   const overflow = document.getElementById('overflow-workspace-btn');
-  if (overflow) overflow.addEventListener('click', openWorkspaceBrowser);
+  if (overflow) {
+    overflow.addEventListener('click', (e) => {
+      if (overflow.classList.contains('agent-disabled') || _isChatMode()) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      openWorkspaceBrowser();
+    });
+  }
   const pill = document.getElementById('workspace-indicator-btn');
   if (pill) pill.addEventListener('click', clearWorkspace);
 }

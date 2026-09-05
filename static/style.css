@@ -127,24 +127,24 @@ pre, code, .hljs {
 /* Scrollbar styling */
 @supports selector(::-webkit-scrollbar) {
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 4px;
+    height: 4px;
   }
   ::-webkit-scrollbar-track {
-    background: var(--panel);
+    background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background-color: var(--red);
-    border-radius: 4px;
-    border: 2px solid var(--panel);
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 9999px;
+    border: none;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background-color: color-mix(in srgb, var(--red) 80%, white);
+    background-color: rgba(255, 255, 255, 0.28);
   }
 }
 
-html {
-  scrollbar-color: var(--red) var(--panel);
+html, body {
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
   scrollbar-width: thin;
 }
 

@@ -1524,7 +1524,13 @@ function initializeEventListeners() {
       const ttsOff = settings.tts_enabled === false || !settings.tts_provider || settings.tts_provider === 'disabled';
       const overflowTts = el('overflow-tts-btn');
       if (overflowTts) {
-        overflowTts.style.display = ttsOff ? 'none' : '';
+        if (ttsOff) {
+          overflowTts.style.setProperty('display', 'none', 'important');
+          overflowTts.setAttribute('hidden', '');
+        } else {
+          overflowTts.style.removeProperty('display');
+          overflowTts.removeAttribute('hidden');
+        }
       }
     })
     .catch(() => {});
@@ -1726,7 +1732,7 @@ function initializeEventListeners() {
     const state = loadToggleState();
     const key = _modeKey(stateKey, mode);
     if (Object.prototype.hasOwnProperty.call(state, key)) return !!state[key];
-    return mode === 'agent'; // default: ON in agent, OFF in chat
+    return false; // Tools are OFF by default in Gemini until explicitly enabled
   }
 
   function saveToolPref(stateKey, mode, value) {
@@ -1782,36 +1788,86 @@ function initializeEventListeners() {
     }
   }
 
+  function syncActiveToolChips() {
+    const st = loadToggleState();
+    const isAgent = (st.mode === 'agent');
+
+    // Agent mode chip
+    const agentChip = el('mode-agent-chip');
+    if (agentChip) agentChip.style.display = isAgent ? 'inline-flex' : 'none';
+    const agentBtn = el('mode-agent-btn');
+    if (agentBtn) {
+      agentBtn.classList.toggle('active', isAgent);
+      agentBtn.setAttribute('aria-pressed', String(isAgent));
+    }
+
+    // Web Search chip
+    const webChk = el('web-toggle');
+    const isWeb = !!(webChk && webChk.checked);
+    const webChip = el('web-chip');
+    if (webChip) webChip.style.display = isWeb ? 'inline-flex' : 'none';
+    const webBtn = el('web-toggle-btn');
+    if (webBtn) {
+      webBtn.classList.toggle('active', isWeb);
+      webBtn.setAttribute('aria-pressed', String(isWeb));
+    }
+
+    // Bash Shell chip (only active in agent mode)
+    const bashChk = el('bash-toggle');
+    const isBash = !!(bashChk && bashChk.checked && isAgent);
+    const bashChip = el('bash-chip');
+    if (bashChip) bashChip.style.display = isBash ? 'inline-flex' : 'none';
+    const bashBtn = el('bash-toggle-btn');
+    if (bashBtn) {
+      bashBtn.classList.toggle('active', isBash);
+      bashBtn.setAttribute('aria-pressed', String(isBash));
+    }
+  }
+  window.__odysseusSyncActiveToolChips = syncActiveToolChips;
+
   function applyModeToToggles(mode) {
+    const isAgent = mode === 'agent';
     MODE_TOOLS.forEach(({ btnId, checkboxId, stateKey }) => {
       const btn = el(btnId);
       if (!btn) return;
-      // Hide bash button in chat mode
-      if (mode === 'chat' && stateKey === 'bash') {
-        btn.style.display = 'none';
-        return;
+      if (stateKey === 'bash') {
+        btn.classList.toggle('agent-disabled', !isAgent);
+        btn.setAttribute('aria-disabled', String(!isAgent));
+        btn.title = isAgent ? 'Shell Access' : 'Wymaga trybu agenta';
+        btn.style.display = '';
+        if (!isAgent) {
+          btn.classList.remove('active');
+          btn.setAttribute('aria-pressed', 'false');
+          if (checkboxId) { const chk = el(checkboxId); if (chk) chk.checked = false; }
+          return;
+        }
       }
-      // Show buttons in agent mode (or for web toggle in any mode)
       btn.style.display = '';
       if (btn.style.display === 'none') return;
       const on = loadToolPref(stateKey, mode);
       btn.classList.toggle('active', on);
+      btn.setAttribute('aria-pressed', String(on));
       if (checkboxId) { const chk = el(checkboxId); if (chk) chk.checked = on; }
     });
+    syncActiveToolChips();
   }
 
 	  // ── Agent / Chat mode toggle ──
 	  (function initModeToggle() {
     const agentBtn = el('mode-agent-btn');
     const chatBtn = el('mode-chat-btn');
-    if (!agentBtn || !chatBtn) return;
+    if (!agentBtn) return;
     const state = loadToggleState();
     let currentMode = state.mode || 'chat';
 
-    // Immediately hide bash button in chat mode on page load
-    if (currentMode === 'chat') {
-      const bashBtn = el('bash-toggle-btn');
-      if (bashBtn) bashBtn.style.display = 'none';
+    // Initialize bash button state
+    const bashBtn = el('bash-toggle-btn');
+    if (bashBtn) {
+      const isAgent = currentMode === 'agent';
+      bashBtn.classList.toggle('agent-disabled', !isAgent);
+      bashBtn.setAttribute('aria-disabled', String(!isAgent));
+      bashBtn.title = isAgent ? 'Shell Access' : 'Wymaga trybu agenta';
+      bashBtn.style.display = '';
     }
 
     function setMode(mode) {
@@ -1820,25 +1876,43 @@ function initializeEventListeners() {
       st.mode = mode;
       saveToggleState(st);
       agentBtn.classList.toggle('active', mode === 'agent');
-      chatBtn.classList.toggle('active', mode === 'chat');
+      if (chatBtn) {
+        chatBtn.classList.toggle('active', mode === 'chat');
+        chatBtn.setAttribute('aria-pressed', String(mode === 'chat'));
+      }
       agentBtn.setAttribute('aria-pressed', String(mode === 'agent'));
-      chatBtn.setAttribute('aria-pressed', String(mode === 'chat'));
-      // Slide the pill to the active button
+      // Slide the pill to the active button (if legacy mode-toggle exists)
       const toggle = agentBtn.closest('.mode-toggle');
       if (toggle) toggle.classList.toggle('mode-chat', mode === 'chat');
-      // Workspace pill + overflow entry are agent-only - hide immediately (no flash).
+      // Workspace pill + overflow entry are agent-only
       try { workspaceModule.applyMode(mode); } catch (_) {}
-      // Delay tool glow-up for a staggered effect
-      setTimeout(() => applyModeToToggles(mode), 500);
+      const isAgent = mode === 'agent';
+      const bBtn = el('bash-toggle-btn');
+      if (bBtn) {
+        bBtn.classList.toggle('agent-disabled', !isAgent);
+        bBtn.setAttribute('aria-disabled', String(!isAgent));
+        bBtn.title = isAgent ? 'Shell Access' : 'Wymaga trybu agenta';
+        if (!isAgent) {
+          bBtn.classList.remove('active');
+          bBtn.setAttribute('aria-pressed', 'false');
+        }
+      }
+      syncActiveToolChips();
+      applyModeToToggles(mode);
     }
     window.__odysseusSetChatMode = setMode;
     agentBtn.addEventListener('click', () => {
-      // Agent mode turns off research if active
-      const resChk = el('research-toggle');
-      if (resChk && resChk.checked) _syncResearchIndicator(false);
-      setMode('agent');
+      // Toggle between agent and chat mode
+      const targetMode = (currentMode === 'agent') ? 'chat' : 'agent';
+      if (targetMode === 'agent') {
+        const resChk = el('research-toggle');
+        if (resChk && resChk.checked) _syncResearchIndicator(false);
+      }
+      setMode(targetMode);
     });
-    chatBtn.addEventListener('click', () => setMode('chat'));
+    if (chatBtn) {
+      chatBtn.addEventListener('click', () => setMode('chat'));
+    }
 	    setMode(currentMode);
 	  })();
 
@@ -1938,7 +2012,12 @@ function initializeEventListeners() {
     if (chk) chk.checked = saved;
     btn.classList.toggle('active', saved);
     btn.setAttribute('aria-pressed', String(saved));
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+      if (btn.classList.contains('agent-disabled') || btn.getAttribute('aria-disabled') === 'true') {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       const curMode = (loadToggleState().mode) || 'chat';
       const chk = el(checkboxId);
       chk.checked = !chk.checked;
@@ -1946,6 +2025,8 @@ function initializeEventListeners() {
       btn.setAttribute('aria-pressed', String(chk.checked));
       saveToolPref(stateKey, curMode, chk.checked);
       showToolToggleToast(stateKey, chk.checked);
+      updatePlusDot();
+      syncActiveToolChips();
       if (chk.checked) _showToolSplash(stateKey);
       // Web search and Research are mutually exclusive — Research takes priority
       if (stateKey === 'web' && chk.checked) {
@@ -1958,6 +2039,35 @@ function initializeEventListeners() {
   }
   setupToggle('web-toggle-btn', 'web-toggle', 'web');
   setupToggle('bash-toggle-btn', 'bash-toggle', 'bash');
+
+  // ── Active Tool Chips (Composer Pills: Agent, Search, Shell) ──
+  (function initComposerChips() {
+    const agentChip = el('mode-agent-chip');
+    if (agentChip) {
+      agentChip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (window.__odysseusSetChatMode) window.__odysseusSetChatMode('chat');
+      });
+    }
+    const webChip = el('web-chip');
+    if (webChip) {
+      webChip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const webBtn = el('web-toggle-btn');
+        if (webBtn) webBtn.click();
+      });
+    }
+    const bashChip = el('bash-chip');
+    if (bashChip) {
+      bashChip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const bashBtn = el('bash-toggle-btn');
+        if (bashBtn) bashBtn.click();
+      });
+    }
+    syncActiveToolChips();
+  })();
+
   try { workspaceModule.initWorkspace(); } catch (_) {}
 
   // Document editor toggle (special: uses module panel, not a checkbox)
@@ -2048,7 +2158,7 @@ function initializeEventListeners() {
     const plusBtn = el('overflow-plus-btn');
     if (!plusBtn) return;
     const menu = el('overflow-menu');
-    const anyActive = menu ? Array.from(menu.querySelectorAll('.overflow-menu-item.active')).some(item => item.style.display !== 'none') : false;
+    const anyActive = menu ? Array.from(menu.querySelectorAll('.overflow-menu-item.active:not(.agent-disabled)')).some(item => item.style.display !== 'none') : false;
     plusBtn.classList.toggle('has-active', anyActive);
   }
   // External modules (compare) dispatch this when their overflow state changes
@@ -2112,9 +2222,14 @@ function initializeEventListeners() {
     // genuinely taller than the room above the button.
     function positionMenu() {
       const r = plusBtn.getBoundingClientRect();
-      menu.style.left = r.left + 'px';
-      menu.style.right = 'auto';
-      menu.style.bottom = 'auto';
+      const menuWidth = menu.offsetWidth || 250;
+      let left = r.left;
+      if (left + menuWidth > window.innerWidth - 12) {
+        left = window.innerWidth - menuWidth - 12;
+      }
+      menu.style.setProperty('left', Math.max(12, Math.round(left)) + 'px', 'important');
+      menu.style.setProperty('right', 'auto', 'important');
+      menu.style.setProperty('bottom', 'auto', 'important');
       menu.style.maxHeight = '';      // reset so we can measure the natural height
       menu.style.overflowY = '';
       const avail = r.top - 16;        // room above the chevron
@@ -2124,8 +2239,14 @@ function initializeEventListeners() {
         menu.style.maxHeight = avail + 'px';
         menu.style.overflowY = 'auto';
       }
-      menu.style.top = (r.top - 8 - h) + 'px';
+      menu.style.setProperty('top', Math.round(r.top - 8 - h) + 'px', 'important');
     }
+    new ResizeObserver(() => {
+      if (!menu.classList.contains('hidden') && !menu.classList.contains('closing')) {
+        positionMenu();
+      }
+    }).observe(menu);
+
     // Tapping the chevron must NOT steal focus from the message box, or the
     // mobile keyboard collapses. preventDefault on pointerdown keeps the
     // textarea focused (keyboard stays up) while click still opens the menu.
@@ -2144,9 +2265,10 @@ function initializeEventListeners() {
       menu.classList.remove('closing');
       menu.classList.remove('hidden');
       plusBtn.classList.add('expanded');
+      plusBtn.setAttribute('aria-expanded', 'true');
       document.body.appendChild(menu);  // escape the composer's container-type trap
       // Hide pill bar label so it doesn't show through the menu
-      if (pickerWrap) pickerWrap.style.visibility = 'hidden';
+      if (pickerWrap && !plusBtn.closest('.composer-pill')) pickerWrap.style.visibility = 'hidden';
       // Keep the textarea focused so the keyboard stays up if it was open (the
       // pointerdown handler above prevents the focus-steal). Still watch
       // visualViewport so the menu follows the chevron if the viewport shifts.
@@ -2169,6 +2291,7 @@ function initializeEventListeners() {
       // scales back into the chevron) before flipping to display:none.
       menu.classList.add('closing');
       plusBtn.classList.remove('expanded');
+      plusBtn.setAttribute('aria-expanded', 'false');
       if (pickerWrap) pickerWrap.style.visibility = '';
       // Item delays max at 0.18s + 0.20s anim = 0.38s for items, container
       // delay 0.16s + 0.22s = 0.38s. 400ms covers both with margin.
@@ -2255,6 +2378,7 @@ function initializeEventListeners() {
     const overflowMenu = el('overflow-menu');
     const overflowWrapper = document.querySelector('.overflow-wrapper');
     if (!inputLeft || !overflowMenu || !overflowWrapper) return;
+    if (overflowWrapper.closest('.composer-pill')) return;
 
     // Buttons that can be collapsed (in reverse priority — last collapsed first)
     const collapsibleIds = ['bash-toggle-btn', 'web-toggle-btn'];
@@ -2388,6 +2512,7 @@ function initializeEventListeners() {
     const inputTop = document.querySelector('.chat-input-top');
     const pickerWrap = el('model-picker-wrap');
     if (!inputTop || !pickerWrap) return;
+    if (inputTop.closest('.composer-pill')) return;
 
     const PLACEHOLDER_COMPACT_WIDTH = 400;
     const PICKER_HIDE_WIDTH = 220;
@@ -3938,6 +4063,21 @@ function startOdysseusApp() {
     });
   }
 
+  const micBtn = el('composer-mic-btn');
+  if (micBtn) {
+    micBtn.addEventListener('click', () => {
+      if (voiceRecorderModule.getIsRecording()) {
+        voiceRecorderModule.stopRecording();
+      } else {
+        voiceRecorderModule.startRecording(
+          file => fileHandlerModule.addFiles([file]),
+          uiModule.showToast,
+          message => uiModule.showToast(message, 5000),
+        );
+      }
+    });
+  }
+
   // Enter to send (shift+enter for newline)
   if (messageInput) {
     messageInput.addEventListener('keydown', (e) => {
@@ -3955,7 +4095,7 @@ function startOdysseusApp() {
 		    const _MODEL_PICKER_HIDE_CHARS = 23;
 		    const _syncModelPickerAutohide = () => {
 		      const compactMobile = _isMobileChatInput() && !!(messageInput.value || '').trim();
-		      const hidePicker = compactMobile || (messageInput.value || '').replace(/\s/g, '').length >= _MODEL_PICKER_HIDE_CHARS;
+		      const hidePicker = !messageInput.closest('.composer-pill') && (compactMobile || (messageInput.value || '').replace(/\s/g, '').length >= _MODEL_PICKER_HIDE_CHARS);
 		      if (modelPickerWrap) {
 		        modelPickerWrap.classList.toggle('model-picker-autohide', hidePicker);
 		      }

@@ -54,6 +54,13 @@ function formatTime(seconds) {
  */
 function _resetRecordingUI() {
   isRecording = false;
+  const micBtn = document.getElementById('composer-mic-btn');
+  if (micBtn) {
+    micBtn.setAttribute('aria-pressed', 'false');
+    micBtn.setAttribute('aria-label', 'Nagraj wiadomość');
+    micBtn.title = 'Nagraj wiadomość';
+    micBtn.disabled = false;
+  }
   if (recordingInterval) {
     clearInterval(recordingInterval);
     recordingInterval = null;
@@ -62,7 +69,7 @@ function _resetRecordingUI() {
   const sendBtn = document.querySelector('.send-btn');
   if (sendBtn) {
     sendBtn.classList.remove('recording');
-    sendBtn.dataset.mode = '';
+    if (sendBtn.dataset.mode === 'recording') sendBtn.dataset.mode = '';
   }
   if (window._updateSendBtnIcon) {
     setTimeout(window._updateSendBtnIcon, 50);
@@ -162,6 +169,8 @@ export function startRecording(onFileCreated, showToast, showError) {
     return;
   }
 
+  const micBtn = document.getElementById('composer-mic-btn');
+  if (micBtn) micBtn.disabled = true;
   audioChunks = [];
 
   navigator.mediaDevices.getUserMedia({ audio: true })
@@ -217,6 +226,12 @@ export function startRecording(onFileCreated, showToast, showError) {
 
       mediaRecorder.start();
       isRecording = true;
+      if (micBtn) {
+        micBtn.disabled = false;
+        micBtn.setAttribute('aria-pressed', 'true');
+        micBtn.setAttribute('aria-label', 'Zatrzymaj nagrywanie');
+        micBtn.title = 'Zatrzymaj nagrywanie';
+      }
       recordingStartTime = new Date();
 
       // Start browser STT if that's the provider

@@ -1,0 +1,548 @@
+/* ==========================================================================
+   Google Gemini 1:1 Composer & Overflow Tools Styling
+   ========================================================================== */
+
+/* Main Composer Pill Bar */
+.chat-container .chat-input-bar.composer-pill,
+.chat-container.welcome-active .chat-input-bar.composer-pill {
+  background: #1e1f20 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 32px !important;
+  padding: 14px 18px 12px 18px !important;
+  min-height: 96px !important;
+  box-sizing: border-box !important;
+  box-shadow: rgba(0, 0, 0, 0.16) 0px 2px 8px -2px !important;
+  color: #e3e3e3 !important;
+  font-family: "Google Sans Flex", "Google Sans Text", "Google Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  max-width: 820px !important;
+  width: min(820px, calc(100% - 48px)) !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  margin-top: 0 !important;
+  margin-bottom: 24px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+  position: relative !important;
+  left: auto !important;
+  right: auto !important;
+  transform: none !important;
+}
+
+.chat-container .composer-pill:focus-within {
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28) !important;
+}
+
+/* Flex Column for Top / Input area */
+.composer-pill .chat-input-top {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 8px !important;
+  min-width: 0 !important;
+  position: relative !important;
+  width: 100% !important;
+  flex: 1 1 auto !important;
+}
+
+.composer-pill .chat-input-bottom {
+  display: none !important;
+}
+
+/* ==========================================================================
+   Row 1: Full-width Textarea
+   ========================================================================== */
+
+.composer-pill .composer-text-row {
+  display: flex !important;
+  width: 100% !important;
+  min-height: 38px !important;
+  position: relative !important;
+  align-items: flex-start !important;
+  padding: 0 4px !important;
+  box-sizing: border-box !important;
+}
+
+.chat-container .composer-pill textarea#message {
+  flex: 1 1 100% !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 36px !important;
+  max-height: 220px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+  font: inherit !important;
+  font-size: 16px !important;
+  line-height: 24px !important;
+  color: #e3e3e3 !important;
+  resize: none !important;
+  box-sizing: border-box !important;
+}
+
+.chat-container .composer-pill textarea#message::placeholder {
+  color: #8e918f !important;
+  opacity: 1 !important;
+  font-size: 16px !important;
+}
+
+.composer-pill #message-ghost {
+  display: none !important;
+}
+
+/* ==========================================================================
+   Row 2: Actions Bar (Left: Tools / Chips, Right: Model Picker / Mic / Send)
+   ========================================================================== */
+
+.composer-pill .composer-actions-row {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  width: 100% !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+}
+
+.composer-pill .composer-actions-left {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
+}
+
+.composer-pill .composer-actions-right {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  flex-shrink: 0 !important;
+}
+
+/* Overflow (+) Button */
+.composer-pill .overflow-wrapper {
+  position: relative !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
+}
+
+.composer-pill #overflow-plus-btn {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  min-height: 36px !important;
+  border-radius: 9999px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  color: #c4c7c5 !important;
+  background: transparent !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  box-shadow: none !important;
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.2s cubic-bezier(0.2, 0, 0, 1) !important;
+}
+
+.composer-pill #overflow-plus-btn > svg {
+  width: 22px !important;
+  height: 22px !important;
+  stroke-width: 2.2 !important;
+  transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1) !important;
+}
+
+.composer-pill #overflow-plus-btn:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #e3e3e3 !important;
+}
+
+.composer-pill #overflow-plus-btn.expanded {
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: #e3e3e3 !important;
+}
+
+.composer-pill #overflow-plus-btn.expanded > svg {
+  transform: rotate(45deg) !important;
+}
+
+.composer-pill .plus-active-dot {
+  display: none !important;
+}
+
+/* ==========================================================================
+   Active Tool Chips (e.g. [ Agent ], [ Search ], [ Shell ])
+   ========================================================================== */
+
+.composer-active-chips {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex-shrink: 1 !important;
+  min-width: 0 !important;
+  overflow-x: auto !important;
+  scrollbar-width: none !important;
+}
+
+.composer-active-chips::-webkit-scrollbar {
+  display: none !important;
+}
+
+.composer-chip {
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: #e3e3e3 !important;
+  border: 0 !important;
+  border-radius: 9999px !important;
+  height: 34px !important;
+  padding: 0 12px 0 10px !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: inherit !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  line-height: 20px !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+  user-select: none !important;
+  box-sizing: border-box !important;
+  transition: background-color 0.15s ease, color 0.15s ease !important;
+}
+
+.composer-chip[style*="none"],
+.composer-chip[hidden],
+.composer-chip.hidden {
+  display: none !important;
+}
+
+.composer-chip:hover {
+  background: rgba(255, 255, 255, 0.18) !important;
+  color: #ffffff !important;
+}
+
+.composer-chip .composer-chip-icon {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 16px !important;
+  height: 16px !important;
+  color: inherit !important;
+  flex-shrink: 0 !important;
+}
+
+.composer-chip .composer-chip-icon svg {
+  width: 16px !important;
+  height: 16px !important;
+  stroke: currentColor !important;
+}
+
+.composer-chip .composer-chip-label {
+  display: inline-block !important;
+  font-size: 13.5px !important;
+  font-weight: 500 !important;
+  color: inherit !important;
+  max-width: 130px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.composer-chip .composer-chip-close {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 14px !important;
+  height: 14px !important;
+  margin-left: 2px !important;
+  font-size: 11px !important;
+  line-height: 1 !important;
+  border-radius: 50% !important;
+  color: #c4c7c5 !important;
+  opacity: 0.7 !important;
+}
+
+.composer-chip:hover .composer-chip-close {
+  opacity: 1 !important;
+  color: #ffffff !important;
+}
+
+/* Legacy tool-indicator aliases */
+.composer-chip.tool-indicator .tool-indicator-x {
+  display: none !important;
+}
+
+/* ==========================================================================
+   Trailing Actions (Model Picker, Mic, Send)
+   ========================================================================== */
+
+.composer-pill #model-picker-wrap {
+  position: relative !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  min-width: 0 !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  transform: none !important;
+}
+
+.chat-container .composer-pill #model-picker-btn {
+  height: 36px !important;
+  padding: 0 12px !important;
+  gap: 6px !important;
+  color: #c4c7c5 !important;
+  border: 0 !important;
+  border-radius: 9999px !important;
+  background: transparent !important;
+  font: inherit !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  transition: background 0.15s ease, color 0.15s ease !important;
+}
+
+.chat-container .composer-pill #model-picker-btn:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #e3e3e3 !important;
+}
+
+.composer-pill #model-picker-label {
+  max-width: 120px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.composer-pill #model-picker-btn svg {
+  opacity: 0.8 !important;
+  width: 12px !important;
+  height: 12px !important;
+  flex-shrink: 0 !important;
+}
+
+.composer-pill #composer-mic-btn {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  min-height: 36px !important;
+  border-radius: 9999px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  color: #c4c7c5 !important;
+  background: transparent !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: background 0.15s ease, color 0.15s ease !important;
+}
+
+.composer-pill #composer-mic-btn:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #e3e3e3 !important;
+}
+
+.composer-pill #composer-mic-btn[aria-pressed="true"] {
+  background: #69343a !important;
+  color: #ffb4ab !important;
+}
+
+.chat-container .composer-pill #send-btn {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  min-height: 36px !important;
+  border-radius: 9999px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  color: #1e1f20 !important;
+  background: #e3e3e3 !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-shadow: none !important;
+  transition: background 0.15s ease !important;
+}
+
+.chat-container .composer-pill #send-btn:hover {
+  background: #ffffff !important;
+}
+
+.chat-container .composer-pill #send-btn svg {
+  width: 18px !important;
+  height: 18px !important;
+  stroke: #1e1f20 !important;
+  stroke-width: 2.5 !important;
+}
+
+.composer-pill:has(textarea:placeholder-shown) #send-btn[data-mode="send"] {
+  display: none !important;
+}
+
+.chat-container:has(#attach-strip > *) .composer-pill #send-btn[data-mode="send"] {
+  display: inline-flex !important;
+}
+
+/* ==========================================================================
+   Tools Floating Popup Menu (Gemini 1:1)
+   ========================================================================== */
+
+#overflow-menu.composer-tools-menu {
+  position: fixed !important;
+  width: 260px !important;
+  max-width: calc(100vw - 24px) !important;
+  padding: 8px !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 20px !important;
+  background: #1e1f20 !important;
+  color: #e3e3e3 !important;
+  font-family: inherit !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+  z-index: 10050 !important;
+}
+
+#overflow-menu.composer-tools-menu.hidden {
+  display: none !important;
+}
+
+.composer-tools-menu .overflow-menu-item {
+  min-height: 40px !important;
+  height: 40px !important;
+  padding: 0 14px !important;
+  gap: 12px !important;
+  border: 0 !important;
+  border-radius: 12px !important;
+  background: transparent !important;
+  color: #e3e3e3 !important;
+  font: inherit !important;
+  font-size: 14px !important;
+  font-weight: 400 !important;
+  display: flex !important;
+  align-items: center !important;
+  cursor: pointer !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  text-align: left !important;
+  transition: background-color 0.15s ease !important;
+}
+
+/* Strictly hide any disabled, hidden, empty, or display:none items in the menu */
+.composer-tools-menu > [hidden],
+.composer-tools-menu > [style*="none"],
+.composer-tools-menu > .hidden,
+.composer-tools-menu > *:empty:not(.composer-menu-divider),
+.composer-tools-menu .overflow-menu-item[style*="none"],
+.composer-tools-menu .overflow-menu-item.hidden,
+.composer-tools-menu .overflow-menu-item:empty,
+.composer-tools-menu #mode-chat-btn,
+.composer-tools-menu #overflow-tts-btn[style*="none"],
+.composer-tools-menu #overflow-tts-btn[hidden],
+.composer-tools-menu #overflow-tts-btn:empty {
+  display: none !important;
+  min-height: 0 !important;
+  height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+}
+
+.composer-tools-menu .overflow-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.composer-tools-menu .overflow-menu-item.active,
+.composer-tools-menu .overflow-menu-item[aria-pressed="true"] {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+.composer-tools-menu .overflow-menu-item svg:first-child {
+  color: #c4c7c5 !important;
+  width: 18px !important;
+  height: 18px !important;
+  flex-shrink: 0 !important;
+}
+
+.composer-tools-menu .overflow-menu-item:hover svg:first-child {
+  color: #e3e3e3 !important;
+}
+
+/* Checkmark on active menu items (Gemini 1:1: "Tryb nauki ✓") */
+.composer-tools-menu .composer-menu-check {
+  margin-left: auto !important;
+  width: 18px !important;
+  height: 18px !important;
+  color: #e3e3e3 !important;
+  display: none !important;
+  flex-shrink: 0 !important;
+}
+
+.composer-tools-menu .overflow-menu-item.active .composer-menu-check,
+.composer-tools-menu .overflow-menu-item[aria-pressed="true"] .composer-menu-check {
+  display: inline-block !important;
+}
+
+.composer-tools-menu .overflow-active-dot {
+  display: none !important;
+}
+
+.composer-menu-divider {
+  display: block !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  margin: 6px 8px !important;
+  padding: 0 !important;
+  height: 1px !important;
+}
+
+.composer-tools-menu .overflow-menu-item.agent-disabled {
+  opacity: 0.4 !important;
+  pointer-events: none !important;
+}
+
+.composer-pill #model-picker-menu {
+  position: absolute !important;
+  bottom: calc(100% + 12px) !important;
+  right: 0 !important;
+  min-width: min(280px, calc(100vw - 48px)) !important;
+  max-width: min(360px, calc(100vw - 48px)) !important;
+  background: #1e1f20 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 20px !important;
+  padding: 10px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
+  z-index: 10050 !important;
+}
+
+@media (max-width: 768px) {
+  .chat-container .chat-input-bar.composer-pill {
+    padding: 10px 14px 10px 14px !important;
+    border-radius: 28px !important;
+    min-height: 84px !important;
+  }
+  .composer-active-chips {
+    max-width: 50% !important;
+  }
+  .composer-chip {
+    height: 32px !important;
+    padding: 0 10px 0 8px !important;
+    font-size: 13px !important;
+  }
+  .composer-pill #model-picker-label {
+    max-width: 70px !important;
+  }
+  .chat-container .composer-pill #model-picker-btn {
+    padding: 0 6px !important;
+    gap: 4px !important;
+    font-size: 13px !important;
+  }
+}

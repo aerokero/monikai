@@ -2622,7 +2622,6 @@ export function addMessage(role, content, modelName, metadata) {
           const contEndpointLabel = r < roundEndpointLabels.length
             ? roundEndpointLabels[r]
             : pair.actualEndpointLabel;
-          roleEl.textContent = modelRouteLabel(
           let roundLabel = modelRouteLabel(
             pair.requestedModel,
             contModel,

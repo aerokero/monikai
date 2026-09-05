@@ -945,7 +945,7 @@ export function updateModelPicker() {
     _ensureDefaultPendingChat();
   }
 
-  const displayName = modelId ? modelId.split('/').pop() : 'Select model';
+  const displayName = modelId === 'monika-companion' ? 'Monika' : (modelId ? modelId.split('/').pop() : 'Wybierz model');
   // The header indicator clips long names with ellipsis; show the full model
   // identifier on hover (#1982). No tooltip on the "Select model" placeholder.
   label.title = modelId || '';

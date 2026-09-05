@@ -393,9 +393,14 @@ def serve_spa_page(request: Request):
             html = f.read()
         nonce = getattr(request.state, "csp_nonce", "")
         html = html.replace("{{CSP_NONCE}}", nonce)
-        # Inject dynamic cache busting for all scripts
+        # Version asset attributes only; matching '.js' throughout the HTML
+        # also corrupts inline JavaScript calls such as response.json().
         now_ts = str(int(time.time()))
-        html = re.sub(r'(\.js|\.css)(\?v=[^"\'\s>]+)?', r'\1?v=' + now_ts, html)
+        html = re.sub(
+            r'((?:src|href)=["\']/static/[^"\'\s>]+\.(?:js|css))(?:\?v=[^"\'\s>]*)?(["\'])',
+            lambda match: match[1] + '?v=' + now_ts + match[2],
+            html,
+        )
         resp = HTMLResponse(html)
         resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         resp.headers["Pragma"] = "no-cache"

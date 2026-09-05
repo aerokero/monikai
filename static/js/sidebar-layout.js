@@ -34,6 +34,7 @@ export function initSidebarLayout(Storage, opts) {
   // ── Icon rail + sidebar toggle ──
   const iconRail = document.getElementById('icon-rail');
   const hamburgerBtn = document.getElementById('hamburger-btn');
+  const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
   const SIDEBAR_MODE_KEY = 'odysseus-sidebar-mode';
 
   function _setSidebarModeClasses(mode) {
@@ -103,6 +104,7 @@ export function initSidebarLayout(Storage, opts) {
       document.body.classList.toggle('hamburger-only', sidebarHidden && railHidden);
       document.body.classList.toggle('sidebar-collapsed', sidebarHidden);
       _setSidebarModeClasses(!sidebarHidden ? 'full' : (railHidden ? 'off' : 'mini'));
+      hamburgerBtn.style.display = sidebarHidden ? '' : 'none';
     }
     // Keep incognito button clear of hamburger
     const incogBtn = document.getElementById('incognito-btn');
@@ -125,14 +127,6 @@ export function initSidebarLayout(Storage, opts) {
   }
   _applyStoredSidebarMode();
   syncRailSide();
-
-  // In-sidebar toggle button — same behavior as hamburger
-  const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
-  if (sidebarToggleBtn) {
-    sidebarToggleBtn.addEventListener('click', (e) => {
-      if (hamburgerBtn) hamburgerBtn.click();
-    });
-  }
 
   // Header-only new-chat aliases. #sidebar-new-chat-btn is wired in app.js
   // because it needs the full default-model/pending-chat flow; wiring it here
@@ -180,65 +174,74 @@ export function initSidebarLayout(Storage, opts) {
     syncRailSide();
   };
 
-  if (hamburgerBtn) {
-    hamburgerBtn.addEventListener('click', (e) => {
+  function _handleHamburgerToggle(e) {
+    if (e) {
       e.stopPropagation();
-      const sidebar = document.getElementById('sidebar');
+      e.preventDefault();
+    }
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
 
-      _userToggledSidebar = true;
-      const isSidebarVisible = !sidebar.classList.contains('hidden');
+    _userToggledSidebar = true;
+    const isSidebarVisible = !sidebar.classList.contains('hidden');
 
-      if (window.innerWidth < 768) {
-        // Mobile: full sidebar ↔ hidden — simple toggle, no mini rail
-        const backdrop = document.getElementById('sidebar-backdrop');
-        if (iconRail) { iconRail.classList.remove('mobile-mini'); iconRail.style.cssText = ''; }
+    if (window.innerWidth < 768) {
+      // Mobile: full sidebar ↔ hidden — simple toggle, no mini rail
+      const backdrop = document.getElementById('sidebar-backdrop');
+      if (iconRail) { iconRail.classList.remove('mobile-mini'); iconRail.style.cssText = ''; }
 
-        if (isSidebarVisible) {
-          // Closing sidebar
-          sidebar.classList.add('hidden');
-          _saveSidebarMode('off');
-          if (backdrop) backdrop.classList.remove('visible');
-        } else {
-          // Mobile: the hamburger always opens the sidebar from the RIGHT.
-          // (Not persisted — keeps the desktop side preference untouched.)
-          if (!sidebar.classList.contains('right-side')) {
-            sidebar.classList.add('right-side');
-            if (documentModule && documentModule.swapSide) { try { documentModule.swapSide(); } catch (_) {} }
-          }
-          // Opening sidebar — blur keyboard first, then open after layout settles
-          if (document.activeElement && document.activeElement !== document.body
-              && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
-            document.activeElement.blur();
-            // Wait for keyboard dismiss to settle, then open
-            setTimeout(() => {
-              sidebar.classList.remove('hidden');
-              _saveSidebarMode('full');
-              if (backdrop) backdrop.classList.add('visible');
-              syncRailSide();
-            }, 250);
-          } else {
+      if (isSidebarVisible) {
+        // Closing sidebar
+        sidebar.classList.add('hidden');
+        _saveSidebarMode('off');
+        if (backdrop) backdrop.classList.remove('visible');
+      } else {
+        // Mobile: the hamburger always opens the sidebar from the RIGHT.
+        // (Not persisted — keeps the desktop side preference untouched.)
+        if (!sidebar.classList.contains('right-side')) {
+          sidebar.classList.add('right-side');
+          if (documentModule && documentModule.swapSide) { try { documentModule.swapSide(); } catch (_) {} }
+        }
+        // Opening sidebar — blur keyboard first, then open after layout settles
+        if (document.activeElement && document.activeElement !== document.body
+            && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+          document.activeElement.blur();
+          // Wait for keyboard dismiss to settle, then open
+          setTimeout(() => {
             sidebar.classList.remove('hidden');
             _saveSidebarMode('full');
             if (backdrop) backdrop.classList.add('visible');
-          }
+            syncRailSide();
+          }, 250);
+        } else {
+          sidebar.classList.remove('hidden');
+          _saveSidebarMode('full');
+          if (backdrop) backdrop.classList.add('visible');
         }
-        syncRailSide();
-        return;
-      }
-
-      // Desktop: full sidebar ↔ mini (icon rail) — simple toggle
-      if (isSidebarVisible) {
-        sidebar.classList.add('hidden');
-        if (iconRail) iconRail.classList.remove('rail-hidden');
-        _saveSidebarMode('mini');
-      } else {
-        _wasAutoCollapsed = false;
-        iconRail.classList.remove('rail-hidden');
-        sidebar.classList.remove('hidden');
-        _saveSidebarMode('full');
       }
       syncRailSide();
-    });
+      return;
+    }
+
+    // Desktop: full sidebar ↔ mini (icon rail) — simple toggle
+    if (isSidebarVisible) {
+      sidebar.classList.add('hidden');
+      if (iconRail) iconRail.classList.remove('rail-hidden');
+      _saveSidebarMode('mini');
+    } else {
+      _wasAutoCollapsed = false;
+      iconRail.classList.remove('rail-hidden');
+      sidebar.classList.remove('hidden');
+      _saveSidebarMode('full');
+    }
+    syncRailSide();
+  }
+
+  if (hamburgerBtn) {
+    hamburgerBtn.addEventListener('click', _handleHamburgerToggle);
+  }
+  if (sidebarToggleBtn) {
+    sidebarToggleBtn.addEventListener('click', _handleHamburgerToggle);
   }
 
   // Icon rail section clicks — open sidebar and scroll to section

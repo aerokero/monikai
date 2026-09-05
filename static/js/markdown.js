@@ -613,6 +613,16 @@ export function mdToHtml(src, opts) {
   const mermaidBlocks = [];
   let s = (src ?? '');
 
+  // Strip or unwrap internal thought / response_brief metadata
+  if (s.includes('<response_brief') || s.includes('<reply_core>')) {
+    const match = s.match(/<reply_core>([\s\S]*?)<\/reply_core>/i);
+    if (match) {
+      s = s.replace(/<response_brief[\s\S]*?<\/response_brief>/gi, match[1].trim());
+    } else {
+      s = s.replace(/<\/?(response_brief|reply_core)[^>]*>/gi, '');
+    }
+  }
+
   // Extract fenced code blocks before any markdown/HTML preservation passes.
   // Otherwise placeholders from the allowed-HTML sanitizer (e.g.
   // ___ALLOWED_HTML_0___) can leak into quoted HTML/JS samples, because the

@@ -2,15 +2,14 @@
   "_users": {
     "bartosz": {
       "theme": {
-        "name": "custom",
+        "name": "dark",
         "colors": {
           "bg": "#282c34",
           "fg": "#9cdef2",
           "panel": "#111111",
           "border": "#355a66",
           "red": "#e06c75"
-        },
-        "bgEffectColor": "#9cdef2"
+        }
       },
       "tasks_opened": true
     }
