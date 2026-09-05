@@ -546,3 +546,170 @@
     font-size: 13px !important;
   }
 }
+
+/* ==========================================================================
+   Top-right Chat Actions Kebab & Context Pill
+   ========================================================================== */
+
+.chat-top-bar {
+  position: relative !important;
+  min-height: 40px !important;
+  padding: 6px 16px 0 16px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.chat-top-bar .chat-meta-overlay {
+  position: absolute !important;
+  top: 8px !important;
+  right: 16px !important;
+  left: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-end !important;
+  gap: 6px !important;
+  z-index: 100 !important;
+  pointer-events: auto !important;
+  width: auto !important;
+  max-width: none !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.chat-meta-overlay #current-meta,
+.chat-meta-overlay #current-meta-count,
+.chat-meta-overlay #session-cost-display {
+  display: none !important;
+}
+
+/* Floating rename input when user clicks Rename */
+.chat-meta-overlay #current-meta:has(.session-rename-input) {
+  display: block !important;
+  position: fixed !important;
+  top: 16px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  background: #1e1f20 !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 12px !important;
+  padding: 8px 14px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
+  z-index: 10060 !important;
+  min-width: 240px !important;
+}
+
+.chat-meta-overlay .export-dropdown-wrap {
+  margin: 0 !important;
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.chat-meta-overlay .export-dl-btn {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  min-height: 36px !important;
+  border-radius: 50% !important;
+  padding: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: #c4c7c5 !important;
+  background: transparent !important;
+  border: none !important;
+  cursor: pointer !important;
+  transition: background-color 0.15s ease, color 0.15s ease !important;
+}
+
+.chat-meta-overlay .export-dl-btn:hover,
+.chat-meta-overlay .export-dl-btn.open {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #e3e3e3 !important;
+}
+
+.export-dropdown-menu {
+  background: #1e1f20 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 12px !important;
+  padding: 6px !important;
+  min-width: 170px !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5) !important;
+  z-index: 10050 !important;
+  color: #e3e3e3 !important;
+  backdrop-filter: blur(12px) !important;
+}
+
+.export-dropdown-item {
+  padding: 8px 12px !important;
+  font-size: 13px !important;
+  font-family: inherit !important;
+  font-weight: 400 !important;
+  border-radius: 8px !important;
+  color: #e3e3e3 !important;
+  gap: 10px !important;
+  display: flex !important;
+  align-items: center !important;
+  cursor: pointer !important;
+  transition: background-color 0.12s ease !important;
+}
+
+.export-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.export-dropdown-item.dropdown-item-danger {
+  color: #f28b82 !important;
+}
+
+.export-dropdown-item.dropdown-item-danger:hover {
+  background: rgba(242, 139, 130, 0.12) !important;
+}
+
+/* Chat context pill positioned underneath the 3-dots menu */
+.chat-meta-overlay .chat-context-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  height: 22px !important;
+  padding: 0 8px !important;
+  margin: 0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 9999px !important;
+  background: #1e1f20 !important;
+  color: #c4c7c5 !important;
+  font-family: inherit !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  line-height: 1 !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25) !important;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease !important;
+}
+
+.chat-meta-overlay .chat-context-pill[hidden] {
+  display: none !important;
+}
+
+.chat-meta-overlay .chat-context-pill:hover,
+.chat-meta-overlay .chat-context-pill.open {
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  color: #e3e3e3 !important;
+}
+
+.chat-meta-overlay .chat-context-pill.warn {
+  color: #f59e0b !important;
+  border-color: rgba(245, 158, 11, 0.3) !important;
+}
+
+.chat-meta-overlay .chat-context-pill.danger {
+  color: #ef4444 !important;
+  border-color: rgba(239, 68, 68, 0.3) !important;
+}
+

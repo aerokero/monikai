@@ -1833,7 +1833,7 @@ function initializeEventListeners() {
       if (stateKey === 'bash') {
         btn.classList.toggle('agent-disabled', !isAgent);
         btn.setAttribute('aria-disabled', String(!isAgent));
-        btn.title = isAgent ? 'Shell Access' : 'Wymaga trybu agenta';
+        btn.title = isAgent ? 'Shell Access' : 'Requires agent mode';
         btn.style.display = '';
         if (!isAgent) {
           btn.classList.remove('active');
@@ -1866,7 +1866,7 @@ function initializeEventListeners() {
       const isAgent = currentMode === 'agent';
       bashBtn.classList.toggle('agent-disabled', !isAgent);
       bashBtn.setAttribute('aria-disabled', String(!isAgent));
-      bashBtn.title = isAgent ? 'Shell Access' : 'Wymaga trybu agenta';
+      bashBtn.title = isAgent ? 'Shell Access' : 'Requires agent mode';
       bashBtn.style.display = '';
     }
 
@@ -1891,7 +1891,7 @@ function initializeEventListeners() {
       if (bBtn) {
         bBtn.classList.toggle('agent-disabled', !isAgent);
         bBtn.setAttribute('aria-disabled', String(!isAgent));
-        bBtn.title = isAgent ? 'Shell Access' : 'Wymaga trybu agenta';
+        bBtn.title = isAgent ? 'Shell Access' : 'Requires agent mode';
         if (!isAgent) {
           bBtn.classList.remove('active');
           bBtn.setAttribute('aria-pressed', 'false');

@@ -57,8 +57,8 @@ function _resetRecordingUI() {
   const micBtn = document.getElementById('composer-mic-btn');
   if (micBtn) {
     micBtn.setAttribute('aria-pressed', 'false');
-    micBtn.setAttribute('aria-label', 'Nagraj wiadomość');
-    micBtn.title = 'Nagraj wiadomość';
+    micBtn.setAttribute('aria-label', 'Record message');
+    micBtn.title = 'Record message';
     micBtn.disabled = false;
   }
   if (recordingInterval) {
@@ -229,8 +229,8 @@ export function startRecording(onFileCreated, showToast, showError) {
       if (micBtn) {
         micBtn.disabled = false;
         micBtn.setAttribute('aria-pressed', 'true');
-        micBtn.setAttribute('aria-label', 'Zatrzymaj nagrywanie');
-        micBtn.title = 'Zatrzymaj nagrywanie';
+        micBtn.setAttribute('aria-label', 'Stop recording');
+        micBtn.title = 'Stop recording';
       }
       recordingStartTime = new Date();
 

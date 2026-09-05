@@ -261,9 +261,24 @@ body {
 
 #sidebar #workspace-section #email-section .section-icon {
   display: inline-flex !important;
-  width: 16px !important;
-  height: 16px !important;
+  width: 18px !important;
+  height: 18px !important;
+  min-width: 18px !important;
+  max-width: 18px !important;
   color: var(--gemini-text-secondary) !important;
+  stroke: currentColor !important;
+  position: static !important;
+  left: 0 !important;
+  top: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  opacity: 1 !important;
+  flex-shrink: 0 !important;
+  transition: color 0.15s ease !important;
+}
+
+#sidebar #workspace-section #email-section .section-header-flex:hover .section-icon {
+  color: var(--gemini-text-primary) !important;
 }
 
 #sidebar #email-compose-btn {

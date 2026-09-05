@@ -36,7 +36,7 @@ export class MonikaCompanion {
             <span>Monika</span>
           </div>
           <div class="monika-companion-actions">
-            <button id="monika-toggle-mode-btn" class="monika-mini-btn" title="Przełącz tryb (Pływający Pet / Zadokowany)">
+            <button id="monika-toggle-mode-btn" class="monika-mini-btn" title="Toggle mode (Floating Pet / Docked)">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>
               </svg>
@@ -57,7 +57,7 @@ export class MonikaCompanion {
 
         <!-- Interactive Thought Bubble -->
         <div class="monika-thought-bubble" id="monika-thought-bubble">
-          <span id="monika-thought-text">Jestem tutaj z Tobą w Odysseus Workspace! ✨</span>
+          <span id="monika-thought-text">I'm here with you in Odysseus Workspace! ✨</span>
         </div>
       </div>
     `;
