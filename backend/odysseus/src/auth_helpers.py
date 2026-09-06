@@ -10,6 +10,20 @@ from src.owner_identity import auth_disabled, effective_storage_owner
 def get_current_user(request: Request) -> Optional[str]:
     """Get current username from request state (set by auth middleware)."""
     return getattr(request.state, 'current_user', None)
+    u = getattr(request.state, 'current_user', None)
+    if u:
+        return u
+    auth_mgr = getattr(request.app.state, "auth_manager", None)
+    if auth_mgr:
+        token = request.cookies.get("odysseus_session")
+        u = auth_mgr.get_username_for_token(token)
+        if u:
+            return u
+    if _auth_disabled():
+        if auth_mgr and hasattr(auth_mgr, "get_primary_user"):
+            return auth_mgr.get_primary_user()
+        return "bartosz"
+    return None
 
 
 def effective_user(request: Request) -> Optional[str]:

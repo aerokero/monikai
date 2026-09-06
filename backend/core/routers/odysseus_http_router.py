@@ -50,6 +50,7 @@ def _ensure_native_session(session_id: str, prompt: str = "", model: str = "moni
                     archived=False,
                     headers={},
                     owner=None,
+                    owner="bartosz",
                     created_at=now,
                     updated_at=now,
                     last_accessed=now,
@@ -58,6 +59,8 @@ def _ensure_native_session(session_id: str, prompt: str = "", model: str = "moni
                 )
                 db_sess.add(row)
             else:
+                if not row.owner:
+                    row.owner = "bartosz"
                 if not row.name or row.name in ("Monika Chat", "Nobody", "New Chat") or str(row.name).startswith("New Chat"):
                     row.name = (title[:32] + "...") if len(title) > 32 else title
                 row.endpoint_url = row.endpoint_url or "/api/chat_stream"

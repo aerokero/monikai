@@ -21,6 +21,14 @@ logger = logging.getLogger(__name__)
 
 from core.atomic_io import atomic_write_json as _atomic_write_json  # noqa: E402
 
+
+def _is_auth_disabled() -> bool:
+    try:
+        from src.owner_identity import auth_disabled
+        return auth_disabled()
+    except Exception:
+        return os.getenv("AUTH_ENABLED", "true").strip().lower() == "false"
+
 DEFAULT_PRIVILEGES = {
     "can_use_agent": True,
     "can_use_browser": True,
@@ -144,6 +152,13 @@ class AuthManager:
                 pruned = len(data) - len(self._sessions)
                 if pruned > 0:
                     self._save_sessions()
+                if _is_auth_disabled():
+                    self._sessions = {k: v for k, v in data.items() if v.get("username")}
+                else:
+                    self._sessions = {k: v for k, v in data.items() if v.get("expiry", 0) > now}
+                    pruned = len(data) - len(self._sessions)
+                    if pruned > 0:
+                        self._save_sessions()
                 logger.info(f"Loaded {len(self._sessions)} session(s) from disk")
         except Exception as e:
             logger.error(f"Failed to load sessions: {e}")
@@ -238,6 +253,15 @@ class AuthManager:
     @property
     def is_configured(self) -> bool:
         return len(self.users) > 0
+
+    def get_primary_user(self) -> Optional[str]:
+        """Return the primary admin or first configured user."""
+        for u, data in self.users.items():
+            if data.get("is_admin"):
+                return u
+        if self.users:
+            return next(iter(self.users.keys()))
+        return "bartosz"
 
     def policy(self) -> dict:
         """Return public auth policy constants for the frontend."""
@@ -596,6 +620,8 @@ class AuthManager:
         return token
 
     def validate_token(self, token: Optional[str]) -> bool:
+        if _is_auth_disabled():
+            return True
         if not token:
             return False
         expired = False
@@ -623,14 +649,23 @@ class AuthManager:
     def get_username_for_token(self, token: Optional[str]) -> Optional[str]:
         """Return the username associated with a valid token."""
         if not token:
+            if _is_auth_disabled():
+                return self.get_primary_user()
             return None
         expired = False
         deleted_user = False
         with self._sessions_lock:
             session = self._sessions.get(token)
             if session is None:
+                if _is_auth_disabled():
+                    return self.get_primary_user()
                 return None
             if time.time() > session["expiry"]:
+                if _is_auth_disabled():
+                    _u = session.get("username")
+                    if _u in self.users:
+                        return _u
+                    return self.get_primary_user()
                 self._sessions.pop(token, None)
                 expired = True
             else:
@@ -643,6 +678,8 @@ class AuthManager:
                     return _u
         if expired or deleted_user:
             self._save_sessions()
+            if _is_auth_disabled():
+                return self.get_primary_user()
         return None
 
     def revoke_token(self, token: str):
@@ -668,6 +705,16 @@ class AuthManager:
 
     def status(self, token: Optional[str]) -> Dict[str, Any]:
         username = self.get_username_for_token(token)
+        if _is_auth_disabled():
+            username = username or self.get_primary_user()
+            return {
+                "configured": True,
+                "authenticated": True,
+                "username": username,
+                "is_admin": self.is_admin(username) if username else True,
+                "privileges": self.get_privileges(username) if username else ADMIN_PRIVILEGES,
+                "auth_disabled": True,
+            }
         authenticated = username is not None
         result = {
             "configured": self.is_configured,

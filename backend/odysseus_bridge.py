@@ -61,6 +61,7 @@ def init_and_register_odysseus_backend(app: FastAPI):
         from core.constants import AUTH_FILE
         from routes.auth_routes import setup_auth_routes
         auth_manager = AuthManager(AUTH_FILE)
+        app.state.auth_manager = auth_manager
         app.include_router(setup_auth_routes(auth_manager))
 
         @app.get("/login")

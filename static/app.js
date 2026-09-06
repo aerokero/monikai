@@ -1300,6 +1300,15 @@ function initializeEventListeners() {
     userBarAdmin.addEventListener('click', () => adminModule.open());
   }
 
+  // Pre-fill user bar from cache to avoid placeholder flicker
+  const _cachedUser = localStorage.getItem('odysseus-auth-user') || localStorage.getItem('odysseus-last-user');
+  if (_cachedUser) {
+    const _ubn = el('user-bar-name');
+    const _uba = el('user-bar-avatar');
+    if (_ubn) _ubn.textContent = _cachedUser;
+    if (_uba) _uba.textContent = _cachedUser.charAt(0).toUpperCase();
+  }
+
   // Fetch auth status — populate user bar and show admin button if admin
   fetch(`${API_BASE}/api/auth/status`, { credentials: 'same-origin' })
     .then(r => r.json())
@@ -1318,6 +1327,7 @@ function initializeEventListeners() {
         }
         userBarName.textContent = displayName;
         if (userBarAvatar) userBarAvatar.textContent = d.username.charAt(0).toUpperCase();
+        try { localStorage.setItem('odysseus-auth-user', d.username); } catch (_) {}
       }
       // Apply per-user privilege restrictions
       if (d.privileges) {
