@@ -3049,8 +3049,14 @@ function initializeEventListeners() {
     // Text-only emojis toggle. Default is OFF so model-emitted shortcodes
     // like `:blush:` render through the normal monochrome emoji path.
     applyTextEmojis(state['text-emojis'] === true);
-    // Hide thinking sections toggle (show-thinking: checked=show, unchecked=hide)
-    document.body.classList.toggle('hide-thinking', state['show-thinking'] === false);
+    // Hide thinking sections toggle (show-thinking: checked=show, unchecked=hide).
+    // Unlike the sidebar entries, this setting is represented by a body class,
+    // so apply the same first-run default explicitly instead of only applying
+    // it to the checkbox in the Appearance modal.
+    const showThinking = 'show-thinking' in state
+      ? state['show-thinking'] !== false
+      : !UI_VIS_DEFAULT_OFF.has('show-thinking');
+    document.body.classList.toggle('hide-thinking', !showThinking);
     // Fullwidth chat toggle (chat-fullwidth: checked=fullwidth, unchecked=big-padding
     document.body.classList.toggle('fullwidth-chat', state['chat-fullwidth'] === true);
   }

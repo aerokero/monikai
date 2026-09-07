@@ -369,13 +369,29 @@ register_models_http_routes(app)
 register_mcp_http_routes(app)
 register_research_http_routes(app, emit_to_frontend=_emit_to_frontend)
 register_voice_http_routes(app)
-register_odysseus_http_routes(app, emit_to_frontend=_emit_to_frontend)
 
 try:
     from backend.odysseus_bridge import init_and_register_odysseus_backend
     init_and_register_odysseus_backend(app)
 except Exception as _ody_err:
     logger.warning("Odysseus backend bridge initialization: %s", _ody_err)
+
+try:
+    from .odysseus_voice_gateway import OdysseusVoiceGateway
+    app.state.odysseus_voice_gateway = OdysseusVoiceGateway(
+        app,
+        model=SETTINGS.get("text_model"),
+        endpoint_id=SETTINGS.get("text_endpoint_id"),
+        persona_id=SETTINGS.get("text_persona_id"),
+    )
+except Exception as _voice_gateway_err:
+    app.state.odysseus_voice_gateway = None
+    logger.warning("Odysseus voice gateway initialization: %s", _voice_gateway_err)
+
+# Keep the compatibility bridge for model discovery/default-chat and older
+# clients.  Native Odysseus chat routes were mounted above, so Starlette
+# resolves /api/chat(_stream) to the native conversation pipeline first.
+register_odysseus_http_routes(app, emit_to_frontend=_emit_to_frontend)
 
 class _RevalidatingStatic(StaticFiles):
     async def get_response(self, path, scope):
@@ -643,6 +659,7 @@ register_audio_lifecycle_handlers(
     get_hue_agent=_get_hue_agent,
     get_home_assistant_agent=_get_home_assistant_agent,
     get_minecraft_bot_manager=_get_minecraft_bot_manager,
+    get_conversation_gateway=lambda: getattr(app.state, "odysseus_voice_gateway", None),
     shutdown_and_exit=_shutdown_and_exit,
 )
 

@@ -50,7 +50,15 @@ def get_character_prompt() -> str:
 
 def current_system_prompt() -> str:
     """CHARACTER_PROMPT + OPERATIONAL_PROMPT, reloaded fresh (for session/therapy mode)."""
-    return get_character_prompt() + "\n\n" + OPERATIONAL_PROMPT
+    from .response_language import response_language_instruction
+
+    return "\n\n".join(
+        part for part in (
+            get_character_prompt(),
+            OPERATIONAL_PROMPT,
+            response_language_instruction(),
+        ) if part
+    )
 
 
 CHARACTER_PROMPT: str = get_character_prompt()
@@ -112,7 +120,12 @@ OPERATIONAL_PROMPT = "\n\n".join(
 )
 
 
-SYSTEM_PROMPT = CHARACTER_PROMPT + "\n\n" + OPERATIONAL_PROMPT
+from .response_language import response_language_instruction
+
+SYSTEM_PROMPT = "\n\n".join(
+    part for part in (CHARACTER_PROMPT, OPERATIONAL_PROMPT, response_language_instruction())
+    if part
+)
 
 
 async def assemble_prompt(db_path=None) -> str:
@@ -127,7 +140,9 @@ async def assemble_prompt(db_path=None) -> str:
         assembler = ContextAssembler()
         return await assembler.assemble(
             character_prompt=get_character_prompt(),
-            operational_prompt=OPERATIONAL_PROMPT,
+            operational_prompt="\n\n".join(
+                (OPERATIONAL_PROMPT, response_language_instruction())
+            ),
             db_path=db_path,
         )
     except Exception as exc:

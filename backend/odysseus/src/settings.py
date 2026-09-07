@@ -59,6 +59,13 @@ DEFAULT_SETTINGS = {
     "tts_model": "tts-1",
     "tts_voice": "alloy",
     "tts_speed": "1",
+    # Shared output level for browser read-aloud and the PCM Live renderer.
+    # Store this as a normalized value so both clients can use the same setting.
+    "tts_volume": 1.0,
+    # Read-aloud is independent from text generation and is opt-in.  A user
+    # can enable it for every completed assistant message without changing
+    # the selected chat model or persona.
+    "tts_auto_read": False,
     "stt_enabled": False,
     "stt_provider": "disabled",
     "stt_model": "base",

@@ -23,6 +23,7 @@ RUN apt-get update \
         libglib2.0-0 \
         libgomp1 \
         portaudio19-dev \
+        espeak-ng \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

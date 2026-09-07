@@ -63,6 +63,8 @@ const SettingsPanel = ({
   onModelPresetChange = () => {},
   geminiVoice = 'Leda',
   onVoiceChange = () => {},
+  voiceVolume = 100,
+  onVoiceVolumeChange = () => {},
   socket = null,
 }) => {
   const { t, language, setLanguage } = useLanguage();
@@ -77,6 +79,9 @@ const SettingsPanel = ({
 
   const [modelsStatus, setModelsStatus] = useState(null);
   const [mcpStatus, setMcpStatus] = useState(null);
+  const [ttsProvider, setTtsProvider] = useState(
+    () => localStorage.getItem('monikai_tts_provider') || 'disabled'
+  );
 
   useEffect(() => {
     if (!socket) return;
@@ -95,6 +100,20 @@ const SettingsPanel = ({
       socket.off('mcp_servers_status', onMcpStatus);
     };
   }, [socket]);
+
+  useEffect(() => {
+    fetch('/api/v1/voice/status', { credentials: 'same-origin' })
+      .then((response) => response.ok ? response.json() : null)
+      .then((payload) => {
+        const provider = payload?.voice_settings?.canonical?.provider
+          || payload?.voice_settings?.current_provider;
+        if (provider) {
+          localStorage.setItem('monikai_tts_provider', provider);
+          setTtsProvider(provider);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleSelectModelProvider = (task, provider) => {
     if (!socket) return;
@@ -154,7 +173,13 @@ const SettingsPanel = ({
             ]}
           />
         </FieldRow>
-        <FieldRow title={t('settings.model_preset')} description={t('settings.model_preset_desc')}>
+        <div className="text-xs opacity-70 max-w-[680px] mb-3">
+          Tekst, myślenie, pamięć i persona są wybierane w Odysseusie. Poniższe ustawienia dotyczą wyłącznie opcjonalnego transportu Live Voice i renderowania głosu.
+        </div>
+        <div className="text-xs opacity-70 max-w-[680px] mb-3">
+          Live Voice włączasz ikoną zasilania na lewym pasku. Przycisk mikrofonu przy polu tekstowym tylko wycisza lub wznawia mikrofon w aktywnej sesji Live — nie wysyła osobnej głosówki.
+        </div>
+        <FieldRow title="Model Live Voice (transport)" description="Gemini Live obsługuje mikrofon, transkrypcję i granice tury. Nie jest autorem odpowiedzi tekstowej.">
           <SelectField
             value={geminiModelPreset}
             onChange={(e) => onModelPresetChange?.(e.target.value)}
@@ -165,7 +190,7 @@ const SettingsPanel = ({
             ]}
           />
         </FieldRow>
-        <FieldRow title={t('settings.voice')} description={t('settings.voice_desc')}>
+        <FieldRow title="Głos transportu Live" description="Głos sesji transportowej. Ostateczny tekst jest czytany przez wybrany renderer TTS poniżej.">
           <SelectField
             value={geminiVoice}
             onChange={(e) => onVoiceChange?.(e.target.value)}
@@ -173,23 +198,46 @@ const SettingsPanel = ({
             options={GEMINI_VOICES}
           />
         </FieldRow>
-        <FieldRow title="Modularny Silnik TTS" description="Wybierz provider syntezy mowy (Gemini Live lub ElevenLabs streaming)">
+        <FieldRow title="Renderer mowy" description="Czyta gotową odpowiedź Odysseusa. Nie zmienia modelu tekstowego, persony ani treści odpowiedzi.">
           <SelectField
-            value={localStorage.getItem('monikai_tts_provider') || 'gemini'}
+            value={ttsProvider}
             onChange={(e) => {
-              localStorage.setItem('monikai_tts_provider', e.target.value);
+              const provider = e.target.value;
+              setTtsProvider(provider);
+              localStorage.setItem('monikai_tts_provider', provider);
               fetch('/api/v1/voice/select', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ provider: e.target.value }),
+                body: JSON.stringify({
+                  provider,
+                  ...(provider === 'gemini'
+                    ? { model: 'gemini-2.5-flash-preview-tts', voice: geminiVoice }
+                    : {}),
+                }),
               }).catch(() => {});
             }}
             wrapperClassName="w-[220px]"
             options={[
-              { value: 'gemini', label: 'Gemini Live (Natywne dwukierunkowe audio)' },
-              { value: 'elevenlabs', label: 'ElevenLabs (Streaming Multilingual v2)' },
+              { value: 'disabled', label: 'Wyłączony' },
+              { value: 'gemini', label: 'Gemini TTS (PCM)' },
+              { value: 'elevenlabs', label: 'ElevenLabs (read-aloud)' },
             ]}
           />
+        </FieldRow>
+        <FieldRow title="Głośność mowy" description="Wspólny poziom głośności dla odczytu wiadomości i dźwięku Live Voice.">
+          <div className="flex w-[260px] items-center gap-3">
+            <input
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              value={voiceVolume}
+              onChange={(e) => onVoiceVolumeChange?.(e.target.value)}
+              className="min-w-0 flex-1 accent-[#e8b266]"
+              aria-label="Głośność mowy"
+            />
+            <span className="w-10 text-right text-xs opacity-75">{voiceVolume}%</span>
+          </div>
         </FieldRow>
 
         <SectionLabel className="pt-6">Model Router (Odysseus Agent Hub)</SectionLabel>

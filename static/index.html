@@ -1220,7 +1220,7 @@
                 .catch(function(){});
             })();
             </script>
-            <button type="button" id="composer-mic-btn" aria-label="Record message" title="Record message" aria-pressed="false"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg></button>
+            <button type="button" id="composer-mic-btn" aria-label="Record voice message (not Live Voice)" title="Record voice message (not Live Voice)" aria-pressed="false"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg></button>
             <button type="submit" form="chat-form" class="send-btn" id="send-btn" data-mode="send" aria-label="Send message" title="Send message (Enter)">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
             </button>
@@ -1574,6 +1574,23 @@
             </div>
           </div>
           <div class="admin-card">
+            <h2><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;opacity:0.6"><path d="M5 8h14M5 12h9M5 16h6"/><path d="M18 15l3 3-3 3"/><path d="M21 18h-6"/></svg>Response Language</h2>
+            <div class="admin-toggle-sub" style="margin-bottom:8px">Controls the language of AI replies independently from Monika's persona and the interface language.</div>
+            <div class="settings-col">
+              <div class="settings-row">
+                <label class="settings-label">Language</label>
+                <select id="set-responseLanguageSelect" class="settings-select">
+                  <option value="auto">Same as the user</option>
+                  <option value="pl">Polski</option>
+                  <option value="en">English</option>
+                  <option value="zh">中文</option>
+                  <option value="ja">日本語</option>
+                </select>
+              </div>
+              <div id="set-responseLanguageMsg" style="font-size:11px;color:color-mix(in srgb, var(--fg) 45%, transparent);"></div>
+            </div>
+          </div>
+          <div class="admin-card">
             <h2 style="display:flex;align-items:center;gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:1px;opacity:0.6;flex-shrink:0"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>Utility Model <span style="font-size:0.72em;opacity:0.55;font-weight:normal;">(Recommended: Local Endpoint)</span></h2>
             <div class="admin-toggle-sub" style="margin-bottom:8px">Runs background tasks (compaction, cleanup, auto-naming, retrieving memories from files) on a small/local model instead of your chat model. Leave blank to use the chat model.</div>
             <div class="settings-col">
@@ -1656,18 +1673,17 @@
               <div id="set-imgSettingsMsg" style="font-size:11px;color:color-mix(in srgb, var(--fg) 45%, transparent);"></div>
             </div>
           </div>
-          <!-- TTS panel hidden — user opted out of read-aloud entirely. Kept
-               in DOM so the JS that wires set-ttsProviderSelect etc. doesn't
-               throw on missing nodes; not visible to anyone. -->
-          <div class="admin-card" hidden style="display:none">
+          <div class="admin-card">
             <h2 style="display:flex;align-items:center;gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;opacity:0.6"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>Text to Speech<span style="flex:1"></span><label class="admin-switch"><input type="checkbox" id="set-ttsEnabledToggle" checked><span class="admin-slider"></span></label></h2>
-            <div class="admin-toggle-sub" style="margin-bottom:8px">Configure TTS provider for assistant message read-aloud.</div>
+            <div class="admin-toggle-sub" style="margin-bottom:8px">Read an already-generated assistant message aloud. This does not change the selected chat model or persona.</div>
             <div style="display:flex;flex-direction:column;gap:0.5rem;">
               <div style="display:flex;align-items:center;gap:0.75rem;">
                 <label class="settings-label">Provider</label>
                 <select id="set-ttsProviderSelect" class="settings-select">
                   <option value="disabled">Disabled</option>
                   <option value="browser">Browser (built-in)</option>
+                  <option value="gemini">Gemini TTS</option>
+                  <option value="elevenlabs">ElevenLabs</option>
                   <option value="local">Local (Kokoro-82M)</option>
                 </select>
               </div>
@@ -1678,7 +1694,7 @@
                   <option value="tts-1-hd">tts-1-hd (quality)</option>
                   <option value="gpt-4o-mini-tts">gpt-4o-mini-tts (steerable)</option>
                 </select>
-                <input id="set-ttsModelInput" type="text" placeholder="model name" style="flex:1;padding:5px;display:none;">
+                <input id="set-ttsModelInput" type="text" placeholder="gemini-2.5-flash-preview-tts" style="flex:1;padding:5px;display:none;">
               </div>
               <div id="set-ttsVoiceRow" style="display:flex;align-items:center;gap:0.75rem;">
                 <label class="settings-label">Voice</label>
@@ -1693,7 +1709,7 @@
                   <option value="sage">Sage</option>
                   <option value="shimmer">Shimmer</option>
                 </select>
-                <input id="set-ttsVoiceInput" type="text" placeholder="af_heart" style="flex:1;padding:5px;display:none;">
+                <input id="set-ttsVoiceInput" type="text" placeholder="Leda" style="flex:1;padding:5px;display:none;">
               </div>
               <div id="set-ttsSpeedRow" style="display:flex;align-items:center;gap:0.75rem;">
                 <label class="settings-label">Speed</label>
@@ -1706,6 +1722,17 @@
                   <option value="2">2x</option>
                 </select>
               </div>
+              <div id="set-ttsVolumeRow" style="display:flex;align-items:center;gap:0.75rem;">
+                <label class="settings-label">Volume</label>
+                <div style="display:flex;align-items:center;gap:0.6rem;flex:1;">
+                  <input id="set-ttsVolumeRange" type="range" min="0" max="100" step="1" value="100" style="flex:1;min-width:120px;">
+                  <span id="set-ttsVolumeValue" style="min-width:38px;text-align:right;font-size:11px;color:var(--fg);">100%</span>
+                </div>
+              </div>
+              <label style="display:flex;align-items:center;gap:0.6rem;font-size:12px;color:var(--fg);">
+                <input type="checkbox" id="set-ttsAutoReadToggle">
+                Automatically read every completed assistant message
+              </label>
               <button type="button" id="set-ttsPreviewBtn" class="admin-btn-sm" style="margin-top:4px;padding:5px 16px;font-size:12px;">Preview</button>
               <div id="set-ttsSettingsMsg" style="font-size:11px;color:color-mix(in srgb, var(--fg) 45%, transparent);"></div>
             </div>
@@ -1972,7 +1999,7 @@
               <label class="vis-row">
                 <span class="vis-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2a7 7 0 0 0-7 7c0 3 2 5.5 4.5 7.5.7.6 1.2 1.3 1.5 2h2c.3-.7.8-1.4 1.5-2C17 14.5 19 12 19 9a7 7 0 0 0-7-7z"/><line x1="10" y1="22" x2="14" y2="22"/></svg></span>
                 <span class="vis-label">Thinking Process <span class="vis-hint">Show &lt;think&gt; collapsible bars</span></span>
-                <input type="checkbox" checked data-ui-key="show-thinking"><span class="vis-switch"></span>
+                <input type="checkbox" data-ui-key="show-thinking"><span class="vis-switch"></span>
               </label>
               <label class="vis-row">
                 <span class="vis-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path d="M4 4l16 16"/></svg></span>

@@ -83,6 +83,8 @@ out/
 # Build and cache directories
 .cache/
 .tmp-vite-plan-build/
+data/huggingface/
+data/odysseus/tts_cache/
 
 # IDE
 .vscode/

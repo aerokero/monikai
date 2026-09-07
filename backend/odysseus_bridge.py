@@ -4,6 +4,7 @@ Model Discovery, Email, Calendar, Notes, Documents, Tasks, MCP, Vault, Settings)
 """
 
 import logging
+import json
 import os
 import sys
 from pathlib import Path
@@ -19,18 +20,86 @@ if str(_ODY_ROOT) not in sys.path:
 # Ensure persistent data dir and auth settings are configured
 os.environ["AUTH_ENABLED"] = "false"
 
+
+def _ensure_builtin_model_endpoints() -> None:
+    """Back the picker aliases with real native Odysseus endpoints.
+
+    The public picker intentionally exposes stable ids (``gemini-text`` and
+    ``ollama-local``).  Native chat routes, however, resolve endpoint ids via
+    ``ModelEndpoint``.  Keeping the adapter rows here lets the native route
+    remain authoritative without exposing provider plumbing in the UI.
+    """
+    from core.database import ModelEndpoint, SessionLocal
+
+    definitions = (
+        {
+            "id": "gemini-text",
+            "name": "Google Gemini",
+            "base_url": os.getenv(
+                "GEMINI_OPENAI_BASE_URL",
+                "https://generativelanguage.googleapis.com/v1beta/openai",
+            ).rstrip("/"),
+            "api_key": os.getenv("GEMINI_API_KEY") or None,
+            "models": ["gemini-2.5-flash", "gemini-2.5-pro"],
+            "endpoint_kind": "api",
+        },
+        {
+            "id": "ollama-local",
+            "name": "Local Ollama",
+            "base_url": os.getenv("OLLAMA_OPENAI_BASE_URL", "http://localhost:11434/v1").rstrip("/"),
+            "api_key": None,
+            "models": ["llama3.2", "qwen2.5-coder", "mistral"],
+            "endpoint_kind": "local",
+        },
+    )
+
+    db = SessionLocal()
+    try:
+        for definition in definitions:
+            row = db.query(ModelEndpoint).filter(ModelEndpoint.id == definition["id"]).first()
+            if row is None:
+                row = ModelEndpoint(
+                    id=definition["id"],
+                    name=definition["name"],
+                    base_url=definition["base_url"],
+                    api_key=definition["api_key"],
+                    is_enabled=True,
+                    cached_models=json.dumps(definition["models"]),
+                    model_type="llm",
+                    endpoint_kind=definition["endpoint_kind"],
+                    model_refresh_mode="manual",
+                    supports_tools=True,
+                    owner=None,
+                )
+                db.add(row)
+                continue
+
+            # Repair rows created by an earlier bridge version, but do not
+            # overwrite an operator's explicit endpoint configuration.
+            if row.base_url in ("", "/api/chat_stream", None):
+                row.base_url = definition["base_url"]
+            if definition["id"] == "gemini-text" and os.getenv("GEMINI_API_KEY"):
+                row.api_key = os.getenv("GEMINI_API_KEY")
+            if not row.cached_models:
+                row.cached_models = json.dumps(definition["models"])
+        db.commit()
+    finally:
+        db.close()
+
 def init_and_register_odysseus_backend(app: FastAPI):
     """Initializes all Odysseus components and mounts full native routers."""
     try:
         import core.database as db
         db.init_db()
         logger.info("Odysseus database initialized at %s", os.environ.get("ODYSSEUS_DATA_DIR"))
+        _ensure_builtin_model_endpoints()
 
         from src.constants import BASE_DIR, REQUEST_TIMEOUT, OPENAI_API_KEY, SESSIONS_FILE
         from src.app_initializer import initialize_managers
         
         # 1. Initialize all core managers & handlers
         components = initialize_managers(BASE_DIR)
+        app.state.odysseus_components = components
         session_manager = components["session_manager"]
         memory_manager = components["memory_manager"]
         memory_vector = components.get("memory_vector")
@@ -62,6 +131,28 @@ def init_and_register_odysseus_backend(app: FastAPI):
         webhook_manager = WebhookManager(api_key_manager=api_key_manager)
         mcp_manager = McpManager()
         set_mcp_manager(mcp_manager)
+
+        # Text conversation belongs to native Odysseus.  Mount this router
+        # before the compatibility HTTP bridge so the production
+        # /api/chat(_stream) endpoints use the real session, model, persona,
+        # tool and memory pipeline instead of the old MonikAI shim.
+        try:
+            from routes.chat_routes import setup_chat_routes
+
+            app.include_router(setup_chat_routes(
+                session_manager=session_manager,
+                chat_handler=chat_handler,
+                chat_processor=chat_processor,
+                memory_manager=memory_manager,
+                research_handler=research_handler,
+                upload_handler=upload_handler,
+                memory_vector=memory_vector,
+                webhook_manager=webhook_manager,
+                skills_manager=skills_manager,
+            ))
+            logger.info("Odysseus native chat_routes mounted")
+        except Exception as e:
+            logger.warning("chat_routes mount error: %s", e, exc_info=True)
 
         # 3. Auth Manager & Routes
         from core.auth import AuthManager

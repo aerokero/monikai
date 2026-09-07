@@ -318,6 +318,17 @@ def extract_preset(chat_handler, preset_id) -> PresetInfo:
     temperature, max_tokens, system_prompt, char_name = (
         chat_handler.validate_and_extract_preset(preset_id)
     )
+    # Keep reply language outside the character preset.  This applies to the
+    # native chat path, including custom/no-persona turns and Live's gateway.
+    try:
+        from backend.core.response_language import response_language_instruction
+
+        language_layer = response_language_instruction()
+        system_prompt = "\n\n".join(
+            part for part in (system_prompt, language_layer) if part
+        ) or None
+    except Exception:
+        logger.debug("Unable to add response-language layer", exc_info=True)
     return PresetInfo(
         temperature=temperature,
         max_tokens=max_tokens,

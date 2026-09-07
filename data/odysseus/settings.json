@@ -8,10 +8,12 @@
   "vision_model_fallbacks": [],
   "app_public_url": "",
   "tts_enabled": true,
-  "tts_provider": "disabled",
-  "tts_model": "tts-1",
-  "tts_voice": "alloy",
+  "tts_provider": "local",
+  "tts_model": "eleven_multilingual_v2",
+  "tts_voice": "af_heart",
   "tts_speed": "1",
+  "tts_volume": 1.0,
+  "tts_auto_read": true,
   "stt_enabled": false,
   "stt_provider": "disabled",
   "stt_model": "base",
@@ -45,8 +47,8 @@
   "tool_path_extra_roots": [],
   "task_endpoint_id": "",
   "task_model": "",
-  "default_endpoint_id": "",
-  "default_model": "",
+  "default_endpoint_id": "8d2728e4",
+  "default_model": "openrouter/free",
   "document_writing_style": "",
   "default_model_fallbacks": [],
   "share_defaults_with_users": false,
@@ -59,7 +61,7 @@
   "skill_autosave_min_confidence": 0.85,
   "skill_max_injected": 3,
   "reminder_channel": "browser",
-  "reminder_llm_synthesis": false,
+  "reminder_llm_synthesis": true,
   "reminder_llm_persona": "",
   "reminder_ntfy_topic": "Reminders",
   "reminder_email_to": "",
@@ -74,5 +76,8 @@
     "delete_session": "ctrl+alt+d",
     "admin_panel": "ctrl+shift+u",
     "cancel": "escape"
+  },
+  "email_writing_styles_by_account": {
+    "c1e819e4754e49578816ff3043080b41": ""
   }
 }

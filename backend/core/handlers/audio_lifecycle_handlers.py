@@ -37,6 +37,7 @@ def register_audio_lifecycle_handlers(
     get_hue_agent,
     get_home_assistant_agent,
     get_minecraft_bot_manager,
+    get_conversation_gateway,
     shutdown_and_exit,
 ):
     last_start_params = {"sid": None, "data": None}
@@ -291,6 +292,11 @@ def register_audio_lifecycle_handlers(
                 audio_source=audio_source,
                 screen_source=screen_source,
                 play_audio_locally=play_audio_locally,
+                conversation_gateway=get_conversation_gateway(),
+                conversation_model=(data or {}).get("text_model") or get_settings().get("text_model"),
+                conversation_endpoint_id=(data or {}).get("text_endpoint_id") or get_settings().get("text_endpoint_id"),
+                conversation_preset_id=(data or {}).get("text_persona_id") or get_settings().get("text_persona_id"),
+                conversation_session_id=(data or {}).get("text_session_id"),
             )
             print("[SYSTEM NOTIFICATION] AudioLoop initialized successfully.")
 

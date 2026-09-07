@@ -2,23 +2,16 @@
   "_users": {
     "bartosz": {
       "theme": {
-        "name": "gpt",
+        "name": "ume",
         "colors": {
-          "bg": "#212121",
-          "fg": "#ececec",
-          "panel": "#171717",
-          "border": "#424242",
-          "red": "#949494",
-          "advanced": {
-            "sendBtnBg": "#949494",
-            "sendBtnHover": "#7f7f7f",
-            "userBubbleBg": "#2f2f2f",
-            "aiBubbleBg": "#171717",
-            "inputBg": "#2f2f2f",
-            "brandColor": "#ffffff",
-            "brandMixTo": "#ffffff"
-          }
-        }
+          "bg": "#2b1b2e",
+          "fg": "#f5c2e7",
+          "panel": "#1e1420",
+          "border": "#6c4675",
+          "red": "#f5a0c0"
+        },
+        "bgPattern": "petals",
+        "bgEffectColor": "#f5a0c0"
       },
       "tasks_opened": true
     }

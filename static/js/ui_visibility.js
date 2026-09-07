@@ -46,7 +46,10 @@ export const UI_VIS_MAP = {
 };
 
 // Keys hidden by default on first run (no localStorage yet).
-export const UI_VIS_DEFAULT_OFF = new Set(['text-emojis', 'chat-fullwidth']);
+// Model reasoning is useful as an explicit diagnostic view, but it should not
+// be part of the normal conversation surface.  Keep the existing opt-in
+// toggle; a user can still enable it from Appearance when debugging a model.
+export const UI_VIS_DEFAULT_OFF = new Set(['text-emojis', 'chat-fullwidth', 'show-thinking']);
 
 /**
  * Resolve every UI_VIS_MAP selector to visible (true) or hidden (false) for the

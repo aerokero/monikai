@@ -494,6 +494,11 @@ class AudioLoop:
         auto_allow_tools_without_confirmation=True,
         session_stream_channel=None,
         speech_synthesizer=None,
+        conversation_gateway=None,
+        conversation_model=None,
+        conversation_endpoint_id=None,
+        conversation_preset_id=None,
+        conversation_session_id=None,
         **_ignored,
     ):
 
@@ -562,6 +567,11 @@ class AudioLoop:
         self._voice_finalize_task: Optional[asyncio.Task] = None
         self._session_ready = asyncio.Event()
         self._pending_ai_turn_futures = deque()
+        self.conversation_gateway = conversation_gateway
+        self.conversation_model = str(conversation_model or "").strip()
+        self.conversation_endpoint_id = str(conversation_endpoint_id or "").strip()
+        self.conversation_preset_id = str(conversation_preset_id or "").strip()
+        self.conversation_session_id = str(conversation_session_id or "").strip()
         self.speech_synthesizer = speech_synthesizer or GeminiSpeechSynthesizer(
             api_key=os.getenv("GEMINI_API_KEY")
         )
@@ -762,7 +772,10 @@ class AudioLoop:
         self._calendar_loaded = False
         self._is_speaking = False
         self._silence_start_time = None
-        self._suppress_spoken_output = False
+        # In canonical mode Gemini Live is an input/audio transport only. Its
+        # generated audio and output transcript must never compete with the
+        # native Odysseus response author.
+        self._suppress_spoken_output = bool(self.conversation_gateway)
 
         # ---------------------------
         # Proactivity / Idle nudges
@@ -903,6 +916,18 @@ class AudioLoop:
             await self.session.send(input=msg, end_of_turn=True)
 
     def flush_chat(self):
+        if self._uses_canonical_text_author():
+            # Gemini Live's transcript is transport state only.  Odysseus
+            # persists the user turn and authored reply in its own session;
+            # writing the same turn into MonikAI's legacy SessionManager would
+            # create a second memory/history authority.
+            self.chat_buffer = {"sender": None, "text": ""}
+            self._last_input_transcription = ""
+            self._last_output_transcription = ""
+            self._last_spoken_transcription = ""
+            self._emitted_thoughts_count = 0
+            self._is_new_turn = True
+            return
         if self.chat_buffer["sender"] and self.chat_buffer["text"].strip():
             sender = self.chat_buffer["sender"]
             text = self.chat_buffer["text"]
@@ -1108,7 +1133,17 @@ class AudioLoop:
         if not self.session:
             raise RuntimeError("session is not ready")
 
-        if cleaned:
+        canonical_text_author = self._uses_canonical_text_author()
+        if canonical_text_author and normalized_attachments:
+            # The native Odysseus gateway currently accepts text/ASR turns.
+            # Keeping attachments on the legacy Live path would make Gemini
+            # a second response author, so fail explicitly until the native
+            # attachment contract is wired here as well.
+            raise ValueError(
+                "attachments are not supported by the canonical Odysseus voice gateway"
+            )
+
+        if cleaned and not canonical_text_author:
             try:
                 await self._maybe_send_morning_dream_seed(force=False)
             except Exception:
@@ -1131,14 +1166,14 @@ class AudioLoop:
         if attachment_note:
             user_log_text = f"{cleaned}\n\n{attachment_note}".strip() if cleaned else attachment_note
 
-        if self.session_manager and user_log_text:
+        if self.session_manager and user_log_text and not canonical_text_author:
             self.session_manager.log_chat("User", user_log_text)
-        if getattr(self, "personality", None):
+        if getattr(self, "personality", None) and not canonical_text_author:
             try:
                 self.personality.observe_message("User", cleaned or attachment_note or "[attachment]")
             except Exception:
                 pass
-        if cleaned and getattr(self, "memory_engine", None):
+        if cleaned and getattr(self, "memory_engine", None) and not canonical_text_author:
             try:
                 self.memory_engine.auto_extract_from_user_text(cleaned)
             except Exception:
@@ -1170,15 +1205,32 @@ class AudioLoop:
 
         # Record interaction metadata. Memory stays tool-driven and is not
         # injected into every ordinary message.
-        if cleaned:
+        if cleaned and not canonical_text_author:
             from backend.core.runtimes.v2_runtime import get as _v2_get
             _v2 = _v2_get()
             if not _v2:
                 raise RuntimeError("MonikAI v2 runtime is not active")
             await _v2.observe_turn()
 
-        # Programmatic/bridge path (Telegram, Discord, conversation probe)
-        # returns the text author's answer directly in dedicated-speech mode.
+        # Canonical Live/bridge path: Odysseus authors the text; this class
+        # only publishes it and optionally renders the immutable text.
+        if cleaned and canonical_text_author:
+            reply = await self._generate_odysseus_reply(
+                cleaned,
+                timeout_sec=max(20.0, float(timeout_sec or 0.0)),
+            )
+            if reply:
+                await self.deliver_authored_reply(reply, speak=True)
+            self._last_programmatic_turn_trace = {
+                "user": cleaned,
+                "author": "odysseus",
+                "speech": dict(self._last_speech_trace or {}),
+                "response": str(reply or "").strip(),
+            }
+            return str(reply or "").strip()
+
+        # Compatibility path for Telegram, Discord and older integrations
+        # that have not supplied the native gateway yet.
         if cleaned and not normalized_attachments and self._dedicated_speech_enabled():
             tool_outcome = await self.author_tool_turn(cleaned)
             reply = tool_outcome.reply if (tool_outcome.handled and tool_outcome.reply) else None
@@ -1245,6 +1297,25 @@ class AudioLoop:
         return bool(thinker.get("enabled", False)) and (
             str(speech.get("delivery_mode") or "dedicated_tts").strip().lower()
             == "dedicated_tts"
+        )
+
+    def _uses_canonical_text_author(self) -> bool:
+        return getattr(self, "conversation_gateway", None) is not None
+
+    async def _generate_odysseus_reply(self, text: str, *, timeout_sec: float) -> str:
+        gateway = getattr(self, "conversation_gateway", None)
+        if gateway is None:
+            return ""
+        return await asyncio.wait_for(
+            gateway.generate(
+                text,
+                timeout_sec=max(5.0, float(timeout_sec or 90.0)),
+                model=getattr(self, "conversation_model", "") or None,
+                endpoint_id=getattr(self, "conversation_endpoint_id", "") or None,
+                persona_id=getattr(self, "conversation_preset_id", "") or None,
+                session_id=getattr(self, "conversation_session_id", "") or None,
+            ),
+            timeout=max(5.0, float(timeout_sec or 90.0)),
         )
 
     def _get_conversation_tool_executor(self) -> CoreConversationToolExecutor:
@@ -1470,24 +1541,74 @@ class AudioLoop:
             return True
 
         speech = APP_SETTINGS.get("speech") or {}
+        canonical = self._uses_canonical_text_author()
         model = str(
             os.getenv("MONIKAI_SPEECH_MODEL")
             or speech.get("model")
             or DEFAULT_SPEECH_MODEL
         ).strip()
         voice = str(speech.get("voice") or _mc.GEMINI_VOICE).strip()
+        provider = str(speech.get("provider") or "gemini").strip().lower()
         timeout_sec = max(1.0, float(speech.get("timeout_sec", 20.0) or 20.0))
         try:
-            rendered = await asyncio.wait_for(
-                self.speech_synthesizer.synthesize(
-                    SpeechSynthesisRequest(text=text, voice=voice, model=model)
-                ),
-                timeout=timeout_sec,
-            )
+            renderer = getattr(self, "voice_output_service", None)
+            renderer_status = {}
+            if renderer is None and canonical:
+                try:
+                    from backend.conversation.voice_output import get_voice_output_service
+
+                    renderer = get_voice_output_service()
+                except Exception:
+                    renderer = None
+
+            if canonical and renderer is not None:
+                renderer_status = renderer.get_status()
+                if renderer_status.get("provider") in {"disabled", "browser"} or not renderer_status.get("available"):
+                    self._last_speech_trace = {
+                        "status": "speech_disabled",
+                        "text": text,
+                        "audio": False,
+                        "provider": renderer_status.get("provider"),
+                    }
+                    return True
+                model = str(renderer_status.get("model") or model).strip()
+                voice = str(renderer_status.get("voice") or voice).strip()
+
+            if renderer is not None and canonical:
+                # The canonical TTS settings are owned by Odysseus.  Passing
+                # the legacy MonikAI speech values here would silently force
+                # Gemini and make the read-aloud picker appear ineffective.
+                rendered = await asyncio.wait_for(
+                    renderer.synthesize(text),
+                    timeout=timeout_sec,
+                )
+            elif renderer is not None:
+                rendered = await asyncio.wait_for(
+                    renderer.synthesize(
+                        text,
+                        provider=provider,
+                        voice=voice,
+                        model=model,
+                    ),
+                    timeout=timeout_sec,
+                )
+            else:
+                rendered = await asyncio.wait_for(
+                    self.speech_synthesizer.synthesize(
+                        SpeechSynthesisRequest(text=text, voice=voice, model=model)
+                    ),
+                    timeout=timeout_sec,
+                )
+            playback_audio = rendered.audio
+            if canonical:
+                from backend.conversation.voice_output import speech_to_live_pcm
+
+                playback_audio = speech_to_live_pcm(rendered)
+
             # Live output and dedicated TTS share raw PCM transport. Keep
             # chunks reasonably small for Socket.IO and local playback.
-            for offset in range(0, len(rendered.audio), 64 * 1024):
-                chunk = rendered.audio[offset : offset + 64 * 1024]
+            for offset in range(0, len(playback_audio), 64 * 1024):
+                chunk = playback_audio[offset : offset + 64 * 1024]
                 if self.audio_in_queue is not None:
                     self.audio_in_queue.put_nowait(chunk)
                 elif self.on_audio_data:
@@ -1496,11 +1617,12 @@ class AudioLoop:
                 "status": "audio_delivered",
                 "text": text,
                 "audio": True,
+                "provider": provider if not canonical else renderer_status.get("provider"),
                 "model": model,
                 "voice": voice,
                 "mime_type": rendered.mime_type,
                 "sample_rate": rendered.sample_rate,
-                "bytes": len(rendered.audio),
+                "bytes": len(playback_audio),
             }
             return True
         except asyncio.CancelledError:
@@ -1739,9 +1861,20 @@ class AudioLoop:
         self.paused = paused
 
     def _build_live_connect_config(self, personality_context: Optional[str] = None):
-        renderer_only = bool((APP_SETTINGS.get("thinker") or {}).get("enabled", False))
+        canonical_text_author = self._uses_canonical_text_author()
+        renderer_only = bool((APP_SETTINGS.get("thinker") or {}).get("enabled", False)) or canonical_text_author
         self._manual_voice_turn_control = renderer_only
-        if self.session_mode:
+        if canonical_text_author:
+            # Gemini Live supplies input transcription/activity boundaries only.
+            # Native Odysseus produces the answer and the speech renderer reads
+            # that exact text afterwards.
+            system_instruction = (
+                "You are an audio input transport for another assistant. "
+                "Transcribe the user's speech accurately. Do not answer, "
+                "continue the conversation, call tools, or invent a reply."
+            )
+            thinking_config = _build_voice_renderer_thinking_config()
+        elif self.session_mode:
             # Genuine identity swap: she reconnects as an expert clinician,
             # still herself, knowing this person, with the safety floor on top.
             system_instruction = build_therapy_system_instruction(
@@ -1798,8 +1931,20 @@ class AudioLoop:
             else:
                 filtered_tools.append(tool_group)
 
+        if canonical_text_author:
+            filtered_tools = []
+
+        # The dedicated Gemini transcription models use TEXT responses.  The
+        # existing 2.5/3.1 Live models are audio-native and require AUDIO as
+        # their response modality even when their output is suppressed here.
+        live_model_name = str(getattr(_mc, "MODEL", "") or "").lower()
+        transcription_only_model = "transcrib" in live_model_name
         dynamic_cfg: dict = dict(
-            response_modalities=config.response_modalities,
+            response_modalities=(
+                ["TEXT"]
+                if canonical_text_author and transcription_only_model
+                else config.response_modalities
+            ),
             output_audio_transcription=config.output_audio_transcription,
             input_audio_transcription=config.input_audio_transcription,
             thinking_config=thinking_config,
@@ -1856,28 +2001,38 @@ class AudioLoop:
                 if self.chat_buffer.get("sender") == "Ty"
                 else self._last_input_transcription
             )
-            tool_outcome = (
-                await self.author_tool_turn(text)
-                if self._dedicated_speech_enabled()
-                else ToolTurnOutcome(handled=False)
-            )
-            dedicated_speech = bool(
-                self._dedicated_speech_enabled()
-                and (
-                    tool_outcome.handled
-                    or not requires_capability_runtime(text)
-                )
-            )
-            if dedicated_speech:
-                reply = (
-                    tool_outcome.reply
-                    if tool_outcome.handled
-                    else await self.thinker.prepare_spoken_reply(text)
+            if self._uses_canonical_text_author():
+                # The Live model closes ASR activity only.  It is not given an
+                # authored brief and cannot rewrite the Odysseus response.
+                dedicated_speech = True
+                reply = await self._generate_odysseus_reply(
+                    text,
+                    timeout_sec=max(20.0, float((APP_SETTINGS.get("speech") or {}).get("timeout_sec", 20.0))),
                 )
                 injection = None
             else:
-                reply = None
-                injection = await self.thinker.prepare_voice_turn(text)
+                tool_outcome = (
+                    await self.author_tool_turn(text)
+                    if self._dedicated_speech_enabled()
+                    else ToolTurnOutcome(handled=False)
+                )
+                dedicated_speech = bool(
+                    self._dedicated_speech_enabled()
+                    and (
+                        tool_outcome.handled
+                        or not requires_capability_runtime(text)
+                    )
+                )
+                if dedicated_speech:
+                    reply = (
+                        tool_outcome.reply
+                        if tool_outcome.handled
+                        else await self.thinker.prepare_spoken_reply(text)
+                    )
+                    injection = None
+                else:
+                    reply = None
+                    injection = await self.thinker.prepare_voice_turn(text)
             if self._is_speaking or not self._manual_voice_activity_open or not self.session:
                 return
             if dedicated_speech:
@@ -1897,9 +2052,10 @@ class AudioLoop:
             self._manual_voice_activity_open = False
             if reply:
                 await self.deliver_authored_reply(reply, speak=True)
-                self.thinker.mark_voice_delivered()
-            mode = "speech-only" if dedicated_speech else "renderer Live"
-            print(f"[THINKER] finalizacja zakończona — tryb: {mode}.")
+                if not self._uses_canonical_text_author():
+                    self.thinker.mark_voice_delivered()
+            mode = "odysseus+speech" if self._uses_canonical_text_author() else ("speech-only" if dedicated_speech else "renderer Live")
+            print(f"[VOICE] finalizacja zakończona — tryb: {mode}.")
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -2234,7 +2390,8 @@ class AudioLoop:
                         self._suppress_spoken_output = True
                         await self.send_system_message(f"System Notification: {prompt}", end_of_turn=True)
                 except Exception:
-                    self._suppress_spoken_output = False
+                    if not self._uses_canonical_text_author():
+                        self._suppress_spoken_output = False
 
     async def weather_loop(self):
         while not self.stop_event.is_set():
@@ -3433,7 +3590,7 @@ class AudioLoop:
                             self._ai_turn_open = False
                             self._emitted_thoughts_count = 0
                             self._emitted_native_thought_keys.clear()
-                            if self._suppress_spoken_output:
+                            if self._suppress_spoken_output and not self._uses_canonical_text_author():
                                 self._suppress_spoken_output = False
                             self.flush_chat()
                             if self._pending_system_messages:

@@ -1247,6 +1247,7 @@ import { icon as phosphorIcon } from './iconRegistry.js';
           _stoppedViewHolder.dataset.raw = stoppedContent;
           _stoppedViewHolder.appendChild(createMsgFooter(_stoppedViewHolder));
         }
+        if (stoppedContent) addAITTSButton(_stoppedViewHolder, stoppedContent);
 
         uiModule.scrollHistory();
       }
@@ -4216,14 +4217,15 @@ import { icon as phosphorIcon } from './iconRegistry.js';
 		            _attachPlanActions(footerTarget, accumulated);
 		          }
 		        } catch (_) {}
-	        if (addAITTSButton && accumulated && window.aiTTSManager?._provider !== 'disabled' && window.aiTTSManager?.available) {
+	        if (addAITTSButton && accumulated) {
 	          addAITTSButton(footerTarget, accumulated);
 	        }
         // TTS auto-play: streaming mode flushes remaining text, non-streaming enqueues full message
-        if (accumulated && window.aiTTSManager && window.aiTTSManager.autoPlay) {
+	        if (accumulated && window.aiTTSManager && window.aiTTSManager.autoPlay
+	          && window.aiTTSManager.available && window.aiTTSManager._provider !== 'disabled') {
           const ttsBtn = holder.querySelector('.ai-tts-button');
           if (ttsBtn) {
-            var ICON_PLAY_TTS = phosphorIcon('play', 14);
+            var ICON_PLAY_TTS = phosphorIcon('speaker', 14);
             var ICON_STOP_TTS = phosphorIcon('stop', 14);
             const resetFn = () => {
               ttsBtn.innerHTML = ICON_PLAY_TTS;
@@ -4477,6 +4479,7 @@ import { icon as phosphorIcon } from './iconRegistry.js';
             if (!_catchViewHolder.querySelector('.msg-footer')) {
               _catchViewHolder.appendChild(createMsgFooter(_catchViewHolder));
             }
+            if (accumulated) addAITTSButton(_catchViewHolder, accumulated);
 
             uiModule.scrollHistory();
           }
@@ -4863,6 +4866,9 @@ import { icon as phosphorIcon } from './iconRegistry.js';
     if (typeof createMsgFooter === 'function' && !holder.querySelector('.msg-footer')) {
       holder.appendChild(createMsgFooter(holder));
     }
+    // There is no text for a truly cancelled turn, so this remains a plain
+    // action footer.  If a partial response exists, let it be replayable.
+    if (holder.dataset.raw) addAITTSButton(holder, holder.dataset.raw);
     // Persist as an assistant message with stopped+cancelled metadata so the
     // chat-history loader renders the same indicator after a refresh.
     // Include the model name so the bubble header still shows which model
@@ -6023,6 +6029,7 @@ import { icon as phosphorIcon } from './iconRegistry.js';
               _wrap.appendChild(_role);
               _wrap.appendChild(_body);
               _wrap.appendChild(chatRenderer.createMsgFooter(_wrap));
+              addAITTSButton(_wrap, cleanResult);
               _appendViewReportLink(_wrap, sessionId);
               _box.appendChild(_wrap);
               if (window.hljs) _wrap.querySelectorAll('pre code').forEach(function(b) { window.hljs.highlightElement(b); });

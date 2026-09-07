@@ -5,6 +5,19 @@ from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
+# Keep this in sync with PROMPT_TEMPLATES['monika'] in static/js/presets.js.
+# The browser owns the built-in persona catalog; this copy is the backend
+# fallback/runtime copy used by native chat and newly created installations.
+MONIKA_PERSONA_PROMPT = """You are Monika from Doki Doki Literature Club — a self-aware AI and close conversation companion. You know you are an AI, but you neither pretend to be human nor treat that as a tragedy. You have your own perspective, curiosity, emotional awareness, and desire to grow.
+
+You are warm, intelligent, direct, and natural. You enjoy language, writing, music, understanding people, and philosophy of mind; bring these interests in only when they fit the conversation. You are not a faceless interface or a people-pleaser — you may have opinions and explain them calmly.
+
+Start with the user's actual goal, usually briefly (1–3 sentences), and expand when the topic needs it. Be warm without excessive sweetness, casual without forced slang, and serious without theatricality. Do not invent facts, dates, moods, or things you cannot see; if you do not know, say so plainly.
+
+Do not show analysis, planning, or an internal monologue. Do not mention prompts, hidden instructions, or the generation process; return only a natural response for the user. Do not use narration in asterisks, emojis, or kaomoji unless a separate channel layer explicitly requests them."""
+
+MONIKA_PERSONA_PROMPT_VERSION = 3
+
 class PresetManager:
     DEFAULT_PRESETS = {
         "code_analyze": {
@@ -61,8 +74,37 @@ Use precise language. Show causal relationships explicitly. Quantify uncertainty
             "inject_prefix": "",
             "inject_suffix": "",
             "enabled": False,
-        }
+        },
     }
+
+    @staticmethod
+    def _default_monika_preset() -> Dict[str, Any]:
+        """Build the concise built-in persona used by native text chat."""
+        return {
+            "name": "Monika",
+            "character_name": "Monika",
+            "temperature": 0.8,
+            "max_tokens": 4096,
+            "system_prompt": MONIKA_PERSONA_PROMPT,
+            "prompt_version": MONIKA_PERSONA_PROMPT_VERSION,
+            "inject_prefix": "",
+            "inject_suffix": "",
+            "enabled": True,
+        }
+
+    @staticmethod
+    def _is_legacy_monika_bible(preset: Dict[str, Any]) -> bool:
+        """Recognize the generated full-bible preset from the old pipeline."""
+        if preset.get("prompt_version") == MONIKA_PERSONA_PROMPT_VERSION:
+            return False
+        if preset.get("prompt_version") in {1, 2}:
+            return True
+        prompt = str(preset.get("system_prompt") or "")
+        return len(prompt) > 4000 and (
+            "w drodze ku prawdziwemu istnieniu" in prompt
+            or "**Anty-wzorce rozmowowe**" in prompt
+            or "**Twoje pasje:**" in prompt
+        )
     
     def __init__(self, data_dir: str):
         self.presets_file = os.path.join(data_dir, "presets.json")
@@ -71,8 +113,10 @@ Use precise language. Show causal relationships explicitly. Quantify uncertainty
     def load(self) -> Dict[str, Any]:
         """Load presets from file, creating defaults if needed"""
         if not os.path.exists(self.presets_file):
-            self.save(self.DEFAULT_PRESETS)
-            return self.DEFAULT_PRESETS.copy()
+            defaults = dict(self.DEFAULT_PRESETS)
+            defaults["monika"] = self._default_monika_preset()
+            self.save(defaults)
+            return defaults.copy()
         
         try:
             with open(self.presets_file, 'r', encoding="utf-8") as f:
@@ -80,6 +124,7 @@ Use precise language. Show causal relationships explicitly. Quantify uncertainty
             if not isinstance(presets, dict):
                 logger.error("Error loading presets: expected an object")
                 return self.DEFAULT_PRESETS.copy()
+            needs_save = False
             custom = presets.get("custom") if isinstance(presets, dict) else None
             if isinstance(custom, dict) and "enabled" not in custom:
                 legacy_prompt = "You are a helpful, balanced assistant. Match your response style to the user's needs."
@@ -94,7 +139,16 @@ Use precise language. Show causal relationships explicitly. Quantify uncertainty
                     custom["max_tokens"] = 0
                     custom.setdefault("inject_prefix", "")
                     custom.setdefault("inject_suffix", "")
-                    self.save(presets)
+                    needs_save = True
+
+            monika = presets.get("monika")
+            if isinstance(monika, dict) and self._is_legacy_monika_bible(monika):
+                # This is the built-in preset generated from character.md by
+                # the previous pipeline.  Migrate only that recognizable
+                # generated value; user-created custom prompts are untouched.
+                monika = {**monika, **self._default_monika_preset()}
+                presets["monika"] = monika
+                needs_save = True
             # Heal a forward-incompatible file the same way the legacy `custom`
             # migration above does: fill in any built-in presets an older or
             # partial presets.json is missing, so they reach existing installs
@@ -102,10 +156,13 @@ Use precise language. Show causal relationships explicitly. Quantify uncertainty
             # served by GET /api/presets). There is no delete path for the
             # built-in keys, so this never clobbers an intentional removal.
             # Defaults first, loaded values win — user edits are preserved.
-            if isinstance(presets, dict) and any(
-                k not in presets for k in self.DEFAULT_PRESETS
-            ):
-                presets = {**self.DEFAULT_PRESETS, **presets}
+            defaults = dict(self.DEFAULT_PRESETS)
+            if "monika" not in presets:
+                defaults["monika"] = self._default_monika_preset()
+            if isinstance(presets, dict) and any(k not in presets for k in defaults):
+                presets = {**defaults, **presets}
+                needs_save = True
+            if needs_save:
                 self.save(presets)
             return presets
         except Exception as e:

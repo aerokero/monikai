@@ -69,6 +69,17 @@ function _pickerModelKey(m) {
   return `${m.endpointId || m.url || m.epName || 'model'}::${m.mid || ''}`;
 }
 
+function _persistConversationConfig(patch) {
+  try {
+    fetch(`${API_BASE}/api/conversation-config`, {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    }).catch(() => {});
+  } catch (_) {}
+}
+
 // ── Shared keyboard nav for model pickers ──
 function _handlePickerKeydown(e, listEl, itemSelector, closeFn) {
   if (e.key === 'Escape') { closeFn(); return; }
@@ -685,6 +696,17 @@ async function _pick(m) {
         display: m.display || m.mid || '',
         picked_at: Date.now(),
       };
+      // The desktop Live client can reuse the same text author selection when
+      // it starts its audio transport.  This is routing state, not persona
+      // state, and deliberately stays separate from the voice picker.
+      if (m && m.mid) localStorage.setItem('odysseus-text-model', m.mid);
+      if (m && m.endpointId) localStorage.setItem('odysseus-text-endpoint-id', m.endpointId);
+      if (m && m.mid) {
+        _persistConversationConfig({
+          text_model: m.mid,
+          text_endpoint_id: m.endpointId || undefined,
+        });
+      }
     } catch (_) {}
     let switchDone = null;
     const switchPromise = new Promise(resolve => { switchDone = resolve; });

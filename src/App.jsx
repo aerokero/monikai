@@ -61,6 +61,17 @@ const SOCKET_TOKEN =
 const CLIENT_CAPTURE_ENABLED =
   localStorage.getItem('monikai_client_capture') === 'true' ||
   import.meta.env.VITE_MONIKAI_CLIENT_CAPTURE === 'true';
+const getConversationOptions = () => ({
+  text_model: localStorage.getItem('odysseus-text-model') || '',
+  text_endpoint_id: localStorage.getItem('odysseus-text-endpoint-id') || '',
+  text_persona_id: localStorage.getItem('odysseus-text-persona-id') || '',
+});
+const normalizeVoiceVolumePercent = (value, fallback = 100) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  const percent = parsed <= 1 ? parsed * 100 : parsed;
+  return Math.max(0, Math.min(100, Math.round(percent)));
+};
 const DEVICE_ID = (() => {
   const existing = localStorage.getItem('monikai_device_id');
   if (existing) return existing;
@@ -355,10 +366,15 @@ function AppContent() {
   const [visionFrame, setVisionFrame] = useState(null);
   const [geminiModelPreset, setGeminiModelPreset] = useState('2.5');
   const [geminiVoice, setGeminiVoice] = useState('Leda');
+  const [voiceVolume, setVoiceVolume] = useState(() => {
+    const stored = localStorage.getItem('monikai_tts_volume');
+    return stored == null ? 100 : normalizeVoiceVolumePercent(stored);
+  });
 
   // Web Audio Context for Mic Visualization
   const audioContextRef = useRef(null);
   const playbackContextRef = useRef(null);
+  const playbackGainRef = useRef(null);
   const playbackNextTimeRef = useRef(0);
   const analyserRef = useRef(null);
   const sourceRef = useRef(null);
@@ -370,6 +386,27 @@ function AppContent() {
   const screenTimerRef = useRef(null);
   const isConnectedRef = useRef(isConnected);
   const isMutedRef = useRef(isMuted);
+
+  // Keep the output gain in sync even though the socket's audio listener is
+  // intentionally registered once.  Live audio and read-aloud therefore use
+  // the same user-controlled volume without reconnecting the session.
+  useEffect(() => {
+    const normalized = voiceVolume / 100;
+    localStorage.setItem('monikai_tts_volume', String(voiceVolume));
+    if (playbackGainRef.current) {
+      playbackGainRef.current.gain.value = normalized;
+    }
+  }, [voiceVolume]);
+
+  useEffect(() => {
+    fetch('/api/v1/voice/status', { credentials: 'same-origin' })
+      .then((response) => response.ok ? response.json() : null)
+      .then((payload) => {
+        const volume = payload?.voice_settings?.canonical?.volume;
+        if (volume != null) setVoiceVolume(normalizeVoiceVolumePercent(volume));
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     isConnectedRef.current = isConnected;
@@ -395,6 +432,9 @@ function AppContent() {
   const ensurePlaybackContext = async () => {
     if (!playbackContextRef.current) {
       playbackContextRef.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+      playbackGainRef.current = playbackContextRef.current.createGain();
+      playbackGainRef.current.gain.value = voiceVolume / 100;
+      playbackGainRef.current.connect(playbackContextRef.current.destination);
       if (selectedSpeakerId && typeof playbackContextRef.current.setSinkId === 'function') {
         try {
           await playbackContextRef.current.setSinkId(selectedSpeakerId);
@@ -427,7 +467,7 @@ function AppContent() {
 
     const source = context.createBufferSource();
     source.buffer = audioBuffer;
-    source.connect(context.destination);
+    source.connect(playbackGainRef.current || context.destination);
     const startAt = Math.max(context.currentTime + 0.02, playbackNextTimeRef.current);
     source.start(startAt);
     playbackNextTimeRef.current = startAt + audioBuffer.duration;
@@ -684,6 +724,7 @@ function AppContent() {
           audio_source: CLIENT_CAPTURE_ENABLED ? 'frontend' : 'backend',
           screen_source: CLIENT_CAPTURE_ENABLED ? 'frontend' : 'backend',
           play_audio_locally: !CLIENT_CAPTURE_ENABLED,
+          ...getConversationOptions(),
         });
       }, 500);
     }
@@ -710,6 +751,7 @@ function AppContent() {
             audio_source: 'frontend',
             screen_source: 'frontend',
             play_audio_locally: false,
+            ...getConversationOptions(),
           });
         }, 700);
       }
@@ -782,6 +824,9 @@ function AppContent() {
       if (settings.tool_permissions) {
         setToolPermissions(normalizeToolPermissions(settings.tool_permissions));
       }
+      if (settings.text_model) localStorage.setItem('odysseus-text-model', settings.text_model);
+      if (settings.text_endpoint_id) localStorage.setItem('odysseus-text-endpoint-id', settings.text_endpoint_id);
+      if (settings.text_persona_id) localStorage.setItem('odysseus-text-persona-id', settings.text_persona_id);
       if (settings.gemini_model_preset) setGeminiModelPreset(settings.gemini_model_preset);
       if (settings.gemini_voice) setGeminiVoice(settings.gemini_voice);
       setSettingsLoaded(true);
@@ -1403,10 +1448,22 @@ function AppContent() {
         audio_source: CLIENT_CAPTURE_ENABLED ? 'frontend' : 'backend',
         screen_source: CLIENT_CAPTURE_ENABLED ? 'frontend' : 'backend',
         play_audio_locally: !CLIENT_CAPTURE_ENABLED,
+        ...getConversationOptions(),
       });
       setIsConnected(true);
       setIsMuted(false);
     }
+  };
+
+  const handleVoiceVolumeChange = (value) => {
+    const next = normalizeVoiceVolumePercent(value);
+    setVoiceVolume(next);
+    fetch('/api/v1/voice/volume', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ volume: next / 100 }),
+    }).catch(() => {});
   };
 
   const toggleMute = () => {
@@ -1797,7 +1854,20 @@ function AppContent() {
           onVoiceChange={(voice) => {
             setGeminiVoice(voice);
             socket.emit('update_settings', { gemini_voice: voice });
+            // Keep the canonical read-aloud renderer in sync when Gemini is
+            // selected.  Live's own audio is only a transport in the merged
+            // architecture, so it must not become a second voice setting.
+            const provider = localStorage.getItem('monikai_tts_provider') || 'gemini';
+            if (provider === 'gemini') {
+              fetch('/api/v1/voice/select', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider, voice }),
+              }).catch(() => {});
+            }
           }}
+          voiceVolume={voiceVolume}
+          onVoiceVolumeChange={handleVoiceVolumeChange}
         />
 
         {activeSessionPrompt && (

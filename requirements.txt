@@ -8,6 +8,10 @@ google-genai
 opencv-python
 pyaudio
 sounddevice
+# Local Kokoro-82M TTS (CUDA is used when the container exposes an NVIDIA GPU)
+torch==2.7.1
+kokoro==0.9.4
+soundfile
 vosk
 pillow
 mss

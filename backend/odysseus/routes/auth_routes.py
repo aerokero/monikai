@@ -737,6 +737,11 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
             "agent_max_rounds": (1, 200),
             "agent_max_tool_calls": (0, 1000),  # 0 = unlimited
         }
+        _FLOAT_RANGES = {
+            # Keep voice output in a normalized 0..1 range.  The UI exposes
+            # this as 0..100%, but the stored value is shared by every client.
+            "tts_volume": (0.0, 1.0),
+        }
         for key in DEFAULT_SETTINGS:
             if key in RETIRED_SETTING_KEYS:
                 continue
@@ -749,6 +754,16 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
                     val = int(val)
                 except (TypeError, ValueError):
                     raise HTTPException(400, f"{key} must be an integer")
+                val = max(lo, min(val, hi))
+            elif key in _FLOAT_RANGES:
+                lo, hi = _FLOAT_RANGES[key]
+                try:
+                    val = float(val)
+                except (TypeError, ValueError):
+                    raise HTTPException(400, f"{key} must be a number")
+                # Be forgiving if an older/client-side caller sends percent.
+                if val > 1.0:
+                    val /= 100.0
                 val = max(lo, min(val, hi))
             current[key] = val
         _save_settings(current)

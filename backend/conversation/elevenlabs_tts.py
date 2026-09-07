@@ -40,7 +40,7 @@ class ElevenLabsSpeechSynthesizer:
         }
         payload = {
             "text": request.text,
-            "model_id": self.model_id,
+            "model_id": request.model or self.model_id,
             "voice_settings": {
                 "stability": 0.5,
                 "similarity_boost": 0.75,

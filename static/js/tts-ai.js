@@ -3,6 +3,46 @@
 
 import { getSettings } from './appConfig.js';
 import { icon as phosphorIcon } from './iconRegistry.js';
+import uiModule from './ui.js';
+
+// Thinking is display-only. TTS must never speak text inside <think> (or its
+// common aliases), including a block that is still open while the response is
+// streaming. A small scanner is used instead of one lazy regex so nested
+// thinking tags and <think time="..."> remain safe as well.
+const THINKING_TAG_RE = /<\/?(?:think(?:ing)?|thought)\b[^<>]*>/gi;
+
+function stripThinkingForSpeech(value) {
+    const source = String(value ?? '');
+    let output = '';
+    let cursor = 0;
+    let depth = 0;
+    let match;
+
+    THINKING_TAG_RE.lastIndex = 0;
+    while ((match = THINKING_TAG_RE.exec(source)) !== null) {
+        if (depth === 0) output += source.slice(cursor, match.index);
+
+        if (/^<\//.test(match[0])) {
+            if (depth > 0) depth -= 1;
+        } else {
+            depth += 1;
+        }
+        cursor = match.index + match[0].length;
+    }
+
+    // If a thinking block is still open, intentionally discard everything
+    // after it. This is the important streaming case: no partial reasoning
+    // can enter the TTS queue before </think> arrives.
+    if (depth === 0) output += source.slice(cursor);
+    return output;
+}
+
+function normalizeVolume(value, fallback = 1) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    const normalized = parsed > 1 ? parsed / 100 : parsed;
+    return Math.max(0, Math.min(1, normalized));
+}
 
 class AITTSManager {
     constructor() {
@@ -12,6 +52,7 @@ class AITTSManager {
         this.useBrowserTTS = false;
         this.browserVoice = '';
         this.playbackSpeed = 1;
+        this.volume = 1;
         this._provider = 'disabled';
         this.autoPlay = false;
         this.cache = new Map(); // Client-side audio cache
@@ -38,6 +79,10 @@ class AITTSManager {
             // the shared cache before doing so, so this still sees the new value.
             try {
                 const settings = await getSettings();
+                this.autoPlay = settings.tts_auto_read === true;
+                if (settings.tts_volume != null) {
+                    this.volume = normalizeVolume(settings.tts_volume);
+                }
                 if (settings.tts_enabled === false) {
                     this.available = false;
                     this._provider = 'disabled';
@@ -49,7 +94,11 @@ class AITTSManager {
             const stats = await response.json();
             this.available = stats.available && stats.ready;
             this.playbackSpeed = stats.speed || 1;
+            if (stats.volume != null) {
+                this.volume = normalizeVolume(stats.volume);
+            }
             this._provider = stats.provider || 'disabled';
+            if (typeof stats.auto_read === 'boolean') this.autoPlay = stats.auto_read;
 
             if (stats.provider === 'browser') {
                 this.useBrowserTTS = true;
@@ -70,8 +119,9 @@ class AITTSManager {
     }
 
     extractPlainText(content) {
-        // Strip <think>/<thinking> blocks (model reasoning)
-        let cleaned = content.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '');
+        // Strip model reasoning before and after HTML parsing. The second pass
+        // also catches escaped tags such as &lt;think&gt;...&lt;/think&gt;.
+        let cleaned = stripThinkingForSpeech(content);
 
         // Create a temporary div to parse HTML/markdown
         const temp = document.createElement('div');
@@ -82,6 +132,7 @@ class AITTSManager {
 
         // Get text content
         let text = temp.textContent || temp.innerText || '';
+        text = stripThinkingForSpeech(text);
 
         // Clean up markdown syntax
         text = text
@@ -190,6 +241,7 @@ class AITTSManager {
             const audioUrl = await this.synthesize(text);
 
             this.currentAudio = new Audio(audioUrl);
+            this.currentAudio.volume = this.volume;
             await this.currentAudio.play();
             this.isPlaying = true;
             // Note: onended should be set by the caller (addAITTSButton)
@@ -207,6 +259,7 @@ class AITTSManager {
             const voice = this._findBrowserVoice();
             if (voice) utterance.voice = voice;
             utterance.rate = this.playbackSpeed;
+            utterance.volume = this.volume;
 
             utterance.onend = () => {
                 this.isPlaying = false;
@@ -314,6 +367,7 @@ class AITTSManager {
 
                 await new Promise((resolve, reject) => {
                     const audio = new Audio(audioUrl);
+                    audio.volume = this.volume;
                     if (this._provider === 'local' && this.playbackSpeed !== 1) {
                         audio.playbackRate = this.playbackSpeed;
                     }
@@ -461,10 +515,6 @@ window.aiTTSManager = new AITTSManager();
 
 // Function to add AI TTS button to a message element's action bar
 export function addAITTSButton(messageElement, text) {
-    if (!window.aiTTSManager.available || window.aiTTSManager._provider === 'disabled') {
-        return;
-    }
-
     if (messageElement.querySelector('.ai-tts-button')) {
         return;
     }
@@ -473,13 +523,14 @@ export function addAITTSButton(messageElement, text) {
     const actions = messageElement.querySelector('.msg-actions');
     if (!actions) return;
 
-    var ICON_PLAY = phosphorIcon('play', 14);
+    var ICON_PLAY = phosphorIcon('speaker', 14);
     var ICON_STOP = phosphorIcon('stop', 14);
     var ICON_LOADING = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="9" stroke-dasharray="42" stroke-dashoffset="12" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.8s" repeatCount="indefinite"/></circle></svg>';
 
     const playButton = document.createElement('button');
     playButton.className = 'ai-tts-button';
     playButton.type = 'button';
+    const unavailableTitle = 'Read aloud — enable TTS in Settings';
     playButton.title = 'Read aloud';
     playButton.innerHTML = ICON_PLAY;
     playButton.style.cssText = 'background:none;border:none;color:#6b7280;cursor:pointer;padding:2px 6px;border-radius:4px;transition:color .15s;line-height:1;display:inline-flex;align-items:center;';
@@ -493,7 +544,9 @@ export function addAITTSButton(messageElement, text) {
         playButton.innerHTML = ICON_PLAY;
         playButton.classList.remove('playing', 'loading');
         playButton.style.color = '#6b7280';
-        playButton.title = 'Read aloud';
+        playButton.title = (window.aiTTSManager.available && window.aiTTSManager._provider !== 'disabled')
+            ? 'Read aloud'
+            : unavailableTitle;
     }
 
     playButton.addEventListener('click', async (e) => {
@@ -503,6 +556,17 @@ export function addAITTSButton(messageElement, text) {
         if (mgr.isPlaying || mgr._processing) {
             mgr.stop();
             resetButton();
+            return;
+        }
+
+        // Keep the action visible even when no provider is configured, so the
+        // user can discover read-aloud from any message.  Refresh first because
+        // settings may have changed after this message was rendered.
+        if (!mgr.available || mgr._provider === 'disabled') {
+            await mgr.checkAvailability();
+        }
+        if (!mgr.available || mgr._provider === 'disabled') {
+            uiModule.showToast('Enable a TTS provider in Settings → AI → Text to Speech', 4500);
             return;
         }
 
@@ -521,5 +585,5 @@ window.addEventListener('beforeunload', () => {
 
 export { AITTSManager };
 
-const ttsModule = { AITTSManager, addAITTSButton };
+const ttsModule = { AITTSManager, addAITTSButton, stripThinkingForSpeech };
 export default ttsModule;

@@ -6,6 +6,7 @@ services:
     container_name: monikai
     restart: unless-stopped
     init: true
+    gpus: all
 
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
@@ -38,6 +39,8 @@ services:
       SESSION_SUMMARY_MODEL: "gemini-3.5-flash-lite"
       ODYSSEUS_DATA_DIR: "/app/data/odysseus"
       PYTHONPATH: "/app/data/python-packages:/app:/app/backend/odysseus"
+      KOKORO_DEVICE: "auto"
+      HF_HOME: "/app/data/huggingface"
 
     dns:
       - 1.1.1.1

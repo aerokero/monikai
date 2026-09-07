@@ -381,6 +381,8 @@ async function initDefaultChat() {
   var epSel = el('set-defaultEpSelect');
   var modelSel = el('set-defaultModelSelect');
   var msg = el('set-defaultChatMsg');
+  var responseLanguageSel = el('set-responseLanguageSelect');
+  var responseLanguageMsg = el('set-responseLanguageMsg');
   var _endpoints = [];
 
   // Fill any <select> with the models for a given endpoint id.
@@ -407,8 +409,17 @@ async function initDefaultChat() {
     refreshModels(settings.default_model || '');
   } catch (e) { console.warn('Failed to load default chat settings', e); }
 
+  try {
+    var conversationRes = await fetch('/api/conversation-config', { credentials: 'same-origin' });
+    var conversationConfig = await conversationRes.json();
+    if (responseLanguageSel) {
+      responseLanguageSel.value = conversationConfig.response_language || 'auto';
+    }
+  } catch (e) { console.warn('Failed to load response language', e); }
+
   epSel.addEventListener('change', function() { refreshModels(''); saveDefault(); });
   modelSel.addEventListener('change', saveDefault);
+  if (responseLanguageSel) responseLanguageSel.addEventListener('change', saveResponseLanguage);
 
   async function saveDefault() {
     try {
@@ -419,6 +430,29 @@ async function initDefaultChat() {
       msg.textContent = 'Saved'; msg.style.color = 'var(--fg)';
       setTimeout(function() { msg.textContent = ''; }, 2000);
     } catch (e) { msg.textContent = 'Failed to save'; msg.style.color = 'var(--red)'; }
+  }
+
+  async function saveResponseLanguage() {
+    if (!responseLanguageSel) return;
+    try {
+      var response = await fetch('/api/conversation-config', {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ response_language: responseLanguageSel.value }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (responseLanguageMsg) {
+        responseLanguageMsg.textContent = 'Saved';
+        responseLanguageMsg.style.color = 'var(--fg)';
+        setTimeout(function() { responseLanguageMsg.textContent = ''; }, 1500);
+      }
+    } catch (e) {
+      if (responseLanguageMsg) {
+        responseLanguageMsg.textContent = 'Failed to save';
+        responseLanguageMsg.style.color = 'var(--red)';
+      }
+    }
   }
 
   _registerAiEndpointRefresh(function(endpoints) {
@@ -739,17 +773,34 @@ async function initTtsSettings() {
   var voiceRow = el('set-ttsVoiceRow');
   var speedSelect = el('set-ttsSpeedSelect');
   var speedRow = el('set-ttsSpeedRow');
+  var volumeRange = el('set-ttsVolumeRange');
+  var volumeValue = el('set-ttsVolumeValue');
   var ttsMsg = el('set-ttsSettingsMsg');
   var ttsEnabledToggle = el('set-ttsEnabledToggle');
+  var ttsAutoReadToggle = el('set-ttsAutoReadToggle');
   var ttsConfigWrap = provSel ? provSel.closest('div[style*="flex-direction"]') : null;
 
   function isEndpoint() { return provSel.value.startsWith('endpoint:'); }
+  function isGemini() { return provSel.value === 'gemini'; }
+  function isElevenLabs() { return provSel.value === 'elevenlabs'; }
   function getModel() { return isEndpoint() ? modelSelect.value : modelInput.value; }
   function getVoice() { return isEndpoint() ? voiceSelect.value : voiceInput.value; }
+  function volumePercent(raw) {
+    var value = Number(raw);
+    if (!Number.isFinite(value)) value = 1;
+    if (value <= 1) value *= 100;
+    return Math.max(0, Math.min(100, Math.round(value)));
+  }
+  function getVolume() {
+    return volumeRange ? Math.max(0, Math.min(1, Number(volumeRange.value || 100) / 100)) : 1;
+  }
+  function syncVolumeLabel() {
+    if (volumeValue && volumeRange) volumeValue.textContent = `${volumeRange.value}%`;
+  }
 
   function updateVisibility() {
     var prov = provSel.value;
-    modelRow.style.display = prov.startsWith('endpoint:') ? 'flex' : 'none';
+    modelRow.style.display = (isEndpoint() || isGemini() || isElevenLabs()) ? 'flex' : 'none';
     voiceRow.style.display = prov === 'disabled' ? 'none' : 'flex';
     speedRow.style.display = prov === 'disabled' ? 'none' : 'flex';
     if (isEndpoint()) {
@@ -758,6 +809,7 @@ async function initTtsSettings() {
     } else {
       modelSelect.style.display = 'none'; modelInput.style.display = '';
       voiceSelect.style.display = 'none'; voiceInput.style.display = prov === 'disabled' ? 'none' : '';
+      modelInput.style.display = (isGemini() || isElevenLabs()) ? '' : 'none';
     }
   }
 
@@ -780,8 +832,11 @@ async function initTtsSettings() {
     if (settings.tts_model) { modelSelect.value = settings.tts_model; modelInput.value = settings.tts_model; }
     if (settings.tts_voice) { voiceSelect.value = settings.tts_voice; voiceInput.value = settings.tts_voice; }
     if (settings.tts_speed) { speedSelect.value = settings.tts_speed; }
+    if (volumeRange && settings.tts_volume != null) volumeRange.value = String(volumePercent(settings.tts_volume));
     if (ttsEnabledToggle) ttsEnabledToggle.checked = settings.tts_enabled !== false;
+    if (ttsAutoReadToggle) ttsAutoReadToggle.checked = settings.tts_auto_read === true;
   } catch (e) { console.warn('Failed to load TTS settings', e); }
+  syncVolumeLabel();
 
   function syncTtsDisabled() {
     var off = ttsEnabledToggle && !ttsEnabledToggle.checked;
@@ -794,7 +849,15 @@ async function initTtsSettings() {
 
   async function saveTTS() {
     try {
-      await _postSettings({ tts_enabled: ttsEnabledToggle ? ttsEnabledToggle.checked : true, tts_provider: provSel.value, tts_model: getModel() || 'tts-1', tts_voice: getVoice() || 'alloy', tts_speed: speedSelect.value || '1' });
+      await _postSettings({
+        tts_enabled: ttsEnabledToggle ? ttsEnabledToggle.checked : true,
+        tts_provider: provSel.value,
+        tts_model: getModel() || (isGemini() ? 'gemini-2.5-flash-preview-tts' : (isElevenLabs() ? 'eleven_multilingual_v2' : 'tts-1')),
+        tts_voice: getVoice() || (isGemini() ? 'Leda' : 'alloy'),
+        tts_speed: speedSelect.value || '1',
+        tts_volume: getVolume(),
+        tts_auto_read: ttsAutoReadToggle ? ttsAutoReadToggle.checked : false,
+      });
       ttsMsg.textContent = 'Saved'; ttsMsg.style.color = 'var(--fg)'; setTimeout(() => { ttsMsg.textContent = ''; }, 2000);
       if (window.aiTTSManager) window.aiTTSManager.checkAvailability();
     } catch (e) { ttsMsg.textContent = 'Failed to save'; ttsMsg.style.color = 'var(--red)'; }
@@ -808,6 +871,8 @@ async function initTtsSettings() {
   provSel.addEventListener('change', function() {
     var prov = provSel.value;
     if (prov === 'local') voiceInput.value = 'af_heart';
+    else if (prov === 'gemini') { voiceInput.value = 'Leda'; modelInput.value = 'gemini-2.5-flash-preview-tts'; }
+    else if (prov === 'elevenlabs') { voiceInput.value = '21m00Tcm4TlvDq8ikWAM'; modelInput.value = 'eleven_multilingual_v2'; }
     else if (isEndpoint()) { voiceSelect.value = 'alloy'; modelSelect.value = 'tts-1'; }
     else if (prov === 'browser') { voiceInput.value = ''; voiceInput.placeholder = 'OS default voice'; }
     updateVisibility();
@@ -818,7 +883,12 @@ async function initTtsSettings() {
   voiceSelect.addEventListener('change', saveAndClearCache);
   voiceInput.addEventListener('change', saveTTS);
   speedSelect.addEventListener('change', saveAndClearCache);
+  if (volumeRange) {
+    volumeRange.addEventListener('input', syncVolumeLabel);
+    volumeRange.addEventListener('change', saveTTS);
+  }
   if (ttsEnabledToggle) ttsEnabledToggle.addEventListener('change', function() { syncTtsDisabled(); saveTTS(); });
+  if (ttsAutoReadToggle) ttsAutoReadToggle.addEventListener('change', saveTTS);
 
   // Preview / test button
   var previewBtn = el('set-ttsPreviewBtn');
@@ -853,6 +923,7 @@ async function initTtsSettings() {
             if (match) utt.voice = match;
           }
           utt.rate = parseFloat(speedSelect.value) || 1;
+          utt.volume = getVolume();
           previewBtn.textContent = 'Stop'; previewBtn.style.borderColor = 'var(--red, #e55)';
           await new Promise(function(resolve, reject) {
             utt.onend = resolve;
@@ -869,6 +940,7 @@ async function initTtsSettings() {
           var blob = await res.blob();
           var url = URL.createObjectURL(blob);
           previewAudio = new Audio(url);
+          previewAudio.volume = getVolume();
           previewBtn.textContent = 'Stop'; previewBtn.style.borderColor = 'var(--red, #e55)';
           await new Promise(function(resolve, reject) {
             previewAudio.onended = function() { URL.revokeObjectURL(url); previewAudio = null; resolve(); };

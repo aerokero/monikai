@@ -719,6 +719,34 @@ def _set_user_time_from_request(request: Request) -> None:
         pass
 
 
+def _configured_preset_id(chat_handler) -> Optional[str]:
+    """Return the canonical text persona configured for the app.
+
+    The browser normally sends ``preset_id`` explicitly.  API clients and old
+    frontends do not, though, so the native route needs the same fallback as
+    the shared model/persona configuration instead of hard-coding a second
+    persona selection rule here.
+    """
+    try:
+        from backend.core.settings_store import SETTINGS
+
+        candidate = str(SETTINGS.get("text_persona_id") or "").strip()
+        presets = getattr(chat_handler.preset_manager, "presets", {}) or {}
+        if candidate and candidate in presets:
+            if presets[candidate].get("enabled") is not False:
+                return candidate
+            return None
+        # Older installs may not have the new setting yet.  Preserve the
+        # historical default only when the canonical preset is available and
+        # enabled; do not silently revive a disabled custom preset.
+        monika = presets.get("monika")
+        if not candidate and isinstance(monika, dict) and monika.get("enabled") is not False:
+            return "monika"
+    except Exception:
+        logger.debug("Unable to resolve configured text persona", exc_info=True)
+    return None
+
+
 def setup_chat_routes(
     session_manager,
     chat_handler,
@@ -746,6 +774,8 @@ def setup_chat_routes(
         use_research = chat_request.use_research
         time_filter = chat_request.time_filter
         preset_id = chat_request.preset_id
+        if not preset_id:
+            preset_id = _configured_preset_id(chat_handler)
 
         # Verify the caller owns this session before loading it.
         # Without this, any authenticated user can post into another user's chat.
@@ -949,6 +979,8 @@ def setup_chat_routes(
         use_research = form_data.get("use_research")
         time_filter = form_data.get("time_filter")
         preset_id = form_data.get("preset_id")
+        if not preset_id:
+            preset_id = _configured_preset_id(chat_handler)
         selected_endpoint_id = str(
             form_data.get("selected_endpoint_id")
             or (body or {}).get("selected_endpoint_id")

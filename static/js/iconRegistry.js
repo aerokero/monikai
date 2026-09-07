@@ -61,6 +61,7 @@ const PATHS = Object.freeze({
   more: '<circle cx="128" cy="128" r="12" fill="currentColor"/><circle cx="128" cy="64" r="12" fill="currentColor"/><circle cx="128" cy="192" r="12" fill="currentColor"/>',
   download: '<polyline points="86 110 128 152 170 110" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><line x1="128" y1="40" x2="128" y2="152" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><path d="M216,152v56a8,8,0,0,1-8,8H48a8,8,0,0,1-8-8V152" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>',
   paperclip: '<path d="M216.6,116.4,120.7,212.3a56,56,0,0,1-79.2-79.2l96-96a40,40,0,0,1,56.6,56.6l-96,96a24,24,0,0,1-33.9-33.9l88-88" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>',
+  speaker: '<path d="M32,96H72l72-56V216L72,160H32Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><path d="M176,88c12,12,20,24,20,40s-8,28-20,40" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><path d="M200,64c20,20,32,40,32,64s-12,44-32,64" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>',
   play: '<path d="M216.3,119.3,88.5,43.1A8,8,0,0,0,76,50v156a8,8,0,0,0,12.5,6.7l127.8-76.2A10,10,0,0,0,216.3,119.3Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>',
 });
 

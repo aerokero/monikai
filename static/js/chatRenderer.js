@@ -2799,6 +2799,7 @@ export function addMessage(role, content, modelName, metadata) {
       if (firstWrap && firstWrap.classList.contains('msg-ai')) {
         if (metadata?.memories_used?.length) firstWrap._memoriesUsed = metadata.memories_used;
         firstWrap.appendChild(createMsgFooter(firstWrap));
+        addAITTSButton(firstWrap, firstWrap.dataset.raw || '');
         if (metadata) displayMetrics(firstWrap, metadata);
       }
 
@@ -3126,6 +3127,7 @@ export function addMessage(role, content, modelName, metadata) {
       // history reloads need this assignment).
       if (metadata?.memories_used?.length) wrap._memoriesUsed = metadata.memories_used;
       wrap.appendChild(createMsgFooter(wrap));
+      addAITTSButton(wrap, text);
       if (metadata) displayMetrics(wrap, metadata);
     } else {
       // Add timestamp to user header (like AI messages)

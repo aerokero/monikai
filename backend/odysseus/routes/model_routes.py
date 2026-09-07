@@ -33,6 +33,11 @@ from src.auth_helpers import _auth_disabled, effective_user, owner_filter
 
 logger = logging.getLogger(__name__)
 
+# The former MonikAI adapter is a character/runtime compatibility endpoint,
+# not a text engine the user should select in the model picker.  Persona
+# selection remains in the preset UI; only real model endpoints belong here.
+_LEGACY_PICKER_ENDPOINT_IDS = frozenset({"monika-native"})
+
 _SPEECH_ENDPOINT_SETTINGS = (
     ("tts_provider", "tts_model", "tts-1", "Text to Speech"),
     ("stt_provider", "stt_model", "base", "Speech to Text"),
@@ -1563,6 +1568,8 @@ def setup_model_routes(model_discovery):
             db.close()
 
         for ep in endpoints:
+            if str(getattr(ep, "id", "") or "") in _LEGACY_PICKER_ENDPOINT_IDS:
+                continue
             base = _normalize_base(ep.base_url)
             provider = _safe_detect_provider(base)
             ep_model_type = getattr(ep, "model_type", None) or "llm"

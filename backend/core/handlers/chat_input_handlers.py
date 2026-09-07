@@ -85,6 +85,37 @@ def register_chat_input_handlers(
             print("[SERVER DEBUG] [Error] Session is None. Cannot send text.")
             return
 
+        if (
+            attachments
+            and callable(getattr(audio_loop, "_uses_canonical_text_author", None))
+            and audio_loop._uses_canonical_text_author()
+        ):
+            # The canonical gateway currently accepts text/ASR turns only.
+            # Do not fall back to Gemini Live for attachments, because that
+            # would reintroduce a second response author.
+            await sio.emit(
+                "error",
+                {"msg": "Załączniki w trybie Live Voice używają jeszcze interfejsu tekstowego Odysseusa."},
+                room=sid,
+            )
+            return
+
+        # Desktop typed turns use the same native Odysseus author as the
+        # finalized microphone turns.  Do not send them into Gemini Live,
+        # otherwise the Live model becomes a second response author.
+        if (
+            not attachments
+            and callable(getattr(audio_loop, "_uses_canonical_text_author", None))
+            and audio_loop._uses_canonical_text_author()
+            and text
+        ):
+            try:
+                await audio_loop.submit_text_turn(text)
+            except Exception as exc:
+                print(f"[SERVER DEBUG] Odysseus voice text turn failed: {exc}")
+                await sio.emit("error", {"msg": "Odysseus text turn failed"}, room=sid)
+            return
+
         async def _send_with_reconnect_retry(input_payload, end_of_turn=False):
             try:
                 await audio_loop.session.send(input=input_payload, end_of_turn=end_of_turn)

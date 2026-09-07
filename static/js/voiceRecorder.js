@@ -57,8 +57,8 @@ function _resetRecordingUI() {
   const micBtn = document.getElementById('composer-mic-btn');
   if (micBtn) {
     micBtn.setAttribute('aria-pressed', 'false');
-    micBtn.setAttribute('aria-label', 'Record message');
-    micBtn.title = 'Record message';
+    micBtn.setAttribute('aria-label', 'Record voice message (not Live Voice)');
+    micBtn.title = 'Record voice message (not Live Voice)';
     micBtn.disabled = false;
   }
   if (recordingInterval) {

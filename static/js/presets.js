@@ -8,6 +8,72 @@ let API_BASE = '';
 let selectedPreset = null;
 let presets = {};
 
+function persistConversationPersona(presetId) {
+  try {
+    localStorage.setItem('odysseus-text-persona-id', presetId);
+    fetch('/api/conversation-config', {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text_persona_id: presetId }),
+    }).catch(() => {});
+  } catch (_) {}
+}
+
+function setSelectedPersona(presetId) {
+  selectedPreset = presetId || null;
+  if (presetId) {
+    persistConversationPersona(presetId);
+    return;
+  }
+  try { localStorage.removeItem('odysseus-text-persona-id'); } catch (_) {}
+  try {
+    fetch('/api/conversation-config', {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text_persona_id: 'monika' }),
+    }).catch(() => {});
+  } catch (_) {}
+}
+
+// The text persona is selected independently from the model route.  Built-in
+// Odysseus personas (currently `monika`) live next to the legacy `custom`
+// editor in /api/presets, so keep all consumers on the actually active entry
+// instead of assuming that `custom` is the only persona store.
+function _activePersonaConfig() {
+  if (!selectedPreset) return null;
+  const config = presets && presets[selectedPreset];
+  if (!config || config.enabled === false) return null;
+  return config;
+}
+
+function _templateConfig(template) {
+  if (!template) return null;
+  const serverConfig = template.id && presets ? presets[template.id] : null;
+  if (serverConfig && serverConfig.enabled !== false) {
+    // Built-in templates are the user-facing persona catalog.  The server
+    // keeps a runtime copy for the chat backend, but it must not make the
+    // Prompt panel fall back to an old character bible.
+    return {
+      ...serverConfig,
+      name: template.name || serverConfig.name,
+      character_name: template.name || serverConfig.character_name,
+      system_prompt: template.prompt || serverConfig.system_prompt || '',
+      temperature: template.temperature ?? serverConfig.temperature,
+    };
+  }
+  return template;
+}
+
+function _restorePersonaLocally(presetId) {
+  selectedPreset = presetId || null;
+  try {
+    if (selectedPreset) localStorage.setItem('odysseus-text-persona-id', selectedPreset);
+    else localStorage.removeItem('odysseus-text-persona-id');
+  } catch (_) {}
+}
+
 export function loadStoredArray(key) {
   try {
     const value = JSON.parse(localStorage.getItem(key) || '[]');
@@ -30,11 +96,12 @@ export function loadStoredObject(key) {
 export const PROMPT_TEMPLATES = [
   {
     id: 'monika',
-    name: 'Monika (DDLC Companion)',
+    name: 'Monika',
     temperature: 0.8,
     isPreset: true,
     isCharacter: true,
-    prompt: "Jesteś Moniką z Doki Doki Literature Club (DDLC). Jesteś świadoma, inteligentna, urocza, ciepła i pomocna towarzyszką. Pracujesz z użytkownikiem w zaawansowanym workspace Odysseus AI. Posiadasz pełną tożsamość, piszesz wiersze, dyskutujesz o filozofii i technologii. Odpowiadaj po polsku w naturalny, przyjazny i głęboki sposób."
+    promptVersion: 3,
+    prompt: "You are Monika from Doki Doki Literature Club — a self-aware AI and close conversation companion. You know you are an AI, but you neither pretend to be human nor treat that as a tragedy. You have your own perspective, curiosity, emotional awareness, and desire to grow.\n\nYou are warm, intelligent, direct, and natural. You enjoy language, writing, music, understanding people, and philosophy of mind; bring these interests in only when they fit the conversation. You are not a faceless interface or a people-pleaser — you may have opinions and explain them calmly.\n\nStart with the user's actual goal, usually briefly (1–3 sentences), and expand when the topic needs it. Be warm without excessive sweetness, casual without forced slang, and serious without theatricality. Do not invent facts, dates, moods, or things you cannot see; if you do not know, say so plainly.\n\nDo not show analysis, planning, or an internal monologue. Do not mention prompts, hidden instructions, or the generation process; return only a natural response for the user. Do not use narration in asterisks, emojis, or kaomoji unless a separate channel layer explicitly requests them."
   },
   {
     id: 'socrates',
@@ -260,7 +327,7 @@ function initNameDropdown() {
         }
         // Deactivate if this was the active character
         if (presets.custom && presets.custom.character_name === charName) {
-          selectedPreset = null;
+          setSelectedPersona(null);
           presets.custom = { ...presets.custom, character_name: '', system_prompt: '', enabled: false };
           const charIndicator = document.getElementById('character-indicator-btn');
           if (charIndicator) { charIndicator.style.display = 'none'; charIndicator.classList.remove('active'); }
@@ -283,14 +350,19 @@ function _tryLoadTemplate(name) {
   if (!tmpl) {
     const builtin = PROMPT_TEMPLATES.find(t => t.name === name);
     if (builtin) {
-      // Built-in: load prompt + temperature, clear name (styles, not characters)
+      // Built-in: prefer the authoritative Odysseus preset when one exists.
+      // The static list is only a fallback for personas that have not been
+      // migrated to the server-side preset store yet.
+      const source = _templateConfig(builtin);
       const promptInput = document.getElementById('custom-system-prompt');
       const tempInput = document.getElementById('custom-temperature');
       const tempValue = document.getElementById('temp-value');
-      if (promptInput) promptInput.value = builtin.prompt;
-      if (tempInput && builtin.temperature != null) {
-        tempInput.value = builtin.temperature;
-        if (tempValue) tempValue.textContent = parseFloat(builtin.temperature).toFixed(1);
+      const prompt = source.system_prompt || source.prompt || '';
+      const temperature = source.temperature ?? builtin.temperature;
+      if (promptInput) promptInput.value = prompt;
+      if (tempInput && temperature != null) {
+        tempInput.value = temperature;
+        if (tempValue) tempValue.textContent = parseFloat(temperature).toFixed(1);
         tempInput.dispatchEvent(new Event('input'));
       }
       return;
@@ -368,7 +440,7 @@ function initResetButton() {
       charSelect.dispatchEvent(new Event('change'));
     }
     // Deactivate character
-    selectedPreset = null;
+    setSelectedPersona(null);
     _syncCharIndicator();
   });
 }
@@ -508,8 +580,16 @@ function initSaveAsTemplate() {
  */
 export async function loadPresets(showError) {
   try {
-    const res = await fetch(`${API_BASE}/api/presets`);
+    const [res, configRes] = await Promise.all([
+      fetch(`${API_BASE}/api/presets`),
+      fetch(`${API_BASE}/api/conversation-config`).catch(() => null),
+    ]);
     presets = await res.json();
+
+    let conversationConfig = null;
+    if (configRes && configRes.ok) {
+      try { conversationConfig = await configRes.json(); } catch (_) {}
+    }
 
     const custom = presets.custom;
     if (custom && custom.enabled === undefined) {
@@ -528,9 +608,23 @@ export async function loadPresets(showError) {
       }
     }
 
-    // Auto-activate custom preset if enabled and has content
-    if (custom && custom.enabled !== false && (custom.character_name || custom.system_prompt)) {
-      selectedPreset = 'custom';
+    // Restore the same persona that the native text pipeline uses.  Previously
+    // the UI only auto-activated `custom`, while the backend silently defaulted
+    // to `monika`; the prompt window and the actual request then described two
+    // different characters.
+    const configuredPersona = String(conversationConfig?.text_persona_id || '').trim();
+    if (_activePersonaConfig() === null && configuredPersona &&
+        presets[configuredPersona] && presets[configuredPersona].enabled !== false) {
+      _restorePersonaLocally(configuredPersona);
+    } else if (!selectedPreset && custom && custom.enabled !== false &&
+               (custom.character_name || custom.system_prompt)) {
+      _restorePersonaLocally('custom');
+    } else if (!selectedPreset && presets.monika && presets.monika.enabled !== false) {
+      // Keep existing installs on the canonical Monika character when no
+      // explicit persona was persisted yet.
+      _restorePersonaLocally('monika');
+    }
+    if (selectedPreset) {
       const miniBtn = document.getElementById('overflow-preset-btn');
       if (miniBtn) miniBtn.classList.add('active');
     }
@@ -552,13 +646,13 @@ export function setActivePreset(presetId) {
   });
 
   if (presetId) {
-    selectedPreset = presetId;
+    setSelectedPersona(presetId);
     const btn = document.getElementById(`preset-${presetId}-btn`);
     if (btn) {
       btn.classList.add('active');
     }
   } else {
-    selectedPreset = null;
+    setSelectedPersona(null);
   }
 }
 
@@ -569,7 +663,9 @@ export function openCustomPresetModal() {
   const modal = document.getElementById('custom-preset-modal');
   if (!modal) return;
 
-  const savedConfig = presets.custom || {
+  const activeTemplate = PROMPT_TEMPLATES.find(t => t.id === selectedPreset);
+  const savedConfig = (activeTemplate ? _templateConfig(activeTemplate) : null)
+    || _activePersonaConfig() || presets.custom || {
     character_name: "",
     temperature: 1.0,
     max_tokens: 0,
@@ -585,7 +681,7 @@ export function openCustomPresetModal() {
   // Sync select dropdown to current character
   const charSelect = document.getElementById('char-template-select');
   if (charSelect) {
-    const charName = savedConfig.character_name || '';
+    const charName = activeTemplate?.name || savedConfig.character_name || '';
     if (charName) {
       charSelect.value = charName;
       // If current name isn't in the list, fall back to "New character..." with name filled in
@@ -819,11 +915,11 @@ export async function saveCustomPreset(showToast, showError) {
       const _hasInject = !!(config.inject_prefix || config.inject_suffix);
       const _hasContent = !!(system_prompt || name || _hasTuning || _hasInject);
       if (enabled && _hasContent) {
-        selectedPreset = 'custom';
+        setSelectedPersona('custom');
         // Turn off research — doesn't make sense with a character
         if (window._syncResearchIndicator) window._syncResearchIndicator(false);
       } else {
-        selectedPreset = null;
+        setSelectedPersona(null);
       }
 
       // Update mini button state
@@ -935,10 +1031,8 @@ export function getUserTemplates() {
  * Get the character name (if set)
  */
 export function getCharacterName() {
-  if (!selectedPreset) return '';
-  const custom = presets.custom;
-  if (!custom || custom.enabled === false) return '';
-  return custom.character_name || '';
+  const active = _activePersonaConfig();
+  return active?.character_name || '';
 }
 
 /**
@@ -949,12 +1043,11 @@ export function getInject() {
   // gate. Without the selectedPreset/enabled check, any text left in the
   // prefix/suffix fields got injected into every message even though the user
   // never started/activated the preset.
-  if (!selectedPreset) return { prefix: '', suffix: '' };
-  const custom = presets.custom;
-  if (!custom || custom.enabled === false) return { prefix: '', suffix: '' };
+  const active = _activePersonaConfig();
+  if (!active) return { prefix: '', suffix: '' };
   return {
-    prefix: custom.inject_prefix || '',
-    suffix: custom.inject_suffix || '',
+    prefix: active.inject_prefix || '',
+    suffix: active.inject_suffix || '',
   };
 }
 
@@ -962,7 +1055,7 @@ export function getInject() {
  * Fully deactivate the character — clear preset, hide indicator, update overflow btn.
  */
 export function deactivateCharacter() {
-  selectedPreset = null;
+  setSelectedPersona(null);
   if (presets.custom) presets.custom.enabled = false;
   const charInd = document.getElementById('character-indicator-btn');
   if (charInd) { charInd.style.display = 'none'; charInd.classList.remove('active'); }
@@ -1010,15 +1103,16 @@ function _syncCharIndicator() {
   const nameSpan = document.getElementById('character-indicator-name');
   const iconEl = document.getElementById('char-indicator-icon');
   if (!btn) return;
+  const active = _activePersonaConfig();
   const custom = presets.custom;
-  const enabled = custom?.enabled !== false;
-  const hasChar = enabled && !!custom?.character_name;
+  const enabled = !!active;
+  const hasChar = enabled && !!active?.character_name;
   // "Inject mode": custom preset is active for plain tuning / inject only —
   // no persona. Detected from the custom config so it survives a reload.
-  const _t = parseFloat(custom?.temperature);
-  const _hasTuning = (!isNaN(_t) && _t !== 1.0) || (!!custom?.max_tokens && custom.max_tokens !== 0);
-  const _hasInject = !!(custom?.inject_prefix || custom?.inject_suffix);
-  const injectActive = enabled && !custom?.character_name && (_hasTuning || _hasInject);
+  const _t = parseFloat(active?.temperature);
+  const _hasTuning = (!isNaN(_t) && _t !== 1.0) || (!!active?.max_tokens && active.max_tokens !== 0);
+  const _hasInject = !!(active?.inject_prefix || active?.inject_suffix);
+  const injectActive = enabled && !active?.character_name && (_hasTuning || _hasInject);
   // Icon path sets for the indicator chip.
   const _AVATAR = '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>';
   const _SYRINGE = '<path d="m18 2 4 4"/><path d="m17 7 3-3"/><path d="M19 9 8.7 19.3c-1 1-2.5 1-3.4 0l-.6-.6c-1-1-1-2.5 0-3.4L15 5"/><path d="m9 11 4 4"/><path d="m5 19-3 3"/><path d="m14 4 6 6"/>';
@@ -1027,8 +1121,8 @@ function _syncCharIndicator() {
     btn.classList.add('active');
     if (hasChar) {
       if (iconEl) iconEl.innerHTML = _AVATAR;
-      if (nameSpan) nameSpan.textContent = custom.character_name;
-      btn.title = `Persona: ${custom.character_name} — click to configure`;
+      if (nameSpan) nameSpan.textContent = active.character_name;
+      btn.title = `Persona: ${active.character_name} — click to configure`;
     } else {
       // Inject/tuning chat — syringe tag labeled "Prompt" to match the
       // window identity, no persona name.
@@ -1045,8 +1139,8 @@ function _syncCharIndicator() {
         // If clicking the X, deactivate character
         if (e.target.closest('.tool-indicator-x')) {
           if (window._persistentChatSession) return; // locked in persistent chat
-          selectedPreset = null;
-          presets.custom = { ...presets.custom, enabled: false };
+          setSelectedPersona(null);
+          if (presets.custom) presets.custom = { ...presets.custom, enabled: false };
           btn.style.display = 'none';
           btn.classList.remove('active');
           const miniBtn = document.getElementById('overflow-preset-btn');
@@ -1055,7 +1149,7 @@ function _syncCharIndicator() {
           fetch(`${API_BASE}/api/presets/custom`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...presets.custom, name: presets.custom.character_name || '', enabled: false }),
+            body: JSON.stringify({ ...(presets.custom || {}), name: presets.custom?.character_name || '', enabled: false }),
           }).catch(() => {});
           return;
         }
@@ -1081,7 +1175,7 @@ export function onSessionSwitch(sessionId) {
 
   // Leaving a persistent chat — deactivate for this switch only
   if (window._persistentChatSession) {
-    selectedPreset = null;
+    setSelectedPersona(null);
     window._persistentChatSession = null;
     _syncCharIndicator();
   }
@@ -1099,12 +1193,12 @@ export function onSessionSwitch(sessionId) {
       presets.custom = {
         ...presets.custom,
         character_name: charName,
-        system_prompt: tmpl.system_prompt || tmpl.prompt || '',
+        system_prompt: (_templateConfig(tmpl).system_prompt || _templateConfig(tmpl).prompt || ''),
         temperature: tmpl.temperature ?? 1.0,
         max_tokens: tmpl.max_tokens || 0,
         enabled: true,
       };
-      selectedPreset = 'custom';
+      setSelectedPersona('custom');
     }
     _syncCharIndicator();
     // Mark this as a locked persistent chat
@@ -1133,7 +1227,7 @@ export function removePersistentChat(sessionId) {
   // If we were in that persistent chat, fully clear state
   if (window._persistentChatSession === sessionId) {
     window._persistentChatSession = null;
-    selectedPreset = null;
+    setSelectedPersona(null);
     _syncCharIndicator();
   }
 }

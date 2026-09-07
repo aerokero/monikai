@@ -46,6 +46,13 @@ DEFAULT_SETTINGS = {
     },
     "gemini_model_preset": "2.5",
     "gemini_voice": "Leda",
+    # Text authoring is selected independently from the Live audio transport.
+    "text_model": "gemini-2.5-flash",
+    "text_endpoint_id": "gemini-text",
+    "text_persona_id": "monika",
+    # Reply language is a conversation setting, not part of a persona prompt.
+    # Auto follows the user's latest message and keeps personas language-neutral.
+    "response_language": "auto",
     "camera_flipped": False,
     "camera_source": "frontend",
     "audio_source": "backend",
@@ -125,6 +132,7 @@ DEFAULT_SETTINGS = {
     # "live_renderer" only as an explicit compatibility rollback.
     "speech": {
         "delivery_mode": "dedicated_tts",
+        "provider": "gemini",
         "model": "gemini-2.5-flash-preview-tts",
         "voice": None,
         "timeout_sec": 20.0,
