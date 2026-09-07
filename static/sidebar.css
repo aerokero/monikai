@@ -27,6 +27,14 @@ body {
   font-family: inherit;
 }
 
+/* Phosphor registry icons carry their own stroke on each path.  The legacy
+   shell styles a few SVG roots with `stroke: currentColor`; reset that root
+   value so the registry's transparent viewBox rect can never become a pale
+   square frame around an icon. */
+svg[data-icon-profile="phosphor-regular"] {
+  stroke: none !important;
+}
+
 #sidebar {
   min-width: 260px !important;
 }
@@ -822,3 +830,13 @@ html.ody-sidebar-off #sidebar {
 /* Readable controls above a scene background, clear of the right hamburger. */
 #hamburger-btn, .chat-meta-overlay .export-dl-btn { background: var(--panel) !important; }
 body.hamburger-right.sidebar-collapsed .chat-top-bar .chat-meta-overlay { right: 64px !important; }
+
+/* Keep this override after the legacy icon rules above.  Their selectors use
+   `!important` for the sidebar stroke, so the profile selector needs the same
+   specificity and source order to prevent the transparent registry rect from
+   being stroked. */
+#sidebar svg[data-icon-profile="phosphor-regular"],
+#icon-rail svg[data-icon-profile="phosphor-regular"],
+#sidebar #workspace-section #email-section svg[data-icon-profile="phosphor-regular"] {
+  stroke: none !important;
+}

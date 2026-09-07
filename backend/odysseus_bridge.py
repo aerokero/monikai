@@ -208,6 +208,22 @@ def init_and_register_odysseus_backend(app: FastAPI):
         except Exception as e:
             logger.warning("hwfit/cookbook mount error: %s", e)
 
+        # 19. Diagnostics (service health and terminal log viewer)
+        try:
+            from routes.diagnostics_routes import setup_diagnostics_routes
+
+            personal_docs_manager = getattr(chat_processor, "personal_docs_manager", None)
+            rag_manager = getattr(personal_docs_manager, "rag_manager", None)
+            app.include_router(setup_diagnostics_routes(
+                rag_manager=rag_manager,
+                rag_available=bool(rag_manager and getattr(rag_manager, "healthy", True)),
+                research_handler=research_handler,
+                memory_vector=memory_vector,
+            ))
+            logger.info("diagnostics_routes mounted")
+        except Exception as e:
+            logger.warning("diagnostics_routes mount error: %s", e)
+
         logger.info("Odysseus backend full suite successfully initialized and mounted!")
 
     except Exception as err:

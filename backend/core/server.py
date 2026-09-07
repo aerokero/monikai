@@ -19,6 +19,8 @@ if sys.platform == 'win32':
     except Exception:
         pass
 
+from ..logging_config import setup_logging
+
 import socketio
 import uvicorn
 from fastapi import FastAPI, HTTPException, Response, Request
@@ -147,6 +149,11 @@ async def lifespan(app: FastAPI):
     global server_mic_listener
     global telegram_service, telegram_task
     global discord_service, discord_task
+
+    setup_logging(
+        level=os.getenv("MONIKAI_LOG_LEVEL", "INFO"),
+        json_mode=os.getenv("MONIKAI_LOG_JSON", "false").lower() in {"1", "true", "yes"},
+    )
 
     # Code to run on startup
     print(f"[SERVER DEBUG] Startup Event Triggered")

@@ -1,13 +1,13 @@
 """Diagnostics routes — /api/db/stats, /api/rag/stats, /api/test/youtube, /api/test-research."""
 
 import logging
-import os
 from typing import Dict, Any
 
 from fastapi import APIRouter, HTTPException, Form, Request
 
+from backend.logging_config import get_application_log_path
 from services.youtube.youtube_handler import extract_youtube_id, extract_transcript_async
-from core.constants import DEFAULT_HOST, DATA_DIR
+from core.constants import DEFAULT_HOST
 from core.middleware import require_admin
 
 logger = logging.getLogger(__name__)
@@ -34,12 +34,12 @@ def setup_diagnostics_routes(
         require_admin(request)
         limit = max(1, min(limit, 1000))
         try:
-            log_file = os.path.join(DATA_DIR, "logs", "app.log")
-            if not os.path.exists(log_file):
+            log_file = get_application_log_path()
+            if not log_file.is_file():
                 return {"status": "success", "logs": []}
 
             # Safe tail read of the log file (max 5MB via rotation)
-            with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
+            with log_file.open("r", encoding="utf-8", errors="ignore") as f:
                 lines = f.readlines()
 
             tail_lines = lines[-limit:] if len(lines) > limit else lines

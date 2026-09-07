@@ -53,6 +53,7 @@ import { initKeyboardShortcuts } from './js/keyboard-shortcuts.js';
 import { getSettings } from './js/appConfig.js';
 import { initSidebarLayout, syncRailSide } from './js/sidebar-layout.js?v=20260715startupclean';
 import { initSectionCollapse, initSectionDrag } from './js/section-management.js';
+import { icon as phosphorIcon } from './js/iconRegistry.js';
 
 const API_BASE = window.location.origin;
 window.themeModule = themeModule;
@@ -60,6 +61,167 @@ window.sessionModule = sessionModule;
 window.uiModule = uiModule;
 window.adminModule = adminModule;
 window.cookbookModule = cookbookModule;
+
+// Keep the legacy/static shell on the same Phosphor Regular profile as the
+// React shell. The static page predates the shared registry and still embeds
+// a number of one-off Lucide-like SVGs in index.html; replace only the
+// application controls below, leaving scene artwork and data visualizations
+// untouched.
+function hydrateCanonicalIcons(root = document) {
+  const targets = [
+    ['#rail-search-btn', 'search'],
+    ['#rail-new-session', 'plus'],
+    ['#rail-delete-session', 'x', true],
+    ['#rail-chats', 'chat'],
+    ['#rail-documents', 'file'],
+    ['#rail-calendar', 'calendar'],
+    ['#rail-compare', 'columns'],
+    ['#rail-cookbook', 'book'],
+    ['#rail-research', 'search'],
+    ['#rail-email', 'mail'],
+    ['#rail-gallery', 'image'],
+    ['#rail-archive', 'book'],
+    ['#rail-memory', 'brain'],
+    ['#rail-notes', 'note'],
+    ['#rail-tasks', 'checkCircle'],
+    ['#rail-theme', 'palette'],
+    ['#rail-settings', 'gear'],
+    // The floating/mobile menu buttons are part of the navigation shell;
+    // hydrate them too so they do not fall back to the old inline glyphs.
+    ['#mobile-menu-btn', 'menu', true],
+    ['#hamburger-btn', 'menu'],
+    ['#sidebar-toggle-btn', 'menu'],
+    ['#sidebar-new-chat-btn', 'plus'],
+    ['#sidebar-search-btn', 'search'],
+    ['#tool-library-btn', 'book'],
+    ['#tool-gallery-btn', 'image'],
+    ['#tool-calendar-btn', 'calendar'],
+    ['#tool-notes-btn', 'note'],
+    ['#tool-tasks-btn', 'checkCircle'],
+    ['#tool-memory-btn', 'brain'],
+    ['#tool-compare-btn', 'columns'],
+    ['#tool-cookbook-btn', 'book'],
+    ['#tool-research-btn', 'search'],
+    ['#tool-theme-btn', 'palette'],
+    ['#email-section-title', 'mail'],
+    ['#chats-section-title', 'chat'],
+    ['#user-bar-settings', 'gear'],
+    ['#incognito-indicator', 'eye'],
+    ['#export-dl-btn', 'more'],
+    ['#export-rename-btn', 'pencil'],
+    ['#export-copy-btn', 'copy'],
+    ['#export-pdf-btn', 'file'],
+    ['#export-doc-btn', 'file'],
+    ['#export-delete-btn', 'trash'],
+    ['#overflow-plus-btn', 'plus'],
+    ['#overflow-attach-btn', 'paperclip'],
+    ['#overflow-doc-btn', 'file'],
+    ['#web-toggle-btn', 'search'],
+    ['#overflow-preset-btn', 'pencil'],
+    ['#overflow-rag-btn', 'database'],
+    ['#mode-agent-btn', 'robot'],
+    ['#bash-toggle-btn', 'terminal'],
+    ['#overflow-workspace-btn', 'folder'],
+    ['#mode-agent-chip .composer-chip-icon', 'robot'],
+    ['#web-chip .composer-chip-icon', 'search'],
+    ['#bash-chip .composer-chip-icon', 'terminal'],
+    ['#workspace-indicator-btn .composer-chip-icon', 'folder'],
+    ['#rag-indicator-btn .composer-chip-icon', 'database'],
+    ['#research-toggle-btn .composer-chip-icon', 'search'],
+    ['#group-toggle-btn .composer-chip-icon', 'user'],
+    ['#character-indicator-icon', 'user'],
+    ['#compare-indicator-btn .composer-chip-icon', 'columns'],
+    ['#model-picker-btn', 'caretDown'],
+    ['#model-picker-refresh-btn', 'refresh'],
+    ['#model-picker-add-models-btn', 'plus'],
+    ['#composer-mic-btn', 'microphone'],
+    ['#incognito-btn .eye-open', 'eye'],
+    ['#incognito-btn .eye-blinded', 'eye'],
+    ['#close-memory-modal', 'x', true],
+    ['#close-theme-popup', 'x', true],
+  ];
+
+  const makeSvg = (name, source, forceSize) => {
+    const sourceSize = source && (source.getAttribute('width') || source.getAttribute('height'));
+    const parsedSize = Number.parseFloat(sourceSize);
+    const size = Number.isFinite(parsedSize) && parsedSize > 0 ? parsedSize : (forceSize || 16);
+    const cls = source?.getAttribute('class') || '';
+    const holder = document.createElement('template');
+    holder.innerHTML = phosphorIcon(name, size, cls);
+    const svg = holder.content.firstElementChild;
+    if (!svg) return null;
+    if (source?.getAttribute('style')) svg.setAttribute('style', source.getAttribute('style'));
+    if (source?.getAttribute('aria-label')) svg.setAttribute('aria-label', source.getAttribute('aria-label'));
+    svg.dataset.iconProfile = 'phosphor-regular';
+    return svg;
+  };
+
+  const replaceTarget = (host, name, replaceText) => {
+    if (!host) return;
+    const source = host.querySelector('svg');
+    if (source?.dataset.iconProfile === 'phosphor-regular') return;
+    const svg = makeSvg(name, source);
+    if (svg && source) {
+      source.replaceWith(svg);
+      return;
+    }
+    if (svg && replaceText && !host.children.length) host.replaceChildren(svg);
+  };
+
+  // A few sidebar affordances are SVG elements themselves rather than hosts
+  // containing an icon (collapse, sort and the small row actions). Keep these
+  // on the same registry profile too, including elements inserted later by
+  // section/session hydration.
+  const directTargets = [
+    ['#sidebar .list-item-plus-icon', 'plus'],
+    ['#sidebar .section-collapse-chevron', 'caretDown'],
+    ['#sidebar .sort-icon', 'sort'],
+    ['#sidebar .session-menu-btn > svg', 'caretDown'],
+    ['#sidebar .auto-sort-icon > svg', 'sparkle'],
+    ['#sidebar #session-bulk-archive svg', 'archive'],
+    ['#sidebar #session-bulk-delete svg', 'trash'],
+    ['#sidebar #session-bulk-cancel svg', 'x'],
+  ];
+  const replaceDirect = (source, name) => {
+    if (!source || source.dataset.iconProfile === 'phosphor-regular') return;
+    const svg = makeSvg(name, source);
+    if (svg) source.replaceWith(svg);
+  };
+
+  targets.forEach(([selector, name, replaceText]) => {
+    replaceTarget(root.querySelector(selector), name, replaceText);
+  });
+  directTargets.forEach(([selector, name]) => {
+    root.querySelectorAll(selector).forEach((source) => replaceDirect(source, name));
+  });
+  root.querySelectorAll('.composer-menu-check').forEach((el) => replaceTarget(el, 'check', false));
+  root.querySelectorAll('.composer-chip-close').forEach((el) => {
+    if (el.dataset.iconProfile === 'phosphor-regular') return;
+    const svg = makeSvg('x', null, 10);
+    if (!svg) return;
+    el.replaceChildren(svg);
+    el.dataset.iconProfile = 'phosphor-regular';
+  });
+}
+
+window.__hydrateCanonicalIcons = hydrateCanonicalIcons;
+hydrateCanonicalIcons();
+
+// Section collapse controls and session rows are created after the initial
+// module boot. Observe only the navigation surfaces so late additions inherit
+// the same icon profile without touching scene artwork or rendered content.
+const canonicalIconObserver = new MutationObserver(() => {
+  if (canonicalIconObserver._queued) return;
+  canonicalIconObserver._queued = true;
+  requestAnimationFrame(() => {
+    canonicalIconObserver._queued = false;
+    hydrateCanonicalIcons(document);
+  });
+});
+['#sidebar', '#icon-rail'].forEach((selector) => {
+  const surface = document.querySelector(selector);
+  if (surface) canonicalIconObserver.observe(surface, { childList: true, subtree: true });
+});
 
 function _isMobileChatInput() {
   return window.innerWidth <= 768;
@@ -919,7 +1081,7 @@ function initializeEventListeners() {
     const welcomeName = document.querySelector('.welcome-name');
     const welcomeSub = el('welcome-sub');
     const tipEl = el('welcome-tip');
-    const _resIco = '<svg class="welcome-boat" style="position:relative;top:0.5px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>';
+    const _resIco = phosphorIcon('search', 14, 'welcome-boat');
     if (active) {
       if (welcomeName) {
         if (!welcomeName.dataset.researchOrigHtml) welcomeName.dataset.researchOrigHtml = welcomeName.innerHTML;
@@ -2709,10 +2871,10 @@ function initializeEventListeners() {
 
   // ── Incognito mode toggle (on welcome screen) ──
   const incognitoBtn = el('incognito-btn');
-  const INCOGNITO_EYE_OPEN = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-  const INCOGNITO_EYE_CLOSED = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><line x1="8" y1="16" x2="16" y2="8"/><line x1="8" y1="8" x2="16" y2="16"/></svg>';
-  const SESSION_ICON_CHAT = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
-  const SESSION_ICON_INCOGNITO = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+  const INCOGNITO_EYE_OPEN = phosphorIcon('eye', 18);
+  const INCOGNITO_EYE_CLOSED = phosphorIcon('eyeSlash', 18);
+  const SESSION_ICON_CHAT = phosphorIcon('chat', 12);
+  const SESSION_ICON_INCOGNITO = phosphorIcon('eyeSlash', 12);
 
   function _syncSessionIncognitoIcon(active) {
     const activeSession = document.querySelector('.list-item.active-session .session-icon');
@@ -2743,7 +2905,7 @@ function initializeEventListeners() {
         incognitoBtn.innerHTML = INCOGNITO_EYE_CLOSED + '<span class="incognito-label">Nobody</span>';
         if (welcomeName) {
           welcomeName.dataset.originalHtml = welcomeName.innerHTML;
-          welcomeName.innerHTML = '<svg class="welcome-boat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><line x1="8" y1="16" x2="16" y2="8"/><line x1="8" y1="8" x2="16" y2="16"/></svg>Nobody';
+          welcomeName.innerHTML = phosphorIcon('eyeSlash', 18, 'welcome-boat') + 'Nobody';
           // Restart the L→R clip-wipe reveal on the new label
           welcomeName.style.animation = 'none';
           welcomeName.offsetHeight;
@@ -4021,10 +4183,10 @@ function startOdysseusApp() {
   // copy here: two capture-phase listeners on the same textarea meant the one
   // without the draft guard won and ate unsent multi-line prompts (#5862).
 
-  const _sendIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
-  const _micIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
-  const _stopIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
-  const _newChatIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+  const _sendIcon = phosphorIcon('arrowUp', 16);
+  const _micIcon = phosphorIcon('microphone', 16);
+  const _stopIcon = phosphorIcon('stop', 16);
+  const _newChatIcon = phosphorIcon('plus', 16);
 
   // Expose icons globally so chat.js updateSubmitButton can use them
   window._odysseusBtnIcons = { send: _sendIcon, mic: _micIcon, stop: _stopIcon, newChat: _newChatIcon };

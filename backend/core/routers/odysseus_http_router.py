@@ -49,7 +49,6 @@ def _ensure_native_session(session_id: str, prompt: str = "", model: str = "moni
                     rag=False,
                     archived=False,
                     headers={},
-                    owner=None,
                     owner="bartosz",
                     created_at=now,
                     updated_at=now,

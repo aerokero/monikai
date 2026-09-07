@@ -71,7 +71,7 @@ const SETUP_PROVIDER_HINT_NAMES = SETUP_PROVIDER_NAMES.concat(SETUP_DEVICE_AUTH_
 const SETUP_PROVIDER_HINT = SETUP_PROVIDER_HINT_NAMES.slice(0, -1).join(', ') + ', or ' + SETUP_PROVIDER_HINT_NAMES[SETUP_PROVIDER_HINT_NAMES.length - 1];
 const SETUP_LOCAL_ICON = phosphorIcon('monitor', 11);
 const SETUP_API_ICON = phosphorIcon('globe', 11);
-const SETUP_SETTINGS_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
+const SETUP_SETTINGS_ICON = phosphorIcon('gear', 12);
 
 function _setupApiProviderChips() {
   return SETUP_PROVIDER_NAMES.map(name =>
@@ -326,7 +326,7 @@ function slashReply(text) {
       btn.type = 'button';
       btn.className = 'copy-code';
       btn.setAttribute('data-code', pre.textContent);
-      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+      btn.innerHTML = phosphorIcon('copy', 14);
       pre.appendChild(btn);
     }
   });
@@ -504,7 +504,7 @@ function typewriterBlocksReply(blocks, options = {}) {
         useBtn.type = 'button';
         useBtn.className = 'use-code';
         useBtn.title = 'Use in Chat';
-        useBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg>';
+        useBtn.innerHTML = phosphorIcon('arrowDown', 14);
         const copyText = block.copyText || block.text || '';
         const useNow = (e) => {
           e.preventDefault();
@@ -532,7 +532,7 @@ function typewriterBlocksReply(blocks, options = {}) {
         btn.className = 'copy-code';
         btn.setAttribute('data-code', copyText);
         btn.title = 'Copy';
-        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+        btn.innerHTML = phosphorIcon('copy', 14);
         const copyNow = (e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -5257,7 +5257,7 @@ async function _cmdShortcuts(args, ctx) {
   btn.type = 'button';
   btn.className = 'copy-code';
   btn.setAttribute('data-code', pre.textContent);
-  btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+  btn.innerHTML = phosphorIcon('copy', 14);
   pre.appendChild(btn);
   body.appendChild(pre);
   uiModule.scrollHistory();
