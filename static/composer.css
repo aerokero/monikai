@@ -666,25 +666,38 @@
   background: rgba(242, 139, 130, 0.12) !important;
 }
 
-/* Chat context pill positioned underneath the 3-dots menu */
+/* Context control sits immediately to the left of the 3-dots menu. */
+.chat-top-bar .chat-meta-overlay {
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 2px !important;
+}
+
+.chat-meta-overlay .export-dropdown-wrap { order: 2; }
+.chat-meta-overlay .chat-context-pill { order: 1; }
+
 .chat-meta-overlay .chat-context-pill {
   display: inline-flex;
   align-items: center !important;
-  gap: 5px !important;
-  height: 22px !important;
-  padding: 0 8px !important;
+  justify-content: center !important;
+  gap: 0 !important;
+  width: 36px !important;
+  min-width: 36px !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  padding: 0 !important;
   margin: 0 !important;
-  border: 1px solid color-mix(in srgb, var(--fg) 8%, transparent) !important;
-  border-radius: 9999px !important;
-  background: var(--panel) !important;
+  border: none !important;
+  border-radius: 50% !important;
+  background: transparent !important;
   color: var(--ui-text-secondary) !important;
   font-family: inherit !important;
-  font-size: 0.6875rem !important;
+  font-size: 0 !important;
   font-weight: 500 !important;
   line-height: 1 !important;
   cursor: pointer !important;
   white-space: nowrap !important;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25) !important;
+  box-shadow: none !important;
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease !important;
 }
 
@@ -695,8 +708,16 @@
 .chat-meta-overlay .chat-context-pill:hover,
 .chat-meta-overlay .chat-context-pill.open {
   background: color-mix(in srgb, var(--fg) 12%, transparent) !important;
-  border-color: color-mix(in srgb, var(--fg) 16%, transparent) !important;
   color: var(--fg) !important;
+}
+
+.chat-meta-overlay .chat-context-pill > #chat-context-pill-label {
+  display: none !important;
+}
+
+.chat-meta-overlay .chat-context-pill > svg {
+  width: 18px !important;
+  height: 18px !important;
 }
 
 .chat-meta-overlay .chat-context-pill.warn {
@@ -740,4 +761,5 @@
   .composer-chip { min-height: 44px; }
   #overflow-menu.composer-tools-menu .overflow-menu-item { min-height: 44px !important; height: auto !important; }
   .chat-top-bar .chat-meta-overlay { right: 12px !important; }
+  .chat-meta-overlay .chat-context-pill { width:44px !important; min-width:44px !important; height:44px !important; min-height:44px !important; }
 }

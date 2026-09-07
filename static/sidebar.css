@@ -256,7 +256,7 @@ body {
 }
 
 #sidebar #workspace-section #email-section .section-icon {
-  display: inline-flex;
+  display: inline-flex !important;
   width: 18px !important;
   height: 18px !important;
   min-width: 18px !important;
@@ -579,13 +579,14 @@ html.ody-sidebar-off #sidebar {
 }
 
 #chat-history {
+  --chat-pill-height: 52px;
   display: flex;
   flex-direction: column !important;
-  gap: 20px !important;
+  gap: 8px !important;
   max-width: 100% !important;
   width: 100% !important;
   margin: 0 !important;
-  padding: 24px max(var(--chat-gutter), calc((100% - var(--chat-content-width)) / 2)) !important;
+  padding: 18px max(var(--chat-gutter), calc((100% - var(--chat-content-width)) / 2)) !important;
   min-height: 0;
   scroll-padding-bottom: 24px;
   box-sizing: border-box !important;
@@ -593,6 +594,17 @@ html.ody-sidebar-off #sidebar {
   overflow-x: hidden !important;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--fg) 12%, transparent) transparent;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, rgba(0, 0, 0, .32) 7%, #000 20%, #000 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, rgba(0, 0, 0, .32) 7%, #000 20%, #000 100%);
+}
+
+/* Fill unused vertical space so a short conversation starts above the composer.
+   Once messages exceed the viewport, the spacer collapses to zero and scrolling
+   remains a normal top-to-bottom history. */
+#chat-history::before {
+  content: '';
+  flex: 1 0 0;
+  min-height: 0;
 }
 
 #chat-history::-webkit-scrollbar {
@@ -623,6 +635,7 @@ html.ody-sidebar-off #sidebar {
   border: none !important;
   background: transparent !important;
   box-shadow: none !important;
+  flex: 0 0 auto;
 }
 
 /* User chat bubble styling (User bubble) */
@@ -643,6 +656,10 @@ html.ody-sidebar-off #sidebar {
   background: var(--user-bubble-bg, var(--panel)) !important;
   border-radius: 28px !important;
   padding: 14px 22px !important;
+  min-height: var(--chat-pill-height);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
   color: var(--fg) !important;
   box-shadow: none !important;
   line-height: 1.5 !important;
@@ -655,30 +672,45 @@ html.ody-sidebar-off #sidebar {
 #chat-history .msg.msg-ai {
   align-self: flex-start !important;
   align-items: flex-start !important;
-  max-width: 100% !important;
+  max-width: min(82%, 800px) !important;
   margin-left: 0 !important;
   margin-right: auto !important;
-  width: 100% !important;
+  width: fit-content !important;
+  padding-top: 15px;
 }
 
 #chat-history .msg.msg-ai .role {
-  display: flex;
+  display: inline-flex;
+  position: absolute;
+  top: 0;
+  left: 12px;
+  z-index: 1;
   align-items: center !important;
   gap: 8px !important;
   font-size: 0.875rem !important;
   font-weight: 500 !important;
   color: var(--fg) !important;
-  margin-bottom: 6px !important;
+  width: fit-content;
+  margin: 0 !important;
+  padding: 5px 10px;
+  background: color-mix(in srgb, var(--ai-bubble-bg, var(--panel)) 92%, var(--panel));
+  border: none;
+  border-radius: 999px;
 }
 
 #chat-history .msg.msg-ai .body {
-  background: var(--ai-bubble-bg, transparent) !important;
+  background: var(--ai-bubble-bg, var(--panel)) !important;
   border: none !important;
   box-shadow: none !important;
-  padding: 12px 16px !important;
+  border-radius: 28px !important;
+  padding: 14px 22px !important;
+  min-height: var(--chat-pill-height);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
   color: var(--fg) !important;
   font-size: 1rem !important;
-  line-height: 1.6 !important;
+  line-height: 24px !important;
   word-break: break-word !important;
 }
 
@@ -698,6 +730,12 @@ html.ody-sidebar-off #sidebar {
 #chat-history .msg pre { max-width: 100%; overflow-x: auto; white-space: pre; }
 #chat-history .msg img, #chat-history .msg video { max-width: 100%; height: auto; }
 #chat-history .msg table { display: block; max-width: 100%; overflow-x: auto; }
+#chat-history .msg.msg-ai .role::before { content:none !important; display:none !important; }
+#chat-history .msg .msg-footer { position:absolute; top:100%; margin-top:4px; opacity:0; pointer-events:none; transition:opacity .15s ease; z-index:2; }
+#chat-history .msg.msg-user .msg-footer { right:0; }
+#chat-history .msg:has(.body:hover) .msg-footer,
+#chat-history .msg:focus-within .msg-footer { opacity:1; pointer-events:auto; }
+
 
 :where(button, a, input, textarea, select, [tabindex]):focus-visible {
   outline: 2px solid var(--accent-primary, var(--red)) !important;

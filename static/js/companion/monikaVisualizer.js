@@ -141,14 +141,19 @@ export class MonikaVisualizer {
       .monika-vn-atmosphere {
         position: absolute;
         inset: 0;
-        background: radial-gradient(circle at 50% 35%, transparent 50%, rgba(10, 8, 14, 0.35) 85%),
-                    linear-gradient(to top, rgba(14, 12, 18, 0.75) 0%, transparent 35%);
+        /* Keep the room and face readable; only the lower foreground needs
+           a soft shadow so the chat pills remain legible. */
+        background: linear-gradient(to top,
+          rgba(10, 8, 14, 0.78) 0%,
+          rgba(10, 8, 14, 0.52) 18%,
+          rgba(10, 8, 14, 0.22) 38%,
+          transparent 62%);
         pointer-events: none;
       }
       
       /* Keep the companion visible at welcome, quiet behind readable messages. */
       .chat-container:not(.welcome-active) .monika-vn-stage {
-        opacity: 0.14;
+        opacity: 1;
       }
       @media (max-width: 768px) {
         .monika-vn-char-wrap {
