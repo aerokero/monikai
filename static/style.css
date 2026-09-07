@@ -17,10 +17,10 @@
 
 :root {
   /* Core palette */
-  --bg: #282c34;
-  --fg: #9cdef2;
-  --panel: #111;
-  --border: #355a66;
+  --bg: #0f0f0f;
+  --fg: #e3e3e3;
+  --panel: #1e1f20;
+  --border: #383a3c;
   --red: #e06c75;
   /* Were `var(--green)` / `var(--warn)` — self-referential, so they
      resolved to invalid and every site fell back to its own literal
@@ -102,7 +102,7 @@ body {
      below so left + right docks can coexist without skewing the whole body. */
   transition: padding-left 160ms cubic-bezier(0.22, 0.61, 0.36, 1),
               padding-right 160ms cubic-bezier(0.22, 0.61, 0.36, 1);
-  font-family: var(--font-family, 'Fira Code', monospace);
+  font-family: var(--font-family, system-ui, sans-serif);
   display: flex;
   height: 100%;
   height: 100dvh; /* dynamic viewport height — adapts when mobile keyboard opens */
@@ -606,7 +606,7 @@ body.bg-pattern-sparkles {
       background: var(--sidebar-bg, var(--panel));
     }
     .sidebar-hamburger {
-      display: none !important; /* external #hamburger-btn is the only toggle */
+      display: inline-flex; /* Header toggle is available while the sidebar is open. */
     }
     .sidebar-inner {
       flex: 1;

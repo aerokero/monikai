@@ -18,7 +18,7 @@
   'use strict';
 
   // Click-as-button rows we want reachable by keyboard.
-  var ROW_SELECTOR = ['#sidebar .list-item', '#user-bar-profile'].join(',');
+  var ROW_SELECTOR = ['#sidebar .list-item', '#sidebar .session-item', '#sidebar .date-section-header', '#sidebar .session-folder-header', '#user-bar-profile'].join(',');
 
   // Native interactive descendants. If a row contains one of these we must
   // NOT give the row role="button" — a button inside a button is invalid
@@ -118,9 +118,62 @@
     el.click();
   });
 
+  // Track focus only for floating dialogs. Docked workspace panes stay navigable
+  // alongside the chat and must never trap the keyboard.
+  var openDialogs = new Map();
+  function floating(modal) {
+    return modal && !modal.matches('.modal-left-docked, .modal-right-docked, .modal-minimized')
+      && !modal.classList.contains('hidden') && modal.getClientRects().length > 0
+      && getComputedStyle(modal).visibility !== 'hidden';
+  }
+  function focusables(modal) {
+    return Array.from(modal.querySelectorAll(NESTED_INTERACTIVE))
+      .filter(function (el) { return !el.disabled && el.tabIndex >= 0 && !el.closest('[inert]')
+        && el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden'; });
+  }
+  function syncDialogFocus() {
+    openDialogs.forEach(function (opener, modal) {
+      if (!modal.isConnected || !floating(modal)) {
+        openDialogs.delete(modal);
+        if ((modal.contains(document.activeElement) || document.activeElement === document.body)
+            && opener && opener.isConnected && !opener.closest('[inert]')) opener.focus({preventScroll:true});
+      }
+    });
+    document.querySelectorAll('.modal').forEach(function (modal) {
+      var content = modal.querySelector('.modal-content');
+      if (!content) return;
+      var isFloating = floating(modal);
+      content.setAttribute('aria-modal', String(isFloating));
+      if (!isFloating || openDialogs.has(modal)) return;
+      openDialogs.set(modal, document.activeElement);
+      if (!modal.contains(document.activeElement)) {
+        content.tabIndex = -1;
+        (focusables(modal)[0] || content).focus({preventScroll:true});
+      }
+    });
+  }
+  document.addEventListener('keydown', function (event) {
+    if (event.key !== 'Tab' || event.defaultPrevented) return;
+    var modals = Array.from(openDialogs.keys()).filter(floating);
+    modals.sort(function (a,b) { return (parseInt(getComputedStyle(b).zIndex)||0) - (parseInt(getComputedStyle(a).zIndex)||0); });
+    var modal = modals[0];
+    if (!modal) return;
+    var items = focusables(modal);
+    var index = items.indexOf(document.activeElement);
+    if (!items.length) { event.preventDefault(); return; }
+    if (index < 0 || (event.shiftKey && index === 0) || (!event.shiftKey && index === items.length-1)) {
+      event.preventDefault();
+      items[event.shiftKey ? items.length-1 : 0].focus();
+    }
+  });
+
   function init() {
     enhanceAll(document);
     enhanceModals(document);
+    new MutationObserver(function (mutations) {
+      if (mutations.some(function (m) { return m.type === 'childList' || m.target.matches('.modal'); })) syncDialogFocus();
+    }).observe(document.body, {childList:true, subtree:true, attributes:true, attributeFilter:['class','style']});
+    syncDialogFocus();
 
     // Sidebar content is re-rendered as the user navigates (session lists,
     // tool sub-rows, etc.). Watch for new rows and enhance them too.

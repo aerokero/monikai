@@ -509,7 +509,7 @@ function initializeEventListeners() {
       e.stopPropagation();
       exportMenu.classList.remove('open');
       const meta = sessionModule.getSessions().find(s => s.id === sessionModule.getCurrentSessionId());
-      const sessionName = meta ? meta.name : 'Odysseus Chat';
+      const sessionName = meta ? meta.name : 'MonikAI Chat';
       const originalTitle = document.title;
       document.title = sessionName;
       const chatHistory = document.getElementById('chat-history');
@@ -2227,6 +2227,8 @@ function initializeEventListeners() {
     const ownerWrap = menu.parentElement;
     const pickerWrap = el('model-picker-wrap');
     let _vvReposition = null;
+    let closeTimer = null;
+    let keyboardOpened = false;
     // Pin the menu's bottom 8px above the chevron (viewport-relative, since it's
     // portaled to <body>). Only cap height + show a scrollbar when the list is
     // genuinely taller than the room above the button.
@@ -2242,7 +2244,7 @@ function initializeEventListeners() {
       menu.style.setProperty('bottom', 'auto', 'important');
       menu.style.maxHeight = '';      // reset so we can measure the natural height
       menu.style.overflowY = '';
-      const avail = r.top - 16;        // room above the chevron
+      const avail = Math.max(44, r.top - 16);        // room above the chevron
       const natural = menu.scrollHeight;
       const h = Math.min(natural, avail);
       if (natural > avail) {           // only cap + scroll when it doesn't fit
@@ -2272,6 +2274,8 @@ function initializeEventListeners() {
         return;
       }
       // Re-opening while a fold-in is mid-animation: cancel it cleanly.
+      clearTimeout(closeTimer);
+      keyboardOpened = e.detail === 0;
       menu.classList.remove('closing');
       menu.classList.remove('hidden');
       plusBtn.classList.add('expanded');
@@ -2283,6 +2287,7 @@ function initializeEventListeners() {
       // pointerdown handler above prevents the focus-steal). Still watch
       // visualViewport so the menu follows the chevron if the viewport shifts.
       positionMenu();
+      if (keyboardOpened) menu.querySelector('button:not([hidden]):not(:disabled)')?.focus();
       if (window.visualViewport && !_vvReposition) {
         _vvReposition = () => positionMenu();
         window.visualViewport.addEventListener('resize', _vvReposition);
@@ -2305,11 +2310,12 @@ function initializeEventListeners() {
       if (pickerWrap) pickerWrap.style.visibility = '';
       // Item delays max at 0.18s + 0.20s anim = 0.38s for items, container
       // delay 0.16s + 0.22s = 0.38s. 400ms covers both with margin.
-      setTimeout(() => {
+      if (menu.contains(document.activeElement)) plusBtn.focus();
+      closeTimer = setTimeout(() => {
         menu.classList.add('hidden');
         menu.classList.remove('closing');
         if (ownerWrap) ownerWrap.appendChild(menu);  // restore from <body> portal
-      }, 400);
+      }, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 400);
     }
     // Close menu when clicking any item inside it. preventDefault on pointerdown
     // so tapping an item (e.g. Attach files) doesn't steal focus from the message
@@ -2538,7 +2544,7 @@ function initializeEventListeners() {
 	        textarea.setAttribute('placeholder', 'Swipe to toggle plan');
 	        return;
 	      }
-	      textarea.setAttribute('placeholder', width < PLACEHOLDER_COMPACT_WIDTH ? 'Message...' : 'Message Odysseus...');
+	      textarea.setAttribute('placeholder', width < PLACEHOLDER_COMPACT_WIDTH ? 'Message...' : 'Message Monika...');
 	    }
 
 	    if (_isMobile && textarea && !textarea._odysseusPlanPlaceholderHint) {
@@ -4035,6 +4041,8 @@ function startOdysseusApp() {
     if (!sendBtn || sendBtn.dataset.mode !== 'streaming') return false;
     const hasText = messageInput && messageInput.value.trim().length > 0;
     const nextPhase = hasText ? 'queue' : 'processing';
+    sendBtn.hidden = false;
+    sendBtn.setAttribute('aria-label', hasText ? 'Queue message' : 'Stop generation');
     if (sendBtn.dataset.phase === nextPhase) return true;
     sendBtn.dataset.phase = nextPhase;
     sendBtn.classList.remove('mic-mode', 'newchat-mode', 'newchat-expanded', 'anim-spin', 'anim-launch', 'anim-land');
@@ -4054,10 +4062,15 @@ function startOdysseusApp() {
       _updateStreamingSubmitButton();
       return;
     }
-    if (sendBtn.dataset.mode === 'recording') return;
+    if (sendBtn.dataset.mode === 'recording') { sendBtn.hidden = false; return; }
 
     sendBtn.innerHTML = _sendIcon;
     sendBtn.title = 'Send message (Enter)';
+    sendBtn.setAttribute('aria-label', 'Send message');
+    // Keep the action target visible so the composer remains stable while the
+    // user types and while a response is streaming. The controller changes
+    // its icon/label; hiding it caused the action row to jump on mobile.
+    sendBtn.hidden = false;
     sendBtn.dataset.mode = 'send';
     sendBtn.classList.remove('mic-mode', 'newchat-mode', 'newchat-expanded');
   }

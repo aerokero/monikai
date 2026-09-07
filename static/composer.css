@@ -1,26 +1,26 @@
 /* ==========================================================================
-   Google Gemini 1:1 Composer & Overflow Tools Styling
+   MonikAI Composer & Overflow Tools Styling
    ========================================================================== */
 
 /* Main Composer Pill Bar */
-.chat-container .chat-input-bar.composer-pill,
-.chat-container.welcome-active .chat-input-bar.composer-pill {
-  background: #1e1f20 !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+.chat-container .chat-input-bar.composer-pill {
+  background: var(--input-bg, var(--panel)) !important;
+  border: 1px solid var(--input-border, var(--border)) !important;
   border-radius: 32px !important;
   padding: 14px 18px 12px 18px !important;
   min-height: 96px !important;
   box-sizing: border-box !important;
   box-shadow: rgba(0, 0, 0, 0.16) 0px 2px 8px -2px !important;
-  color: #e3e3e3 !important;
-  font-family: "Google Sans Flex", "Google Sans Text", "Google Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-  max-width: 820px !important;
-  width: min(820px, calc(100% - 48px)) !important;
+  color: var(--fg) !important;
+  font-family: var(--font-family, system-ui, sans-serif) !important;
+  max-width: var(--chat-content-width) !important;
+  width: min(var(--chat-content-width), calc(100% - 2 * var(--chat-gutter))) !important;
   margin-left: auto !important;
   margin-right: auto !important;
   margin-top: 0 !important;
-  margin-bottom: 24px !important;
-  display: flex !important;
+  margin-bottom: max(12px, env(safe-area-inset-bottom)) !important;
+  flex-shrink: 0;
+  display: flex;
   flex-direction: column !important;
   justify-content: space-between !important;
   transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
@@ -31,13 +31,13 @@
 }
 
 .chat-container .composer-pill:focus-within {
-  border-color: rgba(255, 255, 255, 0.16) !important;
+  border-color: color-mix(in srgb, var(--fg) 16%, transparent) !important;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28) !important;
 }
 
 /* Flex Column for Top / Input area */
 .composer-pill .chat-input-top {
-  display: flex !important;
+  display: flex;
   flex-direction: column !important;
   align-items: stretch !important;
   gap: 8px !important;
@@ -56,7 +56,7 @@
    ========================================================================== */
 
 .composer-pill .composer-text-row {
-  display: flex !important;
+  display: flex;
   width: 100% !important;
   min-height: 38px !important;
   position: relative !important;
@@ -78,17 +78,17 @@
   outline: none !important;
   box-shadow: none !important;
   font: inherit !important;
-  font-size: 16px !important;
+  font-size: 1rem !important;
   line-height: 24px !important;
-  color: #e3e3e3 !important;
+  color: var(--fg) !important;
   resize: none !important;
   box-sizing: border-box !important;
 }
 
 .chat-container .composer-pill textarea#message::placeholder {
-  color: #8e918f !important;
+  color: var(--ui-text-muted) !important;
   opacity: 1 !important;
-  font-size: 16px !important;
+  font-size: 1rem !important;
 }
 
 .composer-pill #message-ghost {
@@ -100,18 +100,18 @@
    ========================================================================== */
 
 .composer-pill .composer-actions-row {
-  display: flex !important;
+  display: flex;
   align-items: center !important;
   justify-content: space-between !important;
   width: 100% !important;
-  height: 36px !important;
+  height: auto !important;
   min-height: 36px !important;
   box-sizing: border-box !important;
   position: relative !important;
 }
 
 .composer-pill .composer-actions-left {
-  display: flex !important;
+  display: flex;
   align-items: center !important;
   gap: 8px !important;
   min-width: 0 !important;
@@ -119,7 +119,7 @@
 }
 
 .composer-pill .composer-actions-right {
-  display: flex !important;
+  display: flex;
   align-items: center !important;
   gap: 6px !important;
   flex-shrink: 0 !important;
@@ -128,7 +128,7 @@
 /* Overflow (+) Button */
 .composer-pill .overflow-wrapper {
   position: relative !important;
-  display: inline-flex !important;
+  display: inline-flex;
   align-items: center !important;
   justify-content: center !important;
   flex-shrink: 0 !important;
@@ -143,9 +143,9 @@
   padding: 0 !important;
   margin: 0 !important;
   border: 0 !important;
-  color: #c4c7c5 !important;
+  color: var(--ui-text-secondary) !important;
   background: transparent !important;
-  display: inline-flex !important;
+  display: inline-flex;
   align-items: center !important;
   justify-content: center !important;
   cursor: pointer !important;
@@ -161,13 +161,13 @@
 }
 
 .composer-pill #overflow-plus-btn:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
-  color: #e3e3e3 !important;
+  background: color-mix(in srgb, var(--fg) 8%, transparent) !important;
+  color: var(--fg) !important;
 }
 
 .composer-pill #overflow-plus-btn.expanded {
-  background: rgba(255, 255, 255, 0.12) !important;
-  color: #e3e3e3 !important;
+  background: color-mix(in srgb, var(--fg) 12%, transparent) !important;
+  color: var(--fg) !important;
 }
 
 .composer-pill #overflow-plus-btn.expanded > svg {
@@ -183,7 +183,7 @@
    ========================================================================== */
 
 .composer-active-chips {
-  display: inline-flex !important;
+  display: inline-flex;
   align-items: center !important;
   gap: 8px !important;
   flex-shrink: 1 !important;
@@ -193,86 +193,85 @@
 }
 
 .composer-active-chips::-webkit-scrollbar {
-  display: none !important;
+  display: none;
 }
 
 .composer-chip {
-  background: rgba(255, 255, 255, 0.12) !important;
-  color: #e3e3e3 !important;
-  border: 0 !important;
-  border-radius: 9999px !important;
-  height: 34px !important;
-  padding: 0 12px 0 10px !important;
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
+  color: var(--fg);
+  border: 0;
+  border-radius: 9999px;
+  height: 34px;
+  padding: 0 12px 0 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  font-family: inherit !important;
-  font-size: 14px !important;
-  font-weight: 500 !important;
-  line-height: 20px !important;
-  cursor: pointer !important;
-  white-space: nowrap !important;
-  user-select: none !important;
-  box-sizing: border-box !important;
-  transition: background-color 0.15s ease, color 0.15s ease !important;
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 20px;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  box-sizing: border-box;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-.composer-chip[style*="none"],
 .composer-chip[hidden],
 .composer-chip.hidden {
   display: none !important;
 }
 
 .composer-chip:hover {
-  background: rgba(255, 255, 255, 0.18) !important;
-  color: #ffffff !important;
+  background: color-mix(in srgb, var(--fg) 18%, transparent);
+  color: var(--fg);
 }
 
 .composer-chip .composer-chip-icon {
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  width: 16px !important;
-  height: 16px !important;
-  color: inherit !important;
-  flex-shrink: 0 !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: inherit;
+  flex-shrink: 0;
 }
 
 .composer-chip .composer-chip-icon svg {
-  width: 16px !important;
-  height: 16px !important;
-  stroke: currentColor !important;
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
 }
 
 .composer-chip .composer-chip-label {
-  display: inline-block !important;
-  font-size: 13.5px !important;
-  font-weight: 500 !important;
-  color: inherit !important;
-  max-width: 130px !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  white-space: nowrap !important;
+  display: inline-block;
+  font-size: 0.84375rem;
+  font-weight: 500;
+  color: inherit;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .composer-chip .composer-chip-close {
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  width: 14px !important;
-  height: 14px !important;
-  margin-left: 2px !important;
-  font-size: 11px !important;
-  line-height: 1 !important;
-  border-radius: 50% !important;
-  color: #c4c7c5 !important;
-  opacity: 0.7 !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 2px;
+  font-size: 0.6875rem;
+  line-height: 1;
+  border-radius: 50%;
+  color: var(--ui-text-secondary);
+  opacity: 0.7;
 }
 
 .composer-chip:hover .composer-chip-close {
-  opacity: 1 !important;
-  color: #ffffff !important;
+  opacity: 1;
+  color: var(--fg);
 }
 
 /* Legacy tool-indicator aliases */
@@ -286,7 +285,7 @@
 
 .composer-pill #model-picker-wrap {
   position: relative !important;
-  display: inline-flex !important;
+  display: inline-flex;
   align-items: center !important;
   min-width: 0 !important;
   opacity: 1 !important;
@@ -298,22 +297,22 @@
   height: 36px !important;
   padding: 0 12px !important;
   gap: 6px !important;
-  color: #c4c7c5 !important;
+  color: var(--ui-text-secondary) !important;
   border: 0 !important;
   border-radius: 9999px !important;
   background: transparent !important;
   font: inherit !important;
-  font-size: 14px !important;
+  font-size: 0.875rem !important;
   font-weight: 500 !important;
   cursor: pointer !important;
-  display: inline-flex !important;
+  display: inline-flex;
   align-items: center !important;
   transition: background 0.15s ease, color 0.15s ease !important;
 }
 
 .chat-container .composer-pill #model-picker-btn:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
-  color: #e3e3e3 !important;
+  background: color-mix(in srgb, var(--fg) 8%, transparent) !important;
+  color: var(--fg) !important;
 }
 
 .composer-pill #model-picker-label {
@@ -338,9 +337,9 @@
   border-radius: 9999px !important;
   padding: 0 !important;
   border: 0 !important;
-  color: #c4c7c5 !important;
+  color: var(--ui-text-secondary) !important;
   background: transparent !important;
-  display: inline-flex !important;
+  display: inline-flex;
   align-items: center !important;
   justify-content: center !important;
   cursor: pointer !important;
@@ -348,13 +347,13 @@
 }
 
 .composer-pill #composer-mic-btn:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
-  color: #e3e3e3 !important;
+  background: color-mix(in srgb, var(--fg) 8%, transparent) !important;
+  color: var(--fg) !important;
 }
 
 .composer-pill #composer-mic-btn[aria-pressed="true"] {
-  background: #69343a !important;
-  color: #ffb4ab !important;
+  background: color-mix(in srgb, var(--color-recording) 20%, var(--panel)) !important;
+  color: var(--color-recording) !important;
 }
 
 .chat-container .composer-pill #send-btn {
@@ -365,10 +364,10 @@
   border-radius: 9999px !important;
   padding: 0 !important;
   border: 0 !important;
-  color: #1e1f20 !important;
-  background: #e3e3e3 !important;
+  color: var(--panel) !important;
+  background: var(--fg) !important;
   cursor: pointer !important;
-  display: inline-flex !important;
+  display: inline-flex;
   align-items: center !important;
   justify-content: center !important;
   box-shadow: none !important;
@@ -376,26 +375,23 @@
 }
 
 .chat-container .composer-pill #send-btn:hover {
-  background: #ffffff !important;
+  background: var(--fg) !important;
 }
 
 .chat-container .composer-pill #send-btn svg {
   width: 18px !important;
   height: 18px !important;
-  stroke: #1e1f20 !important;
+  stroke: var(--panel) !important;
   stroke-width: 2.5 !important;
 }
 
-.composer-pill:has(textarea:placeholder-shown) #send-btn[data-mode="send"] {
-  display: none !important;
-}
-
-.chat-container:has(#attach-strip > *) .composer-pill #send-btn[data-mode="send"] {
+/* State belongs to the controller, including attachment-only messages. */
+.chat-container .composer-pill #send-btn[hidden] {
   display: inline-flex !important;
 }
 
 /* ==========================================================================
-   Tools Floating Popup Menu (Gemini 1:1)
+   Tools Floating Popup Menu (MonikAI)
    ========================================================================== */
 
 #overflow-menu.composer-tools-menu {
@@ -403,10 +399,10 @@
   width: 260px !important;
   max-width: calc(100vw - 24px) !important;
   padding: 8px !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid color-mix(in srgb, var(--fg) 8%, transparent) !important;
   border-radius: 20px !important;
-  background: #1e1f20 !important;
-  color: #e3e3e3 !important;
+  background: var(--panel) !important;
+  color: var(--fg) !important;
   font-family: inherit !important;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.3) !important;
   z-index: 10050 !important;
@@ -424,11 +420,11 @@
   border: 0 !important;
   border-radius: 12px !important;
   background: transparent !important;
-  color: #e3e3e3 !important;
+  color: var(--fg) !important;
   font: inherit !important;
-  font-size: 14px !important;
+  font-size: 0.875rem !important;
   font-weight: 400 !important;
-  display: flex !important;
+  display: flex;
   align-items: center !important;
   cursor: pointer !important;
   width: 100% !important;
@@ -437,16 +433,13 @@
   transition: background-color 0.15s ease !important;
 }
 
-/* Strictly hide any disabled, hidden, empty, or display:none items in the menu */
+/* Explicit visibility states win over component layout. */
 .composer-tools-menu > [hidden],
-.composer-tools-menu > [style*="none"],
 .composer-tools-menu > .hidden,
 .composer-tools-menu > *:empty:not(.composer-menu-divider),
-.composer-tools-menu .overflow-menu-item[style*="none"],
 .composer-tools-menu .overflow-menu-item.hidden,
 .composer-tools-menu .overflow-menu-item:empty,
 .composer-tools-menu #mode-chat-btn,
-.composer-tools-menu #overflow-tts-btn[style*="none"],
 .composer-tools-menu #overflow-tts-btn[hidden],
 .composer-tools-menu #overflow-tts-btn:empty {
   display: none !important;
@@ -458,31 +451,31 @@
 }
 
 .composer-tools-menu .overflow-menu-item:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
+  background: color-mix(in srgb, var(--fg) 8%, transparent) !important;
 }
 
 .composer-tools-menu .overflow-menu-item.active,
 .composer-tools-menu .overflow-menu-item[aria-pressed="true"] {
-  background: rgba(255, 255, 255, 0.06) !important;
+  background: color-mix(in srgb, var(--fg) 6%, transparent) !important;
 }
 
 .composer-tools-menu .overflow-menu-item svg:first-child {
-  color: #c4c7c5 !important;
+  color: var(--ui-text-secondary) !important;
   width: 18px !important;
   height: 18px !important;
   flex-shrink: 0 !important;
 }
 
 .composer-tools-menu .overflow-menu-item:hover svg:first-child {
-  color: #e3e3e3 !important;
+  color: var(--fg) !important;
 }
 
-/* Checkmark on active menu items (Gemini 1:1: "Tryb nauki ✓") */
+/* Checkmark on active menu items (MonikAI: "Tryb nauki ✓") */
 .composer-tools-menu .composer-menu-check {
   margin-left: auto !important;
   width: 18px !important;
   height: 18px !important;
-  color: #e3e3e3 !important;
+  color: var(--fg) !important;
   display: none !important;
   flex-shrink: 0 !important;
 }
@@ -497,11 +490,11 @@
 }
 
 .composer-menu-divider {
-  display: block !important;
-  background: rgba(255, 255, 255, 0.08) !important;
-  margin: 6px 8px !important;
-  padding: 0 !important;
-  height: 1px !important;
+  display: block;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  margin: 6px 8px;
+  padding: 0;
+  height: 1px;
 }
 
 .composer-tools-menu .overflow-menu-item.agent-disabled {
@@ -515,8 +508,8 @@
   right: 0 !important;
   min-width: min(280px, calc(100vw - 48px)) !important;
   max-width: min(360px, calc(100vw - 48px)) !important;
-  background: #1e1f20 !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: var(--panel) !important;
+  border: 1px solid color-mix(in srgb, var(--fg) 8%, transparent) !important;
   border-radius: 20px !important;
   padding: 10px !important;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
@@ -529,13 +522,15 @@
     border-radius: 28px !important;
     min-height: 84px !important;
   }
-  .composer-active-chips {
-    max-width: 50% !important;
-  }
+  .composer-pill .composer-actions-row { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 4px; }
+  .composer-pill .composer-actions-left { display: contents; }
+  .composer-pill .composer-actions-right { grid-column: 2; grid-row: 1; justify-self: end; }
+  .composer-active-chips { grid-column: 1 / -1; grid-row: 2; max-width: 100%; }
+  .chat-container .composer-pill textarea#message { max-height: min(150px, 30dvh) !important; }
   .composer-chip {
-    height: 32px !important;
-    padding: 0 10px 0 8px !important;
-    font-size: 13px !important;
+    height: 32px;
+    padding: 0 10px 0 8px;
+    font-size: 0.8125rem;
   }
   .composer-pill #model-picker-label {
     max-width: 70px !important;
@@ -543,7 +538,7 @@
   .chat-container .composer-pill #model-picker-btn {
     padding: 0 6px !important;
     gap: 4px !important;
-    font-size: 13px !important;
+    font-size: 0.8125rem !important;
   }
 }
 
@@ -566,7 +561,7 @@
   left: auto !important;
   bottom: auto !important;
   transform: none !important;
-  display: flex !important;
+  display: flex;
   flex-direction: column !important;
   align-items: flex-end !important;
   gap: 6px !important;
@@ -592,19 +587,20 @@
   top: 16px !important;
   left: 50% !important;
   transform: translateX(-50%) !important;
-  background: #1e1f20 !important;
-  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  background: var(--panel) !important;
+  border: 1px solid color-mix(in srgb, var(--fg) 20%, transparent) !important;
   border-radius: 12px !important;
   padding: 8px 14px !important;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
   z-index: 10060 !important;
-  min-width: 240px !important;
+  width: min(360px, calc(100vw - 32px));
+  min-width: 0 !important;
 }
 
 .chat-meta-overlay .export-dropdown-wrap {
   margin: 0 !important;
   position: relative !important;
-  display: flex !important;
+  display: flex;
   align-items: center !important;
   justify-content: center !important;
 }
@@ -616,10 +612,10 @@
   min-height: 36px !important;
   border-radius: 50% !important;
   padding: 0 !important;
-  display: inline-flex !important;
+  display: inline-flex;
   align-items: center !important;
   justify-content: center !important;
-  color: #c4c7c5 !important;
+  color: var(--ui-text-secondary) !important;
   background: transparent !important;
   border: none !important;
   cursor: pointer !important;
@@ -628,42 +624,42 @@
 
 .chat-meta-overlay .export-dl-btn:hover,
 .chat-meta-overlay .export-dl-btn.open {
-  background: rgba(255, 255, 255, 0.08) !important;
-  color: #e3e3e3 !important;
+  background: color-mix(in srgb, var(--fg) 8%, transparent) !important;
+  color: var(--fg) !important;
 }
 
 .export-dropdown-menu {
-  background: #1e1f20 !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  background: var(--panel) !important;
+  border: 1px solid color-mix(in srgb, var(--fg) 12%, transparent) !important;
   border-radius: 12px !important;
   padding: 6px !important;
   min-width: 170px !important;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5) !important;
   z-index: 10050 !important;
-  color: #e3e3e3 !important;
+  color: var(--fg) !important;
   backdrop-filter: blur(12px) !important;
 }
 
 .export-dropdown-item {
   padding: 8px 12px !important;
-  font-size: 13px !important;
+  font-size: 0.8125rem !important;
   font-family: inherit !important;
   font-weight: 400 !important;
   border-radius: 8px !important;
-  color: #e3e3e3 !important;
+  color: var(--fg) !important;
   gap: 10px !important;
-  display: flex !important;
+  display: flex;
   align-items: center !important;
   cursor: pointer !important;
   transition: background-color 0.12s ease !important;
 }
 
 .export-dropdown-item:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
+  background: color-mix(in srgb, var(--fg) 8%, transparent) !important;
 }
 
 .export-dropdown-item.dropdown-item-danger {
-  color: #f28b82 !important;
+  color: var(--color-error) !important;
 }
 
 .export-dropdown-item.dropdown-item-danger:hover {
@@ -672,18 +668,18 @@
 
 /* Chat context pill positioned underneath the 3-dots menu */
 .chat-meta-overlay .chat-context-pill {
-  display: inline-flex !important;
+  display: inline-flex;
   align-items: center !important;
   gap: 5px !important;
   height: 22px !important;
   padding: 0 8px !important;
   margin: 0 !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid color-mix(in srgb, var(--fg) 8%, transparent) !important;
   border-radius: 9999px !important;
-  background: #1e1f20 !important;
-  color: #c4c7c5 !important;
+  background: var(--panel) !important;
+  color: var(--ui-text-secondary) !important;
   font-family: inherit !important;
-  font-size: 11px !important;
+  font-size: 0.6875rem !important;
   font-weight: 500 !important;
   line-height: 1 !important;
   cursor: pointer !important;
@@ -698,18 +694,50 @@
 
 .chat-meta-overlay .chat-context-pill:hover,
 .chat-meta-overlay .chat-context-pill.open {
-  background: rgba(255, 255, 255, 0.12) !important;
-  border-color: rgba(255, 255, 255, 0.16) !important;
-  color: #e3e3e3 !important;
+  background: color-mix(in srgb, var(--fg) 12%, transparent) !important;
+  border-color: color-mix(in srgb, var(--fg) 16%, transparent) !important;
+  color: var(--fg) !important;
 }
 
 .chat-meta-overlay .chat-context-pill.warn {
-  color: #f59e0b !important;
+  color: var(--color-warning) !important;
   border-color: rgba(245, 158, 11, 0.3) !important;
 }
 
 .chat-meta-overlay .chat-context-pill.danger {
-  color: #ef4444 !important;
+  color: var(--color-error) !important;
   border-color: rgba(239, 68, 68, 0.3) !important;
 }
 
+
+/* Keep the menu out of the composer's size-containment context. */
+.chat-container .chat-input-bar.composer-pill { container-type: normal; }
+.chat-container .composer-pill #send-btn {
+  background: var(--send-btn-bg, var(--fg)) !important;
+  color: var(--bg) !important;
+}
+.chat-container .composer-pill #send-btn:hover { background: var(--send-btn-hover, var(--fg)) !important; }
+.chat-container .composer-pill #send-btn svg { stroke: currentColor !important; }
+.chat-container .composer-pill #send-btn:disabled { opacity: 0.5; }
+#overflow-menu.composer-tools-menu .overflow-menu-item[hidden] { display: none !important; }
+.composer-pill #model-picker-menu {
+  max-height: min(420px, 55dvh);
+  overflow-y: auto;
+}
+#attach-strip {
+  width: min(var(--chat-content-width), calc(100% - 2 * var(--chat-gutter)));
+  max-height: 25dvh;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+@media (max-width: 768px) {
+  .chat-container .composer-pill :is(#overflow-plus-btn, #composer-mic-btn, #send-btn, #model-picker-btn),
+  .chat-meta-overlay .export-dl-btn {
+    min-width: 44px !important;
+    min-height: 44px !important;
+    height: 44px !important;
+  }
+  .composer-chip { min-height: 44px; }
+  #overflow-menu.composer-tools-menu .overflow-menu-item { min-height: 44px !important; height: auto !important; }
+  .chat-top-bar .chat-meta-overlay { right: 12px !important; }
+}

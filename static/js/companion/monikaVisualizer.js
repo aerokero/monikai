@@ -20,7 +20,7 @@ export class MonikaVisualizer {
 
   init() {
     this.mountStage();
-    this.startBlinkLoop();
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) this.startBlinkLoop();
     this.updateBackground();
     this.listenToOdysseusEvents();
   }
@@ -39,6 +39,7 @@ export class MonikaVisualizer {
     this.stage = document.createElement('div');
     this.stage.id = 'monika-vn-stage';
     this.stage.className = 'monika-vn-stage';
+    this.stage.setAttribute('aria-hidden', 'true');
 
     this.stage.innerHTML = `
       <div class="monika-vn-room" id="monika-vn-room"></div>
@@ -145,16 +146,29 @@ export class MonikaVisualizer {
         pointer-events: none;
       }
       
-      /* Make Odysseus chat history transparent and comfortably floating */
+      /* Keep the companion visible at welcome, quiet behind readable messages. */
+      .chat-container:not(.welcome-active) .monika-vn-stage {
+        opacity: 0.14;
+      }
+      @media (max-width: 768px) {
+        .monika-vn-char-wrap {
+          width: max(680px, 100%);
+          height: auto;
+          aspect-ratio: 1;
+          transform: translateX(-50%) scale(1.1);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .monika-vn-room { transition: none; }
+      }
+      /* The shell owns layout and colors. */
       #chat-history {
         position: relative;
         z-index: 10;
-        background: transparent !important;
       }
       .chat-top-bar {
         position: relative;
         z-index: 15;
-        background: transparent !important;
         backdrop-filter: none !important;
         -webkit-backdrop-filter: none !important;
         border-bottom: none !important;

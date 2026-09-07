@@ -117,7 +117,7 @@ function stopBrowserSTT() {
  */
 async function transcribeOnServer(audioBlob) {
   const formData = new FormData();
-  formData.append('file', audioBlob, 'audio.webm');
+  formData.append('file', audioBlob, audioBlob.type.includes('mp4') ? 'audio.m4a' : 'audio.webm');
 
   const res = await fetch('/api/stt/transcribe', {
     method: 'POST',
@@ -163,7 +163,7 @@ export function startRecording(onFileCreated, showToast, showError) {
     return;
   }
 
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+  if (!window.MediaRecorder || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     if (showError) showError('Microphone not supported in this browser.');
     _resetRecordingUI();
     return;
@@ -172,10 +172,15 @@ export function startRecording(onFileCreated, showToast, showError) {
   const micBtn = document.getElementById('composer-mic-btn');
   if (micBtn) micBtn.disabled = true;
   audioChunks = [];
+  let activeStream = null;
 
   navigator.mediaDevices.getUserMedia({ audio: true })
     .then(stream => {
-      mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      activeStream = stream;
+      const mimeType = ['audio/webm', 'audio/mp4'].find(type => MediaRecorder.isTypeSupported(type));
+      mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const recordingType = mediaRecorder.mimeType || mimeType || 'audio/webm';
+      const extension = recordingType.includes('mp4') ? 'm4a' : 'webm';
 
       mediaRecorder.ondataavailable = event => {
         if (event.data.size > 0) {
@@ -186,7 +191,7 @@ export function startRecording(onFileCreated, showToast, showError) {
       mediaRecorder.onstop = async () => {
         stream.getTracks().forEach(track => track.stop());
 
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        const audioBlob = new Blob(audioChunks, { type: recordingType });
         const provider = _sttProvider;
 
         if (provider === 'browser') {
@@ -195,7 +200,7 @@ export function startRecording(onFileCreated, showToast, showError) {
             insertTranscription(transcript, showToast);
           } else {
             if (showToast) showToast('No speech detected');
-            const audioFile = new File([audioBlob], `voice-message-${Date.now()}.webm`, { type: 'audio/webm' });
+            const audioFile = new File([audioBlob], `voice-message-${Date.now()}.${extension}`, { type: recordingType });
             if (onFileCreated) onFileCreated(audioFile);
           }
         } else if (provider === 'local' || provider.startsWith('endpoint:')) {
@@ -212,12 +217,12 @@ export function startRecording(onFileCreated, showToast, showError) {
             console.error('STT transcription error:', e);
             if (showError) showError('Transcription failed: ' + e.message);
             // Fallback: attach as file
-            const audioFile = new File([audioBlob], `voice-message-${Date.now()}.webm`, { type: 'audio/webm' });
+            const audioFile = new File([audioBlob], `voice-message-${Date.now()}.${extension}`, { type: recordingType });
             if (onFileCreated) onFileCreated(audioFile);
           }
         } else {
           // STT disabled — attach audio file
-          const audioFile = new File([audioBlob], `voice-message-${Date.now()}.webm`, { type: 'audio/webm' });
+          const audioFile = new File([audioBlob], `voice-message-${Date.now()}.${extension}`, { type: recordingType });
           if (onFileCreated) onFileCreated(audioFile);
         }
 
@@ -244,6 +249,7 @@ export function startRecording(onFileCreated, showToast, showError) {
       }
     })
     .catch(error => {
+      activeStream?.getTracks().forEach(track => track.stop());
       console.error('Microphone access error:', error);
       if (showError) {
         if (error.name === 'NotAllowedError') {

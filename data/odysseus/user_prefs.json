@@ -2,13 +2,22 @@
   "_users": {
     "bartosz": {
       "theme": {
-        "name": "dark",
+        "name": "gpt",
         "colors": {
-          "bg": "#282c34",
-          "fg": "#9cdef2",
-          "panel": "#111111",
-          "border": "#355a66",
-          "red": "#e06c75"
+          "bg": "#212121",
+          "fg": "#ececec",
+          "panel": "#171717",
+          "border": "#424242",
+          "red": "#949494",
+          "advanced": {
+            "sendBtnBg": "#949494",
+            "sendBtnHover": "#7f7f7f",
+            "userBubbleBg": "#2f2f2f",
+            "aiBubbleBg": "#171717",
+            "inputBg": "#2f2f2f",
+            "brandColor": "#ffffff",
+            "brandMixTo": "#ffffff"
+          }
         }
       },
       "tasks_opened": true

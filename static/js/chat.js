@@ -852,6 +852,8 @@ import { loadPanel } from './panels.js';
     if (!submitBtn) return;
 
     if (state === 'streaming') {
+      submitBtn.hidden = false;
+      submitBtn.setAttribute('aria-label', 'Stop generation');
       // Clear any pending transitions from + → arrow swap
       submitBtn.classList.remove('anim-spin', 'anim-spin-swap', 'anim-land', 'mic-mode', 'newchat-mode', 'newchat-expanded', 'recording');
       // Ensure arrow icon is showing before launch
@@ -871,6 +873,7 @@ import { loadPanel } from './panels.js';
         submitBtn.innerHTML = hasQueuedText && icons ? icons.send : _stopSvg;
         submitBtn.dataset.phase = hasQueuedText ? 'queue' : 'processing';
         submitBtn.title = hasQueuedText ? 'Queue message' : 'Stop generation';
+        submitBtn.setAttribute('aria-label', submitBtn.title);
         submitBtn.classList.remove('anim-launch');
         void submitBtn.offsetWidth;
         submitBtn.classList.add('anim-land');

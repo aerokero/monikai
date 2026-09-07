@@ -526,31 +526,20 @@ export function getAutoScroll() {
  * Auto-resize textarea based on content
  */
 export function autoResize(textarea) {
-  const lineHeight = parseInt(getComputedStyle(textarea).lineHeight);
-  const isMobile = window.innerWidth <= 768;
-  const maxHeight = isMobile ? 150 : lineHeight * 8;
-
-  // Use a hidden clone to measure without disrupting the real textarea
-  let clone = textarea._resizeClone;
-  if (!clone) {
-    clone = textarea.cloneNode(false);
-    clone.style.cssText = getComputedStyle(textarea).cssText;
-    clone.style.position = 'absolute';
-    clone.style.visibility = 'hidden';
-    clone.style.height = '0';
-    clone.style.transition = 'none';
-    clone.style.overflow = 'hidden';
-    clone.style.pointerEvents = 'none';
-    clone.style.zIndex = '-1';
-    textarea.parentNode.appendChild(clone);
-    textarea._resizeClone = clone;
-  }
-  clone.style.width = textarea.offsetWidth + 'px';
-  clone.value = textarea.value;
-  clone.style.height = '0';
-  const newHeight = Math.min(Math.max(clone.scrollHeight, lineHeight), maxHeight);
-  textarea.style.height = newHeight + 'px';
-  textarea.style.overflow = newHeight >= maxHeight ? 'auto' : 'hidden';
+  if (!textarea) return;
+  const style = getComputedStyle(textarea);
+  const lineHeight = parseFloat(style.lineHeight) || 24;
+  const cssMax = parseFloat(style.maxHeight);
+  const maxHeight = Math.min(window.innerWidth <= 768 ? 150 : lineHeight * 8,
+    Number.isFinite(cssMax) ? cssMax : Infinity);
+  // Measure the actual control: cloning it duplicated #message and autofocus,
+  // and ID-specific !important rules invalidated the clone's dimensions.
+  const scrollTop = textarea.scrollTop;
+  textarea.style.height = 'auto';
+  const height = Math.min(Math.max(textarea.scrollHeight, lineHeight), maxHeight);
+  textarea.style.height = height + 'px';
+  textarea.style.overflowY = textarea.scrollHeight > height ? 'auto' : 'hidden';
+  textarea.scrollTop = scrollTop;
 }
 
 /**
@@ -1275,7 +1264,7 @@ if (!window._odyEscExpandGuard) {
       return;
     }
     const t = e.target;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) && !t.closest('.modal')) return;
     const expanded = document.querySelector('.doclib-card-expanded');
     const think = document.querySelector('.thinking-content.expanded');
     if (expanded) {
