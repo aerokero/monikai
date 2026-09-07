@@ -1202,8 +1202,9 @@
                 window.__odysseusDefaultChat = dc;
                 var label = document.getElementById('model-picker-label');
                 if (!label) return false;
-                label.textContent = dc.model === 'monika-companion' ? 'Monika' : String(dc.model).split('/').pop();
-                label.title = dc.model;
+                var modelId = dc.model === 'monika-companion' ? 'gemini-2.5-flash' : String(dc.model);
+                label.textContent = dc.model_display || (modelId === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : modelId.split('/').pop());
+                label.title = modelId;
                 return true;
               }
               try {

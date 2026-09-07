@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from typing import Protocol
 
 from .tools import ConversationToolDefinition, ConversationToolRequest
@@ -34,6 +35,27 @@ class TextModelProvider(Protocol):
     ) -> tuple[ConversationToolRequest, ...]: ...
 
 
+def _gemini_model_candidates(requested_model: str) -> list[str]:
+    """Try the selected model first, then configured emergency fallbacks.
+
+    The previous implementation did the opposite for every model except two
+    stale ids, so a picker choice such as ``gemini-2.5-pro`` never reached the
+    Google API.  Fallbacks remain useful, but they must never outrank the
+    user's explicit selection.
+    """
+    requested = str(requested_model or "").strip()
+    candidates: list[str] = [requested] if requested else []
+    configured = (
+        os.getenv("MONIKAI_CONVERSATION_FALLBACK_MODEL", "gemini-3.6-flash"),
+        os.getenv("MONIKAI_CONVERSATION_EMERGENCY_MODEL", "gemini-2.5-flash"),
+    )
+    for candidate in configured:
+        candidate = str(candidate or "").strip()
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+    return candidates
+
+
 class GeminiTextProvider:
     """Google GenAI implementation kept outside the conversation domain."""
 
@@ -58,10 +80,7 @@ class GeminiTextProvider:
                 thinking_budget=request.thinking_budget
             )
 
-        models_to_try = [request.model] if request.model in ("gemini-3.5-flash-lite", "gemini-3.6-flash") else ["gemini-3.5-flash-lite", "gemini-3.6-flash"]
-        for fb in ("gemini-3.5-flash-lite", "gemini-3.6-flash"):
-            if fb not in models_to_try:
-                models_to_try.append(fb)
+        models_to_try = _gemini_model_candidates(request.model)
 
         response = None
         for model_name in models_to_try:
@@ -100,10 +119,7 @@ class GeminiTextProvider:
             for item in request.tools
         ]
 
-        models_to_try = [request.model] if request.model in ("gemini-3.5-flash-lite", "gemini-3.6-flash") else ["gemini-3.5-flash-lite", "gemini-3.6-flash"]
-        for fb in ("gemini-3.5-flash-lite", "gemini-3.6-flash"):
-            if fb not in models_to_try:
-                models_to_try.append(fb)
+        models_to_try = _gemini_model_candidates(request.model)
 
         response = None
         last_exc = None

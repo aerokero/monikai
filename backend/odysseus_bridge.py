@@ -43,6 +43,13 @@ def init_and_register_odysseus_backend(app: FastAPI):
         chat_handler = components["chat_handler"]
         model_discovery = components["model_discovery"]
 
+        # The legacy MonikAI HTTP bridge is registered before these native
+        # routers and needs the same persona source as the preset UI.  Expose
+        # the initialized managers on app.state instead of letting the chat
+        # route keep its own hard-coded character prompt.
+        app.state.preset_manager = preset_manager
+        app.state.chat_handler = chat_handler
+
         # 2. Task scheduler, Webhook & MCP Managers
         from src.task_scheduler import TaskScheduler
         from src.event_bus import set_task_scheduler
@@ -63,6 +70,16 @@ def init_and_register_odysseus_backend(app: FastAPI):
         auth_manager = AuthManager(AUTH_FILE)
         app.state.auth_manager = auth_manager
         app.include_router(setup_auth_routes(auth_manager))
+
+        # The frontend's Persona tab uses these routes.  They were initialized
+        # but never mounted, which made model selection and persona selection
+        # look like two competing systems instead of two working layers.
+        try:
+            from routes.preset_routes import setup_preset_routes
+            app.include_router(setup_preset_routes(preset_manager))
+            logger.info("Odysseus preset_routes mounted")
+        except Exception as e:
+            logger.warning("preset_routes mount error: %s", e)
 
         @app.get("/login")
         async def login_page():

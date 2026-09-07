@@ -20,6 +20,18 @@ const RECENT_MAX = 5;
 // behind search would be a regression — keep listing them in browse mode.
 const BROWSE_ALL_LIMIT = 12;
 
+// Compatibility for chats created before the model/persona split.  This is
+// intentionally not part of the model catalog: it was a persona-shaped alias,
+// not an actual inference model.
+const LEGACY_MODEL_ALIASES = Object.freeze({
+  'monika-companion': 'gemini-2.5-flash',
+});
+
+function _canonicalModelId(modelId) {
+  const value = String(modelId || '').trim();
+  return LEGACY_MODEL_ALIASES[value] || value;
+}
+
 function _loadList(key) {
   try {
     const a = JSON.parse(localStorage.getItem(key) || '[]');
@@ -87,6 +99,7 @@ let _defaultChatPickInFlight = false;
 let _defaultPendingSeq = 0;
 
 function _modelExists(modelId, url) {
+  modelId = _canonicalModelId(modelId);
   if (!modelId || !window.modelsModule || !window.modelsModule.getCachedItems) return false;
   const items = window.modelsModule.getCachedItems() || [];
   if (!items.length) return true;
@@ -97,6 +110,26 @@ function _modelExists(modelId, url) {
     const models = (item.models || []).concat(item.models_extra || []);
     return models.includes(modelId) && (!targetUrl || itemUrl === targetUrl);
   });
+}
+
+function _modelDisplayName(modelId) {
+  const canonical = _canonicalModelId(modelId);
+  const knownDisplayNames = {
+    'gemini-2.5-flash': 'Gemini 2.5 Flash',
+    'gemini-2.5-pro': 'Gemini 2.5 Pro',
+  };
+  try {
+    const items = window.modelsModule && window.modelsModule.getCachedItems
+      ? window.modelsModule.getCachedItems() || []
+      : [];
+    for (const item of items) {
+      const models = (item.models || []).concat(item.models_extra || []);
+      const displays = (item.models_display || []).concat(item.models_extra_display || []);
+      const index = models.indexOf(canonical);
+      if (index >= 0) return (displays[index] || canonical).split('/').pop();
+    }
+  } catch (_) {}
+  return canonical ? (knownDisplayNames[canonical] || canonical.split('/').pop()) : 'Wybierz model';
 }
 
 function _firstAvailableModel() {
@@ -152,13 +185,14 @@ async function _ensureDefaultPendingChat() {
       } catch (_) {}
       const pendingUrl = String((latest && latest.url) || '').replace(/\/+$/, '');
       const defaultUrl = String(dc.endpoint_url || '').replace(/\/+$/, '');
+      const defaultModel = _canonicalModelId(dc.model);
       _deps.setPendingChat({
         url: dc.endpoint_url,
-        modelId: dc.model,
+        modelId: defaultModel,
         endpointId: dc.endpoint_id || '',
         source: 'default',
       });
-      if (!latest || latest.modelId !== dc.model || pendingUrl !== defaultUrl || latest.source !== 'default') {
+      if (!latest || latest.modelId !== defaultModel || pendingUrl !== defaultUrl || latest.source !== 'default') {
         updateModelPicker();
       }
       return;
@@ -882,6 +916,16 @@ export function updateModelPicker() {
       modelId = null;
     }
   }
+  // Migrate the display/state of sessions created with the removed persona
+  // alias. The backend also accepts it for old requests, but the picker must
+  // never present it as a model again.
+  const canonicalModelId = _canonicalModelId(modelId);
+  if (canonicalModelId !== modelId) {
+    modelId = canonicalModelId;
+    if (_pendingChat && _pendingChat.modelId !== canonicalModelId) {
+      _deps.setPendingChat({ ..._pendingChat, modelId: canonicalModelId });
+    }
+  }
   if (!modelId && !currentSessionId && !_pendingChat && _deps.setPendingChat) {
     let cachedDefault = null;
     try {
@@ -893,7 +937,7 @@ export function updateModelPicker() {
       } catch (_) {}
     }
     if (cachedDefault && cachedDefault.endpoint_url && cachedDefault.model) {
-      modelId = cachedDefault.model;
+      modelId = _canonicalModelId(cachedDefault.model);
       _deps.setPendingChat({
         url: cachedDefault.endpoint_url,
         modelId,
@@ -945,7 +989,7 @@ export function updateModelPicker() {
     _ensureDefaultPendingChat();
   }
 
-  const displayName = modelId === 'monika-companion' ? 'Monika' : (modelId ? modelId.split('/').pop() : 'Wybierz model');
+  const displayName = _modelDisplayName(modelId);
   // The header indicator clips long names with ellipsis; show the full model
   // identifier on hover (#1982). No tooltip on the "Select model" placeholder.
   label.title = modelId || '';

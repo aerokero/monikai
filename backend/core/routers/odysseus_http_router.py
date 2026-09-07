@@ -10,6 +10,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -26,7 +27,95 @@ from backend.audio.tts_router import get_tts_router
 logger = logging.getLogger(__name__)
 
 
-def _ensure_native_session(session_id: str, prompt: str = "", model: str = "monika-companion"):
+# The model picker is a routing control, not a character selector.  Keep the
+# old id only as a migration alias for sessions created by older versions.
+LEGACY_COMPANION_MODEL = "monika-companion"
+DEFAULT_TEXT_MODEL = (os.getenv("MONIKAI_TEXT_MODEL") or "gemini-2.5-flash").strip()
+GEMINI_TEXT_MODELS = (
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+)
+GEMINI_TEXT_MODEL_DISPLAY = {
+    "gemini-2.5-flash": "Gemini 2.5 Flash",
+    "gemini-2.5-pro": "Gemini 2.5 Pro",
+}
+
+
+def _canonical_model(model: Any) -> str:
+    """Return a real model id, translating only the removed legacy alias."""
+    value = str(model or "").strip()
+    if value == LEGACY_COMPANION_MODEL:
+        return DEFAULT_TEXT_MODEL
+    if value.startswith("models/"):
+        return value[7:]
+    return value
+
+
+def _is_ollama_route(endpoint_id: Any, endpoint_url: Any) -> bool:
+    """Identify the built-in Ollama route selected by the model picker."""
+    if str(endpoint_id or "").strip() == "ollama-local":
+        return True
+    try:
+        return urlparse(str(endpoint_url or "")).port == 11434
+    except ValueError:
+        return False
+
+
+def _preset_system_prompt(app: FastAPI, preset_id: Any) -> str:
+    """Resolve the active persona without making it part of model routing.
+
+    The native preset manager is initialized by the Odysseus bridge.  The
+    standalone router tests (and early startup) do not have it, so an absent
+    manager simply means that no additional preset layer is active.
+    """
+    preset_key = str(preset_id or "").strip()
+    if not preset_key:
+        return ""
+
+    manager = getattr(getattr(app, "state", None), "preset_manager", None)
+    if manager is None:
+        return ""
+
+    try:
+        preset = manager.get(preset_key)
+    except Exception:
+        preset = None
+    if not isinstance(preset, dict) or preset.get("enabled") is False:
+        return ""
+
+    prompt = str(preset.get("system_prompt") or "").strip()
+    character_name = str(
+        preset.get("character_name") or preset.get("name") or ""
+    ).strip()
+    if character_name:
+        name_line = f"Your name is {character_name}."
+        prompt = f"{name_line} {prompt}".strip()
+    return prompt
+
+
+def _build_system_prompt(app: FastAPI, form_data: Dict[str, Any]) -> str:
+    """Build operational + active-persona instructions as separate layers."""
+    from backend.core.system_prompt import OPERATIONAL_PROMPT, current_system_prompt
+
+    explicit_persona = str(
+        form_data.get("custom_system_prompt")
+        or form_data.get("system_prompt")
+        or form_data.get("persona_prompt")
+        or ""
+    ).strip()
+    active_persona = explicit_persona or _preset_system_prompt(
+        app, form_data.get("preset_id")
+    )
+
+    # No active preset keeps the application's normal Monika character layer.
+    # Once a persona is explicitly selected, replace that character layer and
+    # retain the character-agnostic operational rules exactly once.
+    if not active_persona:
+        return current_system_prompt()
+    return f"{active_persona}\n\n{OPERATIONAL_PROMPT}".strip()
+
+
+def _ensure_native_session(session_id: str, prompt: str = "", model: str = DEFAULT_TEXT_MODEL):
     """Ensure Odysseus session exists in the real SQLite database."""
     try:
         import core.database as db
@@ -45,7 +134,7 @@ def _ensure_native_session(session_id: str, prompt: str = "", model: str = "moni
                     id=session_id,
                     name=(title[:32] + "...") if len(title) > 32 else title,
                     endpoint_url="/api/chat_stream",
-                    model=model or "monika-companion",
+                    model=_canonical_model(model) or DEFAULT_TEXT_MODEL,
                     rag=False,
                     archived=False,
                     headers={},
@@ -63,7 +152,7 @@ def _ensure_native_session(session_id: str, prompt: str = "", model: str = "moni
                 if not row.name or row.name in ("Monika Chat", "Nobody", "New Chat") or str(row.name).startswith("New Chat"):
                     row.name = (title[:32] + "...") if len(title) > 32 else title
                 row.endpoint_url = row.endpoint_url or "/api/chat_stream"
-                row.model = model or row.model or "monika-companion"
+                row.model = _canonical_model(model) or row.model or DEFAULT_TEXT_MODEL
                 row.updated_at = now
                 row.last_accessed = now
             db_sess.commit()
@@ -83,20 +172,20 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
         status = router.get_status() if router else {}
         providers = status.get("providers", {})
 
-        monika_item = {
+        gemini_item = {
             "category": "api",
-            "endpoint_id": "monika-native",
-            "endpoint_name": "Monika (DDLC Companion)",
+            "endpoint_id": "gemini-text",
+            "endpoint_name": "Google Gemini",
             "url": "/api/chat_stream",
-            "models": ["monika-companion", "gemini-2.5-flash", "gemini-2.5-pro"],
-            "models_display": ["Monika (Companion)", "Gemini 2.5 Flash", "Gemini 2.5 Pro"],
+            "models": list(GEMINI_TEXT_MODELS),
+            "models_display": [GEMINI_TEXT_MODEL_DISPLAY.get(model, model) for model in GEMINI_TEXT_MODELS],
             "models_extra": [],
             "models_extra_display": [],
             "model_type": "llm",
             "supports_tools": True,
         }
 
-        items = [monika_item]
+        items = [gemini_item]
 
         for p_name, p_data in providers.items():
             if p_name == "ollama":
@@ -116,18 +205,19 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
         return {
             "ok": True,
             "items": items,
-            "models": ["monika-companion", "gemini-2.5-flash", "gemini-2.5-pro"],
-            "default_model": "monika-companion",
+            "models": [model for item in items for model in item.get("models", [])],
+            "default_model": DEFAULT_TEXT_MODEL,
         }
 
     @app.get("/api/default-chat")
     async def get_default_chat():
         return {
-            "endpoint_id": "monika-native",
-            "endpoint_name": "Monika (DDLC Companion)",
+            "endpoint_id": "gemini-text",
+            "endpoint_name": "Google Gemini",
             "endpoint_url": "/api/chat_stream",
-            "model": "monika-companion",
-            "provider": "gemini",
+            "model": DEFAULT_TEXT_MODEL,
+            "model_display": GEMINI_TEXT_MODEL_DISPLAY.get(DEFAULT_TEXT_MODEL, DEFAULT_TEXT_MODEL),
+            "provider": "google",
         }
 
     @app.post("/api/chat_stream")
@@ -146,8 +236,13 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
 
         prompt = form_data.get("message") or form_data.get("prompt") or ""
         session_id = form_data.get("session") or form_data.get("session_id", "default")
-        model = form_data.get("selected_model") or form_data.get("model", "monika-companion")
-        custom_system_prompt = form_data.get("custom_system_prompt") or form_data.get("system_prompt") or form_data.get("persona_prompt") or ""
+        model = _canonical_model(
+            form_data.get("selected_model")
+            or form_data.get("model")
+            or DEFAULT_TEXT_MODEL
+        )
+        selected_endpoint_id = str(form_data.get("selected_endpoint_id") or "").strip()
+        selected_endpoint_url = str(form_data.get("selected_endpoint_url") or "").strip()
         temperature_raw = form_data.get("temperature") or form_data.get("temp") or 0.8
         try:
             temperature = float(temperature_raw)
@@ -159,15 +254,10 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
             response_text = "Jestem tutaj z Tobą i słucham! ✨"
 
             try:
-                # Load Monika's authentic system prompt with lore, memories, and integrations
-                from backend.core.system_prompt import current_system_prompt
                 from backend.conversation.providers import GeminiTextProvider, TextGenerationRequest
-                
-                base_prompt = current_system_prompt()
-                if custom_system_prompt and custom_system_prompt.strip():
-                    system_prompt = f"{base_prompt}\n\n[AKTYWNA PERSONA / INSTRUKCJA SPECJALNA]:\n{custom_system_prompt.strip()}"
-                else:
-                    system_prompt = base_prompt
+
+                # Persona is resolved independently from the selected model.
+                system_prompt = _build_system_prompt(request.app, form_data)
 
                 # Fetch past messages from real Odysseus database for full conversational memory
                 past_context = ""
@@ -188,14 +278,16 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
 
                 full_user_prompt = f"Historia rozmowy:\n{past_context}\nUżytkownik: {prompt}" if past_context else prompt
 
-                # Generate from Gemini AI or ModelRouter
+                # Generate from the selected engine/model.  The old route
+                # always sent Gemini requests as gemini-2.5-flash, which made
+                # selecting Pro or a local Ollama model purely cosmetic.
                 if prompt.strip():
                     gemini_api_key = os.getenv("GEMINI_API_KEY")
-                    if gemini_api_key:
+                    if gemini_api_key and not _is_ollama_route(selected_endpoint_id, selected_endpoint_url):
                         try:
                             gemini_provider = GeminiTextProvider(api_key=gemini_api_key)
                             req = TextGenerationRequest(
-                                model="gemini-2.5-flash",
+                                model=model,
                                 prompt=full_user_prompt,
                                 system_instruction=system_prompt,
                             )
@@ -209,10 +301,12 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
                             res = await router.complete(
                                 messages=[
                                     {"role": "system", "content": system_prompt},
-                                    {"role": "user", "content": prompt}
+                                    {"role": "user", "content": full_user_prompt}
                                 ],
                                 task="chat",
+                                provider_name="ollama" if _is_ollama_route(selected_endpoint_id, selected_endpoint_url) else None,
                                 model=model,
+                                temperature=temperature,
                             )
                             if res and getattr(res, "content", None):
                                 response_text = res.content.strip()
@@ -259,7 +353,7 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
                         sess_row.last_accessed = now
                         sess_row.last_message_at = now
                         sess_row.updated_at = now
-                        sess_row.model = model or sess_row.model or "monika-companion"
+                        sess_row.model = _canonical_model(model) or sess_row.model or DEFAULT_TEXT_MODEL
                         sess_row.message_count = (sess_row.message_count or 0) + 2
 
                         clean_title = prompt.strip().replace("\n", " ")
