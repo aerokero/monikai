@@ -12,13 +12,23 @@ import { bindMenuDismiss } from './escMenuStack.js';
 import { loadPanel } from './panels.js';
 import { matchModelKey } from './model/matchKey.js';
 import { getTools } from './appConfig.js';
+import { icon as phosphorIcon } from './iconRegistry.js';
 
-const SEARCH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>';
-const REPORT_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>';
-const CHAT_ABOUT_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
-const COPY_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
-const CHECK_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
-const PAPERCLIP_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.8l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
+const SEARCH_ICON = phosphorIcon('search', 14);
+const REPORT_ICON = phosphorIcon('file', 14);
+const CHAT_ABOUT_ICON = phosphorIcon('chat', 14);
+const COPY_ICON = phosphorIcon('copy', 12);
+const CHECK_ICON = phosphorIcon('check', 12);
+const PAPERCLIP_ICON = phosphorIcon('paperclip', 12);
+const EDIT_ICON = phosphorIcon('pencil', 14);
+const REFRESH_ICON = phosphorIcon('refresh', 14);
+const SCISSORS_ICON = phosphorIcon('scissors', 14);
+const QUESTION_ICON = phosphorIcon('question', 14);
+const FORK_ICON = phosphorIcon('fork', 14);
+const TRASH_ICON = phosphorIcon('trash', 14);
+const MORE_ICON = phosphorIcon('more', 14);
+const DOWNLOAD_ICON = phosphorIcon('download', 14);
+const X_ICON = phosphorIcon('x', 14);
 
 /** Sanitize a URL for use in href — only allow http(s) and protocol-relative. */
 function _safeHref(url) {
@@ -1469,6 +1479,7 @@ export function buildImageBubble(imageUrl, prompt, model, size, quality, imageId
 
   const footer = document.createElement('div');
   footer.className = 'msg-footer';
+  bindMessageActionHover(wrap, footer);
 
   const actions = document.createElement('span');
   actions.className = 'msg-actions';
@@ -1490,7 +1501,7 @@ export function buildImageBubble(imageUrl, prompt, model, size, quality, imageId
   dlBtn.className = 'footer-copy-btn';
   dlBtn.type = 'button';
   dlBtn.title = 'Download image';
-  dlBtn.textContent = '\u2913';
+  dlBtn.innerHTML = DOWNLOAD_ICON;
   dlBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     try {
@@ -1503,9 +1514,9 @@ export function buildImageBubble(imageUrl, prompt, model, size, quality, imageId
       a.click();
       a.remove();
       URL.revokeObjectURL(a.href);
-      dlBtn.textContent = '\u2713';
-      setTimeout(() => { dlBtn.textContent = '\u2913'; }, 1500);
-    } catch { dlBtn.textContent = '\u2717'; setTimeout(() => { dlBtn.textContent = '\u2913'; }, 1500); }
+      dlBtn.innerHTML = CHECK_ICON;
+      setTimeout(() => { dlBtn.innerHTML = DOWNLOAD_ICON; }, 1500);
+    } catch { dlBtn.innerHTML = X_ICON; setTimeout(() => { dlBtn.innerHTML = DOWNLOAD_ICON; }, 1600); }
   });
   actions.appendChild(dlBtn);
 
@@ -1549,7 +1560,7 @@ export function buildImageBubble(imageUrl, prompt, model, size, quality, imageId
   editBtn.className = 'footer-copy-btn';
   editBtn.type = 'button';
   editBtn.title = 'Edit in image editor';
-  editBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>';
+  editBtn.innerHTML = EDIT_ICON;
   editBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     try {
@@ -1715,12 +1726,49 @@ function _trackAction(id) {
   localStorage.setItem(_ACTION_RECENTS_KEY, JSON.stringify(recent));
 }
 
+const _messageActionHoverStates = new WeakMap();
+
+function bindMessageActionHover(messageElement, footerElement) {
+  if (!messageElement) return;
+  let state = _messageActionHoverStates.get(messageElement);
+  if (!state) {
+    state = { hideTimer: null, footer: null };
+    const showActions = () => {
+      if (state.hideTimer) clearTimeout(state.hideTimer);
+      state.hideTimer = null;
+      messageElement.classList.add('actions-visible');
+    };
+    const hideActions = () => {
+      if (state.hideTimer) clearTimeout(state.hideTimer);
+      state.hideTimer = setTimeout(() => {
+        state.hideTimer = null;
+        messageElement.classList.remove('actions-visible');
+      }, 280);
+    };
+    state.showActions = showActions;
+    state.hideActions = hideActions;
+    _messageActionHoverStates.set(messageElement, state);
+    messageElement.addEventListener('pointerenter', showActions);
+    messageElement.addEventListener('pointerleave', hideActions);
+    messageElement.addEventListener('focusin', showActions);
+    messageElement.addEventListener('focusout', (event) => {
+      if (!messageElement.contains(event.relatedTarget)) hideActions();
+    });
+  }
+  if (footerElement && footerElement !== state.footer) {
+    state.footer = footerElement;
+    footerElement.addEventListener('pointerenter', state.showActions);
+    footerElement.addEventListener('pointerleave', state.hideActions);
+  }
+}
+
 /**
  * Create a footer row for an AI message with timestamp and action buttons.
  */
 export function createMsgFooter(msgElement) {
   const footer = document.createElement('div');
   footer.className = 'msg-footer';
+  bindMessageActionHover(msgElement, footer);
 
   const actions = document.createElement('span');
   actions.className = 'msg-actions';
@@ -1734,27 +1782,27 @@ export function createMsgFooter(msgElement) {
       btn.innerHTML = CHECK_ICON;
       setTimeout(() => { btn.innerHTML = COPY_ICON; }, 1500);
     }},
-    { id: 'edit', icon: '\u270E', title: 'Edit', cls: 'msg-action-btn', handler(e) {
+    { id: 'edit', icon: EDIT_ICON, html: true, title: 'Edit', cls: 'msg-action-btn', handler(e) {
       e.stopPropagation();
       if (window.chatModule?.editAIMessage) window.chatModule.editAIMessage(msgElement);
     }},
-    { id: 'regen', icon: '\u21BB', title: 'Regenerate from here', cls: 'msg-action-btn', handler(e) {
+    { id: 'regen', icon: REFRESH_ICON, html: true, title: 'Regenerate from here', cls: 'msg-action-btn', handler(e) {
       e.stopPropagation();
       if (window.chatModule?.regenerateFrom) window.chatModule.regenerateFrom(msgElement);
     }},
-    { id: 'shorten', icon: '\u2702', title: 'Rewrite shorter', cls: 'msg-action-btn', handler(e) {
+    { id: 'shorten', icon: SCISSORS_ICON, html: true, title: 'Rewrite shorter', cls: 'msg-action-btn', handler(e) {
       e.stopPropagation();
       if (window.chatModule?.rewriteWith) window.chatModule.rewriteWith(msgElement, 'Rewrite your last response to be shorter and more concise. Keep the key information but cut the fluff.');
     }},
-    { id: 'explain', icon: '?', title: 'Explain simpler', cls: 'msg-action-btn', handler(e) {
+    { id: 'explain', icon: QUESTION_ICON, html: true, title: 'Explain simpler', cls: 'msg-action-btn', handler(e) {
       e.stopPropagation();
       if (window.chatModule?.rewriteWith) window.chatModule.rewriteWith(msgElement, 'Explain your last response in simpler terms. Use plain language and short sentences.');
     }},
-    { id: 'fork', icon: '\u2ADD', title: 'Fork conversation', cls: 'msg-action-btn', handler(e) {
+    { id: 'fork', icon: FORK_ICON, html: true, title: 'Fork conversation', cls: 'msg-action-btn', handler(e) {
       e.stopPropagation();
       if (window.chatModule?.forkFrom) window.chatModule.forkFrom(msgElement);
     }},
-    { id: 'delete', icon: '\u2715', title: 'Delete message', cls: 'msg-action-btn msg-delete-btn', handler(e) {
+    { id: 'delete', icon: TRASH_ICON, html: true, title: 'Delete message', cls: 'msg-action-btn msg-delete-btn', handler(e) {
       e.stopPropagation();
       if (window.chatModule?.deleteMessage) window.chatModule.deleteMessage(msgElement);
     }},
@@ -1796,7 +1844,7 @@ export function createMsgFooter(msgElement) {
     moreBtn.className = 'msg-action-btn msg-more-btn';
     moreBtn.type = 'button';
     moreBtn.title = 'More actions';
-    moreBtn.textContent = '\u00B7\u00B7\u00B7';
+    moreBtn.innerHTML = MORE_ICON;
     moreBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       // Toggle overflow menu — close any existing one first (through its own
@@ -1933,16 +1981,17 @@ function _trackUserAction(id) {
 export function createUserMsgFooter(msgElement) {
   const footer = document.createElement('div');
   footer.className = 'msg-footer';
+  bindMessageActionHover(msgElement, footer);
 
   const actions = document.createElement('span');
   actions.className = 'msg-actions';
 
   const allActions = [
-    { id: 'edit', icon: '\u270E', title: 'Edit message', cls: 'msg-action-btn', handler(e) {
+    { id: 'edit', icon: EDIT_ICON, html: true, title: 'Edit message', cls: 'msg-action-btn', handler(e) {
       e.stopPropagation();
       if (window.chatModule?.editUserMessage) window.chatModule.editUserMessage(msgElement);
     }},
-    { id: 'delete', icon: '\u2715', title: 'Delete message', cls: 'msg-action-btn msg-delete-btn', handler(e) {
+    { id: 'delete', icon: TRASH_ICON, html: true, title: 'Delete message', cls: 'msg-action-btn msg-delete-btn', handler(e) {
       e.stopPropagation();
       if (window.chatModule?.deleteMessage) window.chatModule.deleteMessage(msgElement);
     }},
@@ -1953,7 +2002,7 @@ export function createUserMsgFooter(msgElement) {
       btn.innerHTML = CHECK_ICON;
       setTimeout(() => { btn.innerHTML = COPY_ICON; }, 1500);
     }},
-    { id: 'resend', icon: '\u21BB', title: 'Resend message', cls: 'msg-action-btn', handler(e) {
+    { id: 'resend', icon: REFRESH_ICON, html: true, title: 'Resend message', cls: 'msg-action-btn', handler(e) {
       e.stopPropagation();
       if (window.chatModule?.resendUserMessage) window.chatModule.resendUserMessage(msgElement);
     }},
@@ -1987,7 +2036,7 @@ export function createUserMsgFooter(msgElement) {
     moreBtn.className = 'msg-action-btn msg-more-btn';
     moreBtn.type = 'button';
     moreBtn.title = 'More actions';
-    moreBtn.textContent = '\u00B7\u00B7\u00B7';
+  moreBtn.innerHTML = MORE_ICON;
     moreBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       const existing = document.querySelector('.msg-overflow-menu');
@@ -3009,10 +3058,15 @@ export function addMessage(role, content, modelName, metadata) {
       nav.appendChild(divider);
 
       const tagLabel = document.createElement('span');
-      const _icons = { regen: '\u21BB', shorter: '\u2702', simpler: '?', original: '\u25CB' };
+      const _icons = {
+        regen: REFRESH_ICON,
+        shorter: SCISSORS_ICON,
+        simpler: QUESTION_ICON,
+        original: phosphorIcon('circle', 14),
+      };
       const _tl0 = metadata.variants[idx]?.label;
       tagLabel.className = 'variant-tag' + (_tl0 === 'shorter' ? ' variant-tag-scissors' : '');
-      tagLabel.textContent = _icons[_tl0] || '';
+      tagLabel.innerHTML = _icons[_tl0] || '';
       nav.appendChild(tagLabel);
 
       const prevBtn = document.createElement('button');
@@ -3052,7 +3106,7 @@ export function addMessage(role, content, modelName, metadata) {
         wrap.dataset.raw = sv.raw;
         wrap.dataset.variantIndex = String(newIdx);
         if (window.hljs) wrap.querySelectorAll('pre code').forEach(bl => window.hljs.highlightElement(bl));
-        tagLabel.textContent = _icons[sv.label] || '';
+        tagLabel.innerHTML = _icons[sv.label] || '';
         tagLabel.className = 'variant-tag' + (sv.label === 'shorter' ? ' variant-tag-scissors' : '');
         numLeft.textContent = String(newIdx + 1);
         numLeft.disabled = newIdx === 0;

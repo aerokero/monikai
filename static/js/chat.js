@@ -36,11 +36,12 @@ import {
 } from './chatModelProvenance.js';
 import { createTerminalStreamError, isRecoverableStreamError } from './chatStreamErrors.js';
 import { loadPanel } from './panels.js';
+import { icon as phosphorIcon } from './iconRegistry.js';
 
   const RESEARCH_TIMEOUT_MS = 360000;
   const DEFAULT_TIMEOUT_MS = 120000;
   const RUN_ID_ABORT_GRACE_MS = 2000; // timeout waits this long for a run-id header before hard-aborting
-  const RESEARCH_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>';
+  const RESEARCH_SVG = phosphorIcon('search', 16);
 
   let API_BASE = '';
   let currentAbort = null;
@@ -561,7 +562,7 @@ import { loadPanel } from './panels.js';
       }
       const node = document.createElement('div');
       node.className = 'agent-thread-node running';
-      node.innerHTML = '<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">▶</span><span class="agent-thread-tool">Writing</span><span class="agent-thread-wave">▁▂▃</span></div><div class="agent-thread-content"></div>';
+      node.innerHTML = '<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">' + phosphorIcon('pencil', 12) + '</span><span class="agent-thread-tool">Writing</span><span class="agent-thread-wave">▁▂▃</span></div><div class="agent-thread-content"></div>';
       thread.appendChild(node);
       chatBox.insertBefore(thread, msg);
       msg._docWritingThread = thread;
@@ -605,7 +606,7 @@ import { loadPanel } from './panels.js';
     node.classList.remove('running');
     if (!ok) node.classList.add('error');
     const icon = node.querySelector('.agent-thread-icon');
-    if (icon) icon.textContent = ok ? '✓' : '✗';
+    if (icon) icon.innerHTML = ok ? phosphorIcon('check', 14) : phosphorIcon('x', 14);
     const wave = node.querySelector('.agent-thread-wave');
     if (wave) wave.remove();
     if (!node.querySelector('.agent-thread-status')) {
@@ -862,7 +863,7 @@ import { loadPanel } from './panels.js';
       void submitBtn.offsetWidth;
       // Arrow launches up, then stop icon lands in
       submitBtn.classList.add('anim-launch');
-      const _stopSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+      const _stopSvg = phosphorIcon('stop', 14);
       // Wait for the launch keyframe to finish (0.3s) before swapping the
       // arrow out for the stop icon — otherwise the swap happens mid-flight
       // and the user sees nothing fly out.
@@ -897,7 +898,7 @@ import { loadPanel } from './panels.js';
         setTimeout(window._updateSendBtnIcon, 50);
       } else {
         var icons = window._odysseusBtnIcons;
-        submitBtn.innerHTML = icons ? icons.send : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
+        submitBtn.innerHTML = icons ? icons.send : phosphorIcon('arrowUp', 16);
         submitBtn.title = 'Send message';
         submitBtn.classList.remove('mic-mode', 'newchat-mode');
       }
@@ -952,9 +953,9 @@ import { loadPanel } from './panels.js';
 	    if (!target || !String(plan || '').trim() || target.querySelector('.plan-inline-actions')) return;
 	    const actions = document.createElement('div');
 	    actions.className = 'plan-inline-actions';
-	    actions.innerHTML = `
+      actions.innerHTML = `
 	      <button type="button" class="plan-inline-execute">
-	        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><polygon points="7 4 20 12 7 20 7 4"></polygon></svg>
+	        ${phosphorIcon('play', 12)}
 	        Execute
 	      </button>
 	      <button type="button" class="plan-inline-clear">Clear</button>`;
@@ -999,7 +1000,7 @@ import { loadPanel } from './panels.js';
     wrap.className = 'msg msg-user msg-user-queued';
     wrap.dataset.queueId = item.id;
     wrap.title = 'Queued - click to send now and stop the current response';
-    wrap.innerHTML = `<div class="role">You <span class="queued-pill"><svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>Queued</span></div><div class="body">${_escapeQueueText(item.message)}</div>`;
+    wrap.innerHTML = `<div class="role">You <span class="queued-pill">${phosphorIcon('play', 8)}Queued</span></div><div class="body">${_escapeQueueText(item.message)}</div>`;
     wrap.addEventListener('click', (ev) => {
       if (ev.target && ev.target.closest && ev.target.closest('button, a, textarea, input')) return;
       _promoteQueuedRequest(item.id);
@@ -2260,7 +2261,7 @@ import { loadPanel } from './panels.js';
 
       // Tool-aware thinking spinner
       let _lastToolName = '';
-      const _searchIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="vertical-align:-2px;margin-right:4px"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
+      const _searchIcon = phosphorIcon('search', 14);
       const _toolLabels = {
         'web_search': 'Searching',
         'bash': 'Running',
@@ -3558,7 +3559,7 @@ import { loadPanel } from './panels.js';
                 threadWrap.classList.add('streaming');
                 lastToolThread = threadWrap;
                 const toolLabel = _toolLabels[json.tool.toLowerCase()] || json.tool;
-                const toolIcon = _toolIcons[json.tool.toLowerCase()] || '\u25B6';
+                const toolIcon = _toolIcons[json.tool.toLowerCase()] || phosphorIcon('play', 14);
                 const node = document.createElement('div')
                 node.className = 'agent-thread-node running';
                 const cmdHtml = cmd ? `<pre class="agent-thread-cmd">${esc(cmd)}</pre>` : '';
@@ -3698,7 +3699,7 @@ import { loadPanel } from './panels.js';
                   // bottom of file) so no per-node listener needed.
                   const _wasOpen = currentToolBubble.classList.contains('open');
                   currentToolBubble.className = 'agent-thread-node' + (ok ? '' : ' error') + (_wasOpen ? ' open' : '');
-                  currentToolBubble.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">${ok ? '\u2713' : '\u2717'}</span><span class="agent-thread-tool">${esc(json.tool)}</span><span class="agent-thread-status">${ok ? 'done' : 'failed'}</span><span class="agent-thread-chevron">\u25B6</span></div><div class="agent-thread-content">${cmdHtml2}${outHtml}${diffHtml}</div>`;
+                  currentToolBubble.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">${ok ? phosphorIcon('check', 14) : phosphorIcon('x', 14)}</span><span class="agent-thread-tool">${esc(json.tool)}</span><span class="agent-thread-status">${ok ? 'done' : 'failed'}</span><span class="agent-thread-chevron">${phosphorIcon('play', 10)}</span></div><div class="agent-thread-content">${cmdHtml2}${outHtml}${diffHtml}</div>`;
                   // Reset so thinking spinner between tools says "Thinking" not the old tool's label
                   _lastToolName = '';
                   uiModule.scrollHistory();
@@ -4227,8 +4228,8 @@ import { loadPanel } from './panels.js';
         if (accumulated && window.aiTTSManager && window.aiTTSManager.autoPlay) {
           const ttsBtn = holder.querySelector('.ai-tts-button');
           if (ttsBtn) {
-            var ICON_PLAY_TTS = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="6 3 20 12 6 21 6 3"/></svg>';
-            var ICON_STOP_TTS = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>';
+            var ICON_PLAY_TTS = phosphorIcon('play', 14);
+            var ICON_STOP_TTS = phosphorIcon('stop', 14);
             const resetFn = () => {
               ttsBtn.innerHTML = ICON_PLAY_TTS;
               ttsBtn.classList.remove('playing', 'loading');
@@ -5331,7 +5332,7 @@ import { loadPanel } from './panels.js';
         const origHTML = btn.innerHTML;
         const isCompact = !!btn.closest('pre.pre-compact');
         if (!isCompact) {
-          btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+          btn.innerHTML = phosphorIcon('check', 14);
         }
         btn.classList.add('copied');
         btn.dataset.state = 'copied';
@@ -5372,7 +5373,7 @@ import { loadPanel } from './panels.js';
         const runBtn = pre.querySelector('.run-code');
         if (runBtn) runBtn.setAttribute('data-code', newCode);
         // Swap icon back to pencil
-        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+        btn.innerHTML = phosphorIcon('pencil', 14);
         btn.title = 'Edit';
         btn.classList.remove('active');
       } else {
@@ -5390,7 +5391,7 @@ import { loadPanel } from './panels.js';
         // scroll triggered by clicking Edit".
         try { codeEl.focus({ preventScroll: true }); } catch (_) { codeEl.focus(); }
         // Swap icon to checkmark
-        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+        btn.innerHTML = phosphorIcon('check', 14);
         btn.title = 'Done editing';
         btn.classList.add('active');
       }

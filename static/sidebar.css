@@ -636,6 +636,7 @@ html.ody-sidebar-off #sidebar {
   background: transparent !important;
   box-shadow: none !important;
   flex: 0 0 auto;
+  overflow: visible !important;
 }
 
 /* User chat bubble styling (User bubble) */
@@ -671,19 +672,21 @@ html.ody-sidebar-off #sidebar {
 /* Assistant (Monika) message typography (Direct fluent text, MonikAI) */
 #chat-history .msg.msg-ai {
   align-self: flex-start !important;
+  flex-direction: column !important;
   align-items: flex-start !important;
   max-width: min(82%, 800px) !important;
   margin-left: 0 !important;
   margin-right: auto !important;
   width: fit-content !important;
-  padding-top: 15px;
+  padding-top: 0;
+  gap: 0;
 }
 
 #chat-history .msg.msg-ai .role {
   display: inline-flex;
-  position: absolute;
-  top: 0;
-  left: 12px;
+  position: relative;
+  top: auto;
+  left: auto;
   z-index: 1;
   align-items: center !important;
   gap: 8px !important;
@@ -691,9 +694,9 @@ html.ody-sidebar-off #sidebar {
   font-weight: 500 !important;
   color: var(--fg) !important;
   width: fit-content;
-  margin: 0 !important;
+  margin: 0 0 -10px 0 !important;
   padding: 5px 10px;
-  background: color-mix(in srgb, var(--ai-bubble-bg, var(--panel)) 92%, var(--panel));
+  background: var(--ai-bubble-bg, var(--panel));
   border: none;
   border-radius: 999px;
 }
@@ -714,6 +717,9 @@ html.ody-sidebar-off #sidebar {
   word-break: break-word !important;
 }
 
+#chat-history .msg.msg-ai { --message-action-bg: var(--ai-bubble-bg, var(--panel)); }
+#chat-history .msg.msg-user { --message-action-bg: var(--user-bubble-bg, var(--panel)); }
+
 
 /* Shared shell behavior for every workspace view. */
 #sidebar .section-header-flex:focus-within .section-collapse-btn,
@@ -731,10 +737,35 @@ html.ody-sidebar-off #sidebar {
 #chat-history .msg img, #chat-history .msg video { max-width: 100%; height: auto; }
 #chat-history .msg table { display: block; max-width: 100%; overflow-x: auto; }
 #chat-history .msg.msg-ai .role::before { content:none !important; display:none !important; }
-#chat-history .msg .msg-footer { position:absolute; top:100%; margin-top:4px; opacity:0; pointer-events:none; transition:opacity .15s ease; z-index:2; }
-#chat-history .msg.msg-user .msg-footer { right:0; }
+#chat-history .msg .msg-footer { position:absolute; left:12px; top:100%; margin-top:4px; opacity:0; pointer-events:none; transition:opacity .15s ease; z-index:20; }
+#chat-history .msg .msg-footer .msg-actions { display:inline-flex; align-items:center; gap:2px; padding:2px 4px; border-radius:999px; background:var(--message-action-bg, var(--panel)); }
+#chat-history .msg .msg-footer button { display:inline-flex !important; align-items:center; justify-content:center; min-width:28px; min-height:28px; color:var(--fg) !important; background:transparent !important; border:0 !important; }
+#chat-history .msg:hover,
+#chat-history .msg:focus-within,
+#chat-history .msg.actions-visible { z-index:50 !important; }
+#chat-history .msg.msg-user .msg-footer { left:auto; right:12px; }
+#chat-history .msg .msg-footer .msg-actions,
+#chat-history .msg .msg-footer .msg-action-btn,
+#chat-history .msg .msg-footer .footer-copy-btn { visibility:hidden; }
+#chat-history .msg:hover .msg-footer,
 #chat-history .msg:has(.body:hover) .msg-footer,
-#chat-history .msg:focus-within .msg-footer { opacity:1; pointer-events:auto; }
+#chat-history .msg.actions-visible .msg-footer,
+#chat-history .msg:focus-within .msg-footer { opacity:1 !important; visibility:visible !important; pointer-events:auto; }
+#chat-history .msg:hover .msg-footer .msg-actions,
+#chat-history .msg:hover .msg-footer .msg-action-btn,
+#chat-history .msg:hover .msg-footer .footer-copy-btn,
+#chat-history .msg:has(.body:hover) .msg-footer .msg-actions,
+#chat-history .msg:has(.body:hover) .msg-footer .msg-action-btn,
+#chat-history .msg:has(.body:hover) .msg-footer .footer-copy-btn,
+#chat-history .msg.actions-visible .msg-footer .msg-actions,
+#chat-history .msg.actions-visible .msg-footer .msg-action-btn,
+#chat-history .msg.actions-visible .msg-footer .footer-copy-btn,
+#chat-history .msg:focus-within .msg-footer .msg-actions,
+#chat-history .msg:focus-within .msg-footer .msg-action-btn,
+#chat-history .msg:focus-within .msg-footer .footer-copy-btn,
+#chat-history .msg:hover .msg-footer button,
+#chat-history .msg:has(.body:hover) .msg-footer button,
+#chat-history .msg.actions-visible .msg-footer button { visibility:visible !important; opacity:1 !important; }
 
 
 :where(button, a, input, textarea, select, [tabindex]):focus-visible {
