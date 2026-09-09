@@ -31,6 +31,7 @@ from src.context_compactor import (
 )
 from src.settings import get_setting
 from src.prompt_security import untrusted_context_message
+from src.action_intents import extract_smart_home_command
 from src.tool_security import (
     blocked_tools_for_owner,
     email_tool_policy_names,
@@ -518,9 +519,23 @@ _DOMAIN_RULES = {
 - Use `resolve_contact` to look up a contact's email or phone number by name. Searches the CardDAV address book and sent email history.
 - Use `manage_contact` to list, add, update, or delete contacts in the address book.
 - Do NOT use `manage_memory` for contact lookups — contact details live in the address book, not memory.""",
+    "smart_home": """\
+## Home Assistant intent and disambiguation
+- Interpret smart-home requests by meaning, not by exact keywords. Do not require the user to mention “Home Assistant”.
+- Treat a request as Home Assistant control when it contains an operational action (turn on, turn off, toggle, activate, set, adjust, dim, or an equivalent expression in the user's language) and a physical home target (light, lamp, switch, room lighting, scene, or configured device).
+- Natural examples that mean Home Assistant: “Turn on the kitchen lamp”, “Turn off all the lights”, “Set the lighting to relaxation”, and “Activate the relaxation scene”.
+- Do not use Home Assistant for conversational or personality requests such as “Let's switch to a more relaxed tone” or “I want to relax”.
+- The word “mode” alone is ambiguous. If “Turn on relaxation mode” could mean either a Home Assistant scene or a conversational style, ask: “Do you mean the relaxation lighting scene or a more relaxed conversation style?” Do not guess.
+- When the intent and target are clear, call `home_assistant_control` immediately with one explicit configured target and action. Never claim that Home Assistant is unavailable when the tool is available.
+- “All lights”, “all the lights”, “wszystkie światła”, “całe oświetlenie”, and an explicit “wszystko”/“everything” lighting command are complete targets. They do NOT require an entity inventory, a room name, or a scene name. Never ask the user to choose a particular light or scenario for an explicit all-lights request.
+- Preserve the action polarity exactly: “włącz/włączyć” means `turn_on`; “wyłącz/wyłączyć” means `turn_off`. For an all-lights request use target `all lights`, for example `{"target":"all lights","action":"turn_off"}`.
+- If the target is unknown or matches multiple devices, ask for clarification instead of guessing. Never expose XML, JSON, pseudo-tool calls, or internal tool syntax in the user-facing reply.
+- Apply these rules to equivalent expressions in any language. Reply in the language selected by settings and supported by the current conversation context.
+- `home_assistant_control` is limited to the configured Home Assistant entity filter and does not accept arbitrary service calls. An explicit interactive all-lights request is allowed and is executed as the Home Assistant light domain's `all` target; scheduled Tasks remain single-target. Do not use it for the MonikAI UI theme or Home Assistant frontend theme.
+- Do not use shell, curl, `app_api`, or generic `api_call` for a Home Assistant control request.""",
     "integrations": """\
 ## Integration/API rules
-- To query or control a configured service integration (Home Assistant, Miniflux, Gitea, Linkding, Jellyfin, or any other registered service), use `api_call` with the integration name, HTTP method, path, and optional JSON body.
+- To query or control a registered non-Home-Assistant service integration (Miniflux, Gitea, Linkding, Jellyfin, or any other registered service), use `api_call` with the integration name, HTTP method, path, and optional JSON body.
 - Do not use shell, curl, or `app_api` to reach a user's connected integration when `api_call` is available.""",
 }
 
@@ -535,6 +550,7 @@ _DOMAIN_TOOL_MAP = {
     "files": {"bash", "python", "read_file", "write_file", "edit_file", "apply_patch", "todowrite", "grep", "glob", "ls", "get_workspace", "manage_bg_jobs"},
     "settings": {"manage_settings", "manage_endpoints", "manage_mcp", "manage_webhooks", "manage_tokens", "app_api"},
     "contacts": {"resolve_contact", "manage_contact"},
+    "smart_home": {"home_assistant_control"},
     "integrations": {"api_call"},
 }
 
@@ -764,6 +780,11 @@ If the user asks for a reminder/alarm before the event, pass `reminder_minutes` 
     "cancel_download": "- ```cancel_download``` — Cancel an in-progress download. Args (JSON): {\"session_id\": \"<from list_downloads>\"}. Use for 'cancel the download' / 'kill the download'.",
     "search_hf_models": "- ```search_hf_models``` — Search HuggingFace for models. Args (JSON): {\"query\": \"qwen 8b\", \"limit\": 10?}. Use for 'find a model for X' / 'search huggingface' / 'what models are there for Y'.",
     "list_cached_models": "- ```list_cached_models``` — List models already on disk. Args (JSON, all optional): {\"host\": \"server-name or user@gpu-box\"?, \"model_dir\": \"/data/models,/extra\"?}. Friendly Cookbook server names work. Use for 'what models do I have' / 'show cached models' / 'is X downloaded'.",
+    "home_assistant_control": """\
+```home_assistant_control
+{"target":"tryb nocny","action":"turn_on"}
+```
+Control one explicitly named, configured Home Assistant light, switch, or scene through the shared HA agent, or honor an explicit interactive all-lights command. Use target `all lights` for “turn off all the lights”, “wszystkie światła”, or an explicit “wyłącz wszystko” lighting request; this is a valid target and does not require listing devices or selecting a scene. Preserve polarity: `włącz/włączyć` → `turn_on`, `wyłącz/wyłączyć` → `turn_off`. Use this for natural requests with a physical home target, such as “Turn on the kitchen lamp”, “Set the lighting to relaxation”, or “Activate the relaxation scene”. Do not require the user to say “Home Assistant”. A request about conversation tone is not Home Assistant. If “mode” alone is ambiguous, ask a short clarification before acting. Friendly names are resolved against the configured entity filter. Supported actions are `turn_on`, `turn_off`, `toggle`, and `set` (with brightness 0–100 and/or color). This is not `ui_control`: never use it for MonikAI themes, HA frontend themes, or arbitrary service calls.""",
     "app_api": """\
 ```app_api
 {"action": "call", "method": "GET", "path": "/api/cookbook/gpus"}
@@ -1179,7 +1200,7 @@ _EXPLICIT_WORKSPACE_REFERENCE_RE = re.compile(
 _LOCAL_COMPUTER_REFERENCE_RE = re.compile(
     r"\b(?:on|from|in|using|with)\s+(?:this|my|the)\s+(?:computer|machine|pc|laptop|device|system)\b"
     r"|\b(?:local|host)\s+(?:computer|machine|files?|system)\b"
-    r"|\b(?:on|from)\s+(?!this\b|my\b|the\b|a\b|an\b)(?:[a-z][a-z0-9_.-]{1,31})\b",
+    r"|\b(?:run|execute|deploy|build|install|restart|reboot|check|inspect|open|read|write|copy|move|download|serve|launch|start|stop|kill)\b.{0,80}\b(?:on|from)\s+(?!this\b|my\b|the\b|a\b|an\b)(?:[a-z][a-z0-9_.-]{1,31})\b",
     re.IGNORECASE,
 )
 
@@ -1384,6 +1405,40 @@ def _assistant_requested_followup(messages: List[Dict]) -> bool:
     return False
 
 
+_SMART_HOME_FOLLOWUP_RE = re.compile(
+    r"\b(?:konkret\w*|wolisz|chcesz|wybierz\w*|które\w*|ktore\w*|"
+    r"specific|particular|which|choose|would\s+you\s+like|do\s+you\s+mean)\b"
+    r".{0,180}\b(?:światł\w*|swiatł\w*|swiatl\w*|lamp\w*|"
+    r"oświetl\w*|oswietl\w*|scenariusz\w*|scen\w*|"
+    r"urządzen\w*|urzadzen\w*|home\s+assistant|ha)\b",
+    re.IGNORECASE,
+)
+
+
+def _assistant_requested_smart_home_followup(messages: List[Dict]) -> bool:
+    """Detect a Polish/English HA clarification immediately before this turn."""
+    seen_latest_user = False
+    for msg in reversed(messages):
+        role = msg.get("role")
+        if role == "user" and not seen_latest_user:
+            seen_latest_user = True
+            continue
+        if not seen_latest_user:
+            continue
+        if role != "assistant":
+            continue
+        content = msg.get("content", "")
+        if isinstance(content, list):
+            content = " ".join(
+                b.get("text", "") for b in content if isinstance(b, dict)
+            )
+        text = str(content or "").lower()
+        if "?" not in text:
+            return False
+        return bool(_SMART_HOME_FOLLOWUP_RE.search(text))
+    return False
+
+
 def _classify_agent_request(messages: List[Dict], last_user: str) -> Dict[str, object]:
     """Classify only whether this turn deserves domain tool retrieval.
 
@@ -1394,7 +1449,19 @@ def _classify_agent_request(messages: List[Dict], last_user: str) -> Dict[str, o
     """
     text = str(last_user or "").strip()
     retry_continuation = _is_contextual_retry_continuation(messages, text)
-    continuation = _is_explicit_continuation(text) or _assistant_requested_followup(messages) or retry_continuation
+    smart_home_followup = _assistant_requested_smart_home_followup(messages)
+    smart_home_context = _recent_context_for_retrieval(
+        messages,
+        max_user=5,
+        max_chars=1600,
+    ) if smart_home_followup else ""
+    smart_home_command = extract_smart_home_command(text, smart_home_context)
+    continuation = (
+        _is_explicit_continuation(text)
+        or _assistant_requested_followup(messages)
+        or smart_home_followup
+        or retry_continuation
+    )
     retrieval_query = _recent_context_for_retrieval(messages) if continuation else text
     q = retrieval_query.lower()
 
@@ -1404,6 +1471,7 @@ def _classify_agent_request(messages: List[Dict], last_user: str) -> Dict[str, o
             "continuation": False,
             "domains": set(),
             "retrieval_query": text,
+            "smart_home_command": None,
         }
 
     domains: Set[str] = set()
@@ -1417,6 +1485,22 @@ def _classify_agent_request(messages: List[Dict], last_user: str) -> Dict[str, o
         domains.add("email")
     if has(r"\b(notes?|todos?|to-dos?|checklists?|tasks?|task list|remind me|reminders?|buy|pickup|pick up)\b"):
         domains.add("notes_calendar_tasks")
+    if smart_home_command or (
+        has(
+            r"\b(?:home ?assistant|homeassistant)\b",
+            r"\btryb\s+nocn\w*\b",
+            r"\btryb\s+relaks\w*\b",
+            r"\bnight\s+(?:mode|scene|lights?)\b",
+            r"\b(?:noc|relax|relaks\w*)\s+scene\b",
+            r"\bscene\s+(?:night|noc|relax|relaks\w*)\b",
+            r"\bha\b.{0,40}\b(?:scene|night|noc|relax|lights?)\b",
+        )
+        or (
+            has(r"\b(?:światł\w*|swiatł\w*|swiatl\w*|lamp\w*|lights?|switch(?:es)?)\b")
+            and has(r"\b(?:włącz\w*|wlacz\w*|wyłącz\w*|wylacz\w*|zapal\w*|zaswiec\w*|zaświeć\w*|zgas\w*|zgaś\w*|przełącz\w*|przelacz\w*|aktywuj\w*|odpal\w*|ustaw\w*|turn\s+(?:on|off)|switch\s+(?:on|off)|activate|toggle|enable|disable)\b")
+        )
+    ):
+        domains.add("smart_home")
     if has(r"\b(every day|every morning|every evening|recurring|automatically|cron|scheduled task|background task)\b"):
         domains.add("notes_calendar_tasks")
     if has(r"\b(calendar|event|meeting|appointment|schedule)\b"):
@@ -1467,14 +1551,12 @@ def _classify_agent_request(messages: List[Dict], last_user: str) -> Dict[str, o
         domains.add("settings")
     if has(r"\b(contact|contacts|phone|phone number|address book|vcard)\b"):
         domains.add("contacts")
-    # API-integration intent — calling a configured service via the api_call
-    # tool. Without this the #3794 repro ("Use the api_call tool to call Home
-    # Assistant GET /api/states") matched no domain, classified as low-signal,
-    # and the tool never reached the schema filter. Detect it explicitly so the
-    # "integrations" domain seeds api_call deterministically (see
-    # _DOMAIN_TOOL_MAP), independent of embedding retrieval.
+    # API-integration intent — calling a configured non-Home-Assistant service
+    # via the api_call tool. Home Assistant has its own typed native tool above.
+    # Keep explicit api_call requests available for the generic integration
+    # surface without letting ordinary HA scene commands select it.
     if has(r"\bapi[ _]call\b", r"\bintegrations?\b",
-           r"\b(?:home ?assistant|miniflux|gitea|linkding|jellyfin)\b"):
+           r"\b(?:miniflux|gitea|linkding|jellyfin)\b"):
         domains.add("integrations")
 
     low_signal = not continuation and not domains
@@ -1483,6 +1565,7 @@ def _classify_agent_request(messages: List[Dict], last_user: str) -> Dict[str, o
         "continuation": continuation,
         "domains": domains,
         "retrieval_query": retrieval_query,
+        "smart_home_command": smart_home_command,
     }
 
 
@@ -3444,6 +3527,7 @@ async def stream_agent_loop(
     workload: str = "foreground",
     external_untrusted_context_seen: bool = False,
     exact_approval: Optional[ExactToolApproval] = None,
+    auto_approve_tools: Optional[Set[str]] = None,
     _is_teacher_run: bool = False,
     history_session=None,
     defer_context_shaping: bool = False,
@@ -3459,6 +3543,11 @@ async def stream_agent_loop(
       - data: [DONE]                                        (end)
     """
 
+    auto_approved_tools = frozenset(
+        tool.strip()
+        for tool in (auto_approve_tools or ())
+        if isinstance(tool, str) and tool.strip()
+    )
     run_security = ToolRunSecurityContext(
         external_untrusted_context_seen=(
             bool(external_untrusted_context_seen)
@@ -3471,6 +3560,7 @@ async def stream_agent_loop(
         approval_gate_bypassed=bool(
             exact_approval and exact_approval.allow_remaining_actions
         ),
+        auto_approved_tools=auto_approved_tools,
     )
     mcp_mgr = get_mcp_manager()
     prep_timings: Dict[str, float] = {}
@@ -3523,6 +3613,22 @@ async def stream_agent_loop(
     _intent = _classify_agent_request(messages, _last_user)
     _low_signal_turn = bool(_intent.get("low_signal"))
     _casual_low_signal_turn = _is_casual_low_signal(_last_user)
+    _smart_home_command = _intent.get("smart_home_command")
+    if not isinstance(_smart_home_command, dict):
+        _smart_home_command = None
+    # Small models sometimes stream a clarification or a web-search preamble
+    # before the parser sees that the request is an unambiguous all-lights
+    # command. Hold that first-round prose back until the typed call is fixed;
+    # otherwise the UI briefly shows a false question even though the server
+    # correctly executes Home Assistant. This does not suppress normal chat,
+    # named-device disambiguation, plan mode, or disabled-tool errors.
+    _buffer_smart_home_text = bool(
+        _smart_home_command
+        and not plan_mode
+        and not guide_only
+        and "home_assistant_control" not in disabled_tools
+        and exact_approval is None
+    )
     _existing_conversation = _user_turn_count(messages) > 1
     _active_document_relevant = _turn_targets_active_document(_intent, _last_user, active_document)
     _active_email_draft_relevant = _active_document_relevant and _is_email_document_obj(active_document)
@@ -4062,8 +4168,25 @@ async def stream_agent_loop(
             logger.debug(f"[tool-rag] skill-aware tool include skipped: {_e}")
 
     _intent_domains = set(_intent.get("domains") or set())
-    _base_relevant_tools = None if _relevant_tools is None else set(_relevant_tools)
+    # Runtime skill expansion below may need to be cleared when a direct
+    # smart-home command is narrowed to the dedicated HA tool. Initialize it
+    # before that narrowing branch; otherwise a Polish HA request could raise
+    # UnboundLocalError before the first model call.
     _runtime_skill_tools: Set[str] = set()
+    if (
+        _relevant_tools is not None
+        and "smart_home" in _intent_domains
+        and "files" not in _intent_domains
+    ):
+        # Apply this after RAG and skill expansion. A direct smart-home command
+        # should not drift through memory, search, UI-theme, skills, or shell
+        # tools before touching HA. A needless external read also taints the
+        # run and creates an avoidable approval card for the subsequent action.
+        _relevant_tools = {
+            "home_assistant_control", "ask_user", "update_plan",
+        }
+        _runtime_skill_tools.clear()
+    _base_relevant_tools = None if _relevant_tools is None else set(_relevant_tools)
 
     def _route_finetune_modes(candidate_model: str):
         is_ody = _is_odysseus_qwen_model(candidate_model)
@@ -4098,6 +4221,10 @@ async def stream_agent_loop(
             and not _runtime_skill_tools
             and not doc_mode
             and not notes_mode
+            # Smart-home imperatives are operational requests. Keep the
+            # dedicated Home Assistant tool available even for the local
+            # Odysseus model, whose default finetune route is text-only.
+            and "smart_home" not in _intent_domains
             and not guide_only
         )
         return (
@@ -4293,6 +4420,12 @@ async def stream_agent_loop(
             owner,
             headers=candidate_headers,
         )
+        smart_home_ody_route = bool(
+            is_ody
+            and "smart_home" in _intent_domains
+            and route_tools
+            and "home_assistant_control" in route_tools
+        )
         route_messages, route_mcp_schemas = _build_system_prompt(
             _strip_agent_injected_messages(compacted_source),
             candidate_model,
@@ -4302,7 +4435,10 @@ async def stream_agent_loop(
             needs_admin=_needs_admin,
             relevant_tools=route_tools,
             mcp_disabled_map=_mcp_disabled_map,
-            compact=is_api or is_native_ollama or is_ollama_compat,
+            # Odysseus finetunes use text/fenced tool calls rather than native
+            # schemas. Keep the full HA tool section for smart-home turns so
+            # the model sees the JSON shape and exact fence tag.
+            compact=(is_api or is_native_ollama or is_ollama_compat) and not smart_home_ody_route,
             owner=owner,
             suppress_local_context=guide_only,
             suppress_skills=_low_signal_turn,
@@ -4325,6 +4461,7 @@ async def stream_agent_loop(
             and not plan_mode
             and not approved_plan
             and not guide_only
+            and not smart_home_ody_route
         ):
             route_messages = _minimal_odysseus_general_messages(route_messages, include_memory=True)
             route_mcp_schemas = []
@@ -4434,6 +4571,7 @@ async def stream_agent_loop(
     # lets a legit batch (e.g. 18 calendar events at once) through.
     _call_freq: collections.Counter = collections.Counter()
     _force_answer = False  # set by loop-breaker → next round runs with NO tools
+    _smart_home_command_dispatched = False
     # Supervisor: how many times we've nudged the model after it announced
     # an action without emitting the tool call. Capped to prevent a model
     # that *can't* call the tool from looping forever.
@@ -4763,6 +4901,7 @@ async def stream_agent_loop(
 
     for round_num in range(1, max_rounds + 1):
         round_response = ""
+        _full_response_before_round = full_response
         round_reasoning = ""  # reasoning_content deltas (DeepSeek-thinking, vLLM --reasoning-parser)
         native_tool_calls = []  # populated if model uses function calling
 
@@ -5204,7 +5343,14 @@ async def stream_agent_loop(
                             round_response += _delta_text
                             full_response += _delta_text
                             data["delta"] = _delta_text
-                        if not _ody_qwen_finetune_model or data.get("thinking"):
+                        if (
+                            (not _ody_qwen_finetune_model or data.get("thinking"))
+                            and not (
+                                _buffer_smart_home_text
+                                and not _smart_home_command_dispatched
+                                and not data.get("thinking")
+                            )
+                        ):
                             yield f"data: {json.dumps(data)}\n\n"
                     elif data.get("error"):
                         err_msg = data.get("error", "unknown")
@@ -5243,6 +5389,66 @@ async def stream_agent_loop(
             is_api_model=(_is_api_model and not guide_only),
             allow_fenced_for_api=_ody_doc_finetune_mode,
         )
+
+        # A typed Home Assistant command must not depend on a weak model
+        # remembering to emit a function call.  In particular, small models
+        # sometimes turn "wyłącz wszystkie światła" into a clarification or a
+        # web search.  For the narrow, unambiguous all-lights shape extracted
+        # above, replace any model proposal with the sealed canonical call. It
+        # still goes through the normal security/approval gate below; this only
+        # repairs routing and argument shape, never authorization.
+        if (
+            _smart_home_command
+            and not _smart_home_command_dispatched
+            and exact_approval is None
+            and not plan_mode
+            and not guide_only
+            and "home_assistant_control" not in disabled_tools
+        ):
+            _canonical_home_call = json.dumps(
+                _smart_home_command,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            _ha_indexes = [
+                idx for idx, block in enumerate(tool_blocks)
+                if block.tool_type == "home_assistant_control"
+            ]
+            if _ha_indexes:
+                _ha_idx = _ha_indexes[0]
+                tool_blocks = [ToolBlock("home_assistant_control", _canonical_home_call)]
+                if used_native and _ha_idx < len(converted_calls):
+                    _native_call = dict(converted_calls[_ha_idx])
+                    _native_call["arguments"] = _canonical_home_call
+                    native_tool_calls = [_native_call]
+                    converted_calls = [_native_call]
+                else:
+                    native_tool_calls = []
+                    converted_calls = []
+                    used_native = False
+            else:
+                if tool_blocks or native_tool_calls:
+                    logger.info(
+                        "[smart-home] discarded non-HA model proposal for canonical all-lights command: %s",
+                        [block.tool_type for block in tool_blocks],
+                    )
+                tool_blocks = [ToolBlock("home_assistant_control", _canonical_home_call)]
+                native_tool_calls = []
+                converted_calls = []
+                used_native = False
+            _smart_home_command_dispatched = True
+            if _buffer_smart_home_text:
+                # The first-round prose was deliberately not sent to the
+                # client. Remove it from the accumulated answer as well so it
+                # cannot be persisted after the canonical HA result.
+                full_response = _full_response_before_round
+                round_response = ""
+            logger.info(
+                "[smart-home] canonicalized command action=%s target=%s",
+                _smart_home_command.get("action"),
+                _smart_home_command.get("target"),
+            )
+
         if _ody_doc_stream_create_mode and tool_blocks:
             create_idx = next(
                 (idx for idx, block in enumerate(tool_blocks) if block.tool_type == "create_document"),

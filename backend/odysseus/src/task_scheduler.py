@@ -351,6 +351,18 @@ class TaskScheduler:
         self._run_semaphore = asyncio.Semaphore(1)
         self._concurrency_cap = 1
         self._task_handles = {}
+        self._home_assistant_agent = None
+        self._hue_agent = None
+
+    def set_smart_home_agents(self, *, home_assistant_agent=None, hue_agent=None):
+        """Attach already-initialized smart-home agents to scheduled actions.
+
+        The bridge constructs the scheduler before the MonikAI lifespan has
+        initialized network integrations, so this is deliberately a small
+        lifecycle setter instead of doing network work in ``__init__``.
+        """
+        self._home_assistant_agent = home_assistant_agent
+        self._hue_agent = hue_agent
 
     def _set_run_progress(self, run_id: str, message: str):
         """Persist short live progress text for Activity while a run is active."""
@@ -1245,6 +1257,8 @@ class TaskScheduler:
             kwargs = {"owner": task.owner, "task_name": task.name, "progress_cb": _progress}
             if task.prompt:
                 kwargs["prompt"] = task.prompt
+            if task.action == "home_assistant_control":
+                kwargs["home_assistant_agent"] = self._home_assistant_agent
             if task.action in ("run_script", "run_local", "ssh_command") and task.prompt:
                 kwargs["script" if task.action in ("run_script", "run_local") else "command"] = task.prompt
             # cookbook_serve carries its JSON config in task.prompt — feed it

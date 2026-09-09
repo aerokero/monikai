@@ -315,10 +315,13 @@ CONVERSATION_TOOL_DEFINITIONS = (
     ConversationToolDefinition(
         name="control_light",
         description=(
-            "Control a smart light, compatible device, or named scene only after "
-            "an explicit user command. Phrases such as 'tryb relaksu' explicitly "
-            "request activation of that named scene. Preserve the requested "
-            "action exactly."
+            "Control a configured Home Assistant light, compatible device, or named "
+            "scene only after an explicit physical-home command. Natural requests "
+            "such as 'turn on the kitchen lamp', 'set the lighting to relaxation', "
+            "or 'activate the relaxation scene' indicate smart-home intent. Do not "
+            "use it for conversation style or MonikAI UI themes; if 'mode' alone is "
+            "ambiguous, ask a short clarification. Preserve the requested action "
+            "exactly."
         ),
         parameters_json_schema={
             "type": "object",
@@ -458,6 +461,7 @@ _NAMED_SCENE_RE = re.compile(
     r"(?P<scene>relaks(?:u|acyjny)?|wieczorny|kino|kina|kinowy|filmowy|"
     r"skupieni[ae]|pracy|roboczy|nocny|nocnego|gotowani[ae]|"
     r"standard|standardowy|domyslny)"
+    r"(?:\s+(?:w|in)\s+(?:home\s+assistant|ha))?"
     r"(?:\s*,?\s*(?:prosze|poprosze))?[.!?]*$",
     re.IGNORECASE,
 )
@@ -495,6 +499,10 @@ def plan_named_scene_tool(text: str) -> ConversationToolRequest | None:
         for char in unicodedata.normalize("NFKD", value.casefold())
         if not unicodedata.combining(char)
     )
+    # NFKD removes most Polish diacritics but leaves stroke letters such as
+    # "ł" intact.  Without this translation "włącz" never matched the
+    # existing "wlacz" scene command pattern.
+    normalized = normalized.translate(str.maketrans("ąćęłńóśźż", "acelnoszz"))
     normalized = re.sub(r"\s+", " ", normalized).strip()
     match = _NAMED_SCENE_RE.fullmatch(normalized)
     if match is None:

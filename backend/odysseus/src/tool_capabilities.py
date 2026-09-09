@@ -260,6 +260,11 @@ _register(
     # retain the action effect while treating every successful result as data.
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
+_register(
+    {"home_assistant_control"},
+    ToolEffect.EXTERNAL_SIDE_EFFECT,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
 
 
 TOOL_CAPABILITIES: Mapping[str, ToolCapabilities] = MappingProxyType(dict(_REGISTRY))
@@ -619,6 +624,10 @@ class ToolRunSecurityContext:
     external_untrusted_context_seen: bool = False
     external_sources: list[str] = field(default_factory=list)
     run_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    # Transport-scoped allowlist for tools that may skip the automatic
+    # post-external-context approval gate. This never bypasses tool policy,
+    # ownership, workspace, or execution restrictions.
+    auto_approved_tools: frozenset[str] = field(default_factory=frozenset)
     # Task-scope approval sets this for the resumed in-memory run. Chat-scope
     # approval is projected from the server-owned session history marker below.
     # The bypass affects only this automatic gate; current tool policy, ownership,
@@ -641,6 +650,11 @@ class ToolRunSecurityContext:
             self.external_untrusted_context_seen = True
 
     def decision_for(self, tool_name: Any, content: Any = None) -> ToolGateDecision:
+        if (
+            isinstance(tool_name, str)
+            and tool_name in self.auto_approved_tools
+        ):
+            return ToolGateDecision(True)
         if self.approval_gate_bypassed:
             return ToolGateDecision(True)
         if not self.external_untrusted_context_seen:

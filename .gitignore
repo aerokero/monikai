@@ -86,6 +86,12 @@ out/
 data/huggingface/
 data/odysseus/tts_cache/
 
+# Odysseus runtime state, model-discovery caches, logs, credentials, and
+# conversation/personal data. These files are created locally at runtime and
+# must never be committed, including newly generated cache filenames.
+/data/odysseus/
+/backend/odysseus/data/
+
 # IDE
 .vscode/
 .idea/

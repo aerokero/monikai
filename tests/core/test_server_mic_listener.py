@@ -1,9 +1,12 @@
 import asyncio
+import io
 import time
+import wave
 import numpy as np
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from backend.conversation.speech import SynthesizedSpeech
 from backend.audio.server_mic_listener import (
     AdaptiveEnergyVAD,
     ServerMicListenerService,
@@ -40,6 +43,33 @@ def test_adaptive_energy_vad_speech_detection():
         assert seg is None
     assert not vad.is_speech_active
 
+
+def test_adaptive_energy_vad_long_utterance_uses_configured_safety_limit():
+    vad = AdaptiveEnergyVAD(
+        sample_rate=16000,
+        frame_duration_ms=30,
+        min_speech_duration_ms=60,
+        trailing_silence_duration_ms=120,
+        pre_roll_duration_ms=90,
+        max_speech_duration_ms=300,
+    )
+    silence_frame = b"\x00\x00" * vad.frame_size
+    loud_frame = _generate_pcm_frame(440.0, 30, amplitude=12000.0)
+
+    for _ in range(4):
+        vad.process_frame(silence_frame)
+
+    segment_output = None
+    for _ in range(20):
+        segment_output = vad.process_frame(loud_frame)
+        if segment_output:
+            break
+
+    assert segment_output is not None
+    # The configured 300 ms bound, plus pre-roll, should finish well before
+    # the old fixed 7.5 s cutoff while still returning complete PCM frames.
+    assert len(segment_output) <= int(0.6 * 16000 * 2)
+
     # Feed speech frames
     for _ in range(4):
         seg = vad.process_frame(loud_frame)
@@ -63,7 +93,12 @@ def test_wake_word_extraction():
     service = ServerMicListenerService(require_wake_word=True)
 
     matched, prompt = service.extract_wake_word("Monika, jaka jest dzisiaj pogoda?")
-    assert not matched
+    assert matched
+    assert prompt == "jaka jest dzisiaj pogoda?"
+
+    matched, prompt = service.extract_wake_word("monika")
+    assert matched
+    assert prompt == ""
 
 
     matched, prompt = service.extract_wake_word("Hej Monika, zanotuj coś")
@@ -95,6 +130,12 @@ def test_server_mic_service_mute_and_controls():
     service = ServerMicListenerService()
     assert not service.is_muted
 
+    service.set_muted(True)
+    assert service.is_muted
+
+    service.set_muted(False)
+    assert not service.is_muted
+
 
 @pytest.mark.asyncio
 async def test_sounddevice_read_does_not_block_event_loop():
@@ -111,18 +152,14 @@ async def test_sounddevice_read_does_not_block_event_loop():
     assert not task.done()
     assert await task == (b"frame", False)
 
-    service.set_muted(True)
-    assert service.is_muted
-
-    service.set_muted(False)
-    assert not service.is_muted
-
-
 @pytest.mark.asyncio
-async def test_server_mic_handle_speech_segment():
+async def test_server_mic_handle_speech_segment(monkeypatch):
     mock_handler = AsyncMock(return_value="Jest słonecznie i 20 stopni.")
     mock_turn_cb = AsyncMock()
 
+    # The repository .env selects the local renderer for the real server. This
+    # test exercises the Gemini fallback branch explicitly.
+    monkeypatch.setenv("SERVER_MIC_TTS_PROVIDER", "gemini")
     service = ServerMicListenerService(
         conversation_handler=mock_handler,
         require_wake_word=False,
@@ -148,6 +185,39 @@ async def test_server_mic_handle_speech_segment():
 
 
 @pytest.mark.asyncio
+async def test_server_mic_can_render_replies_with_local_kokoro(monkeypatch):
+    raw_pcm = b"\x01\x02" * 8
+    wav_buffer = io.BytesIO()
+    with wave.open(wav_buffer, "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(24_000)
+        output.writeframes(raw_pcm)
+
+    class FakeVoiceOutput:
+        async def synthesize(self, text, *, provider):
+            assert text == "Słucham?"
+            assert provider == "local"
+            return SynthesizedSpeech(
+                audio=wav_buffer.getvalue(),
+                mime_type="audio/wav",
+                sample_rate=24_000,
+            )
+
+    monkeypatch.setenv("SERVER_MIC_TTS_PROVIDER", "local")
+    service = ServerMicListenerService()
+    service.play_audio_locally = AsyncMock()
+
+    with patch(
+        "backend.conversation.voice_output.get_voice_output_service",
+        return_value=FakeVoiceOutput(),
+    ):
+        await service._synthesize_and_play("Słucham?")
+
+    service.play_audio_locally.assert_awaited_once_with(raw_pcm, sample_rate=24_000)
+
+
+@pytest.mark.asyncio
 async def test_standalone_wake_word_acknowledges_then_accepts_follow_up():
     mock_handler = AsyncMock(return_value="Już włączam światło.")
     service = ServerMicListenerService(
@@ -157,21 +227,60 @@ async def test_standalone_wake_word_acknowledges_then_accepts_follow_up():
     )
     service._play_wake_chime = AsyncMock()
     service._synthesize_and_play = AsyncMock()
-    service.transcribe_speech = AsyncMock(side_effect=["Monika", "Włącz światło"])
+    # The Polish Vosk model commonly drops the English greeting and returns
+    # only the assistant name for spoken "Hey Monika".
+    service.transcribe_wake_word_locally = AsyncMock(return_value="monika")
+    service.transcribe_speech = AsyncMock(return_value="Włącz światło")
 
     # A non-silent segment that passes the service's input sanity checks.
     fake_pcm = _generate_pcm_frame(440.0, 500, amplitude=2000.0)
 
     await service._handle_speech_segment(fake_pcm)
 
-    service._play_wake_chime.assert_awaited_once_with()
+    service._play_wake_chime.assert_awaited_once_with(capture_safe=True)
+    service._synthesize_and_play.assert_awaited_once_with("Hm?")
     assert service.is_awaiting_command
     mock_handler.assert_not_awaited()
+    service.transcribe_speech.assert_not_awaited()
 
     await service._handle_speech_segment(fake_pcm)
 
     mock_handler.assert_awaited_once_with("Włącz światło")
-    assert not service.is_awaiting_command
+    assert service.is_awaiting_command
+
+
+@pytest.mark.asyncio
+async def test_cloud_transcription_is_gated_by_local_wake_recognition():
+    service = ServerMicListenerService(
+        require_wake_word=True,
+        use_gemini_live=False,
+    )
+    service.transcribe_wake_word_locally = AsyncMock(return_value="rozmowa w pokoju")
+    service.transcribe_speech = AsyncMock(return_value="Hej Monika, włącz światło")
+
+    fake_pcm = _generate_pcm_frame(440.0, 500, amplitude=2000.0)
+    await service._handle_speech_segment(fake_pcm)
+
+    service.transcribe_wake_word_locally.assert_awaited_once()
+    service.transcribe_speech.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_server_voice_session_hooks_open_once_and_close_once():
+    opened = AsyncMock()
+    closed = AsyncMock()
+    service = ServerMicListenerService(
+        on_session_started=opened,
+        on_session_finished=closed,
+    )
+
+    await service._open_conversation_session()
+    await service._open_conversation_session()
+    await service._close_conversation_session()
+    await service._close_conversation_session()
+
+    opened.assert_awaited_once_with()
+    closed.assert_awaited_once_with()
 
 
 class _FakeContinuousRecognizer:
@@ -217,6 +326,20 @@ def test_continuous_wake_partial_requires_stability():
     )
 
 
+def test_idle_wake_partial_returns_immediately_after_stability():
+    service = ServerMicListenerService(require_wake_word=True)
+    service.partial_wake_stability_frames = 3
+    service._continuous_wake_recognizer = _FakeContinuousRecognizer(
+        completed=False,
+        result="{}",
+        partial="hej monika",
+    )
+
+    assert service._process_idle_wake_frame(b"frame", voiced=True) == ""
+    assert service._process_idle_wake_frame(b"frame", voiced=True) == ""
+    assert service._process_idle_wake_frame(b"frame", voiced=True) == "hej monika"
+
+
 def test_continuous_wake_unrelated_partial_does_not_preconnect():
     service = ServerMicListenerService(require_wake_word=True)
     service._continuous_wake_recognizer = _FakeContinuousRecognizer(
@@ -245,8 +368,8 @@ def test_continuous_wake_requires_direct_final_form_and_confidence():
         "text": "monika",
         "result": [{"word": "monika", "conf": 0.90}],
     })
-    assert not matched
-    assert confidence == 0.0
+    assert matched
+    assert confidence == pytest.approx(0.90)
 
     matched, _, confidence = service._validate_continuous_wake_result({
         "text": "hej monika",
@@ -295,6 +418,10 @@ async def test_provisional_preconnect_keeps_audio_local_until_verified():
     await asyncio.sleep(0)
 
     service._run_live_session.assert_awaited_once_with(b"")
+    service._play_wake_chime.assert_awaited_once_with(
+        capture_safe=True,
+        gain=1.5,
+    )
     assert service._pending_initial_pcm == b"private audio"
     assert service._wake_verified_event is not None
     assert not service._wake_verified_event.is_set()

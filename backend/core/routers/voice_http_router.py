@@ -15,6 +15,7 @@ class SelectVoiceRequest(BaseModel):
     provider: str
     voice: Optional[str] = None
     model: Optional[str] = None
+    language: Optional[str] = None
     volume: Optional[float] = None
 
 
@@ -26,11 +27,13 @@ class SynthesizeVoiceRequest(BaseModel):
     text: str
     provider: Optional[str] = None
     voice: Optional[str] = None
+    language: Optional[str] = None
 
 
 class TTSRequest(BaseModel):
     text: str
     format: str = "audio"
+    language: Optional[str] = None
 
 
 def register_voice_http_routes(app):
@@ -38,6 +41,7 @@ def register_voice_http_routes(app):
         provider: Optional[str],
         voice: Optional[str] = None,
         model: Optional[str] = None,
+        language: Optional[str] = None,
         volume: Optional[float] = None,
     ) -> None:
         """Persist the voice choice in Odysseus' settings store when present.
@@ -58,6 +62,8 @@ def register_voice_http_routes(app):
             settings["tts_voice"] = str(voice).strip()
         if model:
             settings["tts_model"] = str(model).strip()
+        if language:
+            settings["tts_language"] = str(language).strip().lower()
         if volume is not None:
             try:
                 normalized = float(volume)
@@ -102,7 +108,13 @@ def register_voice_http_routes(app):
                 router.set_voice(provider, req.voice)
             if req.model:
                 router.set_model(provider, req.model)
-        _persist_canonical_voice_settings(provider, req.voice, req.model, req.volume)
+        _persist_canonical_voice_settings(
+            provider,
+            req.voice,
+            req.model,
+            req.language,
+            req.volume,
+        )
         canonical = get_voice_output_service().get_status()
         return {
             "ok": True,
@@ -125,7 +137,12 @@ def register_voice_http_routes(app):
 
         try:
             service = get_voice_output_service()
-            res = await service.synthesize(text=req.text, provider=req.provider, voice=req.voice)
+            res = await service.synthesize(
+                text=req.text,
+                provider=req.provider,
+                voice=req.voice,
+                language=req.language,
+            )
             return {
                 "ok": True,
                 "mime_type": res.mime_type,
@@ -147,7 +164,10 @@ def register_voice_http_routes(app):
         if not req.text.strip():
             raise HTTPException(status_code=400, detail={"message": "Tekst nie może być pusty"})
         try:
-            rendered = await get_voice_output_service().synthesize(req.text)
+            rendered = await get_voice_output_service().synthesize(
+                req.text,
+                language=req.language,
+            )
             audio = rendered.audio
             mime = rendered.mime_type.split(";", 1)[0]
             if mime == "audio/pcm":

@@ -113,6 +113,7 @@
     "no_recap": "当天处理完成后会显示摘要。",
     "stream_minecraft": "Minecraft — 每日记录",
     "stream_telegram": "Telegram — 每日记录",
+    "voice_server": "服务器麦克风对话",
     "loading": "加载中…"
   },
   "schedule": {

@@ -520,7 +520,17 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
             "provider": "google",
         }
 
-    @app.post("/api/chat_stream")
+    # The native Odysseus router owns /api/chat_stream. Keep this old
+    # compatibility implementation available only as an explicit fallback
+    # when native initialization failed; otherwise registering the same path
+    # here makes Starlette dispatch requests to this text-only handler first.
+    _compat_chat_stream_path = (
+        "/api/legacy_chat_stream"
+        if getattr(app.state, "odysseus_native_chat_routes_mounted", False)
+        else "/api/chat_stream"
+    )
+
+    @app.post(_compat_chat_stream_path)
     async def chat_stream(request: Request):
         """SSE endpoint for streaming responses into Odysseus UI."""
         form_data = {}

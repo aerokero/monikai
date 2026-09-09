@@ -20,7 +20,18 @@ services:
       WEB_AGENT_HEADLESS: "1"
       SERVER_MIC_WAKE_WORD_REQUIRED: "true"
       SERVER_MIC_WAKE_LISTEN_TIMEOUT_SECONDS: "10"
-      SERVER_MIC_USE_GEMINI_LIVE: "true"
+      # Use a Polish-trained local Piper renderer for server-speaker playback.
+      # Gemini is retained as an automatic fallback if local synthesis fails.
+      SERVER_MIC_TTS_PROVIDER: "local"
+      # Kokoro-82M has no official Polish voice, so its Polish approximation is
+      # opt-in. Piper's pl_PL-gosia-medium model is downloaded on first use.
+      # Override with SERVER_MIC_TTS_LANGUAGE=auto/en/... when needed.
+      SERVER_MIC_TTS_LANGUAGE: "${SERVER_MIC_TTS_LANGUAGE:-pl}"
+      SERVER_MIC_TTS_TIMEOUT_SECONDS: "30"
+      SERVER_MIC_STT_TIMEOUT_SECONDS: "12"
+      # Default path: local wake gate -> STT -> Monika's full conversation/tool stack.
+      # Set to "true" only for the lower-latency Gemini Live compatibility mode.
+      SERVER_MIC_USE_GEMINI_LIVE: "false"
       SERVER_MIC_FOLLOWUP_TIMEOUT: "8.0"
       SERVER_MIC_GEMINI_LIVE_MODEL: "models/gemini-2.5-flash-native-audio-preview-12-2025"
       SERVER_MIC_LIVE_IDLE_TIMEOUT_SECONDS: "20"
@@ -28,7 +39,11 @@ services:
       SERVER_MIC_VOSK_MODEL_PATH: "/app/data/vosk-model"
       SERVER_MIC_WAKE_CONFIDENCE: "0.72"
       SERVER_MIC_PARTIAL_WAKE_STABILITY_FRAMES: "3"
-      SERVER_MIC_TRAILING_SILENCE_MS: "850"
+      # 850 ms ended natural Polish pauses too aggressively.  Keep a modest
+      # 1.2 s tail so words at the end of a sentence are not cut off.
+      SERVER_MIC_TRAILING_SILENCE_MS: "1200"
+      # Safety valve only; normal segments end on trailing silence.
+      SERVER_MIC_MAX_SPEECH_MS: "15000"
       SERVER_MIC_PRE_ROLL_MS: "600"
       SERVER_MIC_ENERGY_THRESHOLD_RATIO: "1.8"
       SERVER_MIC_MIN_ENERGY_THRESHOLD: "60"
@@ -40,11 +55,18 @@ services:
       ODYSSEUS_DATA_DIR: "/app/data/odysseus"
       PYTHONPATH: "/app/data/python-packages:/app:/app/backend/odysseus"
       KOKORO_DEVICE: "auto"
+      KOKORO_POLISH_MODE: "${KOKORO_POLISH_MODE:-espeak}"
+      PIPER_MODEL_ID: "${PIPER_MODEL_ID:-pl_PL-gosia-medium}"
+      PIPER_MODEL_DIR: "/app/data/tts/piper"
+      PIPER_AUTO_DOWNLOAD: "${PIPER_AUTO_DOWNLOAD:-true}"
+      PIPER_USE_CUDA: "${PIPER_USE_CUDA:-false}"
       HF_HOME: "/app/data/huggingface"
 
+    # Use the LAN resolver so split-DNS names such as ha.tosutosu.pl work
+    # from inside the container as well as from the host. Override this when
+    # deploying on a different network.
     dns:
-      - 1.1.1.1
-      - 8.8.8.8
+      - ${MONIKAI_DNS_SERVER:-192.168.1.10}
 
     ports:
       - "192.168.1.10:8000:8000"

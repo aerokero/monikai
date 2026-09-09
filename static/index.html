@@ -1684,7 +1684,24 @@
                   <option value="browser">Browser (built-in)</option>
                   <option value="gemini">Gemini TTS</option>
                   <option value="elevenlabs">ElevenLabs</option>
-                  <option value="local">Local (Kokoro-82M)</option>
+                  <option value="local">Local (Piper — polski głos żeński)</option>
+                </select>
+              </div>
+              <div id="set-ttsLanguageRow" style="display:flex;align-items:center;gap:0.75rem;">
+                <label class="settings-label">Language</label>
+                <select id="set-ttsLanguageSelect" class="settings-select">
+                  <option value="auto">Auto (text / voice)</option>
+                  <option value="pl">Polski</option>
+                  <option value="en">English (US)</option>
+                  <option value="en-gb">English (UK)</option>
+                  <option value="es">Español</option>
+                  <option value="fr">Français</option>
+                  <option value="de">Deutsch (local fallback)</option>
+                  <option value="it">Italiano</option>
+                  <option value="pt-br">Português (Brasil)</option>
+                  <option value="ja">日本語</option>
+                  <option value="zh">中文</option>
+                  <option value="hi">हिन्दी</option>
                 </select>
               </div>
               <div id="set-ttsModelRow" style="display:flex;align-items:center;gap:0.75rem;">
@@ -2406,15 +2423,34 @@
         <!-- ═══ TOOLS TAB ═══ -->
         <!-- ═══ INTEGRATIONS TAB ═══ -->
         <div data-settings-panel="integrations" class="hidden">
-          <div class="admin-card">
+          <div class="integration-panel-heading">
             <h2><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;opacity:0.6"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>Integrations</h2>
             <div class="admin-toggle-sub" style="margin-bottom:8px">All external service connections in one place.</div>
-            <div id="unified-integrations-list"></div>
-            <div id="unified-intg-form" style="display:none"></div>
-            <div style="text-align:right;padding:8px 0;">
-              <button type="button" class="admin-btn-add" id="unified-intg-add-btn" style="text-align:center;display:inline-flex;align-items:center;justify-content:center;gap:5px;flex-shrink:0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>Add Integration</button>
-            </div>
           </div>
+          <div class="integration-category-heading integration-category-heading-channels" id="channel-integrations-card" aria-labelledby="channel-integrations-heading">
+            <div>
+                  <div class="integration-category-kicker">CHANNELS</div>
+                  <h3 id="channel-integrations-heading"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v12H4z"/><path d="M8 20h8"/><path d="M12 16v4"/></svg>MonikAI Channels</h3>
+                  <div class="admin-toggle-sub">Home Assistant, Telegram and Discord. Tokens are write-only and stored encrypted.</div>
+                </div>
+                <span class="integration-category-badge">3 channel integrations</span>
+            </div>
+            <div id="channel-integrations-list" class="integration-category-list">
+                <div class="admin-empty">Loading channel settings…</div>
+              </div>
+            <div id="channel-integrations-msg" class="admin-toggle-sub" style="min-height:16px;margin-top:4px;"></div>
+          <div class="integration-category-heading integration-category-heading-services" aria-labelledby="service-integrations-heading">
+            <div>
+                  <div class="integration-category-kicker">CONNECTED SERVICES</div>
+                  <h3 id="service-integrations-heading"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>Accounts and service connectors</h3>
+                  <div class="admin-toggle-sub">Email, API, calendars, MCP and other reusable connections.</div>
+                </div>
+              </div>
+              <div id="unified-integrations-list" class="integration-category-list"></div>
+              <div id="unified-intg-form" style="display:none"></div>
+              <div class="integration-category-actions">
+                <button type="button" class="admin-btn-add" id="unified-intg-add-btn" style="text-align:center;display:inline-flex;align-items:center;justify-content:center;gap:5px;flex-shrink:0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>Add Integration</button>
+              </div>
         </div>
 
         <!-- ═══ TOOLS TAB ═══ -->

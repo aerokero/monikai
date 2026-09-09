@@ -479,6 +479,40 @@ class ToolApprovalStore:
             self._purge_expired_locked(now)
             return self._pending.get(str(approval_id or ""))
 
+    def peek_for_session(
+        self,
+        *,
+        owner: Any,
+        session_id: Any,
+    ) -> PendingToolApproval | None:
+        """Return the pending approval for one owned session, if there is one.
+
+        This is intentionally a server-side lookup.  It lets transports that
+        cannot render or click the approval card (notably Live Voice) resolve
+        a short spoken yes/no against the already sealed action without
+        exposing or accepting an approval id from the model or transcript.
+        """
+        now = time.time()
+        normalized_owner = _normalized_owner(owner)
+        normalized_session = str(session_id or "")
+        if not normalized_session:
+            return None
+        with self._lock:
+            self._purge_expired_locked(now)
+            matches = [
+                pending
+                for pending in self._pending.values()
+                if (
+                    pending.owner == normalized_owner
+                    and pending.session_id == normalized_session
+                )
+            ]
+            if not matches:
+                return None
+            # ``create`` currently supersedes older cards in a session. Keep
+            # this deterministic if that storage policy changes later.
+            return max(matches, key=lambda pending: pending.created_at)
+
     def retire_for_session(self, *, owner: Any, session_id: Any) -> bool:
         """Discard pending actions superseded by an ordinary user turn.
 

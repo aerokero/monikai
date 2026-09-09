@@ -127,6 +127,12 @@ def init_and_register_odysseus_backend(app: FastAPI):
         from src.agent_tools import set_mcp_manager
 
         task_scheduler = TaskScheduler(session_manager)
+        # Keep the native scheduler on the application so the MonikAI
+        # lifespan can start/stop it alongside the rest of the runtime.  The
+        # task routes were mounted for a long time without this lifecycle
+        # hook, which made scheduled Tasks look healthy in the UI but never
+        # execute after a fresh server start.
+        app.state.task_scheduler = task_scheduler
         set_task_scheduler(task_scheduler)
         webhook_manager = WebhookManager(api_key_manager=api_key_manager)
         mcp_manager = McpManager()
@@ -136,6 +142,7 @@ def init_and_register_odysseus_backend(app: FastAPI):
         # before the compatibility HTTP bridge so the production
         # /api/chat(_stream) endpoints use the real session, model, persona,
         # tool and memory pipeline instead of the old MonikAI shim.
+        app.state.odysseus_native_chat_routes_mounted = False
         try:
             from routes.chat_routes import setup_chat_routes
 
@@ -150,6 +157,7 @@ def init_and_register_odysseus_backend(app: FastAPI):
                 webhook_manager=webhook_manager,
                 skills_manager=skills_manager,
             ))
+            app.state.odysseus_native_chat_routes_mounted = True
             logger.info("Odysseus native chat_routes mounted")
         except Exception as e:
             logger.warning("chat_routes mount error: %s", e, exc_info=True)

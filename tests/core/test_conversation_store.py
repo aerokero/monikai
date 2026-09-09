@@ -128,3 +128,14 @@ def test_continue_meta_written_by_session_manager(tmp_path):
     assert meta["continues"] == "sess_old"
     assert meta["session_id"] == new_id
     assert meta["kind"] == "conversation"
+
+
+def test_session_manager_can_start_lazily(tmp_path):
+    sm = SessionManager(tmp_path, write_mode="immediate", auto_start=False)
+    assert sm.get_current_session_id() is None
+    assert list((tmp_path / "sessions").iterdir()) == []
+
+    session_id = sm.start_new_session(channel="server_voice")
+    meta = json.loads((sm.get_current_session_path() / "meta.json").read_text(encoding="utf-8"))
+    assert meta["session_id"] == session_id
+    assert meta["channel"] == "server_voice"

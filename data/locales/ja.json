@@ -113,6 +113,7 @@
     "no_recap": "その日の処理が終わると要約が表示されます。",
     "stream_minecraft": "Minecraft — デイリーログ",
     "stream_telegram": "Telegram — デイリーログ",
+    "voice_server": "サーバーマイクでの会話",
     "loading": "読み込み中…"
   },
   "schedule": {

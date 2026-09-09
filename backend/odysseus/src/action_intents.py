@@ -29,6 +29,114 @@ _ACTION_FOLLOWUP = (
 )
 _PLEASE = r"^\s*(?:(?:please|ok(?:ay)?|alright|right|sure|cool|great|thanks)[\s,.!-]+)*"
 
+_SMART_HOME_ACTION = (
+    r"(?:włącz\w*|wlacz\w*|wyłącz\w*|wylacz\w*|zapal\w*|"
+    r"zaświeć\w*|zaswiec\w*|zgaś\w*|zgas\w*|przełącz\w*|"
+    r"przelacz\w*|aktywuj\w*|odpal\w*|ustaw\w*|turn\s+on|"
+    r"turn\s+off|switch\s+on|switch\s+off|activate|toggle|enable|disable)"
+)
+_SMART_HOME_BROAD_TARGET = (
+    r"(?:"
+    r"(?:wszystk\w*|cał\w*|cal\w*)\s+"
+    r"(?:światł\w*|swiatł\w*|swiatl\w*|lamp\w*|oświetleni\w*|oswietleni\w*)"
+    r"|all\s+(?:the\s+)?lights?"
+    r"|every\s+light"
+    r"|(?:wszystko|everything)(?:\s+(?:dosłownie|doslownie|literally|w\s+domu|at\s+home))?"
+    r")"
+)
+_SMART_HOME_TARGET = (
+    r"(?:tryb\s+(?:nocn\w*|relaks\w*)|night\s+mode|scen(?:ę|e|a)?\s+tryb\s+nocn\w*|"
+    r"(?:scene\s+(?:night|noc|relax)|(?:night|noc|relax)\s+scene)|"
+    r"(?:scen(?:a|ę|e)\s+(?:nocn\w*|relaks\w*)|(?:nocn\w*|relaks\w*)\s+scen(?:a|ę|e))|"
+    r"night\s+lights?|"
+    r"home\s+assistant|homeassistant|światł\w*|swiatł\w*|swiatl\w*|"
+    r"lamp\w*|lights?|switch(?:es)?|" + _SMART_HOME_BROAD_TARGET + r")"
+)
+
+_SMART_HOME_ACTION_ON_RE = re.compile(
+    r"\b(?:włącz|włączyć|włączcie|włączmy|wlacz|wlaczyc|wlaczcie|wlaczmy|"
+    r"zapal|zapalić|zapalcie|zapalmy|zaświeć|zaświecić|zaświećcie|"
+    r"zaswiec|zaswiecic|zaswieccie|"
+    r"turn\s+on|switch\s+on|activate|enable)\b",
+    re.I,
+)
+_SMART_HOME_ACTION_OFF_RE = re.compile(
+    r"\b(?:wyłącz|wyłączyć|wyłączcie|wyłączmy|wylacz|wylaczyc|wylaczcie|wylaczmy|"
+    r"zgaś|zgasić|zgaście|zgaśmy|zgas|zgasic|zgascie|zgasmy|"
+    r"turn\s+off|switch\s+off|disable)\b",
+    re.I,
+)
+_SMART_HOME_POLITE_PREFIX = r"(?:proszę|prosze|please|ok(?:ay)?|hej|hey)"
+_SMART_HOME_DIRECT_PREFIX_RES = (
+    re.compile(
+        rf"^\s*(?:{_SMART_HOME_POLITE_PREFIX}\s*[,!.?-]?\s*)*$",
+        re.I,
+    ),
+    re.compile(
+        rf"^\s*(?:czy\s+)?(?:możesz|mozesz|mógłbyś|moglbys|"
+        rf"mógłbyś|moglbyś|can|could|would|will|should|"
+        rf"chcę|chce|want)(?:\s+you)?"
+        rf"(?:\s+{_SMART_HOME_POLITE_PREFIX}\s*[,!.?-]?)*\s*$",
+        re.I,
+    ),
+    re.compile(r"^\s*czy\s*$", re.I),
+)
+_SMART_HOME_BROAD_TARGET_RE = re.compile(rf"\b{_SMART_HOME_BROAD_TARGET}\b", re.I)
+_SMART_HOME_PHYSICAL_TARGET_RE = re.compile(
+    r"\b(?:home\s+assistant|homeassistant|ha|światł\w*|swiatł\w*|swiatl\w*|"
+    r"lamp\w*|lights?|oświetleni\w*|oswietleni\w*|switch(?:es)?|"
+    r"w\s+domu|at\s+home)\b",
+    re.I,
+)
+_SMART_HOME_NEGATION_RE = re.compile(
+    r"\b(?:nie|not|never|don't|do\s+not|doesn't|does\s+not)\b",
+    re.I,
+)
+
+
+def extract_smart_home_command(text: str, context: str = "") -> dict[str, str] | None:
+    """Extract one unambiguous broad lighting command.
+
+    This is a narrow safety/transport normalizer, not a replacement for the
+    model's intent understanding. It exists for the failure mode where a
+    model sees an obvious ``all lights`` command but emits prose or invents a
+    target instead of calling the typed HA tool. Named devices and scenes are
+    intentionally left to the model's normal tool call path.
+
+    ``context`` is used only to carry an already-established lighting topic to
+    a short follow-up such as ``wyłączyć wszystko dosłownie``. The action must
+    still be present in the current user message.
+    """
+    current = str(text or "").strip()
+    if not current:
+        return None
+
+    on_match = _SMART_HOME_ACTION_ON_RE.search(current)
+    off_match = _SMART_HOME_ACTION_OFF_RE.search(current)
+    if bool(on_match) == bool(off_match):
+        # No action, or both polarities in one sentence: let the model ask.
+        return None
+    action_match = on_match or off_match
+    # Refuse an explicit negative statement such as "nie chcę wyłączyć...".
+    if _SMART_HOME_NEGATION_RE.search(current[: action_match.start()]):
+        return None
+    # This fallback is allowed to repair a clear imperative/request only. A
+    # keyword occurrence in an explanatory sentence ("dlaczego nie mogę
+    # wyłączyć...", "how do I turn off...") must remain ordinary chat.
+    action_prefix = current[: action_match.start()]
+    if not any(pattern.fullmatch(action_prefix) for pattern in _SMART_HOME_DIRECT_PREFIX_RES):
+        return None
+    if not _SMART_HOME_BROAD_TARGET_RE.search(current):
+        return None
+
+    topic = " ".join(part for part in (current, str(context or "")) if part)
+    if not _SMART_HOME_PHYSICAL_TARGET_RE.search(topic):
+        return None
+    return {
+        "action": "turn_on" if on_match else "turn_off",
+        "target": "all lights",
+    }
+
 _CALENDAR_ACTION = (
     r"(?:add|adding|create|creating|recreate|recreating|schedule|scheduling|"
     r"reschedule|rescheduling|book|booking|put|set\s+up|make|making|"
@@ -77,6 +185,16 @@ _ROUTING_PATTERNS: tuple[tuple[str, str, Pattern[str]], ...] = tuple(
         ("notes", "set reminder request", rf"{_PLEASE}set\s+(?:a\s+)?reminder\b"),
         ("notes", "assistant reminder request", rf"{_ACTION_QUESTION}set\s+(?:a\s+)?reminder\b"),
 
+        # Home Assistant / smart-home commands. These are intentionally
+        # separate from UI theme commands: “tryb nocny w Home Assistant” is a
+        # request to activate an HA scene, not to change the MonikAI theme.
+        ("smart_home", "assistant Home Assistant control request", rf"{_ACTION_QUESTION}{_SMART_HOME_ACTION}\b.{{0,120}}\b{_SMART_HOME_TARGET}\b"),
+        ("smart_home", "Home Assistant control request", rf"{_PLEASE}{_SMART_HOME_ACTION}\b.{{0,120}}\b{_SMART_HOME_TARGET}\b"),
+        ("smart_home", "natural Home Assistant control request", rf"\b{_SMART_HOME_ACTION}\b.{{0,160}}\b{_SMART_HOME_TARGET}\b"),
+        ("smart_home", "Home Assistant target action request", rf"\b{_SMART_HOME_TARGET}\b.{{0,80}}\b{_SMART_HOME_ACTION}\b"),
+        ("smart_home", "named smart-home scene request", rf"\b{_SMART_HOME_TARGET}\b.{{0,24}}\bscene\b|\bscene\b.{{0,24}}\b{_SMART_HOME_TARGET}\b|\b(?:tryb\s+(?:nocn\w*|relaks\w*)|night\s+mode|noc\s+scene|scene\s+(?:night|noc|relax))\b"),
+        ("smart_home", "Home Assistant clarification", r"\b(?:chodzi|mowa|dotyczy|mam\s+na\s+myśli|mam\s+na\s+mysli|i\s+mean)\b.{0,60}\b(?:home\s+assistant|ha)\b"),
+
         # Email actions.
         ("email", "assistant email action request", rf"{_ACTION_QUESTION}(?:send|write|reply|email|message|archive|delete|mark)\b.{{0,120}}\b(?:emails?|mail|messages?|inbox|unread|read)\b"),
         ("email", "send/write/reply email request", rf"{_PLEASE}(?:send|write|reply)\b.{{0,120}}\b(?:emails?|mail|messages?)\b"),
@@ -119,7 +237,7 @@ _ROUTING_PATTERNS: tuple[tuple[str, str, Pattern[str]], ...] = tuple(
         ("workspace", "file/code inspection request", rf"{_PLEASE}(?:find|inspect|look\s+at|open|read|check)\b.{{0,120}}\b(?:file|folder|directory|repo|repository|code|source|logs?|trace|stack|diff)\b"),
         ("workspace", "server/process debugging request", rf"{_PLEASE}(?:check|debug|fix|restart|start|stop|kill|tail|inspect)\b.{{0,120}}\b(?:server|service|process|port|docker|container|tmux|endpoint|logs?)\b"),
         ("workspace", "local computer task request", r"\b(?:on|from|in|using|with)\s+(?:this|my|the)\s+(?:computer|machine|pc|laptop|device|system)\b|\b(?:local|host)\s+(?:computer|machine|files?|system)\b"),
-        ("workspace", "named computer task request", r"\b(?:on|from)\s+(?!this\b|my\b|the\b|a\b|an\b)(?:[a-z][a-z0-9_.-]{1,31})\b"),
+        ("workspace", "named computer task request", r"\b(?:run|execute|deploy|build|install|restart|reboot|check|inspect|open|read|write|copy|move|download|serve|launch|start|stop|kill)\b.{0,80}\b(?:on|from)\s+(?!this\b|my\b|the\b|a\b|an\b)(?:[a-z][a-z0-9_.-]{1,31})\b"),
         ("workspace", "terminal workspace request", r"\b(?:terminal|shell|workspace|tmux|docker|container|git|branch|commit|diff|pytest|stacktrace|traceback|benchmark|terminal[- ]bench|tbench)\b"),
 
         # Shell / remote-host intent.

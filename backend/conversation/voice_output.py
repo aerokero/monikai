@@ -165,12 +165,27 @@ class VoiceOutputService:
 
     def _settings(self) -> Dict[str, Any]:
         settings = _load_settings()
+        provider = str(settings.get("tts_provider", "disabled") or "disabled").strip().lower()
+        model = str(settings.get("tts_model", "tts-1") or "tts-1").strip()
+        voice = str(settings.get("tts_voice", "alloy") or "alloy").strip()
+        language = str(settings.get("tts_language", "auto") or "auto").strip().lower()
+        # Upgrade the old local Kokoro Polish profile in memory. Without this
+        # compatibility bridge, an ASCII-only sentence could still be routed
+        # through af_heart's English phonemizer after the Piper upgrade.
+        if provider == "local" and language == "auto" and voice.lower() in {
+            "af_alloy", "af_aoede", "af_bella", "af_heart", "af_jessica",
+            "af_kore", "af_nicole", "af_nova", "af_river", "af_sarah", "af_sky",
+        }:
+            model = "Piper"
+            voice = "pl_PL-gosia-medium"
+            language = "pl"
         return {
             "tts_enabled": settings.get("tts_enabled", True),
-            "tts_provider": str(settings.get("tts_provider", "disabled") or "disabled").strip().lower(),
-            "tts_model": str(settings.get("tts_model", "tts-1") or "tts-1").strip(),
-            "tts_voice": str(settings.get("tts_voice", "alloy") or "alloy").strip(),
+            "tts_provider": provider,
+            "tts_model": model,
+            "tts_voice": voice,
             "tts_speed": settings.get("tts_speed", "1"),
+            "tts_language": language,
             "tts_volume": _safe_volume(settings.get("tts_volume", 1.0)),
             "tts_auto_read": bool(settings.get("tts_auto_read", False)),
         }
@@ -202,6 +217,7 @@ class VoiceOutputService:
             "provider": provider,
             "model": settings["tts_model"],
             "voice": settings["tts_voice"],
+            "language": settings.get("tts_language", "auto"),
             "speed": settings["tts_speed"],
             "volume": settings["tts_volume"],
             "auto_read": settings["tts_auto_read"],
@@ -217,6 +233,7 @@ class VoiceOutputService:
         provider: Optional[str] = None,
         voice: Optional[str] = None,
         model: Optional[str] = None,
+        language: Optional[str] = None,
     ) -> SynthesizedSpeech:
         if not str(text or "").strip():
             raise ValueError("speech text cannot be empty")
@@ -237,6 +254,7 @@ class VoiceOutputService:
         selected_model = str(model or settings["tts_model"] or "").strip()
 
         if target in {"gemini", "elevenlabs"}:
+            selected_language = language if language is not None else settings.get("tts_language", "auto")
             if target == "gemini" and selected_model in {"", "tts-1", "tts-1-hd", "gpt-4o-mini-tts"}:
                 selected_model = DEFAULT_GEMINI_TTS_MODEL
             if target == "elevenlabs" and (
@@ -253,17 +271,28 @@ class VoiceOutputService:
                 not selected_voice or selected_voice == DEFAULT_ELEVENLABS_VOICE
             ):
                 selected_voice = "Leda"
-            return await self.router.synthesize(
-                text=speech_text,
-                provider=target,
-                voice=selected_voice,
-                model=selected_model or None,
-            )
+            router_kwargs = {
+                "text": speech_text,
+                "provider": target,
+                "voice": selected_voice,
+                "model": selected_model or None,
+            }
+            # Preserve the compatibility contract for callers that leave the
+            # selector at ``auto``; an explicit language is the useful part.
+            if str(selected_language or "auto").strip().lower() != "auto":
+                router_kwargs["language"] = selected_language
+            return await self.router.synthesize(**router_kwargs)
 
         if target == "local" or target.startswith("endpoint:"):
             from backend.odysseus.services.tts.tts_service import get_tts_service
 
-            audio = await asyncio.to_thread(get_tts_service().synthesize, speech_text)
+            selected_language = language if language is not None else settings.get("tts_language", "auto")
+            audio = await asyncio.to_thread(
+                get_tts_service().synthesize,
+                speech_text,
+                language=selected_language,
+                provider=target,
+            )
             if not audio:
                 raise RuntimeError(f"Provider '{target}' returned no audio")
             return SynthesizedSpeech(

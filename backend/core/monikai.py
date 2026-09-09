@@ -493,12 +493,15 @@ class AudioLoop:
         play_audio_locally=True,
         auto_allow_tools_without_confirmation=True,
         session_stream_channel=None,
+        session_manager=None,
         speech_synthesizer=None,
         conversation_gateway=None,
         conversation_model=None,
         conversation_endpoint_id=None,
         conversation_preset_id=None,
         conversation_session_id=None,
+        channel_tool_scopes=None,
+        channel_require_confirmation=None,
         **_ignored,
     ):
 
@@ -572,6 +575,16 @@ class AudioLoop:
         self.conversation_endpoint_id = str(conversation_endpoint_id or "").strip()
         self.conversation_preset_id = str(conversation_preset_id or "").strip()
         self.conversation_session_id = str(conversation_session_id or "").strip()
+        self.channel_tool_scopes = (
+            None
+            if channel_tool_scopes is None
+            else {str(scope).strip() for scope in channel_tool_scopes if str(scope).strip()}
+        )
+        self.channel_require_confirmation = (
+            None
+            if channel_require_confirmation is None
+            else bool(channel_require_confirmation)
+        )
         self.speech_synthesizer = speech_synthesizer or GeminiSpeechSynthesizer(
             api_key=os.getenv("GEMINI_API_KEY")
         )
@@ -601,7 +614,7 @@ class AudioLoop:
         # SessionManager (global, no projects). A stream channel (e.g.
         # Telegram) routes all turns to a continuous per-day log instead of
         # creating conversation sessions (v3 Phase G).
-        self.session_manager = SessionManager(
+        self.session_manager = session_manager or SessionManager(
             DATA_DIR,
             write_mode=os.getenv("SESSION_WRITE_MODE", "session_end"),
             stream_channel=session_stream_channel,
@@ -1310,9 +1323,13 @@ class AudioLoop:
             gateway.generate(
                 text,
                 timeout_sec=max(5.0, float(timeout_sec or 90.0)),
-                model=getattr(self, "conversation_model", "") or None,
-                endpoint_id=getattr(self, "conversation_endpoint_id", "") or None,
-                persona_id=getattr(self, "conversation_preset_id", "") or None,
+                # Empty channel overrides explicitly reset to the gateway
+                # defaults. Without passing the empty value, a custom model
+                # selected by one Telegram/Discord profile could bleed into
+                # the next channel's otherwise-default conversation.
+                model=getattr(self, "conversation_model", ""),
+                endpoint_id=getattr(self, "conversation_endpoint_id", ""),
+                persona_id=getattr(self, "conversation_preset_id", ""),
                 session_id=getattr(self, "conversation_session_id", "") or None,
             ),
             timeout=max(5.0, float(timeout_sec or 90.0)),
@@ -1358,10 +1375,14 @@ class AudioLoop:
         self,
         request: ConversationToolRequest,
     ) -> bool:
-        if not self.permissions.get(request.name, True):
+        if not self._channel_tool_allowed(request.name):
+            return False
+        if not self._conversation_tool_requires_confirmation(request.name):
             return True
         on_confirmation = getattr(self, "on_tool_confirmation", None)
         if not on_confirmation:
+            if self._channel_confirmation_requires_interactive_approval(request.name):
+                return False
             return bool(
                 getattr(self, "auto_allow_tools_without_confirmation", False)
             )
@@ -1386,6 +1407,39 @@ class AudioLoop:
             return bool(await future)
         finally:
             pending.pop(request_id, None)
+
+    _CHANNEL_TOOL_SCOPES = {
+        "list_smart_devices": "list_smart_devices",
+        "control_light": "control_light",
+        "manage_shopping_list": "manage_shopping_list",
+    }
+
+    def _channel_tool_allowed(self, tool_name: str) -> bool:
+        """Apply an optional transport profile scope to smart-home tools."""
+        scopes = getattr(self, "channel_tool_scopes", None)
+        required_scope = self._CHANNEL_TOOL_SCOPES.get(tool_name)
+        if scopes is None or required_scope is None:
+            return True
+        return required_scope in scopes
+
+    def _conversation_tool_requires_confirmation(self, tool_name: str) -> bool:
+        """Resolve confirmation policy without weakening global settings."""
+        profile_confirmation = getattr(self, "channel_require_confirmation", None)
+        if profile_confirmation is not None and tool_name in self._CHANNEL_TOOL_SCOPES:
+            # Listing devices is read-only; all other smart-home tools are
+            # treated as mutations, including shopping-list writes.
+            if tool_name == "list_smart_devices":
+                return False
+            return bool(profile_confirmation)
+        return bool(getattr(self, "permissions", {}).get(tool_name, True))
+
+    def _channel_confirmation_requires_interactive_approval(self, tool_name: str) -> bool:
+        """Return true when a channel profile cannot safely auto-approve."""
+        return (
+            getattr(self, "channel_require_confirmation", None) is True
+            and tool_name in self._CHANNEL_TOOL_SCOPES
+            and tool_name != "list_smart_devices"
+        )
 
     async def _plan_conversation_tool(
         self,
@@ -1595,7 +1649,12 @@ class AudioLoop:
             else:
                 rendered = await asyncio.wait_for(
                     self.speech_synthesizer.synthesize(
-                        SpeechSynthesisRequest(text=text, voice=voice, model=model)
+                        SpeechSynthesisRequest(
+                            text=text,
+                            voice=voice,
+                            model=model,
+                            language=str(speech.get("language") or "auto"),
+                        )
                     ),
                     timeout=timeout_sec,
                 )
@@ -3666,7 +3725,17 @@ class AudioLoop:
                             ] or fc.name.startswith("minecraft_"):
                                 prompt = fc.args.get("prompt", "")
 
-                                confirmation_required = self.permissions.get(fc.name, True)
+                                if not self._channel_tool_allowed(fc.name):
+                                    function_responses.append(
+                                        types.FunctionResponse(
+                                            id=fc.id,
+                                            name=fc.name,
+                                            response={"result": "This tool is not enabled for the current channel."},
+                                        )
+                                    )
+                                    continue
+
+                                confirmation_required = self._conversation_tool_requires_confirmation(fc.name)
                                 if fc.name.startswith("minecraft_"):
                                     confirmation_required = False
                                 if fc.name == "manage_agent_job":
@@ -3711,6 +3780,15 @@ class AudioLoop:
                                             )
                                             continue
                                     else:
+                                        if self._channel_confirmation_requires_interactive_approval(fc.name):
+                                            function_responses.append(
+                                                types.FunctionResponse(
+                                                    id=fc.id,
+                                                    name=fc.name,
+                                                    response={"result": "Interactive confirmation is not available for this channel."},
+                                                )
+                                            )
+                                            continue
                                         if not self.auto_allow_tools_without_confirmation:
                                             function_responses.append(
                                                 types.FunctionResponse(

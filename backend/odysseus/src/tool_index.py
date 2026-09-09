@@ -96,7 +96,8 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "manage_endpoints": "Endpoint management: list, add, delete, enable, or disable model API endpoints.",
     "manage_mcp": "MCP server management: list, add, delete, reconnect servers, or list available tools.",
     "manage_webhooks": "Webhook management: list, add, delete, enable, or disable webhooks.",
-    "api_call": "Call a configured API integration by name (Home Assistant, Miniflux, Gitea, Linkding, Jellyfin, RSS reader, git forge, bookmark manager, smart home, or any other registered service). Make a GET/POST/PUT/PATCH/DELETE request to the integration's endpoint path, with an optional JSON body. Use whenever the user asks to query or control one of their connected integrations/services.",
+    "api_call": "Call a configured non-Home-Assistant API integration by name (Miniflux, Gitea, Linkding, Jellyfin, RSS reader, git forge, bookmark manager, or any other registered service). Make a GET/POST/PUT/PATCH/DELETE request to the integration's endpoint path, with an optional JSON body. Use whenever the user asks to query or control a connected service that has no dedicated named tool.",
+    "home_assistant_control": "Control one explicitly named, configured Home Assistant light, switch, or scene through the shared HA agent, including an explicit interactive all-lights command. Natural requests such as 'turn on the kitchen lamp', 'set the lighting to relaxation', or 'activate the relaxation scene' indicate smart-home intent; do not require the user to say Home Assistant. A request about conversation tone is not smart-home control, and 'mode' alone is ambiguous. This is not the MonikAI UI theme and does not allow arbitrary HA service calls.",
     "manage_tokens": "API token management: list, create, or delete API access tokens.",
     "manage_documents": "List, read, delete, or tidy documents in the editor panel. action='list' returns clickable rows (most-recent first) so the user can open any doc by clicking. action='read' (aka view/open/get) with document_id returns the content; supports offset=<N> + limit=<N> to page through large docs (response includes next_offset when more remains, so you can keep calling with offset=next_offset). action='delete' with document_id removes a doc (only way to delete). Use this for ANY 'show/read/list/open my documents/docs/files/notes' request — never shell or curl.",
     "manage_research": "List, read/open, or delete saved DEEP RESEARCH results from the Library. action='list' returns clickable [query](#research-<id>) rows (most-recent first). action='read' (aka open/view/get) with id returns the report + sources. action='delete' with id removes it. Use this for ANY 'open/read/find/delete my research / that report / the research on X' request. NOTE: this is for EXISTING research; to START new research use trigger_research.",
@@ -433,9 +434,25 @@ class ToolIndex:
         # keyword-fallback paths (not just the deterministic domain seed) when a
         # user names a connected service.
         frozenset({"api_call", "api call", "integration", "integrations",
-                   "home assistant", "homeassistant", "miniflux", "gitea",
+                   "miniflux", "gitea",
                    "linkding", "jellyfin"}):
             {"api_call"},
+        # Home Assistant has a typed, in-process tool. Keep it ahead of the
+        # generic API fallback so the model cannot lose the live HA runtime
+        # just because the generic integrations registry is empty.
+        frozenset({"home assistant", "homeassistant", "all lights", "all the lights",
+                   "all lighting", "every light", "everything", "wszystkie światła",
+                   "wszystkie swiatla", "wszystko dosłownie", "wszystko doslownie",
+                   "całe oświetlenie", "cale oswietlenie", "światła", "swiatla",
+                   "oświetlenie", "oswietlenie", "wyłącz światła", "wylacz swiatla",
+                   "wyłącz wszystko", "wylacz wszystko", "włącz światła", "wlacz swiatla",
+                   "włącz wszystko", "wlacz wszystko", "tryb nocny",
+                   "night mode", "night lights", "night light", "night scene",
+                   "scene night", "noc scene", "scene noc", "relax scene",
+                   "scene relax", "relaxation scene", "relaxation lighting",
+                   "tryb relaksu", "scena trybu relaksu", "smart home",
+                   "scena tryb nocny"}):
+            {"home_assistant_control"},
         # Managing EXISTING research in the Library — open/read/find/delete.
         frozenset({"my research", "the research", "research on", "open research",
                    "read research", "find research", "delete research",

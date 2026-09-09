@@ -1,6 +1,6 @@
 # routes/tts_routes.py
 """
-TTS API routes — multi-provider (local Kokoro, API endpoint, browser).
+TTS API routes — multi-provider (local Piper/Kokoro, API endpoint, browser).
 """
 
 from fastapi import APIRouter, HTTPException
@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 class TTSRequest(BaseModel):
     text: str
     format: str = "audio"  # "audio" or "base64"
+    language: str | None = None
 
 def setup_tts_routes(tts_service):
     """Setup TTS routes with the provided TTS service"""
@@ -38,7 +39,10 @@ def setup_tts_routes(tts_service):
                 )
             
             if request.format == "base64":
-                audio_b64 = tts_service.synthesize_to_base64(request.text)
+                audio_b64 = tts_service.synthesize_to_base64(
+                    request.text,
+                    language=request.language,
+                )
                 if not audio_b64:
                     raise HTTPException(
                         status_code=500,
@@ -47,7 +51,10 @@ def setup_tts_routes(tts_service):
                 return {"audio": audio_b64}
             
             else:  # audio format
-                audio_data = tts_service.synthesize(request.text)
+                audio_data = tts_service.synthesize(
+                    request.text,
+                    language=request.language,
+                )
                 if not audio_data:
                     raise HTTPException(
                         status_code=500,

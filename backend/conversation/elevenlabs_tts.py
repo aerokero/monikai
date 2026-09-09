@@ -8,7 +8,12 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 import httpx
 
-from .speech import SpeechSynthesisRequest, SpeechSynthesizer, SynthesizedSpeech
+from .speech import (
+    SpeechSynthesisRequest,
+    SpeechSynthesizer,
+    SynthesizedSpeech,
+    speech_language_code,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +53,14 @@ class ElevenLabsSpeechSynthesizer:
                 "use_speaker_boost": True,
             },
         }
+        # Eleven Multilingual v2 detects Polish itself and documents that
+        # language_code is not supported for that model. Newer multilingual
+        # models (for example Flash v2.5/v3) accept it, so pass it only when
+        # the selected model can use the explicit hint.
+        model_id = str(payload["model_id"] or "").lower()
+        language_code = speech_language_code(request.language)
+        if language_code and "multilingual_v2" not in model_id:
+            payload["language_code"] = language_code.split("-", 1)[0]
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=5.0)) as client:
             resp = await client.post(url, json=payload, headers=headers)

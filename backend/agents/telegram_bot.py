@@ -101,6 +101,8 @@ class TelegramChatSession:
         kasa_agent=None,
         hue_agent=None,
         home_assistant_agent=None,
+        channel_profile=None,
+        conversation_session_id=None,
     ):
         self.chat_id = int(chat_id)
         self.user_label = str(user_label or f"telegram:{chat_id}")
@@ -112,6 +114,10 @@ class TelegramChatSession:
         self.kasa_agent = kasa_agent
         self.hue_agent = hue_agent
         self.home_assistant_agent = home_assistant_agent
+        self.channel_profile = dict(channel_profile or {})
+        self.conversation_session_id = str(
+            conversation_session_id or f"telegram-{self.chat_id}"
+        ).strip()
         self.voice_mode = "auto"
         self.audio_loop = None
         self.run_task = None
@@ -131,26 +137,36 @@ class TelegramChatSession:
             enable_audio_io=False,
             auto_allow_tools_without_confirmation=True,
             session_stream_channel="telegram",
+            conversation_model=self.channel_profile.get("model"),
+            conversation_endpoint_id=self.channel_profile.get("endpoint_id"),
+            conversation_preset_id=self.channel_profile.get("preset_id"),
+            conversation_session_id=self.conversation_session_id,
+            channel_tool_scopes=self.channel_profile.get("tool_scopes") if self.channel_profile else None,
+            channel_require_confirmation=(
+                self.channel_profile.get("require_confirmation")
+                if self.channel_profile and "require_confirmation" in self.channel_profile
+                else None
+            ),
         )
         self.audio_loop.kasa_agent = self.kasa_agent
         self.audio_loop.hue_agent = self.hue_agent
         self.audio_loop.home_assistant_agent = self.home_assistant_agent
         self.audio_loop.update_permissions((self.settings_getter() or {}).get("tool_permissions") or {})
-        self.run_task = asyncio.create_task(
-            self.audio_loop.run(
-                start_message=(
-                    "System Notification: You are chatting with the user over Telegram text messages. "
-                    "Respond in plain text only. Keep replies concise by default. "
-                    "On Telegram, you may sound a little more casual, warm, lowercase and playful than in voice mode, "
-                    "if it feels natural for the moment. Keep that text style consistent across messages instead of "
-                    "swinging between tweet-like casual and generic assistant phrasing. "
-                    "Reply in the user's current language by default, and switch languages naturally if the user does. "
-                    "Prefer short, natural replies. Avoid forced holiday mentions, forced cleverness, support-tone phrasing, "
-                    "and random foreign insertions that do not sound organic in the current language. "
-                    "Do not imply that you can see images or hear audio unless the user explicitly sends them."
-                )
-            )
+        start_message = (
+            "System Notification: You are chatting with the user over Telegram text messages. "
+            "Respond in plain text only. Keep replies concise by default. "
+            "On Telegram, you may sound a little more casual, warm, lowercase and playful than in voice mode, "
+            "if it feels natural for the moment. Keep that text style consistent across messages instead of "
+            "swinging between tweet-like casual and generic assistant phrasing. "
+            "Reply in the user's current language by default, and switch languages naturally if the user does. "
+            "Prefer short, natural replies. Avoid forced holiday mentions, forced cleverness, support-tone phrasing, "
+            "and random foreign insertions that do not sound organic in the current language. "
+            "Do not imply that you can see images or hear audio unless the user explicitly sends them."
         )
+        overlay = str(self.channel_profile.get("prompt_overlay") or "").strip()
+        if overlay:
+            start_message += f"\nChannel-specific style instructions (follow when compatible with the main persona):\n{overlay}"
+        self.run_task = asyncio.create_task(self.audio_loop.run(start_message=start_message))
         await self.audio_loop.wait_until_ready(25.0)
 
     async def ask(self, text: str) -> str:
@@ -512,6 +528,7 @@ class TelegramBotService:
         kasa_agent=None,
         hue_agent=None,
         home_assistant_agent=None,
+        channel_profile=None,
         allowed_chat_id: Optional[int] = None,
         allowed_chat_ids: Optional[List[int]] = None,
         allow_groups: bool = False,
@@ -527,6 +544,7 @@ class TelegramBotService:
         self.kasa_agent = kasa_agent
         self.hue_agent = hue_agent
         self.home_assistant_agent = home_assistant_agent
+        self.channel_profile = dict(channel_profile or {})
         normalized_ids = set()
         if allowed_chat_id is not None:
             normalized_ids.add(int(allowed_chat_id))
@@ -556,23 +574,35 @@ class TelegramBotService:
         kasa_agent=None,
         hue_agent=None,
         home_assistant_agent=None,
+        channel_config=None,
+        channel_profile=None,
     ):
-        token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+        config = dict(channel_config or {})
+        token = str(config.get("token") or os.getenv("TELEGRAM_BOT_TOKEN", "")).strip()
+        if channel_config is not None and config.get("enabled") is False:
+            token = ""
         if not token:
             return None
-        raw_allowed = str(os.getenv("TELEGRAM_ALLOWED_CHAT_ID", "")).strip()
-        allowed_chat_id = int(raw_allowed) if raw_allowed else None
-        raw_allowed_list = str(os.getenv("TELEGRAM_ALLOWED_CHAT_IDS", "")).strip()
-        allowed_chat_ids: List[int] = []
-        if raw_allowed_list:
-            for part in raw_allowed_list.split(","):
-                chunk = str(part or "").strip()
-                if not chunk:
-                    continue
-                try:
-                    allowed_chat_ids.append(int(chunk))
-                except Exception:
-                    continue
+        # A typed config is authoritative even when its allowlist is
+        # intentionally empty (empty means all private chats, subject to the
+        # group switch). Only callers that omit typed config use env parsing.
+        if channel_config is not None and "allowed_chat_ids" in config:
+            allowed_chat_id = None
+            allowed_chat_ids = list(config.get("allowed_chat_ids") or [])
+        else:
+            raw_allowed = str(os.getenv("TELEGRAM_ALLOWED_CHAT_ID", "")).strip()
+            allowed_chat_id = int(raw_allowed) if raw_allowed else None
+            raw_allowed_list = str(os.getenv("TELEGRAM_ALLOWED_CHAT_IDS", "")).strip()
+            allowed_chat_ids = []
+            if raw_allowed_list:
+                for part in raw_allowed_list.split(","):
+                    chunk = str(part or "").strip()
+                    if not chunk:
+                        continue
+                    try:
+                        allowed_chat_ids.append(int(chunk))
+                    except Exception:
+                        continue
         try:
             session_idle_sec = float(os.getenv("TELEGRAM_SESSION_IDLE_SEC", "1800"))
         except Exception:
@@ -588,9 +618,10 @@ class TelegramBotService:
             kasa_agent=kasa_agent,
             hue_agent=hue_agent,
             home_assistant_agent=home_assistant_agent,
+            channel_profile=channel_profile,
             allowed_chat_id=allowed_chat_id,
             allowed_chat_ids=allowed_chat_ids,
-            allow_groups=_env_flag("TELEGRAM_ALLOW_GROUPS", False),
+            allow_groups=config.get("allow_groups", _env_flag("TELEGRAM_ALLOW_GROUPS", False)),
             session_idle_sec=session_idle_sec,
         )
 
@@ -913,6 +944,7 @@ class TelegramBotService:
                 kasa_agent=self.kasa_agent,
                 hue_agent=self.hue_agent,
                 home_assistant_agent=self.home_assistant_agent,
+                channel_profile=self.channel_profile,
             )
             self._sessions[chat_id] = session
             return session

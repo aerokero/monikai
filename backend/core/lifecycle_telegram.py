@@ -15,6 +15,15 @@ def start_telegram_service(
     hue_agent=None,
     home_assistant_agent=None,
 ):
+    channel_config = None
+    channel_profile = None
+    try:
+        from src.channel_config import get_channel_integration, get_channel_profile
+        channel_config = get_channel_integration("telegram")
+        channel_profile = get_channel_profile(channel_config.get("profile_id") or "telegram")
+    except Exception as exc:
+        print(f"[SERVER] Typed Telegram config unavailable; using environment: {exc}")
+
     telegram_service = TelegramBotService.from_env(
         settings_getter,
         calendar_manager=calendar_manager,
@@ -25,6 +34,8 @@ def start_telegram_service(
         kasa_agent=kasa_agent,
         hue_agent=hue_agent,
         home_assistant_agent=home_assistant_agent,
+        channel_config=channel_config,
+        channel_profile=channel_profile,
     )
     telegram_task = None
     if telegram_service:

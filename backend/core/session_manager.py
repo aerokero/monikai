@@ -29,6 +29,7 @@ class SessionManager:
         workspace_root: Path,
         write_mode: str = "immediate",
         stream_channel: Optional[str] = None,
+        auto_start: bool = True,
     ):
         self.workspace_root = Path(workspace_root)
         self.sessions_dir = self.workspace_root / "sessions"
@@ -42,7 +43,7 @@ class SessionManager:
         # Stream mode: every log_chat() goes to the channel's continuous
         # per-day log; no conversation session is ever created (Telegram).
         self.stream_channel = stream_channel
-        if not stream_channel:
+        if not stream_channel and auto_start:
             self.start_new_session()
 
     def start_new_session(

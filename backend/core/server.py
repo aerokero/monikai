@@ -147,6 +147,7 @@ async def lifespan(app: FastAPI):
     global calendar_manager, reminder_manager, personality_system, spotify_manager
     global minecraft_bot_manager, minecraft_autonomy_task, minecraft_autonomy_state
     global server_mic_listener
+    global server_voice_sessions, server_voice_chat
     global telegram_service, telegram_task
     global discord_service, discord_task
 
@@ -170,6 +171,29 @@ async def lifespan(app: FastAPI):
     hue_agent, home_assistant_agent = await initialize_smart_home_agents(
         SETTINGS,
     )
+
+    # Native Odysseus tools are mounted before lifespan startup. Publish the
+    # fully initialized shared agent through the small runtime bridge so native
+    # chat and scheduled Tasks use the same filtered Home Assistant connection.
+    try:
+        from src.home_assistant_runtime import set_home_assistant_agent
+        set_home_assistant_agent(home_assistant_agent)
+    except Exception as exc:
+        logger.warning("Could not publish Home Assistant runtime to native tools: %s", exc)
+
+    # The native Odysseus bridge is initialized before the async lifespan, so
+    # inject runtime-only integrations here once Home Assistant is ready.
+    # This keeps scheduled smart-home actions on the same allowlisted agent
+    # path as chat/channel actions.
+    task_scheduler = getattr(app.state, "task_scheduler", None)
+    if task_scheduler:
+        try:
+            task_scheduler.set_smart_home_agents(
+                home_assistant_agent=home_assistant_agent,
+                hue_agent=hue_agent,
+            )
+        except Exception as exc:
+            logger.warning("Could not attach smart-home agents to task scheduler: %s", exc)
 
     # Initialize Global Managers (Persistent across AI sessions)
     data_dir = DATA_DIR
@@ -234,13 +258,20 @@ async def lifespan(app: FastAPI):
         if not registered:
             minecraft_bot_manager = None
 
+    server_voice_chat = None
     try:
         from backend.audio.server_mic_listener import ServerMicListenerService
-        from backend.agents.telegram_bot import TelegramChatSession
+        from backend.audio.server_voice_session import (
+            ServerVoiceChatSession,
+            ServerVoiceSessionStore,
+        )
 
-        mic_session = TelegramChatSession(
-            chat_id=0,
-            user_label="local_server_user",
+        server_voice_sessions = ServerVoiceSessionStore(
+            DATA_DIR,
+            emit_event=_emit_to_frontend,
+        )
+        server_voice_chat = ServerVoiceChatSession(
+            session_store=server_voice_sessions,
             settings_getter=lambda: SETTINGS,
             calendar_manager=calendar_manager,
             reminder_manager=reminder_manager,
@@ -248,11 +279,20 @@ async def lifespan(app: FastAPI):
             personality=personality_system,
             hue_agent=hue_agent,
             home_assistant_agent=home_assistant_agent,
+            conversation_gateway=getattr(app.state, "odysseus_voice_gateway", None),
         )
 
         input_dev = SETTINGS.get("server_mic_device_index", None)
         output_dev = SETTINGS.get("server_mic_output_index", None)
         wake_req = str(os.getenv("SERVER_MIC_WAKE_WORD_REQUIRED", "false")).lower() in {"1", "true", "yes"}
+        use_live = str(os.getenv("SERVER_MIC_USE_GEMINI_LIVE", "false")).lower() in {"1", "true", "yes", "on"}
+
+        async def _server_voice_turn(user_text: str, assistant_text: str):
+            if use_live or server_voice_chat.uses_canonical_history:
+                await server_voice_sessions.record_turn(user_text, assistant_text)
+            else:
+                # ServerVoiceChatSession persisted this turn through AudioLoop.
+                await server_voice_sessions.publish_turn(user_text, assistant_text)
 
         vlf_cfg = SETTINGS.get("smart_home", {}).get("voice_light_feedback", {}) or SETTINGS.get("voice_light_feedback", {})
         voice_light_feedback = None
@@ -270,11 +310,15 @@ async def lifespan(app: FastAPI):
                 print(f"[SERVER] VoiceLightFeedbackController setup error: {e}")
 
         server_mic_listener = ServerMicListenerService(
-            conversation_handler=lambda text: mic_session.ask(text),
+            conversation_handler=lambda text: server_voice_chat.ask(text),
             input_device_index=input_dev,
             output_device_index=output_dev,
             require_wake_word=wake_req,
             gemini_voice=SETTINGS.get("gemini_voice", "Leda") or "Leda",
+            on_session_started=server_voice_sessions.begin,
+            on_session_finished=server_voice_sessions.end,
+            on_turn_finished=_server_voice_turn,
+            use_gemini_live=use_live,
             hue_agent=hue_agent,
             home_assistant_agent=home_assistant_agent,
             voice_light_feedback=voice_light_feedback,
@@ -302,6 +346,8 @@ async def lifespan(app: FastAPI):
         reminder_manager=reminder_manager,
         spotify_manager=spotify_manager,
         personality=personality_system,
+        home_assistant_agent=home_assistant_agent,
+        hue_agent=hue_agent,
     )
 
     # v2 Soul Engine — initialize db + personality + discovery engines.
@@ -315,15 +361,46 @@ async def lifespan(app: FastAPI):
         print(f"[CRITICAL] Failed to initialize MonikAI v2 runtime: {e}")
         raise RuntimeError(f"MonikAI v2 runtime failed to initialize: {e}") from e
 
+    # Start Tasks only after all shared managers and the v2 runtime are ready.
+    # The scheduler waits before its first scan, but a task that is already due
+    # should still never race application startup or observe half-built state.
+    if task_scheduler:
+        try:
+            await task_scheduler.start()
+        except Exception as exc:
+            # A scheduler failure must be visible, but should not prevent the
+            # chat UI from starting. The health of Tasks is reported by its
+            # existing run/history endpoints and logs.
+            logger.exception("Task scheduler failed to start: %s", exc)
+
     try:
         yield
     finally:
+        try:
+            from src.home_assistant_runtime import set_home_assistant_agent
+            set_home_assistant_agent(None)
+        except Exception:
+            pass
+
         if server_mic_listener:
             try:
                 server_mic_listener.stop()
             except Exception:
                 pass
             server_mic_listener = None
+        if server_voice_chat:
+            try:
+                await server_voice_chat.stop()
+            except Exception:
+                pass
+            server_voice_chat = None
+        if server_voice_sessions:
+            try:
+                await server_voice_sessions.end()
+                server_voice_sessions.close()
+            except Exception:
+                pass
+            server_voice_sessions = None
 
         _, minecraft_autonomy_task = await stop_minecraft_runtime(
             minecraft_bot_manager,
@@ -339,6 +416,12 @@ async def lifespan(app: FastAPI):
             discord_service,
             discord_task,
         )
+
+        if task_scheduler:
+            try:
+                await task_scheduler.stop()
+            except Exception as exc:
+                logger.warning("Task scheduler stop failed: %s", exc)
 
         try:
             from backend.core.runtimes import v2_runtime as _v2
@@ -500,6 +583,8 @@ telegram_task = None
 discord_service = None
 discord_task = None
 server_mic_listener = None
+server_voice_sessions = None
+server_voice_chat = None
 
 
 def _get_audio_loop():
@@ -713,6 +798,9 @@ register_session_mode_handlers(
 register_conversation_handlers(
     sio,
     get_audio_loop=lambda: audio_loop,
+    get_session_manager=lambda: (
+        server_voice_sessions.manager if server_voice_sessions else None
+    ),
 )
 
 register_openclaw_skill_handlers(

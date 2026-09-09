@@ -30,3 +30,4 @@ from src.tools.vault import (  # noqa: F401
     _load_vault_config, _run_bw,
     do_vault_search, do_vault_get, do_vault_unlock,
 )
+from src.tools.smart_home import do_home_assistant_control  # noqa: F401

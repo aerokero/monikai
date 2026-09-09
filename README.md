@@ -60,6 +60,51 @@ VITE_MONIKAI_CLIENT_CAPTURE=true
 This mode is intended for a trusted LAN or VPN connection. It does not yet
 provide TLS, multi-client session routing, or public Internet hardening.
 
+### Always-on server microphone
+
+When a microphone and speaker are connected to the server, MonikAI can use
+them as a first-class conversation channel. Idle room audio is checked locally
+with Vosk. After `Hey Monika`/`Hej Monika` (or just `Monika`) is recognized,
+the utterance is transcribed and
+sent through the same conversation, memory, and tool pipeline as web chat.
+That includes Home Assistant, the shopping list, notes, and reminders. Each
+wake activation creates a `Server Voice` conversation visible in web history.
+While idle, the local Vosk recognizer can acknowledge a stable wake partial
+immediately with a louder ping and a short, language-neutral `Hmmm?`; the
+following command is closed by detected trailing silence rather than a fixed
+utterance length.
+
+The Docker Compose setup enables this channel by default. Relevant variables:
+
+```env
+SERVER_MIC_LISTENER_ENABLED=true
+SERVER_MIC_WAKE_WORD_REQUIRED=true
+SERVER_MIC_VOSK_MODEL_PATH=/app/data/vosk-model
+SERVER_MIC_FOLLOWUP_TIMEOUT=8
+SERVER_MIC_USE_GEMINI_LIVE=false
+SERVER_MIC_TTS_PROVIDER=local
+SERVER_MIC_TRAILING_SILENCE_MS=1200
+SERVER_MIC_MAX_SPEECH_MS=15000
+SERVER_MIC_STT_TIMEOUT_SECONDS=12
+```
+
+Put a compatible Polish Vosk model at `data/vosk-model`. Input and output
+devices are auto-detected; fixed PortAudio indexes can be saved as
+`server_mic_device_index` and `server_mic_output_index` in MonikAI settings.
+The text reply uses the model and endpoint currently selected in the web model
+picker (and follows changes made there); it never silently switches providers.
+Server-speaker replies use the Polish-trained local Piper voice
+`pl_PL-gosia-medium` by default and fall back to pronunciation-safe espeak-ng
+if the model cannot be loaded. The voice model is downloaded on first use when
+`PIPER_AUTO_DOWNLOAD=true` (Compose enables this); the first synthesis can
+therefore take longer. Gemini TTS remains available as the natural, cloud
+renderer option in Settings and receives an explicit `pl-PL` language hint.
+The optional Gemini Live compatibility mode has lower latency but a narrower
+tool surface, so the normal conversation path is the default. Voice turns additionally request concise spoken replies while keeping
+the selected text endpoint/model unchanged. If the selected endpoint returns
+an authentication error, repair its key in Model Endpoints rather than
+expecting the voice channel to choose a different provider.
+
 ## Project Layout
 
 - `backend/core/` - runtime, socket handlers, lifecycle, and HTTP routers

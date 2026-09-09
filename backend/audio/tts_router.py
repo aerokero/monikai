@@ -68,6 +68,7 @@ class TTSRouter:
         provider: Optional[str] = None,
         voice: Optional[str] = None,
         model: Optional[str] = None,
+        language: Optional[str] = None,
     ) -> SynthesizedSpeech:
         """Synthesize text using chosen or default provider with graceful fallback."""
         target_provider = provider or self.default_provider
@@ -85,6 +86,7 @@ class TTSRouter:
             req = SpeechSynthesisRequest(
                 text=text,
                 voice=target_voice,
+                language=language or "auto",
                 **({"model": target_model} if target_model else {}),
             )
             return await synth.synthesize(req)
@@ -107,6 +109,7 @@ class TTSRouter:
                         req = SpeechSynthesisRequest(
                             text=text,
                             voice=fallback_voice,
+                            language=language or "auto",
                             **({"model": fallback_model} if fallback_model else {}),
                         )
                         return await fallback_synth.synthesize(req)

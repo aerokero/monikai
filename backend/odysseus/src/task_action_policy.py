@@ -7,6 +7,10 @@ ADMIN_ONLY_TASK_ACTIONS = frozenset({
     "run_script",
     "ssh_command",
     "cookbook_serve",
+    # Home Assistant is a shared external system. Keep scheduled mutations
+    # behind the same admin boundary as shell/cookbook actions until channel
+    # and per-user permissions are fully modeled.
+    "home_assistant_control",
 })
 
 

@@ -765,6 +765,7 @@ async function initVisionSettings() {
 /* ── Text to Speech ── */
 async function initTtsSettings() {
   var provSel = el('set-ttsProviderSelect');
+  var languageSelect = el('set-ttsLanguageSelect');
   var modelSelect = el('set-ttsModelSelect');
   var modelInput = el('set-ttsModelInput');
   var voiceSelect = el('set-ttsVoiceSelect');
@@ -783,8 +784,14 @@ async function initTtsSettings() {
   function isEndpoint() { return provSel.value.startsWith('endpoint:'); }
   function isGemini() { return provSel.value === 'gemini'; }
   function isElevenLabs() { return provSel.value === 'elevenlabs'; }
-  function getModel() { return isEndpoint() ? modelSelect.value : modelInput.value; }
-  function getVoice() { return isEndpoint() ? voiceSelect.value : voiceInput.value; }
+  function getModel() {
+    if (provSel.value === 'local') return 'Piper';
+    return isEndpoint() ? modelSelect.value : modelInput.value;
+  }
+  function getVoice() {
+    if (provSel.value === 'local' && !voiceInput.value) return 'pl_PL-gosia-medium';
+    return isEndpoint() ? voiceSelect.value : voiceInput.value;
+  }
   function volumePercent(raw) {
     var value = Number(raw);
     if (!Number.isFinite(value)) value = 1;
@@ -831,6 +838,13 @@ async function initTtsSettings() {
     if (settings.tts_provider) provSel.value = settings.tts_provider;
     if (settings.tts_model) { modelSelect.value = settings.tts_model; modelInput.value = settings.tts_model; }
     if (settings.tts_voice) { voiceSelect.value = settings.tts_voice; voiceInput.value = settings.tts_voice; }
+    if (languageSelect && settings.tts_language) languageSelect.value = settings.tts_language;
+    // Older profiles used af_heart for Polish Kokoro. Keep them on the
+    // pronunciation-safe Polish voice after the UI is upgraded.
+    if (provSel.value === 'local' && languageSelect && languageSelect.value === 'pl' &&
+        (!settings.tts_voice || /^af_/.test(settings.tts_voice))) {
+      voiceInput.value = 'pl_PL-gosia-medium';
+    }
     if (settings.tts_speed) { speedSelect.value = settings.tts_speed; }
     if (volumeRange && settings.tts_volume != null) volumeRange.value = String(volumePercent(settings.tts_volume));
     if (ttsEnabledToggle) ttsEnabledToggle.checked = settings.tts_enabled !== false;
@@ -854,6 +868,7 @@ async function initTtsSettings() {
         tts_provider: provSel.value,
         tts_model: getModel() || (isGemini() ? 'gemini-2.5-flash-preview-tts' : (isElevenLabs() ? 'eleven_multilingual_v2' : 'tts-1')),
         tts_voice: getVoice() || (isGemini() ? 'Leda' : 'alloy'),
+        tts_language: languageSelect ? (languageSelect.value || 'auto') : 'auto',
         tts_speed: speedSelect.value || '1',
         tts_volume: getVolume(),
         tts_auto_read: ttsAutoReadToggle ? ttsAutoReadToggle.checked : false,
@@ -870,7 +885,12 @@ async function initTtsSettings() {
 
   provSel.addEventListener('change', function() {
     var prov = provSel.value;
-    if (prov === 'local') voiceInput.value = 'af_heart';
+    if (prov === 'local') {
+      if (!languageSelect || languageSelect.value === 'auto' || languageSelect.value === 'pl') {
+        voiceInput.value = 'pl_PL-gosia-medium';
+      }
+      modelInput.value = 'Piper';
+    }
     else if (prov === 'gemini') { voiceInput.value = 'Leda'; modelInput.value = 'gemini-2.5-flash-preview-tts'; }
     else if (prov === 'elevenlabs') { voiceInput.value = '21m00Tcm4TlvDq8ikWAM'; modelInput.value = 'eleven_multilingual_v2'; }
     else if (isEndpoint()) { voiceSelect.value = 'alloy'; modelSelect.value = 'tts-1'; }
@@ -882,6 +902,12 @@ async function initTtsSettings() {
   modelInput.addEventListener('change', saveTTS);
   voiceSelect.addEventListener('change', saveAndClearCache);
   voiceInput.addEventListener('change', saveTTS);
+  if (languageSelect) languageSelect.addEventListener('change', function() {
+    if (provSel.value === 'local' && languageSelect.value === 'pl') {
+      voiceInput.value = 'pl_PL-gosia-medium';
+    }
+    saveAndClearCache();
+  });
   speedSelect.addEventListener('change', saveAndClearCache);
   if (volumeRange) {
     volumeRange.addEventListener('input', syncVolumeLabel);
@@ -908,19 +934,32 @@ async function initTtsSettings() {
         ttsMsg.textContent = 'Select a provider first'; ttsMsg.style.color = 'var(--red, #e55)';
         setTimeout(function() { ttsMsg.textContent = ''; }, 2000); return;
       }
-      var testText = 'Hello, this is a test of text to speech.';
+      var previewLanguage = languageSelect ? (languageSelect.value || 'auto') : 'auto';
+      var testText = (previewLanguage === 'pl' || previewLanguage === 'auto')
+        ? 'Cześć, jestem Monika. Miło Cię słyszeć.'
+        : 'Hello, this is a test of text to speech.';
       previewPlaying = true; previewBtn.textContent = 'Loading...';
       try {
         if (prov === 'browser') {
           if (!('speechSynthesis' in window)) throw new Error('Browser TTS not supported');
           var utt = new SpeechSynthesisUtterance(testText);
+          utt.lang = previewLanguage === 'pl' || previewLanguage === 'auto' ? 'pl-PL' :
+            (previewLanguage === 'en-gb' ? 'en-GB' : 'en-US');
           var voiceVal = getVoice();
+          var voices = window.speechSynthesis.getVoices();
           if (voiceVal) {
-            var voices = window.speechSynthesis.getVoices();
             var target = voiceVal.toLowerCase();
             var match = voices.find(function(v) { return v.name.toLowerCase() === target; }) ||
                         voices.find(function(v) { return v.name.toLowerCase().includes(target); });
             if (match) utt.voice = match;
+          }
+          if (!utt.voice) {
+            var requestedLang = utt.lang.toLowerCase();
+            var languageMatch = voices.find(function(v) {
+              var availableLang = (v.lang || '').toLowerCase().replace('_', '-');
+              return availableLang === requestedLang || availableLang.startsWith(requestedLang.split('-')[0] + '-');
+            });
+            if (languageMatch) utt.voice = languageMatch;
           }
           utt.rate = parseFloat(speedSelect.value) || 1;
           utt.volume = getVolume();
@@ -934,7 +973,7 @@ async function initTtsSettings() {
           var res = await fetch('/api/tts/synthesize', {
             method: 'POST', credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: testText, format: 'audio' })
+            body: JSON.stringify({ text: testText, format: 'audio', language: previewLanguage })
           });
           if (!res.ok) { var err = await res.json().catch(function() { return {}; }); throw new Error(err.detail?.message || 'Synthesis failed'); }
           var blob = await res.blob();
@@ -2262,6 +2301,7 @@ function initAll() {
   initShortcuts();
   initAccount();
   initIntegrations();
+  initChannelIntegrations();
   initEmailSettings();
   initEmailAccountsSettings();
   initReminderSettings();
@@ -3423,6 +3463,283 @@ async function initIntegrations() {
 
   syncAuthRow();
   renderList();
+}
+
+/* ══ MonikAI channel integrations ══ */
+
+let _channelIntegrationsInited = false;
+
+function _channelEsc(value) {
+  const node = document.createElement('div');
+  node.textContent = String(value ?? '');
+  return node.innerHTML;
+}
+
+function _channelCsv(value) {
+  return Array.isArray(value) ? value.join(', ') : String(value || '');
+}
+
+function _channelChecked(value) {
+  return value ? ' checked' : '';
+}
+
+function _channelPresetOptions(presets, selected) {
+  const entries = Object.entries(presets || {}).filter(([id, item]) => item && item.enabled !== false);
+  if (!entries.some(([id]) => id === selected)) entries.unshift([selected || 'monika', { name: selected || 'Monika' }]);
+  return entries.map(([id, item]) => `<option value="${_channelEsc(id)}"${id === selected ? ' selected' : ''}>${_channelEsc(item.name || id)}</option>`).join('');
+}
+
+function _channelProfileMarkup(profileId, profile, presets) {
+  const scopes = new Set(Array.isArray(profile.tool_scopes) ? profile.tool_scopes : []);
+  const scopeLabels = {
+    list_smart_devices: 'Read smart-home devices',
+    control_light: 'Control lights and switches',
+    manage_shopping_list: 'Manage shopping list',
+  };
+  return `
+    <div class="channel-config-profile" data-profile-id="${_channelEsc(profileId)}">
+      <div class="admin-toggle-sub" style="margin:8px 0 5px;">Persona and channel prompt</div>
+      <div class="settings-row">
+        <label class="settings-label" for="channel-${_channelEsc(profileId)}-preset">Persona</label>
+        <select id="channel-${_channelEsc(profileId)}-preset" class="settings-select" data-profile-field="preset_id">
+          ${_channelPresetOptions(presets, profile.preset_id || 'monika')}
+        </select>
+      </div>
+      <div class="settings-row" style="align-items:flex-start;margin-top:6px;">
+        <label class="settings-label" for="channel-${_channelEsc(profileId)}-overlay">Prompt overlay</label>
+        <textarea id="channel-${_channelEsc(profileId)}-overlay" class="settings-select channel-config-textarea" rows="3" data-profile-field="prompt_overlay" placeholder="Optional instructions specific to this channel…">${_channelEsc(profile.prompt_overlay || '')}</textarea>
+      </div>
+      <div class="admin-toggle-sub" style="margin:8px 0 5px;">Smart-home tool access for this channel</div>
+      <div class="channel-config-checks">
+        ${Object.entries(scopeLabels).map(([scope, label]) => `
+          <label><input type="checkbox" data-profile-scope="${scope}"${_channelChecked(scopes.has(scope))}> <span>${label}</span></label>
+        `).join('')}
+      </div>
+      <div class="settings-row" style="margin-top:7px;">
+        <label class="settings-label">Confirm changes</label>
+        <label class="admin-switch" title="Require confirmation before mutating tools">
+          <input type="checkbox" data-profile-field="require_confirmation"${_channelChecked(profile.require_confirmation !== false)}>
+          <span class="admin-slider"></span>
+        </label>
+      </div>
+    </div>`;
+}
+
+function _channelCardMarkup(integrationId, integration, profile, presets) {
+  const enabled = integration.enabled !== false;
+  const title = integrationId === 'home_assistant' ? 'Home Assistant' : integrationId === 'telegram' ? 'Telegram Bot' : 'Discord Bot';
+  const description = integrationId === 'home_assistant'
+    ? 'Discover and control devices through the shared smart-home agent.'
+    : integrationId === 'telegram'
+      ? 'Receive messages, voice notes and reminders through Telegram.'
+      : 'Use Discord as a controlled MonikAI conversation channel.';
+  const tokenPlaceholder = integration.token_configured ? 'Leave blank to keep the current token' : 'Paste token';
+  let connection = '';
+  if (integrationId === 'home_assistant') {
+    connection = `
+      <div class="settings-row">
+        <label class="settings-label" for="channel-${integrationId}-url">URL</label>
+        <input id="channel-${integrationId}-url" class="settings-select" type="url" data-integration-field="url" value="${_channelEsc(integration.url || '')}" placeholder="http://homeassistant.local:8123">
+      </div>
+      <div class="settings-row" style="margin-top:6px;">
+        <label class="settings-label" for="channel-${integrationId}-token">Token</label>
+        <input id="channel-${integrationId}-token" class="settings-select" type="password" data-integration-field="token" placeholder="${_channelEsc(tokenPlaceholder)}" autocomplete="new-password">
+      </div>
+      <div class="settings-row" style="margin-top:6px;">
+        <label class="settings-label" for="channel-${integrationId}-filters">Entity filters</label>
+        <input id="channel-${integrationId}-filters" class="settings-select" type="text" data-integration-field="entities_filter" value="${_channelEsc(_channelCsv(integration.entities_filter))}" placeholder="light.*, switch.*, scene.*">
+      </div>`;
+  } else if (integrationId === 'telegram') {
+    connection = `
+      <div class="settings-row">
+        <label class="settings-label" for="channel-${integrationId}-token">Token</label>
+        <input id="channel-${integrationId}-token" class="settings-select" type="password" data-integration-field="token" placeholder="${_channelEsc(tokenPlaceholder)}" autocomplete="new-password">
+      </div>
+      <div class="settings-row" style="margin-top:6px;">
+        <label class="settings-label" for="channel-${integrationId}-chats">Allowed chat IDs</label>
+        <input id="channel-${integrationId}-chats" class="settings-select" type="text" data-integration-field="allowed_chat_ids" value="${_channelEsc(_channelCsv(integration.allowed_chat_ids))}" placeholder="123456789, -100…">
+      </div>
+      <div class="channel-config-checks" style="margin-top:7px;">
+        <label><input type="checkbox" data-integration-field="allow_groups"${_channelChecked(integration.allow_groups)}> <span>Allow group chats</span></label>
+        <label><input type="checkbox" data-integration-field="proactive_enabled"${_channelChecked(integration.proactive_enabled)}> <span>Allow proactive messages</span></label>
+      </div>`;
+  } else {
+    connection = `
+      <div class="settings-row">
+        <label class="settings-label" for="channel-${integrationId}-token">Token</label>
+        <input id="channel-${integrationId}-token" class="settings-select" type="password" data-integration-field="token" placeholder="${_channelEsc(tokenPlaceholder)}" autocomplete="new-password">
+      </div>
+      <div class="settings-row" style="margin-top:6px;">
+        <label class="settings-label" for="channel-${integrationId}-channels">Allowed channel IDs</label>
+        <input id="channel-${integrationId}-channels" class="settings-select" type="text" data-integration-field="allowed_channel_ids" value="${_channelEsc(_channelCsv(integration.allowed_channel_ids))}" placeholder="123456789012345678">
+      </div>
+      <div class="settings-row" style="margin-top:6px;">
+        <label class="settings-label" for="channel-${integrationId}-guilds">Allowed guild IDs</label>
+        <input id="channel-${integrationId}-guilds" class="settings-select" type="text" data-integration-field="allowed_guild_ids" value="${_channelEsc(_channelCsv(integration.allowed_guild_ids))}" placeholder="Optional server IDs">
+      </div>
+      <div class="settings-row" style="margin-top:6px;">
+        <label class="settings-label" for="channel-${integrationId}-users">Allowed user IDs</label>
+        <input id="channel-${integrationId}-users" class="settings-select" type="text" data-integration-field="allowed_user_ids" value="${_channelEsc(_channelCsv(integration.allowed_user_ids))}" placeholder="Optional user IDs">
+      </div>
+      <div class="channel-config-checks" style="margin-top:7px;">
+        <label><input type="checkbox" data-integration-field="allow_dms"${_channelChecked(integration.allow_dms)}> <span>Allow direct messages</span></label>
+        <label><input type="checkbox" data-integration-field="require_mention"${_channelChecked(integration.require_mention)}> <span>Require @mention in channels</span></label>
+        <label><input type="checkbox" data-integration-field="proactive_enabled"${_channelChecked(integration.proactive_enabled)}> <span>Allow proactive messages</span></label>
+      </div>`;
+  }
+  return `
+    <div class="admin-card channel-config-card" data-channel-id="${integrationId}">
+      <div class="admin-toggle-row">
+        <div>
+          <div class="admin-toggle-label">${title}</div>
+          <div class="admin-toggle-sub">${description}</div>
+        </div>
+        <label class="admin-switch" title="Enable ${title}">
+          <input type="checkbox" data-integration-field="enabled"${_channelChecked(enabled)}>
+          <span class="admin-slider"></span>
+        </label>
+      </div>
+      <div class="channel-config-fields" style="margin-top:9px;">
+        ${connection}
+        ${integrationId !== 'home_assistant' ? _channelProfileMarkup(integrationId, profile || {}, presets) : ''}
+        <div class="channel-config-actions" style="display:flex;justify-content:flex-end;gap:5px;margin-top:10px;">
+          <span class="admin-toggle-sub channel-config-card-msg" style="flex:1;align-self:center;min-height:15px;"></span>
+          <button type="button" class="admin-btn-sm channel-config-test">Test</button>
+          <button type="button" class="admin-btn-add channel-config-save">Save</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function initChannelIntegrations() {
+  if (_channelIntegrationsInited) return;
+  const listEl = el('channel-integrations-list');
+  const globalMsg = el('channel-integrations-msg');
+  if (!listEl) return;
+  _channelIntegrationsInited = true;
+
+  let config = null;
+  let presets = {};
+
+  function setGlobalMessage(message, error = false) {
+    if (!globalMsg) return;
+    globalMsg.textContent = message || '';
+    globalMsg.style.color = error ? 'var(--red)' : '';
+  }
+
+  function render() {
+    const integrations = config?.integrations || {};
+    const profiles = config?.profiles || {};
+    listEl.innerHTML = ['home_assistant', 'telegram', 'discord']
+      .map(id => _channelCardMarkup(id, integrations[id] || {}, profiles[id] || {}, presets))
+      .join('');
+    listEl.querySelectorAll('.channel-config-card').forEach(card => {
+      const sync = () => {
+        const enabled = card.querySelector('[data-integration-field="enabled"]')?.checked !== false;
+        card.querySelectorAll('.channel-config-fields input, .channel-config-fields select, .channel-config-fields textarea').forEach(input => {
+          if (input.dataset.integrationField !== 'enabled') input.disabled = !enabled;
+        });
+      };
+      card.querySelector('[data-integration-field="enabled"]')?.addEventListener('change', sync);
+      card.querySelector('.channel-config-save')?.addEventListener('click', () => saveCard(card));
+      card.querySelector('.channel-config-test')?.addEventListener('click', () => testCard(card));
+      sync();
+    });
+  }
+
+  function collectCard(card) {
+    const integrationId = card.dataset.channelId;
+    const integration = {};
+    card.querySelectorAll('[data-integration-field]').forEach(input => {
+      const field = input.dataset.integrationField;
+      if (field === 'enabled' || input.type === 'checkbox') integration[field] = !!input.checked;
+      else if (field === 'token') {
+        const value = input.value.trim();
+        if (value) integration[field] = value;
+      } else if (field === 'entities_filter') {
+        integration[field] = input.value.split(',').map(item => item.trim()).filter(Boolean);
+      } else if (field.endsWith('_ids')) {
+        integration[field] = input.value.split(',').map(item => item.trim()).filter(Boolean);
+      } else {
+        integration[field] = input.value;
+      }
+    });
+    const profileRoot = card.querySelector('[data-profile-id]');
+    const profile = {};
+    if (profileRoot) {
+      profileRoot.querySelectorAll('[data-profile-field]').forEach(input => {
+        const field = input.dataset.profileField;
+        profile[field] = input.type === 'checkbox' ? !!input.checked : input.value;
+      });
+      profile.tool_scopes = Array.from(profileRoot.querySelectorAll('[data-profile-scope]:checked')).map(input => input.dataset.profileScope);
+    }
+    return { integrationId, integration, profile };
+  }
+
+  async function saveCard(card) {
+    const msg = card.querySelector('.channel-config-card-msg');
+    const { integrationId, integration, profile } = collectCard(card);
+    const body = { integrations: { [integrationId]: integration } };
+    if (Object.keys(profile).length) body.profiles = { [integrationId]: profile };
+    if (msg) { msg.textContent = 'Saving…'; msg.style.color = ''; }
+    try {
+      const response = await fetch('/api/auth/channel-config', {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.detail || 'Save failed');
+      config = payload.config || config;
+      render();
+      setGlobalMessage('Saved. Restart MonikAI to apply transport changes.');
+    } catch (error) {
+      if (msg) {
+        msg.textContent = error.message || 'Save failed';
+        msg.style.color = 'var(--red)';
+      }
+    }
+  }
+
+  async function testCard(card) {
+    const integrationId = card.dataset.channelId;
+    const msg = card.querySelector('.channel-config-card-msg');
+    if (msg) { msg.textContent = 'Testing…'; msg.style.color = ''; }
+    try {
+      const response = await fetch(`/api/auth/channel-config/${integrationId}/test`, { credentials: 'same-origin', method: 'POST' });
+      const payload = await response.json().catch(() => ({}));
+      if (msg) {
+        msg.textContent = payload.message || (payload.ok ? 'Connection successful' : 'Connection failed');
+        msg.style.color = payload.ok ? 'var(--color-success, #50fa7b)' : 'var(--red)';
+      }
+    } catch (_) {
+      if (msg) { msg.textContent = 'Connection failed'; msg.style.color = 'var(--red)'; }
+    }
+  }
+
+  try {
+    const [configResponse, presetsResponse] = await Promise.all([
+      fetch('/api/auth/channel-config', { credentials: 'same-origin' }),
+      fetch('/api/presets', { credentials: 'same-origin' }).catch(() => null),
+    ]);
+    if (!configResponse.ok) {
+      const status = configResponse.status;
+      const reason = status === 403
+        ? 'Admin access required'
+        : status === 404
+          ? 'Channel settings are not loaded in this backend yet. Restart MonikAI and refresh.'
+          : `Failed to load channel settings (HTTP ${status})`;
+      throw new Error(reason);
+    }
+    config = await configResponse.json();
+    if (presetsResponse?.ok) presets = await presetsResponse.json().catch(() => ({}));
+    render();
+  } catch (error) {
+    _channelIntegrationsInited = false;
+    listEl.innerHTML = `<div class="admin-error">${_channelEsc(error.message || 'Failed to load channel settings')}</div>`;
+    setGlobalMessage('', true);
+  }
 }
 
 /* ══ Unified Integrations ══ */

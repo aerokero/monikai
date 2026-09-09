@@ -15,10 +15,16 @@ as context and ``continues: <id>`` recorded in its meta.
 from backend.core import conversation_store
 
 
-def register_conversation_handlers(sio, *, get_audio_loop):
-    def _session_manager():
+def register_conversation_handlers(sio, *, get_audio_loop, get_session_manager=None):
+    def _active_session_manager():
         audio_loop = get_audio_loop()
         return getattr(audio_loop, "session_manager", None) if audio_loop else None
+
+    def _session_manager():
+        manager = _active_session_manager()
+        if manager is not None:
+            return manager
+        return get_session_manager() if get_session_manager else None
 
     @sio.event
     async def conversations_list(sid, data=None):
@@ -66,7 +72,7 @@ def register_conversation_handlers(sio, *, get_audio_loop):
     @sio.event
     async def conversations_new(sid, data=None):
         try:
-            sm = _session_manager()
+            sm = _active_session_manager()
             if not sm:
                 await sio.emit("error", {"msg": "Session manager not available."}, room=sid)
                 return
@@ -121,7 +127,7 @@ def register_conversation_handlers(sio, *, get_audio_loop):
     @sio.event
     async def conversations_continue(sid, data=None):
         try:
-            sm = _session_manager()
+            sm = _active_session_manager()
             old_id = str((data or {}).get("id") or "")
             if not sm or not old_id:
                 await sio.emit("error", {"msg": "Missing conversation id."}, room=sid)

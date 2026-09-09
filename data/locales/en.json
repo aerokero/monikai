@@ -113,6 +113,7 @@
     "no_recap": "Recap appears once the day is processed.",
     "stream_minecraft": "Minecraft — daily log",
     "stream_telegram": "Telegram — daily log",
+    "voice_server": "Server microphone conversation",
     "loading": "Loading…"
   },
   "schedule": {

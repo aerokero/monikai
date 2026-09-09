@@ -53,6 +53,16 @@ DEFAULT_SETTINGS = {
     # Reply language is a conversation setting, not part of a persona prompt.
     # Auto follows the user's latest message and keeps personas language-neutral.
     "response_language": "auto",
+    # Read-aloud defaults to a Polish-trained local renderer. It falls back to
+    # espeak-ng until the optional Piper voice model is present.
+    "tts_enabled": True,
+    "tts_provider": "local",
+    "tts_model": "Piper",
+    "tts_voice": "pl_PL-gosia-medium",
+    "tts_language": "pl",
+    "tts_speed": "1",
+    "tts_volume": 1.0,
+    "tts_auto_read": False,
     "camera_flipped": False,
     "camera_source": "frontend",
     "audio_source": "backend",
@@ -132,9 +142,10 @@ DEFAULT_SETTINGS = {
     # "live_renderer" only as an explicit compatibility rollback.
     "speech": {
         "delivery_mode": "dedicated_tts",
-        "provider": "gemini",
-        "model": "gemini-2.5-flash-preview-tts",
-        "voice": None,
+        "provider": "local",
+        "model": "Piper",
+        "voice": "pl_PL-gosia-medium",
+        "language": "pl",
         "timeout_sec": 20.0,
     },
     "minecraft_autonomy": {
@@ -199,7 +210,8 @@ def load_settings() -> None:
 
             SETTINGS.clear()
             SETTINGS.update(new_settings)
-            print(f"Loaded settings: {SETTINGS}")
+            # Never dump the full settings object: it may contain HA/API tokens.
+            print("Loaded settings (redacted):", ", ".join(sorted(SETTINGS.keys())))
         except Exception as exc:
             print(f"Error loading settings: {exc}")
             SETTINGS.clear()

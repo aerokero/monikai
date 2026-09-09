@@ -136,6 +136,18 @@ class HomeAssistantAgent(BaseSmartHomeAgent):
 
     async def turn_on(self, target: str) -> bool:
         """Turn on an entity (light or switch)."""
+        if self._is_broad_lighting_target(target):
+            success = await self._post(
+                "/services/light/turn_on",
+                {"entity_id": "all"},
+            )
+            if success:
+                for entity_id, state in self.entities.items():
+                    if entity_id.startswith("light."):
+                        state["state"] = "on"
+                print(f"[HA Agent] Turned on all lights: {target}")
+            return success
+
         entity_id = await self._resolve_entity_id(target)
         if not entity_id:
             print(f"[HA Agent] Entity not found: {target}")
@@ -157,16 +169,17 @@ class HomeAssistantAgent(BaseSmartHomeAgent):
 
     async def turn_off(self, target: str) -> bool:
         """Turn off an entity (light or switch) or activate off-scene."""
-        target_norm = self._normalize_text(target)
-        if any(w in target_norm for w in ["wszystk", "all", "every"]):
-            # Turn off all lights in HA and activate all-off scene
-            await self._post("/services/light/turn_off", {"entity_id": "all"})
-            if "scene.wszystko_wylaczone" in self.entities:
-                await self._post("/services/scene/turn_on", {"entity_id": "scene.wszystko_wylaczone"})
-            if "light.wszystkie_swiatla" in self.entities:
-                await self._post("/services/light/turn_off", {"entity_id": "light.wszystkie_swiatla"})
-            print(f"[HA Agent] Turned off all lights and devices: {target}")
-            return True
+        if self._is_broad_lighting_target(target):
+            success = await self._post(
+                "/services/light/turn_off",
+                {"entity_id": "all"},
+            )
+            if success:
+                for entity_id, state in self.entities.items():
+                    if entity_id.startswith("light."):
+                        state["state"] = "off"
+                print(f"[HA Agent] Turned off all lights: {target}")
+            return success
 
         entity_id = await self._resolve_entity_id(target)
         if not entity_id:
@@ -186,6 +199,24 @@ class HomeAssistantAgent(BaseSmartHomeAgent):
             if entity_id in self.entities:
                 self.entities[entity_id]["state"] = "off"
             print(f"[HA Agent] Turned off: {target}")
+        return success
+
+    async def toggle(self, target: str) -> bool:
+        """Toggle a filtered light or switch entity."""
+        entity_id = await self._resolve_entity_id(target)
+        if not entity_id:
+            print(f"[HA Agent] Entity not found: {target}")
+            return False
+
+        domain = entity_id.split(".")[0]
+        if domain not in ("light", "switch"):
+            print(f"[HA Agent] Cannot toggle domain '{domain}'")
+            return False
+
+        success = await self._post(f"/services/{domain}/toggle", {"entity_id": entity_id})
+        if success and entity_id in self.entities:
+            current = str(self.entities[entity_id].get("state", "")).lower()
+            self.entities[entity_id]["state"] = "off" if current == "on" else "on"
         return success
 
     async def set_brightness(self, target: str, brightness: int) -> bool:
@@ -319,6 +350,35 @@ class HomeAssistantAgent(BaseSmartHomeAgent):
             text = text.replace(k, v)
         return "".join(c for c in text if c.isalnum() or c.isspace()).strip()
 
+    def _is_broad_lighting_target(self, target: str) -> bool:
+        """Return whether *target* explicitly means every light.
+
+        Home Assistant accepts the special entity value ``all`` for the light
+        domain. It is not an entity returned by ``/api/states``, so broad
+        commands must be handled before the normal friendly-name resolver.
+        """
+        normalized = self._normalize_text(target)
+        if normalized in {
+            "all",
+            "all light",
+            "all lights",
+            "all the light",
+            "all the lights",
+            "all lighting",
+            "every light",
+            "everywhere",
+            "everything",
+            "wszystko",
+            "wszystko doslownie",
+            "wszystkie lampy",
+            "wszystkie swiatla",
+            "cale oswietlenie",
+        }:
+            return True
+        if "wszystk" in normalized and "swiatl" in normalized:
+            return True
+        return "all" in normalized and "light" in normalized
+
     def _stem_polish(self, word: str) -> str:
         """Strip standard Polish grammatical inflection endings."""
         w = self._normalize_text(word)
@@ -358,11 +418,25 @@ class HomeAssistantAgent(BaseSmartHomeAgent):
             "behind couch": "za kanapa",
             "all": "wszystkie swiatla",
             "all lights": "wszystkie swiatla",
+            "all the lights": "wszystkie swiatla",
+            "all lighting": "wszystkie swiatla",
             "every light": "wszystkie swiatla",
             "everywhere": "wszystkie swiatla",
+            "everything": "wszystkie swiatla",
             "lights": "wszystkie swiatla",
+            "wszystko": "wszystkie swiatla",
+            "wszystko dosłownie": "wszystkie swiatla",
+            "wszystko doslownie": "wszystkie swiatla",
+            "całe oświetlenie": "wszystkie swiatla",
+            "cale oswietlenie": "wszystkie swiatla",
             "relax": "relaks",
             "relaxation": "relaks",
+            "relaxation mode": "relaks",
+            "relaxation scene": "relaks",
+            "tryb relaksu": "relaks",
+            "tryb relaksacyjny": "relaks",
+            "scena relaksu": "relaks",
+            "scena trybu relaksu": "relaks",
             "evening": "relaks i wieczor",
             "movie": "kino i film",
             "cinema": "kino i film",
@@ -395,6 +469,14 @@ class HomeAssistantAgent(BaseSmartHomeAgent):
             "focus": "praca i skupienie",
             "night": "tryb nocny",
             "night mode": "tryb nocny",
+            "night scene": "tryb nocny",
+            "scene night": "tryb nocny",
+            "night lights": "tryb nocny",
+            "noc": "tryb nocny",
+            "noc scene": "tryb nocny",
+            "scene noc": "tryb nocny",
+            "relax scene": "relaks",
+            "scene relax": "relaks",
             "everything off": "wszystko wylaczone",
             "all off": "wszystko wylaczone",
         }

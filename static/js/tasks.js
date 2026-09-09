@@ -250,6 +250,10 @@ const _EMAIL_ACCOUNT_ACTIONS = new Set([
   'check_email_urgency',
 ]);
 
+const _HOME_ASSISTANT_ACTIONS = new Set([
+  'home_assistant_control',
+]);
+
 let _emailAccounts = null;
 async function _fetchEmailAccountsForTasks() {
   if (_emailAccounts) return _emailAccounts;
@@ -328,6 +332,43 @@ async function _renderEmailActionOptions(action, existing, extra) {
     <label class="task-form-label">Email account</label>
     <select id="task-form-email-account" class="task-form-input">${options}</select>
   `);
+}
+
+function _renderHomeAssistantActionOptions(action, existing, extra) {
+  if (!_HOME_ASSISTANT_ACTIONS.has(action)) return;
+  const cfg = _taskPromptConfig(existing?.prompt || '');
+  const target = String(cfg.target || '');
+  const selectedAction = String(cfg.action || 'turn_on').toLowerCase();
+  const brightness = cfg.brightness === undefined || cfg.brightness === null ? '' : String(cfg.brightness);
+  const color = String(cfg.color || '');
+  const option = (value, label) => `<option value="${value}" ${selectedAction === value ? 'selected' : ''}>${label}</option>`;
+
+  extra.innerHTML = `
+    <label class="task-form-label">Home Assistant entity</label>
+    <input type="text" id="task-form-ha-target" class="task-form-input" value="${_escHtml(target)}" placeholder="e.g. light.kitchen or Kitchen lamp" autocomplete="off" />
+    <label class="task-form-label">Operation</label>
+    <select id="task-form-ha-action" class="task-form-input">
+      ${option('turn_on', 'Turn on')}
+      ${option('turn_off', 'Turn off')}
+      ${option('toggle', 'Toggle')}
+      ${option('set', 'Set brightness / color')}
+    </select>
+    <div id="task-form-ha-set-fields" style="display:none;">
+      <label class="task-form-label">Brightness <span style="opacity:0.5;font-weight:normal;font-size:10px;">(0–100, optional)</span></label>
+      <input type="number" id="task-form-ha-brightness" class="task-form-input" min="0" max="100" step="1" value="${_escHtml(brightness)}" placeholder="e.g. 65" />
+      <label class="task-form-label">Color <span style="opacity:0.5;font-weight:normal;font-size:10px;">(optional)</span></label>
+      <input type="text" id="task-form-ha-color" class="task-form-input" value="${_escHtml(color)}" placeholder="e.g. warm, blue, daylight" maxlength="40" />
+    </div>
+    <div class="memory-desc" style="font-size:11px;margin-top:5px;">The task can address only one entity discovered by the Home Assistant filters in Settings. Arbitrary service calls and “all lights” shortcuts are not available.</div>
+  `;
+
+  const sync = () => {
+    const mode = document.getElementById('task-form-ha-action')?.value;
+    const fields = document.getElementById('task-form-ha-set-fields');
+    if (fields) fields.style.display = mode === 'set' ? '' : 'none';
+  };
+  document.getElementById('task-form-ha-action')?.addEventListener('change', sync);
+  sync();
 }
 
 let _triggerEvents = null;
@@ -1314,11 +1355,15 @@ function _showForm(existing, initTaskType, initTriggerType) {
         const extra = document.getElementById('task-form-action-extra');
         if (!sel || !extra) return;
         const action = sel.value;
-        if (!_EMAIL_ACCOUNT_ACTIONS.has(action)) {
+        if (!_EMAIL_ACCOUNT_ACTIONS.has(action) && !_HOME_ASSISTANT_ACTIONS.has(action)) {
           extra.innerHTML = '';
           return;
         }
         extra.innerHTML = '';
+        if (_HOME_ASSISTANT_ACTIONS.has(action)) {
+          _renderHomeAssistantActionOptions(action, existing, extra);
+          return;
+        }
         await _renderEmailActionOptions(action, existing, extra);
         if (action === 'check_email_urgency') {
           extra.insertAdjacentHTML('beforeend', `
@@ -1724,6 +1769,40 @@ function _showForm(existing, initTaskType, initTriggerType) {
       if (_EMAIL_ACCOUNT_ACTIONS.has(action)) {
         const accountId = document.getElementById('task-form-email-account')?.value || '';
         payload.prompt = accountId ? JSON.stringify({ account_id: accountId }) : '';
+      } else if (_HOME_ASSISTANT_ACTIONS.has(action)) {
+        const target = document.getElementById('task-form-ha-target')?.value?.trim() || '';
+        const haAction = document.getElementById('task-form-ha-action')?.value || '';
+        if (!target) {
+          if (uiModule) uiModule.showError('Home Assistant entity is required');
+          return;
+        }
+        if (!haAction) {
+          if (uiModule) uiModule.showError('Select a Home Assistant operation');
+          return;
+        }
+        const haConfig = { target, action: haAction };
+        if (haAction === 'set') {
+          const brightnessValue = document.getElementById('task-form-ha-brightness')?.value?.trim() || '';
+          const colorValue = document.getElementById('task-form-ha-color')?.value?.trim() || '';
+          if (!brightnessValue && !colorValue) {
+            if (uiModule) uiModule.showError('Set requires brightness or color');
+            return;
+          }
+          if (brightnessValue) {
+            const parsedBrightness = Number(brightnessValue);
+            if (!Number.isInteger(parsedBrightness) || parsedBrightness < 0 || parsedBrightness > 100) {
+              if (uiModule) uiModule.showError('Brightness must be an integer from 0 to 100');
+              return;
+            }
+            haConfig.brightness = parsedBrightness;
+          }
+          if (colorValue) haConfig.color = colorValue;
+        }
+        payload.prompt = JSON.stringify(haConfig);
+      } else {
+        // Clear configuration belonging to a previous action when an
+        // existing task is switched to a no-prompt built-in.
+        payload.prompt = '';
       }
       if (action === 'check_email_urgency') {
         const urgentPrompt = document.getElementById('task-form-urgent-email-prompt')?.value || '';

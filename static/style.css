@@ -3755,9 +3755,9 @@ body.bg-pattern-sparkles {
       font-size:0.7rem; color:var(--color-muted-alt); font-weight:normal; margin-left:6px;
     }
     .msg-footer {
-      display:flex; align-items:center; gap:6px;
+      display:flex; align-items:center; gap:4px;
       flex-wrap: wrap;
-      margin-top:6px;
+      margin-top:2px;
       color:var(--color-muted-alt); font-size:0.75rem;
       position: relative;
     }
@@ -24988,6 +24988,132 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
 .settings-select:focus {
   outline: none;
   border-color: var(--red);
+}
+
+/* Typed MonikAI channel settings. Keep these cards visually identical to the
+   surrounding Odysseus Settings surface while allowing the channel-specific
+   controls to wrap on narrow windows. */
+.integration-panel-heading {
+  margin-bottom: 10px;
+  padding: 0 0 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
+}
+.integration-panel-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 5px;
+  padding: 0;
+  border: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+.integration-panel-heading h2 svg {
+  color: var(--accent, var(--red));
+  opacity: 0.8;
+}
+.integration-category {
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 8px;
+  padding: 11px;
+  margin: 10px 0;
+  background: color-mix(in srgb, var(--fg) 2%, transparent);
+}
+.integration-category:first-of-type { margin-top: 10px; }
+.integration-category-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
+}
+.integration-category-heading-channels { margin-top: 3px; }
+.integration-category-heading-services { margin-top: 18px; }
+.integration-category-heading h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 3px;
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.integration-category-heading h3 svg {
+  color: var(--accent, var(--red));
+  opacity: 0.8;
+}
+.integration-category-kicker {
+  margin-bottom: 4px;
+  color: color-mix(in srgb, var(--fg) 55%, transparent);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+.integration-category-badge {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border: 1px solid color-mix(in srgb, var(--accent, var(--red)) 35%, transparent);
+  border-radius: 4px;
+  color: color-mix(in srgb, var(--fg) 68%, transparent);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.integration-category-list { margin-top: 9px; }
+.integration-category-list:empty { display: none; }
+.integration-category-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 0 0;
+}
+.channel-config-card {
+  background: color-mix(in srgb, var(--fg) 2%, transparent);
+}
+.channel-config-card .settings-label {
+  min-width: 118px;
+}
+.channel-config-profile {
+  margin-top: 10px;
+  padding-top: 2px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
+}
+.channel-config-textarea {
+  min-height: 64px;
+  resize: vertical;
+  line-height: 1.4;
+}
+.channel-config-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 14px;
+  color: color-mix(in srgb, var(--fg) 70%, transparent);
+  font-size: 11px;
+}
+.channel-config-checks label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+}
+.channel-config-checks input {
+  accent-color: var(--red);
+}
+
+@media (max-width: 768px) {
+  .integration-category-heading { flex-direction: column; }
+  .integration-category-badge { align-self: flex-start; }
+  .channel-config-card .settings-row {
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
+  .channel-config-card .settings-label,
+  .channel-config-card .settings-select {
+    width: 100%;
+    max-width: 100%;
+    flex: 1 1 100%;
+  }
 }
 
 @media (max-width: 768px) {

@@ -725,6 +725,26 @@ html.ody-sidebar-off #sidebar {
   word-break: break-word !important;
 }
 
+/* An assistant body can contain more than one block: a collapsible thinking
+   section, the streamed reply, sources, findings, etc.  Keep those blocks in
+   one vertical stack.  Without an explicit column direction the flex body
+   lays the thinking header and reply next to each other as soon as both are
+   present, which makes the bubble look randomly split at narrow widths. */
+#chat-history .msg.msg-ai .body {
+  flex-direction: column !important;
+  align-items: stretch !important;
+  justify-content: flex-start !important;
+}
+#chat-history .msg.msg-ai .body > .stream-content,
+#chat-history .msg.msg-ai .body > .thinking-section,
+#chat-history .msg.msg-ai .body > .live-reply-content,
+#chat-history .msg.msg-ai .body > .sources-section {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
 #chat-history .msg.msg-ai { --message-action-bg: var(--ai-bubble-bg, var(--panel)); }
 #chat-history .msg.msg-user { --message-action-bg: var(--user-bubble-bg, var(--panel)); }
 
@@ -745,8 +765,50 @@ html.ody-sidebar-off #sidebar {
 #chat-history .msg img, #chat-history .msg video { max-width: 100%; height: auto; }
 #chat-history .msg table { display: block; max-width: 100%; overflow-x: auto; }
 #chat-history .msg.msg-ai .role::before { content:none !important; display:none !important; }
-#chat-history .msg .msg-footer { position:absolute; left:12px; top:100%; margin-top:4px; opacity:0; pointer-events:none; transition:opacity .15s ease; z-index:20; }
-#chat-history .msg .msg-footer .msg-actions { display:inline-flex; align-items:center; gap:2px; padding:2px 4px; border-radius:999px; background:var(--message-action-bg, var(--panel)); }
+#chat-history .msg .msg-footer {
+  position: absolute;
+  top: 100%;
+  left: 12px;
+  right: 12px;
+  width: auto;
+  max-width: none;
+  min-width: 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: nowrap;
+  margin-top: 4px;
+  padding: 2px 4px;
+  border-radius: 999px;
+  background: var(--message-action-bg, var(--panel));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s ease;
+  z-index: 20;
+}
+#chat-history .msg .msg-footer .msg-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  padding: 0;
+  border-radius: 999px;
+  background: transparent;
+}
+#chat-history .msg .msg-footer .response-metrics {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#chat-history .msg .msg-footer .metrics-divider,
+#chat-history .msg .msg-footer .ctx-divider {
+  flex: 0 0 auto;
+}
+#chat-history .msg .msg-footer .ctx-ring {
+  flex: 0 0 auto;
+}
 #chat-history .msg .msg-footer button { display:inline-flex !important; align-items:center; justify-content:center; min-width:28px; min-height:28px; color:var(--fg) !important; background:transparent !important; border:0 !important; }
 #chat-history .msg:hover,
 #chat-history .msg:focus-within,

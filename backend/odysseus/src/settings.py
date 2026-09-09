@@ -55,10 +55,14 @@ DEFAULT_SETTINGS = {
     # (e.g., urgency alert email). Example: "https://chat.example.com"
     "app_public_url": "",
     "tts_enabled": True,
-    "tts_provider": "disabled",
-    "tts_model": "tts-1",
-    "tts_voice": "alloy",
+    # Local Piper is the pronunciation-safe default for Polish. The model is
+    # fetched lazily by the container when PIPER_AUTO_DOWNLOAD is enabled;
+    # espeak-ng remains an offline fallback if it is not available yet.
+    "tts_provider": "local",
+    "tts_model": "Piper",
+    "tts_voice": "pl_PL-gosia-medium",
     "tts_speed": "1",
+    "tts_language": "pl",
     # Shared output level for browser read-aloud and the PCM Live renderer.
     # Store this as a normalized value so both clients can use the same setting.
     "tts_volume": 1.0,

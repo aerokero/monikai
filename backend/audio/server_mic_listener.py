@@ -36,17 +36,23 @@ except Exception:
 
 
 _WAKE_WORD_RE = re.compile(
-    r"^\s*(?:hej|hey|he|ej|okej|ok)\s+(?:monik(?:a|o)|moniczk(?:a|o))[\s,\.!\?]*",
+    r"^\s*(?:(?:hej|hey|he|ej|okej|ok)\s+)?"
+    r"(?:monik(?:a|o)|moniczk(?:a|o)|monia)"
+    r"[\s,\.!\?]*",
     re.IGNORECASE,
 )
 _CONTINUOUS_WAKE_RE = re.compile(
-    r"^(?:hej|hey|he|ej|okej|ok)\s+monik(?:a|o)\b",
+    r"^(?:(?:hej|hey|he|ej|okej|ok)\s+)?"
+    r"(?:monik(?:a|o)|moniczk(?:a|o)|monia)\b",
     re.IGNORECASE,
 )
 _WAKE_CANDIDATE_RE = re.compile(
     r"^(?:hej|hey|he|ej|okej|ok|monik\w*)\b",
     re.IGNORECASE,
 )
+
+_WAKE_ACKNOWLEDGEMENT = "Hm?"
+_LIVE_WAKE_CHIME_GAIN = 1.5
 
 
 class AdaptiveEnergyVAD:
@@ -61,6 +67,7 @@ class AdaptiveEnergyVAD:
         min_speech_duration_ms: int = 120,
         trailing_silence_duration_ms: int = 650,
         pre_roll_duration_ms: int = 550,
+        max_speech_duration_ms: int = 15000,
     ):
         self.sample_rate = int(sample_rate)
         self.frame_duration_ms = int(frame_duration_ms)
@@ -72,6 +79,15 @@ class AdaptiveEnergyVAD:
         self.min_speech_frames = max(2, int(min_speech_duration_ms / self.frame_duration_ms))
         self.trailing_silence_frames = max(4, int(trailing_silence_duration_ms / self.frame_duration_ms))
         self.pre_roll_frames = max(3, int(pre_roll_duration_ms / self.frame_duration_ms))
+        # A hard upper bound prevents an accidentally open microphone from
+        # accumulating unbounded audio, but it must be long enough for a
+        # normal spoken request (the old fixed 7.5 s bound cut off longer
+        # sentences).  Keep this configurable so installations can tune it
+        # for their room and speaking style.
+        self.max_speech_frames = max(
+            self.min_speech_frames + 1,
+            int(max_speech_duration_ms / self.frame_duration_ms),
+        )
 
         self.noise_floor: float = 450.0  # reasonable initial estimate for room ambient
         self.noise_alpha: float = 0.08
@@ -137,8 +153,10 @@ class AdaptiveEnergyVAD:
                 if self.consecutive_speech_frames >= 2:
                     self.consecutive_silence_frames = 0
 
-                # Max speech duration protection (7.5s max)
-                if len(self.active_speech_frames) > int(7500 / self.frame_duration_ms):
+                # Max speech duration protection.  This is a safety valve,
+                # not the normal end-of-utterance detector (trailing silence
+                # above handles that case).
+                if len(self.active_speech_frames) > self.max_speech_frames:
                     completed_frames = self.active_speech_frames.copy()
                     self.reset_segment()
                     return b"".join(completed_frames)
@@ -397,8 +415,11 @@ class ServerMicListenerService:
         gemini_api_key: Optional[str] = None,
         gemini_voice: str = "Leda",
         on_turn_finished: Optional[Callable[[str, str], Any]] = None,
+        on_session_started: Optional[Callable[[], Any]] = None,
+        on_session_finished: Optional[Callable[[], Any]] = None,
         use_gemini_live: Optional[bool] = None,
         kasa_agent=None,
+        hue_agent=None,
         home_assistant_agent=None,
         voice_light_feedback=None,
     ):
@@ -410,7 +431,29 @@ class ServerMicListenerService:
         self.require_wake_word = bool(require_wake_word)
         self.gemini_api_key = gemini_api_key or os.getenv("GEMINI_API_KEY")
         self.gemini_voice = str(gemini_voice or "Leda")
+        # Server playback uses the canonical local renderer (Piper for Polish,
+        # Kokoro for its supported languages). Keep Gemini as the code-level
+        # fallback for installations without a working local model.
+        self.tts_provider = str(
+            os.getenv("SERVER_MIC_TTS_PROVIDER", "gemini") or "gemini"
+        ).strip().lower()
+        # The always-on server microphone is normally used in Polish, but this
+        # remains an environment setting so the same deployment can be switched
+        # to another language without changing the conversation route.
+        self.tts_language = str(
+            os.getenv("SERVER_MIC_TTS_LANGUAGE", "auto") or "auto"
+        ).strip().lower()
+        self.tts_timeout = max(
+            5.0,
+            float(os.getenv("SERVER_MIC_TTS_TIMEOUT_SECONDS", "30")),
+        )
+        self.stt_timeout = max(
+            3.0,
+            float(os.getenv("SERVER_MIC_STT_TIMEOUT_SECONDS", "12")),
+        )
         self.on_turn_finished = on_turn_finished
+        self.on_session_started = on_session_started
+        self.on_session_finished = on_session_finished
         self.kasa_agent = kasa_agent
         self.hue_agent = hue_agent
         self.home_assistant_agent = home_assistant_agent
@@ -423,7 +466,7 @@ class ServerMicListenerService:
                 print(f"[SERVER MIC] Voice light feedback setup notice: {_e}")
                 self.voice_light_feedback = None
         self.use_gemini_live = (
-            str(os.getenv("SERVER_MIC_USE_GEMINI_LIVE", "true")).lower()
+            str(os.getenv("SERVER_MIC_USE_GEMINI_LIVE", "false")).lower()
             in {"1", "true", "yes", "on"}
             if use_gemini_live is None
             else bool(use_gemini_live)
@@ -468,6 +511,9 @@ class ServerMicListenerService:
             pre_roll_duration_ms=int(
                 os.getenv("SERVER_MIC_PRE_ROLL_MS", "700")
             ),
+            max_speech_duration_ms=int(
+                os.getenv("SERVER_MIC_MAX_SPEECH_MS", "15000")
+            ),
         )
         self.denoiser = AudioDenoiseProcessor(sample_rate=self.sample_rate)
         self._last_transcribe_time = 0.0
@@ -484,6 +530,11 @@ class ServerMicListenerService:
         )
         self._turn_lock = asyncio.Lock()
         self._task: Optional[asyncio.Task] = None
+        # The capture loop must never start a second cloud STT/model request
+        # while the previous segment is still being handled.  Apart from
+        # wasting provider calls, overlapping tasks were a source of apparent
+        # cut-offs and replies arriving out of order.
+        self._speech_segment_task: Optional[asyncio.Task] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._vosk_model = None
         self._vosk_unavailable_reason = ""
@@ -500,7 +551,10 @@ class ServerMicListenerService:
         self._live_audio_queue: Optional[asyncio.Queue] = None
         self._live_session_task: Optional[asyncio.Task] = None
         self._activation_chime_task: Optional[asyncio.Task] = None
+        self._activation_ack_task: Optional[asyncio.Task] = None
+        self._activation_prompt_window_until = 0.0
         self._last_live_voice_time = 0.0
+        self._conversation_session_open = False
 
     @property
     def is_running(self) -> bool:
@@ -527,6 +581,28 @@ class ServerMicListenerService:
     @property
     def is_live_session_active(self) -> bool:
         return bool(self._live_session_task and not self._live_session_task.done())
+
+    async def _call_hook(self, callback: Optional[Callable], *args) -> None:
+        if not callback:
+            return
+        try:
+            result = callback(*args)
+            if asyncio.iscoroutine(result):
+                await result
+        except Exception as exc:
+            print(f"[SERVER MIC] Session hook notice: {exc}")
+
+    async def _open_conversation_session(self) -> None:
+        if self._conversation_session_open:
+            return
+        self._conversation_session_open = True
+        await self._call_hook(self.on_session_started)
+
+    async def _close_conversation_session(self) -> None:
+        if not self._conversation_session_open:
+            return
+        self._conversation_session_open = False
+        await self._call_hook(self.on_session_finished)
 
     def _load_vosk_model(self):
         if self._vosk_model is not None:
@@ -644,7 +720,10 @@ class ServerMicListenerService:
             name="server-mic-gemini-live",
         )
         self._activation_chime_task = asyncio.create_task(
-            self._play_wake_chime(capture_safe=True),
+            self._play_wake_chime(
+                capture_safe=True,
+                gain=_LIVE_WAKE_CHIME_GAIN,
+            ),
             name="server-mic-activation-chime",
         )
         stage = "provisional preconnect" if provisional else "verified"
@@ -735,6 +814,112 @@ class ServerMicListenerService:
         )
         return self._start_live_session(pcm, text, provisional=False)
 
+    def _process_idle_wake_frame(
+        self, frame_data: bytes, *, voiced: bool = True
+    ) -> str:
+        """Return a wake phrase as soon as a stable local partial is heard.
+
+        The normal server-mic path does not use Gemini Live, but it can still
+        keep Vosk running locally while idle.  This lets us acknowledge the
+        wake word before the utterance has ended; the following audio is then
+        collected by the regular VAD as the actual command.
+        """
+        recognizer = self._continuous_wake_recognizer
+        if recognizer is None:
+            return ""
+        self._continuous_wake_audio.append(frame_data)
+        if voiced:
+            self._last_wake_voice_time = time.monotonic()
+
+        try:
+            completed = recognizer.AcceptWaveform(frame_data)
+            if not completed:
+                payload = json.loads(recognizer.PartialResult() or "{}")
+                candidate = self._validate_partial_wake_result(payload)
+                now = time.monotonic()
+                recent_voice = (now - self._last_wake_voice_time) <= 1.0
+                if not candidate or not recent_voice:
+                    if now - self._last_partial_wake_time > 0.45:
+                        self._partial_wake_text = ""
+                        self._partial_wake_hits = 0
+                    return ""
+                if (
+                    candidate == self._partial_wake_text
+                    and now - self._last_partial_wake_time <= 0.45
+                ):
+                    self._partial_wake_hits += 1
+                else:
+                    self._partial_wake_text = candidate
+                    self._partial_wake_hits = 1
+                self._last_partial_wake_time = now
+                if self._partial_wake_hits < self.partial_wake_stability_frames:
+                    return ""
+                return candidate
+
+            payload = json.loads(recognizer.Result() or "{}")
+        except Exception as exc:
+            print(f"[SERVER MIC] [WAKE] Idle Vosk error: {exc}")
+            self._reset_continuous_wake_recognizer()
+            return ""
+
+        matched, text, confidence = self._validate_continuous_wake_result(payload)
+        recent_voice = (time.monotonic() - self._last_wake_voice_time) <= 2.0
+        if matched and recent_voice:
+            print(
+                f"[SERVER MIC] [WAKE] Idle Vosk detected \"{text}\" "
+                f"(confidence={confidence:.3f})."
+            )
+            return text
+        return ""
+
+    async def _announce_normal_wake(self, wake_text: str) -> None:
+        """Give a short audible acknowledgement without delaying activation."""
+        try:
+            # The ping is intentionally capture-safe: the command window has
+            # already opened before this task starts.  The short Hm? prompt
+            # is rendered through the configured Kokoro path, not a language-
+            # specific hard-coded greeting.
+            await self._play_wake_chime(capture_safe=True)
+            await self._synthesize_and_play(
+                _WAKE_ACKNOWLEDGEMENT,
+                capture_safe=True,
+            )
+            print(
+                f"[SERVER MIC] [WAKE] Acknowledged \"{wake_text}\" "
+                f"with {_WAKE_ACKNOWLEDGEMENT}."
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"[SERVER MIC] [WAKE] Acknowledgement notice: {exc}")
+
+    async def _activate_normal_wake(self, wake_text: str) -> bool:
+        """Open command mode immediately after local idle wake detection."""
+        if self.is_awaiting_command or self._conversation_session_open:
+            return False
+        self._awaiting_command_until = time.monotonic() + self.wake_listen_timeout
+        self.vad.reset_segment()
+        self._continuous_wake_audio.clear()
+        self._partial_wake_text = ""
+        self._partial_wake_hits = 0
+        # A fresh recognizer is ready for the next idle period; while the
+        # command window is open the listener does not feed it command audio.
+        self._reset_continuous_wake_recognizer()
+        await self._open_conversation_session()
+        # Keep a small echo-filter window while the short spoken prompt is
+        # playing.  Capture remains active; an isolated "Hm" segment is not
+        # sent to the model as the user's command.
+        self._activation_prompt_window_until = time.monotonic() + 3.0
+        self._activation_ack_task = asyncio.create_task(
+            self._announce_normal_wake(wake_text),
+            name="server-mic-wake-ack",
+        )
+        print(
+            f"[SERVER MIC] [WAKE] Idle wake \"{wake_text}\" detected; "
+            f"listening immediately for {self.wake_listen_timeout:.1f}s."
+        )
+        return True
+
     def extract_wake_word(self, transcript: str) -> Tuple[bool, str]:
         """Check if transcript matches wake word and extract cleaned prompt."""
         text = str(transcript or "").strip()
@@ -787,12 +972,15 @@ class ServerMicListenerService:
             last_exc = None
             for model_name in models_to_try:
                 try:
-                    response = await client.aio.models.generate_content(
-                        model=model_name,
-                        contents=[
-                            prompt,
-                            types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav"),
-                        ],
+                    response = await asyncio.wait_for(
+                        client.aio.models.generate_content(
+                            model=model_name,
+                            contents=[
+                                prompt,
+                                types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav"),
+                            ],
+                        ),
+                        timeout=self.stt_timeout,
                     )
                     text = str(getattr(response, "text", "") or "").strip()
                     if text.lower() in {"", "unintelligible", "[unintelligible]"}:
@@ -990,25 +1178,104 @@ class ServerMicListenerService:
             self._is_speaking = False
             self.vad.reset_segment()
 
-    async def _synthesize_and_play(self, text: str) -> None:
+    async def _synthesize_and_play(
+        self,
+        text: str,
+        *,
+        capture_safe: bool = False,
+    ) -> None:
         """Synthesize one reply and play it through the server audio device."""
         if not text or text.startswith("("):
             return
+
+        total_started = time.perf_counter()
+
+        if self.tts_provider in {"local", "kokoro"}:
+            try:
+                from backend.conversation.voice_output import (
+                    get_voice_output_service,
+                    speech_to_live_pcm,
+                )
+
+                print("[SERVER MIC] [TTS] Synthesizing with local renderer (Piper/Kokoro/espeak)...")
+                synthesis_started = time.perf_counter()
+                rendered = await asyncio.wait_for(
+                    get_voice_output_service().synthesize(
+                        text,
+                        provider="local",
+                        **(
+                            {"language": self.tts_language}
+                            if self.tts_language and self.tts_language != "auto"
+                            else {}
+                        ),
+                    ),
+                    timeout=self.tts_timeout,
+                )
+                synthesis_ms = (time.perf_counter() - synthesis_started) * 1000.0
+                pcm_audio = speech_to_live_pcm(rendered)
+                print(
+                    f"[SERVER MIC] [TTS] Local audio ready ({len(pcm_audio)} bytes, "
+                    f"24000Hz, synth={synthesis_ms:.0f}ms). Starting playback..."
+                )
+                playback_started = time.perf_counter()
+                if capture_safe:
+                    await self.play_audio_locally(
+                        pcm_audio,
+                        sample_rate=24000,
+                        suppress_capture=False,
+                    )
+                else:
+                    await self.play_audio_locally(pcm_audio, sample_rate=24000)
+                print(
+                    "[SERVER MIC] [TTS TIMING] provider=local "
+                    f"synthesis={synthesis_ms:.0f}ms "
+                    f"playback={(time.perf_counter() - playback_started) * 1000.0:.0f}ms "
+                    f"total={(time.perf_counter() - total_started) * 1000.0:.0f}ms"
+                )
+                return
+            except Exception as exc:
+                print(
+                    f"[SERVER MIC] [TTS] Local renderer unavailable ({exc}); "
+                    "falling back to Gemini."
+                )
 
         try:
             print(f"[SERVER MIC] [TTS] Synthesizing speech with voice '{self.gemini_voice}'...")
             from backend.conversation.speech import GeminiSpeechSynthesizer, SpeechSynthesisRequest
 
             synthesizer = GeminiSpeechSynthesizer(api_key=self.gemini_api_key)
+            synthesis_started = time.perf_counter()
             result = await synthesizer.synthesize(
-                SpeechSynthesisRequest(text=text, voice=self.gemini_voice)
+                SpeechSynthesisRequest(
+                    text=text,
+                    voice=self.gemini_voice,
+                    language=self.tts_language or "auto",
+                )
             )
+            synthesis_ms = (time.perf_counter() - synthesis_started) * 1000.0
             if result and result.audio:
                 print(
                     f"[SERVER MIC] [TTS] Audio ready ({len(result.audio)} bytes, "
-                    f"{result.sample_rate}Hz). Starting playback..."
+                    f"{result.sample_rate}Hz, synth={synthesis_ms:.0f}ms). Starting playback..."
                 )
-                await self.play_audio_locally(result.audio, sample_rate=result.sample_rate)
+                playback_started = time.perf_counter()
+                if capture_safe:
+                    await self.play_audio_locally(
+                        result.audio,
+                        sample_rate=result.sample_rate,
+                        suppress_capture=False,
+                    )
+                else:
+                    await self.play_audio_locally(
+                        result.audio,
+                        sample_rate=result.sample_rate,
+                    )
+                print(
+                    "[SERVER MIC] [TTS TIMING] provider=gemini "
+                    f"synthesis={synthesis_ms:.0f}ms "
+                    f"playback={(time.perf_counter() - playback_started) * 1000.0:.0f}ms "
+                    f"total={(time.perf_counter() - total_started) * 1000.0:.0f}ms"
+                )
                 return
         except Exception as exc:
             print(f"[SERVER MIC] [TTS] Gemini unavailable ({exc}); using local fallback.")
@@ -1016,7 +1283,14 @@ class ServerMicListenerService:
         local_audio = await self._synthesize_with_flite(text)
         if local_audio:
             print("[SERVER MIC] [TTS] Playing local fallback voice.")
-            await self.play_audio_locally(local_audio, sample_rate=24000)
+            if capture_safe:
+                await self.play_audio_locally(
+                    local_audio,
+                    sample_rate=24000,
+                    suppress_capture=False,
+                )
+            else:
+                await self.play_audio_locally(local_audio, sample_rate=24000)
             return
         raise RuntimeError("No working speech synthesizer is available")
 
@@ -1081,16 +1355,22 @@ class ServerMicListenerService:
                 except OSError:
                     pass
 
-    async def _play_wake_chime(self, *, capture_safe: bool = False) -> None:
+    async def _play_wake_chime(
+        self,
+        *,
+        capture_safe: bool = False,
+        gain: float = 1.35,
+    ) -> None:
         """Play an API-independent acknowledgement that command mode is open."""
         sample_rate = 24000
         chunks = []
+        amplitude = min(12000.0, 4200.0 * max(0.5, float(gain)))
         for frequency in (660.0, 880.0):
             duration = 0.11
             count = int(sample_rate * duration)
             timeline = np.arange(count, dtype=np.float64) / sample_rate
             envelope = np.sin(np.linspace(0.0, math.pi, count)) ** 2
-            tone = (4200.0 * envelope * np.sin(2.0 * math.pi * frequency * timeline))
+            tone = (amplitude * envelope * np.sin(2.0 * math.pi * frequency * timeline))
             chunks.append(tone.astype(np.int16))
             chunks.append(np.zeros(int(sample_rate * 0.035), dtype=np.int16))
         await self.play_audio_locally(
@@ -1132,7 +1412,7 @@ class ServerMicListenerService:
             "Narzędzia zmieniające stan wywołuj tylko wtedy, gdy bieżąca wypowiedź zawiera pełne, "
             "jawne polecenie z czynnością i obiektem. Samo potwierdzenie typu „Dobra” nie upoważnia do zmiany. "
             "Jeśli narzędzie zwróci BLOCKED, nie twierdź, że operacja się udała; poproś o pełne polecenie. "
-            "Jeżeli użytkownik powiedział tylko twoje imię ('Monika' lub odmianę), odpowiedz krótko 'Słucham?' i zaczekaj na "
+            "Jeżeli użytkownik powiedział tylko twoje imię ('Monika' lub odmianę), odpowiedz krótko 'Hm?' i zaczekaj na "
             "następną wypowiedź. Nie opisuj działania systemu ani transkrypcji."
         )
         return (persona + smart_devices_summary + voice_rules).strip()
@@ -1270,6 +1550,8 @@ class ServerMicListenerService:
                         return
                 if verification is not None and not verification.is_set():
                     return
+
+                await self._open_conversation_session()
 
                 if not initial_pcm and self._pending_initial_pcm:
                     initial_pcm = self._pending_initial_pcm
@@ -1447,6 +1729,7 @@ class ServerMicListenerService:
         except Exception as exc:
             print(f"[SERVER MIC] [LIVE] Session error: {exc}")
         finally:
+            await self._close_conversation_session()
             self._wake_provisional = False
             self._wake_verified_event = None
             self._pending_initial_pcm = b""
@@ -1484,10 +1767,53 @@ class ServerMicListenerService:
 
         self._start_live_session(raw_pcm, transcript)
 
+    def _speech_segment_in_flight(self) -> bool:
+        task = self._speech_segment_task
+        return bool(task and not task.done())
+
+    def _on_speech_segment_done(self, task: asyncio.Task) -> None:
+        """Release the single-segment gate and surface unexpected failures."""
+        if self._speech_segment_task is task:
+            self._speech_segment_task = None
+        if task.cancelled():
+            return
+        try:
+            error = task.exception()
+        except asyncio.CancelledError:
+            return
+        if error:
+            print(f"[SERVER MIC] Błąd przetwarzania segmentu mowy: {error}")
+
+    def _schedule_speech_segment(self, raw_pcm: bytes) -> None:
+        """Schedule one segment and drop overlapping captures deterministically."""
+        if self._speech_segment_in_flight():
+            # The listener continues draining the microphone while STT/model/
+            # TTS work is in progress; the loop resets VAD in that state, so a
+            # second segment cannot leak stale audio into the next turn.
+            print(
+                "[SERVER MIC] [VAD] Ignoring segment while the previous "
+                "segment is still being processed."
+            )
+            self.vad.reset_segment()
+            return
+        task = asyncio.create_task(
+            self._handle_speech_segment(raw_pcm),
+            name="server-mic-speech-segment",
+        )
+        self._speech_segment_task = task
+        task.add_done_callback(self._on_speech_segment_done)
+
     async def _handle_speech_segment(self, raw_pcm: bytes):
         """Process recorded speech segment."""
         if self._is_muted or self._is_speaking or self._is_busy:
             return
+
+        timing_started = time.perf_counter()
+        local_wake_ms = 0.0
+        stt_ms = 0.0
+        model_ms = 0.0
+        tts_ms = 0.0
+        segment_duration = len(raw_pcm) / (self.sample_rate * 2.0)
 
         min_bytes = int(self.sample_rate * 2 * 0.2)
         if len(raw_pcm) < min_bytes:
@@ -1506,15 +1832,76 @@ class ServerMicListenerService:
             await self._handle_live_wake_segment(raw_pcm)
             return
 
-        print(f"[SERVER MIC] [VAD] Detected speech segment ({len(raw_pcm)/32000.0:.2f}s, rms={rms:.1f}). Transcribing...")
+        print(
+            f"[SERVER MIC] [VAD] Detected speech segment "
+            f"({segment_duration:.2f}s, rms={rms:.1f}). Transcribing..."
+        )
 
-        wav_bytes = _raw_pcm_to_wav(raw_pcm, sample_rate=self.sample_rate)
-        transcript = await self.transcribe_speech(wav_bytes)
+        continuing_session = self.is_awaiting_command
+        local_wake_matched = False
+        local_wake_prompt = ""
+        if self.require_wake_word and not continuing_session:
+            # Room audio is classified locally first. Only a segment containing
+            # the wake phrase is allowed to reach cloud transcription.
+            wake_started = time.perf_counter()
+            local_wake = await self.transcribe_wake_word_locally(raw_pcm)
+            local_wake_ms = (time.perf_counter() - wake_started) * 1000.0
+            local_wake_matched, local_wake_prompt = self.extract_wake_word(local_wake)
+            if not local_wake_matched:
+                print(
+                    "[SERVER MIC] [LOCAL] Speech ignored before cloud STT; "
+                    f"no wake word in \"{local_wake or 'unrecognized'}\"."
+                )
+                print(
+                    "[SERVER MIC] [TIMING] "
+                    f"segment={segment_duration:.2f}s local_wake={local_wake_ms:.0f}ms "
+                    f"total={(time.perf_counter() - timing_started) * 1000.0:.0f}ms "
+                    "result=ignored_no_wake"
+                )
+                return
+
+        # A standalone wake phrase is already fully classified by the local
+        # recognizer.  Avoid a second cloud STT round-trip before saying
+            # "Hm?"; attached commands still go through cloud STT for the
+        # better command transcription quality.
+        if local_wake_matched and not local_wake_prompt:
+            transcript = local_wake
+            print(
+                "[SERVER MIC] [LOCAL] Standalone wake confirmed; "
+                "skipping cloud STT before acknowledgement."
+            )
+        else:
+            wav_bytes = _raw_pcm_to_wav(raw_pcm, sample_rate=self.sample_rate)
+            stt_started = time.perf_counter()
+            transcript = await self.transcribe_speech(wav_bytes)
+            stt_ms = (time.perf_counter() - stt_started) * 1000.0
         if not transcript:
+            # A valid local wake is enough to open the command window even if
+            # the cloud transcription request times out or returns no text.
+            transcript = local_wake if local_wake_matched else ""
+        if not transcript:
+            print(
+                "[SERVER MIC] [TIMING] "
+                f"segment={segment_duration:.2f}s local_wake={local_wake_ms:.0f}ms "
+                f"stt={stt_ms:.0f}ms total={(time.perf_counter() - timing_started) * 1000.0:.0f}ms "
+                "result=no_transcript"
+            )
             return
 
+        if continuing_session:
+            prompt_echo = re.sub(r"[^a-ząćęłńóśźż]+", "", transcript.casefold())
+            if (
+                time.monotonic() < self._activation_prompt_window_until
+                and prompt_echo in {"hm", "hmm", "hmmm"}
+            ):
+                print(
+                    "[SERVER MIC] [LOCAL] Ignoring the activation prompt echo; "
+                    "command window remains open."
+                )
+                return
+
         print(f"[SERVER MIC] [HEARD] \"{transcript}\"")
-        if self.is_awaiting_command:
+        if continuing_session:
             # The preceding turn opened follow-up window or was wake word. Accept without repeating name.
             matched, prompt = True, transcript
             self._awaiting_command_until = 0.0
@@ -1523,23 +1910,45 @@ class ServerMicListenerService:
             # Clear an expired window before processing a fresh wake word.
             self._awaiting_command_until = 0.0
             matched, prompt = self.extract_wake_word(transcript)
+            if not matched and local_wake_matched:
+                # Some STT models drop the short greeting/name after the
+                # offline gate. Treat the remaining transcript as the command
+                # rather than forcing the user to repeat the wake word.
+                matched, prompt = True, transcript.strip()
+                print(
+                    "[SERVER MIC] [LOCAL] Wake accepted; cloud STT omitted "
+                    "the wake word."
+                )
         if not matched:
             print(f"[SERVER MIC] [IGNORED] No wake word in: \"{transcript}\"")
             return
+
+        if not continuing_session:
+            await self._close_conversation_session()
+            await self._open_conversation_session()
 
         if self.voice_light_feedback:
             asyncio.create_task(self.voice_light_feedback.set_state("listening"))
 
         if self.require_wake_word and not prompt:
-            acknowledgement = "Słucham?"
+            acknowledgement = _WAKE_ACKNOWLEDGEMENT
             print(
                 "[SERVER MIC] [WAKE] Wake word detected; listening for a command "
                 f"for {self.wake_listen_timeout:.1f}s."
             )
             async with self._turn_lock:
                 self._is_busy = True
+                # The listening window begins with the activation signal, not
+                # after the acknowledgement has finished rendering.
+                self._awaiting_command_until = (
+                    time.monotonic() + self.wake_listen_timeout
+                )
                 try:
-                    await self._play_wake_chime()
+                    await self._play_wake_chime(capture_safe=True)
+                    try:
+                        await self._synthesize_and_play(acknowledgement)
+                    except Exception as exc:
+                        print(f"[SERVER MIC] Błąd głosowego potwierdzenia wake word: {exc}")
                     if self.on_turn_finished:
                         callback = self.on_turn_finished(transcript, acknowledgement)
                         if asyncio.iscoroutine(callback):
@@ -1547,13 +1956,14 @@ class ServerMicListenerService:
                 except Exception as exc:
                     print(f"[SERVER MIC] Błąd potwierdzenia słowa wybudzającego: {exc}")
                 finally:
-                    # Start the full command window after the acknowledgement;
-                    # synthesis and playback latency must not consume it.
-                    self._awaiting_command_until = (
-                        time.monotonic() + self.wake_listen_timeout
-                    )
                     self.vad.reset_segment()
                     self._is_busy = False
+            print(
+                "[SERVER MIC] [TIMING] "
+                f"segment={segment_duration:.2f}s local_wake={local_wake_ms:.0f}ms "
+                f"stt={stt_ms:.0f}ms total={(time.perf_counter() - timing_started) * 1000.0:.0f}ms "
+                "result=wake_ack"
+            )
             return
 
         async with self._turn_lock:
@@ -1563,6 +1973,7 @@ class ServerMicListenerService:
                     asyncio.create_task(self.voice_light_feedback.set_state("thinking"))
 
                 reply_text = ""
+                model_started = time.perf_counter()
                 if self.conversation_handler:
                     try:
                         res = self.conversation_handler(prompt)
@@ -1573,17 +1984,21 @@ class ServerMicListenerService:
                     except Exception as exc:
                         print(f"[SERVER MIC] Error processing reply: {exc}")
                         reply_text = "Przepraszam, coś poszło nie tak przy przetwarzaniu."
+                model_ms = (time.perf_counter() - model_started) * 1000.0
 
                 print(f"[SERVER MIC] [REPLY] \"{reply_text}\"")
 
                 # Synthesize and play response
                 if reply_text and not reply_text.startswith("("):
+                    tts_started = time.perf_counter()
                     try:
                         if self.voice_light_feedback:
                             asyncio.create_task(self.voice_light_feedback.set_state("speaking"))
                         await self._synthesize_and_play(reply_text)
                     except Exception as exc:
                         print(f"[SERVER MIC] Błąd syntezy mowy: {exc}")
+                    finally:
+                        tts_ms = (time.perf_counter() - tts_started) * 1000.0
 
                 if self.on_turn_finished:
                     try:
@@ -1600,11 +2015,19 @@ class ServerMicListenerService:
                 if followup_sec > 0:
                     self._awaiting_command_until = time.monotonic() + followup_sec
                     print(f"[SERVER MIC] [CONVERSATION] Follow-up window open for {followup_sec:.1f}s.")
+                else:
+                    await self._close_conversation_session()
                 if self.voice_light_feedback:
                     try:
                         await self.voice_light_feedback.set_state("idle")
                     except Exception:
                         pass
+                print(
+                    "[SERVER MIC] [TIMING] "
+                    f"segment={segment_duration:.2f}s local_wake={local_wake_ms:.0f}ms "
+                    f"stt={stt_ms:.0f}ms model={model_ms:.0f}ms tts={tts_ms:.0f}ms "
+                    f"total={(time.perf_counter() - timing_started) * 1000.0:.0f}ms"
+                )
                 self._is_busy = False
 
     async def _listen_loop(self):
@@ -1619,7 +2042,7 @@ class ServerMicListenerService:
             except Exception:
                 pass
 
-            if self.use_gemini_live:
+            if self.require_wake_word:
                 # Load the offline recognizer before opening the microphone so
                 # the first spoken wake word cannot race model initialization.
                 await asyncio.to_thread(self._load_vosk_model)
@@ -1650,7 +2073,12 @@ class ServerMicListenerService:
                         f"(model={self.live_model})."
                     )
                 while self._is_running:
-                    if self._is_muted or self._is_speaking or self._is_busy:
+                    if (
+                        self._is_muted
+                        or self._is_speaking
+                        or self._is_busy
+                        or self._speech_segment_in_flight()
+                    ):
                         # Keep draining the capture stream while output is
                         # playing. Otherwise ALSA delivers stale speaker echo
                         # and misses the beginning of the user's next turn.
@@ -1671,6 +2099,16 @@ class ServerMicListenerService:
 
                     segment = self.vad.process_frame(frame_data)
                     now = time.monotonic()
+                    if (
+                        not self.use_gemini_live
+                        and self._conversation_session_open
+                        and self._awaiting_command_until > 0
+                        and now >= self._awaiting_command_until
+                    ):
+                        self._awaiting_command_until = 0.0
+                        await self._close_conversation_session()
+                        if self.require_wake_word:
+                            self._reset_continuous_wake_recognizer()
                     if self.vad.is_speech_active and self.is_awaiting_command:
                         self._awaiting_command_until = max(self._awaiting_command_until, now + 5.0)
                     self._level_peak_rms = max(
@@ -1706,9 +2144,21 @@ class ServerMicListenerService:
                             if not self._is_speaking and self._live_audio_queue is not None:
                                 await self._live_audio_queue.put(frame_data)
                         continue
+                    if (
+                        self.require_wake_word
+                        and not self.is_awaiting_command
+                        and not self._conversation_session_open
+                    ):
+                        wake_text = self._process_idle_wake_frame(
+                            frame_data,
+                            voiced=self.vad.last_rms >= self.vad.last_threshold,
+                        )
+                        if wake_text:
+                            await self._activate_normal_wake(wake_text)
+                            continue
                     if segment:
                         denoised = self.denoiser.denoise_segment(segment)
-                        asyncio.create_task(self._handle_speech_segment(denoised))
+                        self._schedule_speech_segment(denoised)
                     else:
                         if not self.vad.is_speech_active:
                             self.denoiser.update_noise_profile(frame_data)
@@ -1730,7 +2180,12 @@ class ServerMicListenerService:
 
                 print(f"[SERVER MIC] [OK] PyAudio listening stream started (VAD, rate={self.sample_rate}Hz).")
                 while self._is_running:
-                    if self._is_muted or self._is_speaking or self._is_busy:
+                    if (
+                        self._is_muted
+                        or self._is_speaking
+                        or self._is_busy
+                        or self._speech_segment_in_flight()
+                    ):
                         await asyncio.to_thread(stream.read, chunk_size, False)
                         self.vad.reset_segment()
                         continue
@@ -1741,6 +2196,16 @@ class ServerMicListenerService:
                         self._level_peak_rms, self.vad.last_rms
                     )
                     now = time.monotonic()
+                    if (
+                        not self.use_gemini_live
+                        and self._conversation_session_open
+                        and self._awaiting_command_until > 0
+                        and now >= self._awaiting_command_until
+                    ):
+                        self._awaiting_command_until = 0.0
+                        await self._close_conversation_session()
+                        if self.require_wake_word:
+                            self._reset_continuous_wake_recognizer()
                     if now - self._last_level_log_time >= 10.0:
                         print(
                             "[SERVER MIC] [LEVEL] "
@@ -1763,8 +2228,20 @@ class ServerMicListenerService:
                             if not self._is_speaking and self._live_audio_queue is not None:
                                 await self._live_audio_queue.put(data)
                         continue
+                    if (
+                        self.require_wake_word
+                        and not self.is_awaiting_command
+                        and not self._conversation_session_open
+                    ):
+                        wake_text = self._process_idle_wake_frame(
+                            data,
+                            voiced=self.vad.last_rms >= self.vad.last_threshold,
+                        )
+                        if wake_text:
+                            await self._activate_normal_wake(wake_text)
+                            continue
                     if segment:
-                        asyncio.create_task(self._handle_speech_segment(segment))
+                        self._schedule_speech_segment(segment)
                     await asyncio.sleep(0.001)
             else:
                 print("[SERVER MIC] [FAIL] No audio backend available (sounddevice or pyaudio).")
@@ -1773,6 +2250,7 @@ class ServerMicListenerService:
         except Exception as exc:
             print(f"[SERVER MIC] Błąd pętli nasłuchu audio: {exc}")
         finally:
+            await self._close_conversation_session()
             if stream:
                 try:
                     stream.stop()
@@ -1805,6 +2283,13 @@ class ServerMicListenerService:
             self._task.cancel()
         if self._live_session_task and not self._live_session_task.done():
             self._live_session_task.cancel()
+        if self._activation_ack_task and not self._activation_ack_task.done():
+            self._activation_ack_task.cancel()
+        if self._speech_segment_task and not self._speech_segment_task.done():
+            self._speech_segment_task.cancel()
         self._task = None
         self._live_session_task = None
+        self._activation_ack_task = None
+        self._activation_prompt_window_until = 0.0
+        self._speech_segment_task = None
         self._live_audio_queue = None

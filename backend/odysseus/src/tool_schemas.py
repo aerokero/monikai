@@ -659,6 +659,23 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "home_assistant_control",
+            "description": "Control one explicitly named, configured Home Assistant entity or scene through the connected HA agent, or honor an explicit interactive all-lights request. 'all lights', 'wszystkie światła', 'całe oświetlenie', and explicit 'wszystko' lighting commands are valid complete targets and do not require listing devices or choosing a scene. Preserve polarity: włącz/włączyć -> turn_on and wyłącz/wyłączyć -> turn_off; use target='all lights' for the broad lighting target. For commands such as 'włącz tryb nocny w Home Assistant' or 'włącz w domu tryb relaksu', use the spoken scene name as target and action='turn_on'; this resolves the configured HA scene. This is Home Assistant control, not the MonikAI UI theme. Never use this for arbitrary service calls or MonikAI theme changes.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target": {"type": "string", "description": "One explicit Home Assistant entity_id or configured friendly name/scene, or 'all lights' for an explicit request to control every light, e.g. 'tryb nocny', 'tryb relaksu', or 'light.salon'"},
+                    "action": {"type": "string", "enum": ["turn_on", "turn_off", "toggle", "set"], "description": "Action to perform"},
+                    "brightness": {"type": "integer", "description": "For action='set': brightness percentage from 0 to 100"},
+                    "color": {"type": "string", "description": "For action='set': a supported color value"}
+                },
+                "required": ["target", "action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "api_call",
             "description": "Call a registered API integration (RSS reader, git forge, bookmark manager, smart home, etc.). Check the system context for available integrations and their endpoints.",
             "parameters": {

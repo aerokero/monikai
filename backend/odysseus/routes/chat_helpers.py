@@ -7,11 +7,15 @@ import os
 import re
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
+from uuid import uuid4
 from typing import Any, Optional
 
 from core.models import ChatMessage
 from core.database import SessionLocal
 from core.database import Session as DBSession, ModelEndpoint
+from backend.soul.lorebook import activate_lore, render_lore_context
+from backend.soul.lorebook import store as lore_store
 from src.llm_core import normalize_model_id
 from src.endpoint_resolver import normalize_base
 from src.context_compactor import maybe_compact, trim_for_context
@@ -19,6 +23,7 @@ from src.model_context import estimate_tokens, get_context_length
 from src.auth_helpers import effective_user
 from src.prompt_security import untrusted_context_message
 from src.attachment_refs import attachment_ref
+from src.constants import DATA_DIR
 from routes.prefs_routes import _load_for_user as load_prefs_for_user
 
 from fastapi import HTTPException
@@ -49,6 +54,109 @@ def _is_casual_low_signal(text: str) -> bool:
         return False
     tail_words = re.findall(r"[A-Za-z0-9_'-]+", tail)
     return len(tail_words) <= 2
+
+
+def _plain_text_for_lore(content: Any) -> str:
+    """Extract bounded text from a chat content value for lore retrieval."""
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict):
+                value = block.get("text")
+                if isinstance(value, str):
+                    parts.append(value)
+            elif isinstance(block, str):
+                parts.append(block)
+        text = " ".join(parts)
+    else:
+        text = str(content or "")
+    text = re.sub(r"\s+", " ", text).strip()
+    # Lore activation is retrieval input, not a second prompt. Keep large
+    # attachments/transcripts from making every turn expensive or noisy.
+    return text[:4000]
+
+
+def _recent_lore_messages(
+    sess,
+    current_message: str,
+    *,
+    limit: int = 8,
+) -> list[str]:
+    """Return recent user/assistant text plus the current request.
+
+    The current request is often already in ``sess`` because the chat route
+    persists it before context construction. The de-duplication keeps lore
+    activation and its diagnostics to one logical turn in either route.
+    """
+    try:
+        raw_messages = sess.get_context_messages()
+    except Exception:
+        raw_messages = []
+
+    recent: list[str] = []
+    for item in (raw_messages or [])[-max(1, int(limit)) :]:
+        if not isinstance(item, dict) or item.get("role") not in {"user", "assistant"}:
+            continue
+        text = _plain_text_for_lore(item.get("content"))
+        if text:
+            recent.append(text)
+
+    current = _plain_text_for_lore(current_message)
+    if current and (not recent or recent[-1] != current):
+        recent.append(current)
+    return recent[-max(1, int(limit)) :]
+
+
+async def _active_lore_context_message(
+    *,
+    sess,
+    session_id: str,
+    current_message: str,
+    incognito: bool,
+    is_research_spinoff: bool,
+    db_path: Path | None = None,
+) -> dict[str, Any] | None:
+    """Build one guarded prompt message from the active World Stack.
+
+    Lore is world-scoped context, so it remains available when ordinary
+    personal memory or tool calls are disabled. Incognito and research
+    spin-offs are intentionally isolated from the World Stack.
+    Failure to read lore must never make the main chat unavailable.
+    """
+    if incognito or is_research_spinoff:
+        return None
+
+    conversation_id = str(session_id or "").strip()
+    if not conversation_id:
+        return None
+
+    try:
+        db_path = db_path or (Path(DATA_DIR) / "monika.db")
+        stack = await lore_store.get_world_stack(conversation_id, db_path)
+        if not stack.lorebook_ids:
+            return None
+
+        activated = await activate_lore(
+            conversation_id=conversation_id,
+            turn_id=f"chat_{uuid4().hex[:16]}",
+            recent_messages=_recent_lore_messages(sess, current_message),
+            world_stack=stack,
+            db_path=db_path,
+        )
+        rendered = render_lore_context(
+            activated,
+            reality_mode=stack.reality_mode,
+        )
+        if not rendered:
+            return None
+        return untrusted_context_message(
+            "active world lore",
+            rendered,
+            provenance_origin="world_stack",
+        )
+    except Exception:
+        logger.debug("Lore activation skipped for session %s", conversation_id, exc_info=True)
+        return None
 
 
 # Strong references to in-flight fire-and-forget tasks scheduled from this
@@ -637,6 +745,7 @@ async def build_chat_context(
     defer_context_shaping: bool = False,
     continuation_context_message: str | None = None,
     persist_user_message: bool = True,
+    voice_mode: bool = False,
 ) -> ChatContext:
     """Build the full context (preface + messages) for an LLM call.
 
@@ -730,13 +839,32 @@ async def build_chat_context(
             else preprocessed.text_for_context
         )
     )
+
+    preset_system_prompt = preset.system_prompt
+    if voice_mode:
+        # Keep this as a system-level addendum rather than modifying the user
+        # message, so the canonical session/history still contains exactly
+        # what was spoken.  The endpoint/model/persona remain unchanged.
+        voice_addendum = (
+            "[VOICE CHANNEL]\n"
+            "Reply in the user's language, following the current conversation "
+            "context and language settings. Keep a natural, warm spoken style "
+            "and be concise: usually 1–3 short sentences (about 40 words max), "
+            "with no markdown and no mention of transport or transcription. "
+            "Use tools normally; after a successful operation, confirm it in "
+            "one short sentence. Do not omit an important result merely to be brief."
+        )
+        preset_system_prompt = "\n\n".join(
+            part for part in (preset_system_prompt, voice_addendum) if part
+        )
+
     _preface_kwargs = dict(
         message=_ctx_msg,
         session=sess,
         use_web=use_web and not skip_web,
         use_memory=mem_enabled,
         time_filter=time_filter,
-        preset_system_prompt=preset.system_prompt,
+        preset_system_prompt=preset_system_prompt,
         owner=user,
         character_name=preset.character_name,
         agent_mode=agent_mode,
@@ -746,6 +874,20 @@ async def build_chat_context(
     if use_rag is not None or is_research_spinoff or casual_low_signal:
         _preface_kwargs["use_rag"] = use_rag_val
     preface, rag_sources, web_sources = chat_processor.build_context_preface(**_preface_kwargs)
+
+    # World-scoped lore is a separate context layer from personal memory and
+    # document RAG. Keep it in a user-role guarded block so active Roleplay
+    # facts/scenes can guide the model without becoming a trusted instruction
+    # channel or changing the stable system prefix used by local KV caches.
+    lore_message = await _active_lore_context_message(
+        sess=sess,
+        session_id=session_id,
+        current_message=context_message,
+        incognito=incognito,
+        is_research_spinoff=is_research_spinoff,
+    )
+    if lore_message:
+        preface.append(lore_message)
 
     # Capture used memories immediately
     used_memories = getattr(chat_processor, '_last_used_memories', [])

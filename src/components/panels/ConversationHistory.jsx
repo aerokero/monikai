@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, Gamepad2, MessageSquare, Plus, RefreshCw, Send, Trash2 } from '../icons';
+import { ChevronLeft, Gamepad2, MessageSquare, Mic, Plus, RefreshCw, Send, Trash2 } from '../icons';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { Badge, EmptyState } from '../shared/panelPrimitives';
 
@@ -19,6 +19,13 @@ function streamMeta(item, t) {
     return { icon: Gamepad2, label: t('conversations.stream_minecraft') || 'Minecraft — daily log' };
   }
   return { icon: Send, label: t('conversations.stream_telegram') || `${item.channel} — daily log` };
+}
+
+function conversationMeta(item, t) {
+  if (item.channel === 'server_voice') {
+    return { icon: Mic, label: t('conversations.voice_server') || 'Server voice' };
+  }
+  return { icon: MessageSquare, label: t('conversations.untitled') || 'Conversation' };
 }
 
 const ConversationHistory = ({ socket = null, active = false, onStarted = () => {}, variant = 'dock' }) => {
@@ -71,16 +78,23 @@ const ConversationHistory = ({ socket = null, active = false, onStarted = () => 
       setItems((current) => current.filter((item) => item.id !== deletedId));
       if (payload?.current_id) setCurrentId(payload.current_id);
     };
+    const onServerVoiceChanged = () => refresh();
 
     socket.on('conversations_list', onList);
     socket.on('conversation_detail', onDetail);
     socket.on('conversation_started', onStartedEvent);
     socket.on('conversation_deleted', onDeleted);
+    socket.on('server_voice_session_started', onServerVoiceChanged);
+    socket.on('server_voice_turn', onServerVoiceChanged);
+    socket.on('server_voice_session_finished', onServerVoiceChanged);
     return () => {
       socket.off('conversations_list', onList);
       socket.off('conversation_detail', onDetail);
       socket.off('conversation_started', onStartedEvent);
       socket.off('conversation_deleted', onDeleted);
+      socket.off('server_voice_session_started', onServerVoiceChanged);
+      socket.off('server_voice_turn', onServerVoiceChanged);
+      socket.off('server_voice_session_finished', onServerVoiceChanged);
     };
   }, [socket, refresh, onStarted]);
 
@@ -127,8 +141,11 @@ const ConversationHistory = ({ socket = null, active = false, onStarted = () => 
   if (detail) {
     const isStream = detail.kind === 'stream';
     const isCurrent = detail.id === currentId;
+    const meta = isStream ? streamMeta(detail, t) : conversationMeta(detail, t);
     const title = detail.title
-      || (isStream ? streamMeta(detail, t).label : (t('conversations.untitled') || 'Conversation'));
+      || (detail.channel === 'server_voice'
+        ? `${meta.label} ${formatTime(detail.started_at)}`.trim()
+        : (isStream ? meta.label : (t('conversations.untitled') || 'Conversation')));
     return (
       <div className={containerClass}>
         <div className="flex items-center gap-2 border-b border-[rgba(232,178,102,0.14)] px-3 py-2">
@@ -250,12 +267,12 @@ const ConversationHistory = ({ socket = null, active = false, onStarted = () => 
               {dayItems.map((item) => {
                 const isStream = item.kind === 'stream';
                 const isCurrent = item.id === currentId;
-                const meta = isStream ? streamMeta(item, t) : null;
-                const Icon = isStream ? meta.icon : MessageSquare;
+                const meta = isStream ? streamMeta(item, t) : conversationMeta(item, t);
+                const Icon = meta.icon;
                 const title = item.title
                   || (isStream
                     ? meta.label
-                    : `${t('conversations.untitled') || 'Conversation'} ${formatTime(item.started_at)}`.trim());
+                    : `${meta.label} ${formatTime(item.started_at)}`.trim());
                 return (
                   <div
                     key={item.id}

@@ -13,6 +13,7 @@ from pathlib import Path
 
 from core.atomic_io import atomic_write_json, atomic_write_text
 from core.auth import AuthManager, RESERVED_USERNAMES, SetAdminResult, TOKEN_TTL
+from core.middleware import require_admin
 from src.constants import DEEP_RESEARCH_DIR, MEMORY_FILE, PASSWORD_MIN_LENGTH, SKILLS_DIR
 from src.rate_limiter import RateLimiter
 from src.settings_scrub import scrub_settings
@@ -35,6 +36,11 @@ from src.integrations import (
     execute_api_call,
     INTEGRATION_PRESETS,
     migrate_from_settings,
+)
+from src.channel_config import (
+    public_channel_config,
+    test_channel_integration,
+    update_channel_config,
 )
 
 logger = logging.getLogger(__name__)
@@ -930,5 +936,43 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
         if result.get("exit_code", 1) == 0:
             return {"ok": True, "message": "Connection successful"}
         return {"ok": False, "message": (result.get("error") or "Connection failed")[:300]}
+
+    # ---- Typed MonikAI channel configuration ----
+
+    @router.get("/channel-config")
+    async def get_channel_config_route(request: Request):
+        """Return UI-safe Telegram/Discord/Home Assistant configuration."""
+        # Unlike the historical CRUD above, use the shared middleware guard so
+        # the documented AUTH_ENABLED=false single-user mode can configure its
+        # local integrations too.
+        require_admin(request)
+        return public_channel_config()
+
+    @router.put("/channel-config")
+    async def update_channel_config_route(request: Request):
+        """Persist a constrained patch for typed channel integrations."""
+        require_admin(request)
+        try:
+            body = await request.json()
+            update_channel_config(body)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {
+            "ok": True,
+            "config": public_channel_config(),
+            "runtime": {
+                "reload_supported": False,
+                "restart_required": True,
+            },
+        }
+
+    @router.post("/channel-config/{integration_id}/test")
+    async def test_channel_config_route(integration_id: str, request: Request):
+        """Run a read-only health check for a typed channel integration."""
+        require_admin(request)
+        try:
+            return await test_channel_integration(integration_id)
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from exc
 
     return router

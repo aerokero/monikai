@@ -51,6 +51,7 @@ class AITTSManager {
         this.available = false;
         this.useBrowserTTS = false;
         this.browserVoice = '';
+        this.language = 'auto';
         this.playbackSpeed = 1;
         this.volume = 1;
         this._provider = 'disabled';
@@ -80,6 +81,7 @@ class AITTSManager {
             try {
                 const settings = await getSettings();
                 this.autoPlay = settings.tts_auto_read === true;
+                if (settings.tts_language) this.language = String(settings.tts_language);
                 if (settings.tts_volume != null) {
                     this.volume = normalizeVolume(settings.tts_volume);
                 }
@@ -94,6 +96,7 @@ class AITTSManager {
             const stats = await response.json();
             this.available = stats.available && stats.ready;
             this.playbackSpeed = stats.speed || 1;
+            if (stats.language) this.language = String(stats.language);
             if (stats.volume != null) {
                 this.volume = normalizeVolume(stats.volume);
             }
@@ -149,9 +152,10 @@ class AITTSManager {
 
     getCacheKey(text) {
         // Simple hash function for cache key
+        const cacheInput = `${this._provider}|${this.language}|${text}`;
         let hash = 0;
-        for (let i = 0; i < text.length; i++) {
-            const char = text.charCodeAt(i);
+        for (let i = 0; i < cacheInput.length; i++) {
+            const char = cacheInput.charCodeAt(i);
             hash = ((hash << 5) - hash) + char;
             hash = hash & hash;
         }
@@ -191,7 +195,8 @@ class AITTSManager {
                 },
                 body: JSON.stringify({
                     text: plainText,
-                    format: 'audio'
+                    format: 'audio',
+                    language: this.language || 'auto',
                 })
             });
 
@@ -216,14 +221,40 @@ class AITTSManager {
         }
     }
 
-    _findBrowserVoice() {
-        if (!this.browserVoice) return null;
+    _languageForText(text) {
+        const configured = String(this.language || 'auto').trim().toLowerCase().replace('_', '-');
+        if (configured !== 'auto') {
+            if (configured === 'pl' || configured === 'pl-pl') return 'pl-PL';
+            if (configured === 'en') return 'en-US';
+            if (configured === 'en-gb') return 'en-GB';
+            return configured;
+        }
+        // Browser speech defaults are frequently English even when the UI is
+        // Polish. Detect the unambiguous Polish letters before falling back
+        // to the browser's locale.
+        const source = String(text || '');
+        if (/[ąćęłńóśźż]/i.test(source)) return 'pl-PL';
+        const polishMarkers = new Set(['ale', 'czy', 'dla', 'jest', 'mam', 'masz', 'nie', 'oraz', 'to', 'tobie', 'twoj', 'wiem', 'zeby']);
+        const words = source.toLowerCase().match(/[a-ząćęłńóśźż]+/g) || [];
+        if (words.filter(word => polishMarkers.has(word)).length >= 2) return 'pl-PL';
+        return navigator.language || '';
+    }
+
+    _findBrowserVoice(language = '') {
         const voices = window.speechSynthesis.getVoices();
-        const target = this.browserVoice.toLowerCase();
-        // Try exact match first, then partial
-        return voices.find(v => v.name.toLowerCase() === target) ||
-               voices.find(v => v.name.toLowerCase().includes(target)) ||
-               null;
+        const target = String(this.browserVoice || '').trim().toLowerCase();
+        const byName = target
+            ? voices.find(v => v.name.toLowerCase() === target) ||
+              voices.find(v => v.name.toLowerCase().includes(target))
+            : null;
+        if (byName) return byName;
+
+        const wanted = String(language || '').toLowerCase().replace('_', '-');
+        if (!wanted) return null;
+        return voices.find(v => {
+            const available = String(v.lang || '').toLowerCase().replace('_', '-');
+            return available === wanted || available.startsWith(`${wanted.split('-')[0]}-`);
+        }) || null;
     }
 
     async play(text) {
@@ -256,7 +287,8 @@ class AITTSManager {
     _playBrowser(plainText) {
         return new Promise((resolve, reject) => {
             const utterance = new SpeechSynthesisUtterance(plainText);
-            const voice = this._findBrowserVoice();
+            utterance.lang = this._languageForText(plainText) || 'en-US';
+            const voice = this._findBrowserVoice(utterance.lang);
             if (voice) utterance.voice = voice;
             utterance.rate = this.playbackSpeed;
             utterance.volume = this.volume;

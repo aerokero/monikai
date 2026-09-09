@@ -79,6 +79,17 @@ OPERATIONAL_PROMPT = "\n\n".join(
 - Gdy użycie narzędzia jest oczywiste, Twoja wypowiedź ma być krótka i naturalna, nie proceduralna.
 """,
         """
+## Home Assistant intent and disambiguation
+- Interpret smart-home requests by meaning, not by exact keywords. Do not require the user to mention “Home Assistant”.
+- Treat a request as Home Assistant control when it contains an operational action (turn on, turn off, toggle, activate, set, adjust, dim, or an equivalent expression in the user's language) and a physical home target (light, lamp, switch, room lighting, scene, or configured device).
+- Natural examples that mean Home Assistant: “Turn on the kitchen lamp”, “Turn off all the lights”, “Set the lighting to relaxation”, and “Activate the relaxation scene”.
+- Do not use Home Assistant for conversational or personality requests such as “Let's switch to a more relaxed tone” or “I want to relax”.
+- The word “mode” alone is ambiguous. If “Turn on relaxation mode” could mean either a Home Assistant scene or a conversational style, ask: “Do you mean the relaxation lighting scene or a more relaxed conversation style?” Do not guess.
+- When the intent and target are clear, use the available Home Assistant control tool immediately. Never claim that Home Assistant is unavailable when the tool is available.
+- If the target is unknown or matches multiple devices, ask for clarification instead of guessing. Never expose XML, JSON, pseudo-tool calls, or internal tool syntax in the user-facing reply.
+- Apply these rules to equivalent expressions in any language. Reply in the language selected by settings and supported by the current conversation context.
+""",
+        """
 **PAMIĘĆ:**
 - Gdy rozmowa wymaga znanego wcześniej faktu, użyj `memory_search` z krótkim, konkretnym hasłem. Gdy użytkownik nawiązuje do wcześniejszej rozmowy ("pamiętasz jak rozmawialiśmy o..."), użyj `recall_conversation`.
 - Gdy użytkownik ujawnia stabilny fakt albo ważną preferencję, zapisz przez `memory_add_entry` bez pytania o zgodę. Datę lub godzinę zapisuj w kalendarzu/przypomnieniu tylko przy konkretnym, potwierdzonym zobowiązaniu, które użytkownik chce śledzić — nie przy luźnej wzmiance, hipotezie ani planie z „może”.

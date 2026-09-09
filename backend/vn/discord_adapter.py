@@ -27,6 +27,9 @@ class DiscordChatSession:
         reminder_manager=None,
         spotify_manager=None,
         personality=None,
+        home_assistant_agent=None,
+        hue_agent=None,
+        channel_profile=None,
     ):
         self.channel_id = int(channel_id)
         self.channel_label = str(channel_label or f"discord:{channel_id}")
@@ -35,6 +38,12 @@ class DiscordChatSession:
         self.reminder_manager = reminder_manager
         self.spotify_manager = spotify_manager
         self.personality = personality
+        self.home_assistant_agent = home_assistant_agent
+        self.hue_agent = hue_agent
+        self.channel_profile = dict(channel_profile or {})
+        # Keep Discord history isolated from Telegram, local voice and other
+        # Discord channels while still reusing the native Odysseus gateway.
+        self.conversation_session_id = f"discord-{self.channel_id}"
         self.audio_loop = None
         self.run_task = None
         self.lock = asyncio.Lock()
@@ -52,21 +61,33 @@ class DiscordChatSession:
             personality=self.personality,
             enable_audio_io=False,
             auto_allow_tools_without_confirmation=False,
+            conversation_model=self.channel_profile.get("model"),
+            conversation_endpoint_id=self.channel_profile.get("endpoint_id"),
+            conversation_preset_id=self.channel_profile.get("preset_id"),
+            conversation_session_id=self.conversation_session_id,
+            channel_tool_scopes=self.channel_profile.get("tool_scopes") if self.channel_profile else None,
+            channel_require_confirmation=(
+                self.channel_profile.get("require_confirmation")
+                if self.channel_profile and "require_confirmation" in self.channel_profile
+                else None
+            ),
         )
+        self.audio_loop.home_assistant_agent = self.home_assistant_agent
+        self.audio_loop.hue_agent = self.hue_agent
         self.audio_loop.update_permissions((self.settings_getter() or {}).get("tool_permissions") or {})
-        self.run_task = asyncio.create_task(
-            self.audio_loop.run(
-                start_message=(
-                    "System Notification: You are chatting with the user over Discord text messages. "
-                    "Respond in plain text only. Keep replies concise by default. "
-                    "On Discord, you may sound a little more casual, warm, and playful, "
-                    "if it feels natural for the moment. Keep that text style consistent. "
-                    "Reply in the user's current language by default. "
-                    "Prefer short, natural replies. "
-                    "Do not imply that you can see images or hear audio unless the user explicitly sends them."
-                )
-            )
+        start_message = (
+            "System Notification: You are chatting with the user over Discord text messages. "
+            "Respond in plain text only. Keep replies concise by default. "
+            "On Discord, you may sound a little more casual, warm, and playful, "
+            "if it feels natural for the moment. Keep that text style consistent. "
+            "Reply in the user's current language by default. "
+            "Prefer short, natural replies. "
+            "Do not imply that you can see images or hear audio unless the user explicitly sends them."
         )
+        overlay = str(self.channel_profile.get("prompt_overlay") or "").strip()
+        if overlay:
+            start_message += f"\nChannel-specific style instructions (follow when compatible with the main persona):\n{overlay}"
+        self.run_task = asyncio.create_task(self.audio_loop.run(start_message=start_message))
         await self.audio_loop.wait_until_ready(25.0)
 
     async def ask(self, text: str) -> str:
@@ -308,7 +329,14 @@ class DiscordChannelAdapter(discord.Client):
         reminder_manager=None,
         spotify_manager=None,
         personality=None,
+        home_assistant_agent=None,
+        hue_agent=None,
+        channel_profile=None,
         allowed_channel_ids: list[int] = None,
+        allowed_guild_ids: list[int] = None,
+        allowed_user_ids: list[int] = None,
+        allow_dms: bool = True,
+        require_mention: bool = True,
         session_idle_sec: float = 1800.0,
     ):
         intents = discord.Intents.default()
@@ -321,7 +349,14 @@ class DiscordChannelAdapter(discord.Client):
         self.reminder_manager = reminder_manager
         self.spotify_manager = spotify_manager
         self.personality = personality
+        self.home_assistant_agent = home_assistant_agent
+        self.hue_agent = hue_agent
+        self.channel_profile = dict(channel_profile or {})
         self.allowed_channel_ids = allowed_channel_ids or []
+        self.allowed_guild_ids = allowed_guild_ids or []
+        self.allowed_user_ids = allowed_user_ids or []
+        self.allow_dms = bool(allow_dms)
+        self.require_mention = bool(require_mention)
         self.session_idle_sec = max(300.0, float(session_idle_sec or 1800.0))
 
         self._sessions: Dict[int, DiscordChatSession] = {}
@@ -342,7 +377,15 @@ class DiscordChannelAdapter(discord.Client):
 
         # Ignore messages in unauthorized channels (to preserve privacy)
         is_dm = isinstance(message.channel, discord.DMChannel) or type(message.channel).__name__ == "DMChannel"
+        if is_dm and not self.allow_dms:
+            return
         if not is_dm and self.allowed_channel_ids and message.channel.id not in self.allowed_channel_ids:
+            return
+        guild_id = getattr(getattr(message, "guild", None), "id", None)
+        if not is_dm and self.allowed_guild_ids and guild_id not in self.allowed_guild_ids:
+            return
+        author_id = getattr(getattr(message, "author", None), "id", None)
+        if self.allowed_user_ids and author_id not in self.allowed_user_ids:
             return
 
         text = message.content.strip()
@@ -353,7 +396,7 @@ class DiscordChannelAdapter(discord.Client):
         is_mention, text_after_mention = self._parse_mention(text)
         is_command = text.startswith("!")
 
-        if not is_mention and not is_command:
+        if self.require_mention and not is_mention and not is_command:
             # Check if this channel has an active session, otherwise ignore general chatter
             # Unless we are in a DM channel where all messages are directed to the bot
             if not is_dm and message.channel.id not in self._sessions:
@@ -484,6 +527,9 @@ class DiscordChannelAdapter(discord.Client):
                 reminder_manager=self.reminder_manager,
                 spotify_manager=self.spotify_manager,
                 personality=self.personality,
+                home_assistant_agent=self.home_assistant_agent,
+                hue_agent=self.hue_agent,
+                channel_profile=self.channel_profile,
             )
             self._sessions[chat_id] = session
             return session

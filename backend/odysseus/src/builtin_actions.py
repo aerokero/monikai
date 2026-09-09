@@ -8,6 +8,8 @@ scheduler without needing an LLM call.
 import logging
 import os
 import json
+import re
+import unicodedata
 from datetime import datetime
 from typing import Tuple
 
@@ -428,6 +430,143 @@ class TaskDeferred(BaseException):
         super().__init__(reason)
         self.reason = reason
         self.delay_seconds = delay_seconds
+
+
+_BROAD_HOME_ASSISTANT_TARGETS = frozenset({
+    "all",
+    "all light",
+    "all lights",
+    "all the light",
+    "all the lights",
+    "all lighting",
+    "every light",
+    "everywhere",
+    "everything",
+    "wszystko",
+    "wszystko doslownie",
+    "wszystkie lampy",
+    "wszystkie swiatla",
+    "cale oswietlenie",
+})
+
+
+def _normalize_home_assistant_target(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", str(value or ""))
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    normalized = normalized.casefold()
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _is_broad_home_assistant_target(value: str) -> bool:
+    normalized = _normalize_home_assistant_target(value)
+    if normalized in _BROAD_HOME_ASSISTANT_TARGETS:
+        return True
+    return (
+        "all" in normalized
+        and ("light" in normalized or "lighting" in normalized)
+    ) or (
+        "wszystk" in normalized
+        and ("swiatl" in normalized or "lamp" in normalized)
+    )
+
+
+async def action_home_assistant_control(
+    owner: str,
+    home_assistant_agent=None,
+    prompt: str = "",
+    **kwargs,
+) -> Tuple[str, bool]:
+    """Run one explicitly configured, filtered Home Assistant mutation.
+
+    Task prompts are JSON rather than free-form text so a scheduled job cannot
+    turn into an arbitrary HA service call. The agent itself only resolves
+    entities discovered through the configured entity filters.
+    """
+    if home_assistant_agent is None:
+        return "Home Assistant is not available.", False
+    if not getattr(home_assistant_agent, "ha_url", None) or not getattr(home_assistant_agent, "ha_token", None):
+        return "Home Assistant is not configured.", False
+
+    try:
+        config = json.loads(str(prompt or ""))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return "Home Assistant task configuration must be valid JSON.", False
+    if not isinstance(config, dict):
+        return "Home Assistant task configuration must be an object.", False
+
+    target = str(config.get("target") or "").strip()
+    action = str(config.get("action") or "").strip().lower()
+    if not target:
+        return "Home Assistant task target is required.", False
+    if len(target) > 160:
+        return "Home Assistant task target is too long.", False
+
+    # Scheduled tasks intentionally do not expose the legacy agent's broad
+    # natural-language aliases such as "all lights". One configured entity
+    # (or an explicitly discovered scene via turn_on) is predictable and
+    # auditable in run history.
+    allow_broad_targets = bool(kwargs.get("allow_broad_targets", False))
+    is_broad_target = _is_broad_home_assistant_target(target)
+    if is_broad_target and not allow_broad_targets:
+        return "Scheduled Home Assistant tasks require one explicit entity or scene.", False
+
+    if action not in {"turn_on", "turn_off", "toggle", "set"}:
+        return "Unsupported Home Assistant task action.", False
+
+    if is_broad_target and action not in {"turn_on", "turn_off"}:
+        return "Broad Home Assistant lighting targets support turn_on or turn_off only.", False
+
+    # ``all`` is a Home Assistant service target, not an entity returned by
+    # /api/states. Interactive broad requests deliberately bypass friendly-name
+    # aliases so a cached group such as light.wszystkie_swiatla cannot change
+    # the meaning of "all lights". Named targets still resolve through the
+    # configured entity filter before mutating anything.
+    if is_broad_target:
+        entity_id = target
+    else:
+        entity_id = await home_assistant_agent._resolve_entity_id(target)
+        if not entity_id:
+            return f"Home Assistant entity not found in the configured filter: {target}", False
+
+    if action == "turn_on":
+        ok = await home_assistant_agent.turn_on(entity_id)
+        return (f"Turned on {entity_id}.", True) if ok else (f"Could not turn on {entity_id}.", False)
+    if action == "turn_off":
+        ok = await home_assistant_agent.turn_off(entity_id)
+        return (f"Turned off {entity_id}.", True) if ok else (f"Could not turn off {entity_id}.", False)
+    if action == "toggle":
+        toggle = getattr(home_assistant_agent, "toggle", None)
+        if not toggle:
+            return "Home Assistant toggle is unavailable.", False
+        ok = await toggle(entity_id)
+        return (f"Toggled {entity_id}.", True) if ok else (f"Could not toggle {entity_id}.", False)
+
+    brightness = config.get("brightness")
+    color = config.get("color")
+    if brightness is None and color is None:
+        return "Set action requires brightness or color.", False
+    if brightness is not None:
+        try:
+            brightness = int(brightness)
+        except (TypeError, ValueError):
+            return "Brightness must be an integer from 0 to 100.", False
+        if not 0 <= brightness <= 100:
+            return "Brightness must be between 0 and 100.", False
+    if color is not None:
+        color = str(color).strip()
+        if not color or len(color) > 40:
+            return "Color must be a non-empty value up to 40 characters.", False
+
+    changes = []
+    if brightness is not None:
+        if not await home_assistant_agent.set_brightness(entity_id, brightness):
+            return f"Could not set brightness for {entity_id}.", False
+        changes.append(f"brightness={brightness}%")
+    if color is not None:
+        if not await home_assistant_agent.set_color(entity_id, color):
+            return f"Could not set color for {entity_id}.", False
+        changes.append(f"color={color}")
+    return f"Updated {entity_id}: {', '.join(changes)}.", True
 
 
 async def action_tidy_sessions(owner: str, **kwargs) -> Tuple[str, bool]:
@@ -3392,6 +3531,7 @@ async def action_cookbook_serve(
 
 
 BUILTIN_ACTIONS = {
+    "home_assistant_control": action_home_assistant_control,
     "tidy_sessions": action_tidy_sessions,
     "tidy_documents": action_tidy_documents,
     "consolidate_memory": action_consolidate_memory,
@@ -3417,6 +3557,7 @@ BUILTIN_ACTIONS = {
 
 # Descriptions for the UI/API
 BUILTIN_ACTION_INFO = {
+    "home_assistant_control": "Safely control one filtered Home Assistant light, switch, or scene",
     "tidy_sessions": "Clean up empty chat sessions and auto-sort into folders",
     "tidy_documents": "Remove junk/empty documents",
     "consolidate_memory": "Remove duplicate memories",

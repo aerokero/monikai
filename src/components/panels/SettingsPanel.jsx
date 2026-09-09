@@ -16,6 +16,29 @@ const GEMINI_VOICES = [
   { value: 'Fenrir',  label: 'Fenrir'  },
 ];
 
+const LOCAL_KOKORO_VOICES = [
+  { value: 'pl_PL-gosia-medium', label: 'Gosia — polski, żeński, naturalny' },
+  { value: 'af_heart', label: 'af_heart — Kokoro, eksperymentalny polski' },
+  { value: 'af_bella', label: 'af_bella — Kokoro, eksperymentalny polski' },
+  { value: 'af_nicole', label: 'af_nicole — Kokoro, eksperymentalny polski' },
+  { value: 'af_sarah', label: 'af_sarah — Kokoro, eksperymentalny polski' },
+];
+
+const TTS_LANGUAGES = [
+  { value: 'auto', label: 'Automatycznie' },
+  { value: 'pl', label: 'Polski' },
+  { value: 'en', label: 'English (US)' },
+  { value: 'en-gb', label: 'English (UK)' },
+  { value: 'es', label: 'Español' },
+  { value: 'fr', label: 'Français' },
+  { value: 'de', label: 'Deutsch (fallback lokalny)' },
+  { value: 'it', label: 'Italiano' },
+  { value: 'pt-br', label: 'Português (Brasil)' },
+  { value: 'ja', label: '日本語' },
+  { value: 'zh', label: '中文' },
+  { value: 'hi', label: 'हिन्दी' },
+];
+
 const CONFIGURABLE_TOOLS = [
   'cancel_reminder',
   'control_light',
@@ -80,7 +103,13 @@ const SettingsPanel = ({
   const [modelsStatus, setModelsStatus] = useState(null);
   const [mcpStatus, setMcpStatus] = useState(null);
   const [ttsProvider, setTtsProvider] = useState(
-    () => localStorage.getItem('monikai_tts_provider') || 'disabled'
+    () => localStorage.getItem('monikai_tts_provider') || 'local'
+  );
+  const [ttsLanguage, setTtsLanguage] = useState(
+    () => localStorage.getItem('monikai_tts_language') || 'pl'
+  );
+  const [ttsVoice, setTtsVoice] = useState(
+    () => localStorage.getItem('monikai_tts_voice') || 'pl_PL-gosia-medium'
   );
 
   useEffect(() => {
@@ -110,6 +139,16 @@ const SettingsPanel = ({
         if (provider) {
           localStorage.setItem('monikai_tts_provider', provider);
           setTtsProvider(provider);
+        }
+        const language = payload?.voice_settings?.canonical?.language;
+        if (language) {
+          localStorage.setItem('monikai_tts_language', language);
+          setTtsLanguage(language);
+        }
+        const voice = payload?.voice_settings?.canonical?.voice;
+        if (voice) {
+          localStorage.setItem('monikai_tts_voice', voice);
+          setTtsVoice(voice);
         }
       })
       .catch(() => {});
@@ -203,16 +242,24 @@ const SettingsPanel = ({
             value={ttsProvider}
             onChange={(e) => {
               const provider = e.target.value;
+              const nextVoice = provider === 'local' && (ttsLanguage === 'pl' || ttsLanguage === 'auto')
+                ? 'pl_PL-gosia-medium'
+                : ttsVoice;
               setTtsProvider(provider);
+              setTtsVoice(nextVoice);
               localStorage.setItem('monikai_tts_provider', provider);
+              localStorage.setItem('monikai_tts_voice', nextVoice);
               fetch('/api/v1/voice/select', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   provider,
+                  language: ttsLanguage,
                   ...(provider === 'gemini'
                     ? { model: 'gemini-2.5-flash-preview-tts', voice: geminiVoice }
-                    : {}),
+                    : provider === 'local'
+                      ? { voice: nextVoice }
+                      : {}),
                 }),
               }).catch(() => {});
             }}
@@ -221,7 +268,54 @@ const SettingsPanel = ({
               { value: 'disabled', label: 'Wyłączony' },
               { value: 'gemini', label: 'Gemini TTS (PCM)' },
               { value: 'elevenlabs', label: 'ElevenLabs (read-aloud)' },
+              { value: 'local', label: 'Local (Piper — polski głos żeński)' },
             ]}
+          />
+        </FieldRow>
+        {ttsProvider === 'local' && (
+          <FieldRow title="Głos lokalny" description="Dla polskiego domyślnie używa polskiego głosu Piper Gosia; Kokoro pozostaje eksperymentalną opcją.">
+            <SelectField
+              value={ttsVoice}
+              onChange={(e) => {
+                const selected = e.target.value;
+                setTtsVoice(selected);
+                localStorage.setItem('monikai_tts_voice', selected);
+                fetch('/api/v1/voice/select', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ provider: 'local', voice: selected, language: ttsLanguage }),
+                }).catch(() => {});
+              }}
+              wrapperClassName="w-[280px]"
+              options={LOCAL_KOKORO_VOICES}
+            />
+          </FieldRow>
+        )}
+        <FieldRow title="Język renderera mowy" description="Polski używa jawnego kodu pl-PL i polskiego modelu Piper; espeak-ng jest awaryjnym fallbackiem.">
+          <SelectField
+            value={ttsLanguage}
+            onChange={(e) => {
+              const selected = e.target.value;
+              setTtsLanguage(selected);
+              if (ttsProvider === 'local' && selected === 'pl') {
+                setTtsVoice('pl_PL-gosia-medium');
+                localStorage.setItem('monikai_tts_voice', 'pl_PL-gosia-medium');
+              }
+              localStorage.setItem('monikai_tts_language', selected);
+              fetch('/api/v1/voice/select', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  provider: ttsProvider,
+                  language: selected,
+                  ...(ttsProvider === 'local' && selected === 'pl'
+                    ? { voice: 'pl_PL-gosia-medium' }
+                    : {}),
+                }),
+              }).catch(() => {});
+            }}
+            wrapperClassName="w-[260px]"
+            options={TTS_LANGUAGES}
           />
         </FieldRow>
         <FieldRow title="Głośność mowy" description="Wspólny poziom głośności dla odczytu wiadomości i dźwięku Live Voice.">

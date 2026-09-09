@@ -476,7 +476,13 @@ list_smart_devices_tool = {
 
 control_light_tool = {
     "name": "control_light",
-    "description": "Controls smart home devices (lights, lamps, switches).",
+    "description": (
+        "Controls configured Home Assistant lights, lamps, switches, or named scenes "
+        "after an explicit user request. Use natural physical-home requests such as "
+        "'turn on the kitchen lamp', 'set the lighting to relaxation', or 'activate "
+        "the relaxation scene'. Do not use it for conversation style or MonikAI UI "
+        "themes; if 'mode' alone is ambiguous, ask a short clarification."
+    ),
     "parameters": {
         "type": "OBJECT",
         "properties": {

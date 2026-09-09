@@ -22,6 +22,22 @@ async def initialize_smart_home_agents(settings: dict):
 
     print("[SERVER] Startup: Initializing Home Assistant Agent...")
     ha_config = settings.get("smart_home", {}).get("home_assistant", {})
+    # The typed channel config is the new source of truth for the runtime,
+    # while channel_config.py transparently reads the legacy smart_home block
+    # when no migrated value exists yet.
+    try:
+        from src.channel_config import get_channel_integration
+        typed_ha = get_channel_integration("home_assistant")
+        # Once the typed source is available, an explicit disabled state must
+        # be able to turn off a still-populated legacy settings block.
+        ha_config = {
+            **ha_config,
+            "url": typed_ha.get("url") if typed_ha.get("enabled") else None,
+            "token": typed_ha.get("token") if typed_ha.get("enabled") else None,
+            "entities_filter": typed_ha.get("entities_filter") or ha_config.get("entities_filter"),
+        }
+    except Exception as exc:
+        print(f"[SERVER] Typed channel config unavailable; using legacy HA settings: {exc}")
     home_assistant_agent = HomeAssistantAgent(
         ha_url=ha_config.get("url"),
         ha_token=ha_config.get("token"),

@@ -2,6 +2,7 @@ from backend.conversation.tools import (
     ConversationToolRequest,
     ConversationToolResult,
     plan_read_only_tool,
+    plan_named_scene_tool,
     validate_planned_tool_request,
 )
 
@@ -174,6 +175,15 @@ def test_light_control_preserves_explicit_action_and_rejects_negation():
     assert not validate_planned_tool_request(
         "Nie włączaj lampy w salonie.",
         turn_on,
+    )
+
+
+def test_named_scene_planner_accepts_polish_command_and_home_assistant_context():
+    request = plan_named_scene_tool("Włącz tryb nocny w Home Assistant.")
+
+    assert request == ConversationToolRequest(
+        "control_light",
+        {"target": "tryb nocny", "action": "turn_on"},
     )
 
 
