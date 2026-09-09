@@ -55,12 +55,11 @@ DEFAULT_SETTINGS = {
     # (e.g., urgency alert email). Example: "https://chat.example.com"
     "app_public_url": "",
     "tts_enabled": True,
-    # Local Piper is the pronunciation-safe default for Polish. The model is
-    # fetched lazily by the container when PIPER_AUTO_DOWNLOAD is enabled;
-    # espeak-ng remains an offline fallback if it is not available yet.
+    # Local Kokoro is the default Polish renderer; its experimental Polish G2P
+    # path keeps the familiar female Kokoro timbre. espeak-ng is the fallback.
     "tts_provider": "local",
-    "tts_model": "Piper",
-    "tts_voice": "pl_PL-gosia-medium",
+    "tts_model": "Kokoro",
+    "tts_voice": "af_heart",
     "tts_speed": "1",
     "tts_language": "pl",
     # Shared output level for browser read-aloud and the PCM Live renderer.

@@ -138,6 +138,52 @@ def test_server_mic_service_mute_and_controls():
 
 
 @pytest.mark.asyncio
+async def test_expired_command_window_restores_voice_light():
+    voice_light = MagicMock()
+    voice_light.set_state = AsyncMock()
+    service = ServerMicListenerService(
+        require_wake_word=True,
+        voice_light_feedback=voice_light,
+    )
+    service._conversation_session_open = True
+    service._awaiting_command_until = time.monotonic() - 1.0
+    service._reset_continuous_wake_recognizer = MagicMock()
+
+    expired = await service._expire_command_window_if_needed()
+
+    assert expired
+    assert not service._conversation_session_open
+    assert service._awaiting_command_until == 0.0
+    voice_light.set_state.assert_awaited_once_with("idle")
+
+
+@pytest.mark.asyncio
+async def test_voice_light_latest_state_supersedes_stale_update():
+    first_started = asyncio.Event()
+    states = []
+    voice_light = MagicMock()
+
+    async def set_state(state):
+        states.append(state)
+        if state == "listening":
+            first_started.set()
+            await asyncio.Future()
+
+    voice_light.set_state = set_state
+    service = ServerMicListenerService(voice_light_feedback=voice_light)
+
+    service._queue_voice_light_state("listening")
+    await first_started.wait()
+    await service._set_voice_light_state("idle", wait=True)
+
+    # The stale listening coroutine is cancelled before the final reset is
+    # allowed to complete.
+    assert service._voice_light_task is not None
+    assert service._voice_light_task.done()
+    assert states == ["listening", "idle"]
+
+
+@pytest.mark.asyncio
 async def test_sounddevice_read_does_not_block_event_loop():
     class BlockingStream:
         def read(self, _chunk_size):

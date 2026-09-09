@@ -43,22 +43,17 @@ def test_kokoro_language_aliases_and_polish_detection(monkeypatch):
     monkeypatch.delenv("KOKORO_POLISH_MODE", raising=False)
     assert _kokoro_code("en-US") == "a"
     assert _kokoro_code("fr") == "f"
-    assert _kokoro_code("pl") is None
+    assert _kokoro_code("pl") == "l"
     assert detect_text_language("To jest wiadomość po polsku: żółć.") == "pl"
     assert detect_text_language("To jest test") == "pl"
-    monkeypatch.setenv("KOKORO_POLISH_MODE", "experimental")
-    assert _kokoro_code("pl") == "l"
 
 
-def test_polish_is_the_safe_default_and_piper_locale_is_not_portuguese(monkeypatch):
+def test_polish_kokoro_is_the_default_and_voice_locale_stays_kokoro(monkeypatch):
     monkeypatch.delenv("KOKORO_POLISH_MODE", raising=False)
-    assert _kokoro_polish_mode() == "espeak"
+    assert _kokoro_polish_mode() == "experimental"
 
     service = TTSService(cache_dir=tempfile.mkdtemp())
-    assert service._resolve_language("Dobrze.", "auto", "pl_PL-gosia-medium") == "pl"
-    assert _TTS_MODULE._piper_voice_urls("pl_PL-gosia-medium")[0].endswith(
-        "/pl/pl_PL/gosia/medium/pl_PL-gosia-medium.onnx"
-    )
+    assert service._resolve_language("To jest dobrze.", "auto", "af_heart") == "pl"
 
 
 def test_polish_experimental_voice_uses_stock_female_embedding(monkeypatch):
@@ -92,7 +87,7 @@ def test_espeak_fallback_returns_24khz_wav_for_polish():
         assert rendered.getframerate() == 24_000
 
 
-def test_polish_synthesis_never_calls_kokoro_english_pipeline(monkeypatch):
+def test_polish_synthesis_uses_kokoro_polish_pipeline(monkeypatch):
     service = TTSService(cache_dir=tempfile.mkdtemp())
     monkeypatch.setattr(
         service,
@@ -100,18 +95,27 @@ def test_polish_synthesis_never_calls_kokoro_english_pipeline(monkeypatch):
         lambda: {
             "tts_enabled": True,
             "tts_provider": "local",
-            "tts_model": "Kokoro-82M",
+            "tts_model": "Kokoro",
             "tts_voice": "af_heart",
             "tts_speed": "1",
             "tts_language": "pl",
         },
     )
 
+    class FakeKokoro:
+        available = True
+
+        def synthesize_raw(self, text, voice, *, language):
+            assert text == "To jest po polsku."
+            assert voice == "af_heart"
+            assert language == "pl"
+            return b"RIFFfake-kokoro-audio"
+
     kokoro_calls = []
-    monkeypatch.setattr(service, "_get_kokoro", lambda: kokoro_calls.append(True))
+    monkeypatch.setattr(service, "_get_kokoro", lambda: kokoro_calls.append(True) or FakeKokoro())
     audio = service.synthesize("To jest po polsku.", use_cache=False)
     assert audio and audio[:4] == b"RIFF"
-    assert kokoro_calls == []
+    assert kokoro_calls == [True]
 
 
 def test_explicit_local_provider_overrides_a_different_saved_provider(monkeypatch):

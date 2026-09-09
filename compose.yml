@@ -20,11 +20,10 @@ services:
       WEB_AGENT_HEADLESS: "1"
       SERVER_MIC_WAKE_WORD_REQUIRED: "true"
       SERVER_MIC_WAKE_LISTEN_TIMEOUT_SECONDS: "10"
-      # Use a Polish-trained local Piper renderer for server-speaker playback.
+      # Use the local Kokoro renderer for server-speaker playback.
       # Gemini is retained as an automatic fallback if local synthesis fails.
       SERVER_MIC_TTS_PROVIDER: "local"
-      # Kokoro-82M has no official Polish voice, so its Polish approximation is
-      # opt-in. Piper's pl_PL-gosia-medium model is downloaded on first use.
+      # Kokoro-82M uses the local experimental Polish G2P layer for Polish.
       # Override with SERVER_MIC_TTS_LANGUAGE=auto/en/... when needed.
       SERVER_MIC_TTS_LANGUAGE: "${SERVER_MIC_TTS_LANGUAGE:-pl}"
       SERVER_MIC_TTS_TIMEOUT_SECONDS: "30"
@@ -55,11 +54,7 @@ services:
       ODYSSEUS_DATA_DIR: "/app/data/odysseus"
       PYTHONPATH: "/app/data/python-packages:/app:/app/backend/odysseus"
       KOKORO_DEVICE: "auto"
-      KOKORO_POLISH_MODE: "${KOKORO_POLISH_MODE:-espeak}"
-      PIPER_MODEL_ID: "${PIPER_MODEL_ID:-pl_PL-gosia-medium}"
-      PIPER_MODEL_DIR: "/app/data/tts/piper"
-      PIPER_AUTO_DOWNLOAD: "${PIPER_AUTO_DOWNLOAD:-true}"
-      PIPER_USE_CUDA: "${PIPER_USE_CUDA:-false}"
+      KOKORO_POLISH_MODE: "${KOKORO_POLISH_MODE:-experimental}"
       HF_HOME: "/app/data/huggingface"
 
     # Use the LAN resolver so split-DNS names such as ha.tosutosu.pl work

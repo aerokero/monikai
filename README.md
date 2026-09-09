@@ -93,12 +93,11 @@ devices are auto-detected; fixed PortAudio indexes can be saved as
 `server_mic_device_index` and `server_mic_output_index` in MonikAI settings.
 The text reply uses the model and endpoint currently selected in the web model
 picker (and follows changes made there); it never silently switches providers.
-Server-speaker replies use the Polish-trained local Piper voice
-`pl_PL-gosia-medium` by default and fall back to pronunciation-safe espeak-ng
-if the model cannot be loaded. The voice model is downloaded on first use when
-`PIPER_AUTO_DOWNLOAD=true` (Compose enables this); the first synthesis can
-therefore take longer. Gemini TTS remains available as the natural, cloud
-renderer option in Settings and receives an explicit `pl-PL` language hint.
+Server-speaker replies use local Kokoro with its experimental Polish G2P layer
+and the `af_heart` female voice by default. If Kokoro cannot be loaded, the
+renderer falls back to espeak-ng. Gemini TTS remains available as the natural,
+cloud renderer option in Settings and receives an explicit `pl-PL` language
+hint.
 The optional Gemini Live compatibility mode has lower latency but a narrower
 tool surface, so the normal conversation path is the default. Voice turns additionally request concise spoken replies while keeping
 the selected text endpoint/model unchanged. If the selected endpoint returns

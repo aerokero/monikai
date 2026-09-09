@@ -17,8 +17,7 @@ const GEMINI_VOICES = [
 ];
 
 const LOCAL_KOKORO_VOICES = [
-  { value: 'pl_PL-gosia-medium', label: 'Gosia — polski, żeński, naturalny' },
-  { value: 'af_heart', label: 'af_heart — Kokoro, eksperymentalny polski' },
+  { value: 'af_heart', label: 'af_heart — Kokoro, polski eksperymentalny' },
   { value: 'af_bella', label: 'af_bella — Kokoro, eksperymentalny polski' },
   { value: 'af_nicole', label: 'af_nicole — Kokoro, eksperymentalny polski' },
   { value: 'af_sarah', label: 'af_sarah — Kokoro, eksperymentalny polski' },
@@ -109,7 +108,10 @@ const SettingsPanel = ({
     () => localStorage.getItem('monikai_tts_language') || 'pl'
   );
   const [ttsVoice, setTtsVoice] = useState(
-    () => localStorage.getItem('monikai_tts_voice') || 'pl_PL-gosia-medium'
+    () => {
+      const stored = localStorage.getItem('monikai_tts_voice');
+      return stored && !/^pl_PL-gosia/i.test(stored) ? stored : 'af_heart';
+    }
   );
 
   useEffect(() => {
@@ -147,8 +149,9 @@ const SettingsPanel = ({
         }
         const voice = payload?.voice_settings?.canonical?.voice;
         if (voice) {
-          localStorage.setItem('monikai_tts_voice', voice);
-          setTtsVoice(voice);
+          const restoredVoice = /^pl_PL-gosia/i.test(voice) ? 'af_heart' : voice;
+          localStorage.setItem('monikai_tts_voice', restoredVoice);
+          setTtsVoice(restoredVoice);
         }
       })
       .catch(() => {});
@@ -243,7 +246,7 @@ const SettingsPanel = ({
             onChange={(e) => {
               const provider = e.target.value;
               const nextVoice = provider === 'local' && (ttsLanguage === 'pl' || ttsLanguage === 'auto')
-                ? 'pl_PL-gosia-medium'
+                ? 'af_heart'
                 : ttsVoice;
               setTtsProvider(provider);
               setTtsVoice(nextVoice);
@@ -268,12 +271,12 @@ const SettingsPanel = ({
               { value: 'disabled', label: 'Wyłączony' },
               { value: 'gemini', label: 'Gemini TTS (PCM)' },
               { value: 'elevenlabs', label: 'ElevenLabs (read-aloud)' },
-              { value: 'local', label: 'Local (Piper — polski głos żeński)' },
+              { value: 'local', label: 'Local (Kokoro — polski eksperymentalny)' },
             ]}
           />
         </FieldRow>
         {ttsProvider === 'local' && (
-          <FieldRow title="Głos lokalny" description="Dla polskiego domyślnie używa polskiego głosu Piper Gosia; Kokoro pozostaje eksperymentalną opcją.">
+          <FieldRow title="Głos lokalny" description="Kokoro z eksperymentalną polską warstwą wymowy i żeńskimi głosami.">
             <SelectField
               value={ttsVoice}
               onChange={(e) => {
@@ -291,15 +294,15 @@ const SettingsPanel = ({
             />
           </FieldRow>
         )}
-        <FieldRow title="Język renderera mowy" description="Polski używa jawnego kodu pl-PL i polskiego modelu Piper; espeak-ng jest awaryjnym fallbackiem.">
+        <FieldRow title="Język renderera mowy" description="Polski używa eksperymentalnego Kokoro G2P; espeak-ng pozostaje awaryjnym fallbackiem.">
           <SelectField
             value={ttsLanguage}
             onChange={(e) => {
               const selected = e.target.value;
               setTtsLanguage(selected);
               if (ttsProvider === 'local' && selected === 'pl') {
-                setTtsVoice('pl_PL-gosia-medium');
-                localStorage.setItem('monikai_tts_voice', 'pl_PL-gosia-medium');
+                setTtsVoice('af_heart');
+                localStorage.setItem('monikai_tts_voice', 'af_heart');
               }
               localStorage.setItem('monikai_tts_language', selected);
               fetch('/api/v1/voice/select', {
@@ -309,7 +312,7 @@ const SettingsPanel = ({
                   provider: ttsProvider,
                   language: selected,
                   ...(ttsProvider === 'local' && selected === 'pl'
-                    ? { voice: 'pl_PL-gosia-medium' }
+                    ? { voice: 'af_heart' }
                     : {}),
                 }),
               }).catch(() => {});

@@ -53,12 +53,12 @@ DEFAULT_SETTINGS = {
     # Reply language is a conversation setting, not part of a persona prompt.
     # Auto follows the user's latest message and keeps personas language-neutral.
     "response_language": "auto",
-    # Read-aloud defaults to a Polish-trained local renderer. It falls back to
-    # espeak-ng until the optional Piper voice model is present.
+    # Read-aloud defaults to the local Kokoro renderer with its experimental
+    # Polish G2P path; espeak-ng remains the fallback.
     "tts_enabled": True,
     "tts_provider": "local",
-    "tts_model": "Piper",
-    "tts_voice": "pl_PL-gosia-medium",
+    "tts_model": "Kokoro",
+    "tts_voice": "af_heart",
     "tts_language": "pl",
     "tts_speed": "1",
     "tts_volume": 1.0,
@@ -143,8 +143,8 @@ DEFAULT_SETTINGS = {
     "speech": {
         "delivery_mode": "dedicated_tts",
         "provider": "local",
-        "model": "Piper",
-        "voice": "pl_PL-gosia-medium",
+        "model": "Kokoro",
+        "voice": "af_heart",
         "language": "pl",
         "timeout_sec": 20.0,
     },

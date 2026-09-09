@@ -1,6 +1,6 @@
 # routes/tts_routes.py
 """
-TTS API routes — multi-provider (local Piper/Kokoro, API endpoint, browser).
+TTS API routes — multi-provider (local Kokoro, API endpoint, browser).
 """
 
 from fastapi import APIRouter, HTTPException

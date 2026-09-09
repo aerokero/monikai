@@ -169,15 +169,19 @@ class VoiceOutputService:
         model = str(settings.get("tts_model", "tts-1") or "tts-1").strip()
         voice = str(settings.get("tts_voice", "alloy") or "alloy").strip()
         language = str(settings.get("tts_language", "auto") or "auto").strip().lower()
-        # Upgrade the old local Kokoro Polish profile in memory. Without this
-        # compatibility bridge, an ASCII-only sentence could still be routed
-        # through af_heart's English phonemizer after the Piper upgrade.
-        if provider == "local" and language == "auto" and voice.lower() in {
+        # Restore the previous Kokoro profile in memory. This also prevents a
+        # stale Piper profile from taking over after the renderer rollback.
+        kokoro_voices = {
             "af_alloy", "af_aoede", "af_bella", "af_heart", "af_jessica",
             "af_kore", "af_nicole", "af_nova", "af_river", "af_sarah", "af_sky",
-        }:
-            model = "Piper"
-            voice = "pl_PL-gosia-medium"
+        }
+        if provider == "local" and (
+            (language == "auto" and voice.lower() in kokoro_voices)
+            or model.lower() == "piper"
+            or voice.lower().startswith("pl_pl-")
+        ):
+            model = "Kokoro"
+            voice = "af_heart"
             language = "pl"
         return {
             "tts_enabled": settings.get("tts_enabled", True),

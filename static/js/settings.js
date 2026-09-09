@@ -785,11 +785,11 @@ async function initTtsSettings() {
   function isGemini() { return provSel.value === 'gemini'; }
   function isElevenLabs() { return provSel.value === 'elevenlabs'; }
   function getModel() {
-    if (provSel.value === 'local') return 'Piper';
+    if (provSel.value === 'local') return 'Kokoro';
     return isEndpoint() ? modelSelect.value : modelInput.value;
   }
   function getVoice() {
-    if (provSel.value === 'local' && !voiceInput.value) return 'pl_PL-gosia-medium';
+    if (provSel.value === 'local' && (!voiceInput.value || /^pl_PL-gosia/i.test(voiceInput.value))) return 'af_heart';
     return isEndpoint() ? voiceSelect.value : voiceInput.value;
   }
   function volumePercent(raw) {
@@ -839,11 +839,10 @@ async function initTtsSettings() {
     if (settings.tts_model) { modelSelect.value = settings.tts_model; modelInput.value = settings.tts_model; }
     if (settings.tts_voice) { voiceSelect.value = settings.tts_voice; voiceInput.value = settings.tts_voice; }
     if (languageSelect && settings.tts_language) languageSelect.value = settings.tts_language;
-    // Older profiles used af_heart for Polish Kokoro. Keep them on the
-    // pronunciation-safe Polish voice after the UI is upgraded.
+    // Restore the previous Kokoro profile if a stale Piper profile is stored.
     if (provSel.value === 'local' && languageSelect && languageSelect.value === 'pl' &&
-        (!settings.tts_voice || /^af_/.test(settings.tts_voice))) {
-      voiceInput.value = 'pl_PL-gosia-medium';
+        (!settings.tts_voice || /^pl_PL-gosia/i.test(settings.tts_voice))) {
+      voiceInput.value = 'af_heart';
     }
     if (settings.tts_speed) { speedSelect.value = settings.tts_speed; }
     if (volumeRange && settings.tts_volume != null) volumeRange.value = String(volumePercent(settings.tts_volume));
@@ -887,9 +886,9 @@ async function initTtsSettings() {
     var prov = provSel.value;
     if (prov === 'local') {
       if (!languageSelect || languageSelect.value === 'auto' || languageSelect.value === 'pl') {
-        voiceInput.value = 'pl_PL-gosia-medium';
+        voiceInput.value = 'af_heart';
       }
-      modelInput.value = 'Piper';
+      modelInput.value = 'Kokoro';
     }
     else if (prov === 'gemini') { voiceInput.value = 'Leda'; modelInput.value = 'gemini-2.5-flash-preview-tts'; }
     else if (prov === 'elevenlabs') { voiceInput.value = '21m00Tcm4TlvDq8ikWAM'; modelInput.value = 'eleven_multilingual_v2'; }
@@ -904,7 +903,7 @@ async function initTtsSettings() {
   voiceInput.addEventListener('change', saveTTS);
   if (languageSelect) languageSelect.addEventListener('change', function() {
     if (provSel.value === 'local' && languageSelect.value === 'pl') {
-      voiceInput.value = 'pl_PL-gosia-medium';
+      voiceInput.value = 'af_heart';
     }
     saveAndClearCache();
   });

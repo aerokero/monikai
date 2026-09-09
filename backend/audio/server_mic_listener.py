@@ -431,11 +431,10 @@ class ServerMicListenerService:
         self.require_wake_word = bool(require_wake_word)
         self.gemini_api_key = gemini_api_key or os.getenv("GEMINI_API_KEY")
         self.gemini_voice = str(gemini_voice or "Leda")
-        # Server playback uses the canonical local renderer (Piper for Polish,
-        # Kokoro for its supported languages). Keep Gemini as the code-level
+        # Server playback uses the canonical local Kokoro renderer. Keep Gemini as the code-level
         # fallback for installations without a working local model.
         self.tts_provider = str(
-            os.getenv("SERVER_MIC_TTS_PROVIDER", "gemini") or "gemini"
+            os.getenv("SERVER_MIC_TTS_PROVIDER", "local") or "local"
         ).strip().lower()
         # The always-on server microphone is normally used in Polish, but this
         # remains an environment setting so the same deployment can be switched
@@ -552,6 +551,11 @@ class ServerMicListenerService:
         self._live_session_task: Optional[asyncio.Task] = None
         self._activation_chime_task: Optional[asyncio.Task] = None
         self._activation_ack_task: Optional[asyncio.Task] = None
+        # Voice-light updates are intentionally fire-and-forget so a slow
+        # Home Assistant request cannot stall microphone capture.  Keep the
+        # latest task, however, so a later IDLE update can supersede a stale
+        # LISTENING update instead of racing it.
+        self._voice_light_task: Optional[asyncio.Task] = None
         self._activation_prompt_window_until = 0.0
         self._last_live_voice_time = 0.0
         self._conversation_session_open = False
@@ -568,6 +572,7 @@ class ServerMicListenerService:
         self._is_muted = bool(muted)
         if self._is_muted:
             self.vad.reset_segment()
+            self._queue_voice_light_state("idle")
         return self._is_muted
 
     def set_wake_word_required(self, required: bool):
@@ -591,6 +596,85 @@ class ServerMicListenerService:
                 await result
         except Exception as exc:
             print(f"[SERVER MIC] Session hook notice: {exc}")
+
+    def _queue_voice_light_state(self, state: str) -> Optional[asyncio.Task]:
+        """Apply the newest voice-light state without allowing stale writes.
+
+        The microphone paths produce state changes from several independent
+        coroutines.  A plain ``create_task(set_state(...))`` lets an older
+        LISTENING task run after the session has already requested IDLE.  That
+        leaves the physical bulb pulsing forever.  Cancel the previous update
+        and make the newest request wait for its cleanup before touching HA.
+        """
+        feedback = self.voice_light_feedback
+        if feedback is None:
+            return None
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # ``stop()`` can be called after the event loop has gone away.
+            return None
+
+        previous = self._voice_light_task
+        if previous and not previous.done():
+            previous.cancel()
+
+        async def apply_state() -> None:
+            if previous is not None and previous is not asyncio.current_task():
+                try:
+                    await previous
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    # The previous task logs its own Home Assistant error;
+                    # its failure must not block the newest state.
+                    pass
+
+            try:
+                await feedback.set_state(state)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                print(f"[SERVER MIC] Voice light state '{state}' notice: {exc}")
+
+        task = loop.create_task(
+            apply_state(),
+            name=f"server-mic-voice-light-{state}",
+        )
+        self._voice_light_task = task
+        return task
+
+    async def _set_voice_light_state(self, state: str, *, wait: bool = False) -> None:
+        """Request a voice-light state and optionally wait for its HA write."""
+        task = self._queue_voice_light_state(state)
+        if task is None or not wait:
+            return
+        try:
+            # Do not let cancellation of the microphone loop cancel the final
+            # restoration request; the task can finish while streams close.
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            pass
+
+    async def _expire_command_window_if_needed(self, now: Optional[float] = None) -> bool:
+        """Close an expired follow-up window and restore the physical light."""
+        current_time = time.monotonic() if now is None else now
+        if not (
+            not self.use_gemini_live
+            and self._conversation_session_open
+            and self._awaiting_command_until > 0
+            and current_time >= self._awaiting_command_until
+        ):
+            return False
+
+        self._awaiting_command_until = 0.0
+        await self._close_conversation_session()
+        if self.require_wake_word:
+            self._reset_continuous_wake_recognizer()
+        await self._set_voice_light_state("idle", wait=True)
+        print("[SERVER MIC] [CONVERSATION] Follow-up window expired; voice light restored.")
+        return True
 
     async def _open_conversation_session(self) -> None:
         if self._conversation_session_open:
@@ -1197,7 +1281,7 @@ class ServerMicListenerService:
                     speech_to_live_pcm,
                 )
 
-                print("[SERVER MIC] [TTS] Synthesizing with local renderer (Piper/Kokoro/espeak)...")
+                print("[SERVER MIC] [TTS] Synthesizing with local renderer (Kokoro/espeak)...")
                 synthesis_started = time.perf_counter()
                 rendered = await asyncio.wait_for(
                     get_voice_output_service().synthesize(
@@ -1558,7 +1642,7 @@ class ServerMicListenerService:
                 self._pending_initial_pcm = b""
                 print("[SERVER MIC] [LIVE] Realtime session verified and ready.")
                 if self.voice_light_feedback:
-                    asyncio.create_task(self.voice_light_feedback.set_state("listening"))
+                    self._queue_voice_light_state("listening")
 
                 # Stream initial wake audio in chunks
                 if initial_pcm:
@@ -1648,12 +1732,12 @@ class ServerMicListenerService:
                                     elif fragment not in input_text:
                                         input_text = f"{input_text} {fragment}".strip()
                                     if self.voice_light_feedback and player_task is None:
-                                        asyncio.create_task(self.voice_light_feedback.set_state("thinking"))
+                                        self._queue_voice_light_state("thinking")
 
                             tool_call = getattr(response, "tool_call", None)
                             if tool_call:
                                 if self.voice_light_feedback and player_task is None:
-                                    asyncio.create_task(self.voice_light_feedback.set_state("thinking"))
+                                    self._queue_voice_light_state("thinking")
                                 function_responses = []
                                 for fc in getattr(tool_call, "function_calls", []):
                                     fn_name = getattr(fc, "name", "")
@@ -1683,7 +1767,7 @@ class ServerMicListenerService:
                                     if data:
                                         if player_task is None:
                                             if self.voice_light_feedback:
-                                                asyncio.create_task(self.voice_light_feedback.set_state("speaking"))
+                                                self._queue_voice_light_state("speaking")
                                             playback_queue = asyncio.Queue()
                                             player_task = asyncio.create_task(
                                                 self._stream_live_audio(playback_queue),
@@ -1709,7 +1793,7 @@ class ServerMicListenerService:
                                     output_text = ""
                                     turn_active = False
                                     if self.voice_light_feedback:
-                                        asyncio.create_task(self.voice_light_feedback.set_state("listening"))
+                                        self._queue_voice_light_state("listening")
                                     break
 
                 finally:
@@ -1739,10 +1823,7 @@ class ServerMicListenerService:
             self.vad.reset_segment()
             self._reset_continuous_wake_recognizer()
             if self.voice_light_feedback:
-                try:
-                    await self.voice_light_feedback.set_state("idle")
-                except Exception as _fe:
-                    print(f"[SERVER MIC] Error resetting voice light to idle: {_fe}")
+                await self._set_voice_light_state("idle", wait=True)
             print("[SERVER MIC] [LIVE] Session closed; local wake listening resumed.")
 
     async def _handle_live_wake_segment(self, raw_pcm: bytes) -> None:
@@ -1928,7 +2009,7 @@ class ServerMicListenerService:
             await self._open_conversation_session()
 
         if self.voice_light_feedback:
-            asyncio.create_task(self.voice_light_feedback.set_state("listening"))
+            self._queue_voice_light_state("listening")
 
         if self.require_wake_word and not prompt:
             acknowledgement = _WAKE_ACKNOWLEDGEMENT
@@ -1970,7 +2051,7 @@ class ServerMicListenerService:
             self._is_busy = True
             try:
                 if self.voice_light_feedback:
-                    asyncio.create_task(self.voice_light_feedback.set_state("thinking"))
+                    self._queue_voice_light_state("thinking")
 
                 reply_text = ""
                 model_started = time.perf_counter()
@@ -1993,7 +2074,7 @@ class ServerMicListenerService:
                     tts_started = time.perf_counter()
                     try:
                         if self.voice_light_feedback:
-                            asyncio.create_task(self.voice_light_feedback.set_state("speaking"))
+                            self._queue_voice_light_state("speaking")
                         await self._synthesize_and_play(reply_text)
                     except Exception as exc:
                         print(f"[SERVER MIC] Błąd syntezy mowy: {exc}")
@@ -2018,10 +2099,7 @@ class ServerMicListenerService:
                 else:
                     await self._close_conversation_session()
                 if self.voice_light_feedback:
-                    try:
-                        await self.voice_light_feedback.set_state("idle")
-                    except Exception:
-                        pass
+                    await self._set_voice_light_state("idle", wait=True)
                 print(
                     "[SERVER MIC] [TIMING] "
                     f"segment={segment_duration:.2f}s local_wake={local_wake_ms:.0f}ms "
@@ -2099,16 +2177,7 @@ class ServerMicListenerService:
 
                     segment = self.vad.process_frame(frame_data)
                     now = time.monotonic()
-                    if (
-                        not self.use_gemini_live
-                        and self._conversation_session_open
-                        and self._awaiting_command_until > 0
-                        and now >= self._awaiting_command_until
-                    ):
-                        self._awaiting_command_until = 0.0
-                        await self._close_conversation_session()
-                        if self.require_wake_word:
-                            self._reset_continuous_wake_recognizer()
+                    await self._expire_command_window_if_needed(now)
                     if self.vad.is_speech_active and self.is_awaiting_command:
                         self._awaiting_command_until = max(self._awaiting_command_until, now + 5.0)
                     self._level_peak_rms = max(
@@ -2196,16 +2265,7 @@ class ServerMicListenerService:
                         self._level_peak_rms, self.vad.last_rms
                     )
                     now = time.monotonic()
-                    if (
-                        not self.use_gemini_live
-                        and self._conversation_session_open
-                        and self._awaiting_command_until > 0
-                        and now >= self._awaiting_command_until
-                    ):
-                        self._awaiting_command_until = 0.0
-                        await self._close_conversation_session()
-                        if self.require_wake_word:
-                            self._reset_continuous_wake_recognizer()
+                    await self._expire_command_window_if_needed(now)
                     if now - self._last_level_log_time >= 10.0:
                         print(
                             "[SERVER MIC] [LEVEL] "
@@ -2251,6 +2311,8 @@ class ServerMicListenerService:
             print(f"[SERVER MIC] Błąd pętli nasłuchu audio: {exc}")
         finally:
             await self._close_conversation_session()
+            self._awaiting_command_until = 0.0
+            await self._set_voice_light_state("idle", wait=True)
             if stream:
                 try:
                     stream.stop()
@@ -2293,3 +2355,5 @@ class ServerMicListenerService:
         self._activation_prompt_window_until = 0.0
         self._speech_segment_task = None
         self._live_audio_queue = None
+        self._awaiting_command_until = 0.0
+        self._queue_voice_light_state("idle")

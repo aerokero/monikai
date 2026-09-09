@@ -2,7 +2,6 @@
 """Multi-provider TTS service with a pronunciation-safe Polish local path."""
 
 import io
-import importlib.util
 import os
 import wave
 import logging
@@ -70,9 +69,8 @@ KOKORO_EXPERIMENTAL_LANGUAGE_ALIASES = {
 KOKORO_POLISH_CODE = "l"
 KOKORO_POLISH_MODE_ENV = "KOKORO_POLISH_MODE"
 
-# Piper has an actual Polish phoneme inventory and a Polish female voice. It
-# is used only for local Polish synthesis; Kokoro remains useful for the
-# languages it was trained on and remains an optional experimental fallback.
+# Legacy Piper constants are retained only so stale cache/settings data can be
+# recognized during rollback; the active local renderer is Kokoro.
 PIPER_POLISH_MODEL_ID = "pl_PL-gosia-medium"
 PIPER_MODEL_ID_ENV = "PIPER_MODEL_ID"
 PIPER_MODEL_PATH_ENV = "PIPER_MODEL_PATH"
@@ -131,12 +129,10 @@ GENERIC_KOKORO_VOICES = {
     "fenrir",
 }
 
-# The official Kokoro-82M v1.0 has no Polish voice.  The experimental layer
-# below is opt-in through ``KOKORO_POLISH_MODE=experimental`` and falls back
-# to the pronunciation-correct local espeak-ng path if it cannot be
-# initialized or synthesized. Keeping espeak as the default is intentional:
-# a correct Polish pronunciation is preferable to an attractive but wrong
-# English phoneme approximation.
+# The official Kokoro-82M v1.0 has no Polish voice.  The local experimental
+# layer below keeps the Kokoro acoustic model and a Polish espeak-ng G2P map.
+# It is the active Polish path again; espeak-ng remains the fallback if the
+# neural pipeline cannot be initialized or synthesized.
 ESPEAK_LANGUAGE_ALIASES = {
     "a": "en-us",
     "b": "en-gb",
@@ -181,7 +177,7 @@ def _kokoro_polish_mode() -> str:
     fallback.  Reading the variable per request makes switching modes during
     a running process safe for diagnostics and cache invalidation.
     """
-    value = os.getenv(KOKORO_POLISH_MODE_ENV, "espeak").strip().lower()
+    value = os.getenv(KOKORO_POLISH_MODE_ENV, "experimental").strip().lower()
     if value in {"espeak", "fallback", "off", "disabled", "false", "0"}:
         return "espeak"
     return "experimental"
@@ -553,8 +549,8 @@ class TTSService:
     Providers:
       "disabled"        — no TTS
       "browser"         — client-side Web Speech API (no server synthesis)
-      "local"           — Piper Polish voice, Kokoro for supported languages,
-                          and espeak-ng as a pronunciation-safe fallback
+      "local"           — Kokoro, including the experimental Polish G2P path,
+                          with espeak-ng as a fallback
       "endpoint:<id>"   — OpenAI-compatible /audio/speech via ModelEndpoint
     """
 
@@ -579,17 +575,21 @@ class TTSService:
         voice = str(saved.get("tts_voice", "alloy") or "alloy").strip()
         language = normalize_tts_language(saved.get("tts_language", "auto"))
 
-        # Profiles written by the earlier Kokoro Polish experiment commonly
-        # contain local + auto + af_heart. Treat that exact legacy shape as
-        # Polish so a short ASCII reply cannot fall back to English G2P after
-        # the upgrade. Users can still select another language explicitly.
+        # Restore old/local Kokoro profiles in memory. This also prevents a
+        # stale Piper profile from taking over after the renderer rollback.
         if (
             provider == "local"
-            and language == "auto"
-            and voice.lower() in KOKORO_POLISH_EXPERIMENTAL_VOICES
+            and (
+                (
+                    language == "auto"
+                    and voice.lower() in KOKORO_POLISH_EXPERIMENTAL_VOICES
+                )
+                or model.lower() == "piper"
+                or voice.lower().startswith("pl_pl-")
+            )
         ):
-            model = "Piper"
-            voice = PIPER_POLISH_MODEL_ID
+            model = "Kokoro"
+            voice = "af_heart"
             language = "pl"
         return {
             "tts_enabled": saved.get("tts_enabled", True),
@@ -613,18 +613,9 @@ class TTSService:
         if provider == "browser":
             return True  # handled client-side
         if provider == "local":
-            # The actual Piper model is loaded on first synthesis. Reporting
-            # the package as capable here keeps the voice channel enabled
-            # without downloading a 63 MB model from a status endpoint.
-            piper_installed = importlib.util.find_spec("piper") is not None
-            if piper_installed:
-                return True
             kokoro = self._get_kokoro()
-            # Polish (and other languages without a Kokoro voice) can still be
-            # rendered locally through the image's espeak-ng fallback.
             return (
-                piper_installed
-                or (kokoro is not None and kokoro.available)
+                (kokoro is not None and kokoro.available)
                 or bool(shutil.which("espeak-ng"))
             )
         if isinstance(provider, str) and provider.startswith("endpoint:"):
@@ -942,27 +933,7 @@ class TTSService:
         audio_data = None
 
         if provider == "local":
-            # Use a model trained for Polish before considering any
-            # cross-language acoustic approximation. Piper's Gosia voice
-            # keeps a distinctly feminine timbre while its Polish
-            # phonemizer handles Polish letters and word stress natively.
-            if selected_language == "pl" and importlib.util.find_spec("piper") is not None:
-                piper = self._get_piper()
-                if piper and piper.available:
-                    piper_audio = piper.synthesize_raw(text, speed)
-                    audio_data = (
-                        self._resample_wav_to_24khz(piper_audio)
-                        if piper_audio
-                        else None
-                    )
-
-            # Do not initialize the heavyweight English Kokoro pipeline on
-            # the normal Polish fallback path. It cannot improve Polish
-            # pronunciation unless the experimental mode was explicitly
-            # requested.
-            if not audio_data and (
-                selected_language != "pl" or _kokoro_polish_mode() == "experimental"
-            ):
+            if selected_language != "pl" or _kokoro_polish_mode() == "experimental":
                 kokoro = self._get_kokoro()
                 if kokoro and kokoro.available:
                     audio_data = kokoro.synthesize_raw(
@@ -973,9 +944,8 @@ class TTSService:
                 else:
                     logger.warning("Kokoro TTS not available")
 
-            # The experimental Polish path is attempted above.  If it is
-            # disabled or fails, do not send Polish through an English voice;
-            # use the installed pronunciation fallback instead.
+            # If Kokoro is unavailable (or explicitly switched to fallback),
+            # keep the Polish pronunciation through espeak-ng.
             if not audio_data and _espeak_voice(selected_language):
                 audio_data = self._synthesize_with_espeak(text, selected_language, speed)
         elif provider.startswith("endpoint:"):
@@ -1027,25 +997,16 @@ class TTSService:
         }
 
         if provider == "local":
-            piper_installed = importlib.util.find_spec("piper") is not None
-            kokoro = None if piper_installed else self._get_kokoro()
+            kokoro = self._get_kokoro()
             stats["model"] = (
-                f"Piper ({_piper_model_id()})"
-                if piper_installed
+                "Kokoro-82M (GPU/CPU)"
+                if (kokoro and kokoro.available)
                 else (
-                    "Kokoro-82M (GPU)"
-                    if (kokoro and kokoro.available)
-                    else (
-                        "espeak-ng (Polish fallback)"
-                        if shutil.which("espeak-ng") or shutil.which("espeak")
-                        else "Kokoro (not loaded)"
-                    )
+                    "espeak-ng (Polish fallback)"
+                    if shutil.which("espeak-ng") or shutil.which("espeak")
+                    else "Kokoro (not loaded)"
                 )
             )
-            stats["piper_installed"] = piper_installed
-            stats["piper_model"] = _piper_model_id()
-            stats["piper_model_path"] = str(_piper_model_path())
-            stats["piper_auto_download"] = _piper_auto_download()
             stats["kokoro_languages"] = KOKORO_LANGUAGE_CODES
             stats["kokoro_experimental_languages"] = (
                 KOKORO_EXPERIMENTAL_LANGUAGE_CODES
