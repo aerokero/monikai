@@ -138,9 +138,9 @@ async function transcribeOnServer(audioBlob) {
  * Insert transcribed text into the chat input
  */
 function insertTranscription(text, showToast) {
-  if (!text) return;
+  if (!text) return false;
   const input = document.getElementById('message');
-  if (!input) return;
+  if (!input) return false;
 
   const existing = input.value.trim();
   input.value = existing ? existing + ' ' + text : text;
@@ -150,6 +150,19 @@ function insertTranscription(text, showToast) {
   input.focus();
 
   if (showToast) showToast('Transcribed');
+  return true;
+}
+
+/**
+ * Let the chat controller finish a pending control-plane turn from speech.
+ * The server remains the authority: this event only removes the extra click
+ * after STT has put the user's spoken reply into the composer.
+ */
+function notifyVoiceTranscription(text) {
+  if (!text || typeof document === 'undefined') return;
+  document.dispatchEvent(new CustomEvent('odysseus:voice-transcription', {
+    detail: { text: String(text), source: _sttProvider },
+  }));
 }
 
 /**
@@ -197,7 +210,7 @@ export function startRecording(onFileCreated, showToast, showError) {
         if (provider === 'browser') {
           const transcript = stopBrowserSTT();
           if (transcript) {
-            insertTranscription(transcript, showToast);
+            if (insertTranscription(transcript, showToast)) notifyVoiceTranscription(transcript);
           } else {
             if (showToast) showToast('No speech detected');
             const audioFile = new File([audioBlob], `voice-message-${Date.now()}.${extension}`, { type: recordingType });
@@ -209,7 +222,7 @@ export function startRecording(onFileCreated, showToast, showError) {
           try {
             const transcript = await transcribeOnServer(audioBlob);
             if (transcript) {
-              insertTranscription(transcript, showToast);
+              if (insertTranscription(transcript, showToast)) notifyVoiceTranscription(transcript);
             } else {
               if (showToast) showToast('No speech detected');
             }

@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import io from 'socket.io-client';
 
-import ConfirmationPopup from './components/ConfirmationPopup';
 import AuthLock from './components/AuthLock';
 import SessionPromptWindow from './components/SessionPromptWindow';
 import MinecraftConnectPopup from './components/MinecraftConnectPopup';
@@ -226,7 +225,6 @@ function AppContent() {
   const studyShareRef = useRef(null);
 
   const [browserData, setBrowserData] = useState({ image: null, logs: [] });
-  const [confirmationQueue, setConfirmationQueue] = useState([]);
 
   const [showGoodbyePopup, setShowGoodbyePopup] = useState(false);
   const [showMinecraftWindow, setShowMinecraftWindow] = useState(false);
@@ -942,17 +940,6 @@ function AppContent() {
       });
     });
 
-    socket.on('tool_confirmation_request', (data) => {
-      console.log("Received Confirmation Request:", data);
-      setConfirmationQueue((prev) => {
-        const requestId = data?.id;
-        if (requestId && prev.some((item) => item?.id === requestId)) {
-          return prev;
-        }
-        return [...prev, data];
-      });
-    });
-
     socket.on('vn_scene', (payload) => {
       const scene = payload?.scene;
       if (!scene || !isValidScene(scene)) return;
@@ -1029,7 +1016,6 @@ function AppContent() {
       socket.off('request_camera_frame');
       socket.off('browser_frame');
       socket.off('transcription');
-      socket.off('tool_confirmation_request');
       socket.off('vn_scene');
       socket.off('session_mode');
       socket.off('session_prompt');
@@ -1510,9 +1496,19 @@ function AppContent() {
 
     const text = (inputValue || '').trim();
     const attachments = Array.isArray(e.attachments) ? e.attachments : [];
+    const attachmentIds = attachments
+      .map((attachment) => typeof attachment === 'string'
+        ? attachment
+        : attachment?.id || attachment?.attachment_id)
+      .map((attachmentId) => String(attachmentId || '').trim())
+      .filter(Boolean);
 
   // pozwól wysłać: (tekst) lub (same załączniki) lub (oba)
   if (!text && attachments.length === 0) return;
+    if (attachmentIds.length !== attachments.length) {
+      console.error('[CHAT] Attachment upload metadata did not contain native IDs.');
+      return;
+    }
 
     // Treat typed input as activity for VN scene auto-logic
     lastActivityRef.current = Date.now();
@@ -1536,7 +1532,9 @@ function AppContent() {
 
     const shouldAutoShare = Boolean(showStudyWindow && studyShareRef.current && isCurrentPageRequest(text));
     const sendToBackend = () => {
-      socket.emit('user_input', { text, attachments });
+      // Socket.IO carries only durable native upload IDs. Raw file bytes are
+      // uploaded by ChatPanel through /api/upload before this event.
+      socket.emit('user_input', { text, attachments: attachmentIds });
     };
     if (shouldAutoShare) {
       try {
@@ -1684,22 +1682,6 @@ function AppContent() {
       }
     };
     reader.readAsText(file);
-  };
-
-  const activeConfirmationRequest = confirmationQueue.length ? confirmationQueue[0] : null;
-
-  const handleConfirmTool = () => {
-    if (activeConfirmationRequest) {
-      socket.emit('confirm_tool', { id: activeConfirmationRequest.id, confirmed: true });
-      setConfirmationQueue((prev) => prev.slice(1));
-    }
-  };
-
-  const handleDenyTool = () => {
-    if (activeConfirmationRequest) {
-      socket.emit('confirm_tool', { id: activeConfirmationRequest.id, confirmed: false });
-      setConfirmationQueue((prev) => prev.slice(1));
-    }
   };
 
   const activeSessionPrompt = sessionPromptQueue.length ? sessionPromptQueue[0] : null;
@@ -1894,12 +1876,6 @@ function AppContent() {
           onConnected={({ message }) => {
             if (message) pushToast(message, 'system', 3200);
           }}
-        />
-
-        <ConfirmationPopup
-          request={activeConfirmationRequest}
-          onConfirm={handleConfirmTool}
-          onDeny={handleDenyTool}
         />
 
         {/* Goodbye Popup - app close flow */}

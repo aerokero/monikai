@@ -11,6 +11,7 @@ from backend.audio.server_mic_listener import (
     AdaptiveEnergyVAD,
     ServerMicListenerService,
     _raw_pcm_to_wav,
+    _parse_transcription_response,
 )
 
 
@@ -126,6 +127,16 @@ def test_wake_word_extraction():
     assert prompt == "Rozmawiamy sobie o obiedzie."
 
 
+def test_transcription_response_preserves_text_and_reads_quality_metadata():
+    assert _parse_transcription_response(
+        '{"text":"Jaka jest pogoda?","intelligible":true,"confidence":0.94}'
+    ) == ("Jaka jest pogoda?", 0.94, True)
+
+    # Legacy/plain-text providers remain supported, but cannot claim a
+    # confidence value that they did not return.
+    assert _parse_transcription_response("piątek") == ("piątek", None, None)
+
+
 def test_server_mic_service_mute_and_controls():
     service = ServerMicListenerService()
     assert not service.is_muted
@@ -228,6 +239,26 @@ async def test_server_mic_handle_speech_segment(monkeypatch):
         mock_handler.assert_called_once_with("Jaka jest pogoda?")
         service.play_audio_locally.assert_called_once_with(b"\x01\x02\x03\x04", sample_rate=24000)
         mock_turn_cb.assert_called_once_with("Jaka jest pogoda?", "Jest słonecznie i 20 stopni.")
+
+
+@pytest.mark.asyncio
+async def test_server_mic_drops_low_confidence_transcript_before_handler():
+    mock_handler = AsyncMock(return_value="Nie powinnam tego powiedzieć.")
+    service = ServerMicListenerService(
+        conversation_handler=mock_handler,
+        require_wake_word=False,
+    )
+    service.transcribe_speech = AsyncMock(return_value="Okej, ja się waszy.")
+    service._last_stt_confidence = 0.31
+    # The patched method does not update the metadata itself, so model the
+    # adapter's rejection state explicitly as it would be set in production.
+    service._last_stt_rejection_reason = "low_confidence"
+
+    fake_pcm = _generate_pcm_frame(440.0, 500, amplitude=2000.0)
+    await service._handle_speech_segment(fake_pcm)
+
+    mock_handler.assert_not_awaited()
+
 
 
 @pytest.mark.asyncio

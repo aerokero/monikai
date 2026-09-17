@@ -353,7 +353,14 @@ class ToolIndex:
         # believed it had only email tools and refused web/other tasks (#1707).
         frozenset({"email", "emails", "mail", "mails", "gmail", "googlemail", "message", "messages", "send", "reply", "replies", "inbox", "unread"}):
             {"list_email_accounts", "list_emails", "read_email", "scan_email_unsubscribes", "unsubscribe_email", "send_email", "reply_to_email", "bulk_email", "delete_email", "archive_email", "mark_email_read", "resolve_contact", "ui_control"},
-        frozenset({"calendar", "event", "meeting", "schedule", "appointment"}):
+        frozenset({
+            "calendar", "event", "meeting", "schedule", "appointment",
+            "kalendarz", "kalendarzu", "kalendarza", "kalendarzem",
+            "wydarzenie", "wydarzenia", "wydarzeniu", "wydarzeń", "wydarzen",
+            "spotkanie", "spotkania", "spotkaniu", "spotkań", "spotkan",
+            "termin", "terminu", "terminie", "wizyta", "wizyty", "wizycie",
+            "harmonogram",
+        }):
             {"manage_calendar"},
         # Detached background `bash` jobs (#!bg): check on / read output / kill.
         frozenset({"background job", "background jobs", "bg job", "bg jobs",
@@ -361,7 +368,14 @@ class ToolIndex:
                    "check on that job", "job output", "kill the job",
                    "kill the background", "stop the background", "running job"}):
             {"manage_bg_jobs"},
-        frozenset({"note", "todo", "reminder", "remind", "checklist", "remember to"}):
+        frozenset({
+            "note", "todo", "reminder", "remind", "checklist", "remember to",
+            "notatka", "notatkę", "notatki", "notatek", "notatką", "notatkach",
+            "zadanie", "zadania", "zadań", "zadan", "zadaniem", "zadaniu",
+            "przypomnienie", "przypomnienia", "przypomnieniem", "przypomnieniu",
+            "przypomnij", "przypomnij mi", "zapamiętaj", "zapamietaj", "zapisz", "dopisz",
+            "kup", "kupić", "kupic", "lista zakupów", "lista zakupow",
+        }):
             {"manage_notes"},
         # Chat/session management. "rename" alone maps to documents below, so a
         # request like "rename the last 12 sessions/chats" needs these session
@@ -379,7 +393,14 @@ class ToolIndex:
                    "daily task", "background task", "scheduled task", "schedule a",
                    "automatically", "auto-summarize", "auto summarize",
                    "cron", "periodically", "on a schedule", "set up a task",
-                   "create a task", "summarize my inbox every", "remind me every"}):
+                   "create a task", "task list", "my tasks", "show tasks",
+                   "summarize my inbox every", "remind me every",
+                   "codziennie", "codzienny", "co rano", "co wieczór", "co wieczor",
+                   "co tydzień", "co tydzien", "cyklicz", "automatycznie",
+                   "ustaw zadanie", "ustaw zadania", "utwórz zadanie", "utworz zadanie",
+                   "pokaż zadania", "pokaz zadania", "moje zadania", "zadanie",
+                   "zadania", "zadań", "zadan", "zaplanuj", "zadanie cykliczne",
+                   "zadania cykliczne"}):
             {"manage_tasks"},
         frozenset({"contact", "address", "phone", "who is"}):
             {"resolve_contact", "manage_contact"},

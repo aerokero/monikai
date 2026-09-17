@@ -9,7 +9,6 @@ from src.owner_identity import auth_disabled, effective_storage_owner
 
 def get_current_user(request: Request) -> Optional[str]:
     """Get current username from request state (set by auth middleware)."""
-    return getattr(request.state, 'current_user', None)
     u = getattr(request.state, 'current_user', None)
     if u:
         return u

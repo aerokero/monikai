@@ -229,6 +229,44 @@ async def test_canonical_manual_voice_turn_calls_odysseus_once_before_delivery()
     assert events[2] == ("deliver", "Odpowiedź z Odysseusa.", True)
 
 
+async def test_unintelligible_manual_voice_turn_closes_live_activity_without_reply():
+    events = []
+
+    class FakeGateway:
+        async def generate(self, text, **kwargs):
+            events.append(("generate", text))
+            return "Nie powinnam odpowiadać."
+
+    class FakeSession:
+        async def send_realtime_input(self, **kwargs):
+            events.append(("live", kwargs))
+
+    loop = AudioLoop.__new__(AudioLoop)
+    loop.conversation_gateway = FakeGateway()
+    loop.chat_buffer = {"sender": "Ty", "text": "[unintelligible]"}
+    loop._last_input_transcription = ""
+    loop.session = FakeSession()
+    loop.out_queue = None
+    loop._is_speaking = False
+    loop._manual_voice_activity_open = True
+    loop._voice_finalize_task = asyncio.current_task()
+    loop._suppress_spoken_output = False
+    loop.thinker = SimpleNamespace(update_voice_transcript=lambda text: events.append(("clear", text)))
+    loop._last_speech_trace = {}
+
+    async def deliver(reply, *, speak):
+        events.append(("deliver", reply, speak))
+
+    loop.deliver_authored_reply = deliver
+
+    await loop._finalize_manual_voice_turn()
+
+    assert [event[0] for event in events] == ["live", "clear"]
+    assert loop._manual_voice_activity_open is False
+    assert loop._suppress_spoken_output is True
+    assert loop._last_speech_trace["status"] == "ignored"
+
+
 async def test_lore_learning_runs_after_matching_authored_turn(monkeypatch):
     captured = []
     finished = asyncio.Event()

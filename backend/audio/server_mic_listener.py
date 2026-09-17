@@ -22,6 +22,13 @@ from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
 
 import numpy as np
 
+from backend.conversation.voice_quality import (
+    DEFAULT_MIN_VOICE_CONFIDENCE,
+    assess_voice_transcript,
+    normalize_voice_confidence,
+    normalize_voice_transcript,
+)
+
 try:
     import sounddevice as sd
     _SOUNDDEVICE_AVAILABLE = True
@@ -53,6 +60,53 @@ _WAKE_CANDIDATE_RE = re.compile(
 
 _WAKE_ACKNOWLEDGEMENT = "Hm?"
 _LIVE_WAKE_CHIME_GAIN = 1.5
+
+
+def _parse_transcription_response(raw_text: Any) -> Tuple[str, Optional[float], Optional[bool]]:
+    """Parse structured STT metadata while keeping plain-text compatibility.
+
+    The Gemini transcription prompt asks for JSON so the recognizer can expose
+    its uncertainty. Older endpoints and test doubles may still return plain
+    text, in which case confidence remains unknown and the text is preserved.
+    """
+    raw = normalize_voice_transcript(raw_text)
+    if not raw:
+        return "", None, None
+
+    candidates = [raw]
+    if raw.startswith("```") and raw.endswith("```"):
+        fenced = raw[3:-3].strip()
+        if fenced.lower().startswith("json"):
+            fenced = fenced[4:].strip()
+        candidates.insert(0, fenced)
+    candidates.extend(match.group(0) for match in re.finditer(r"\{[^{}]{0,512}\}", raw))
+
+    for candidate in candidates:
+        try:
+            payload = json.loads(candidate)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        text = payload.get("text", payload.get("transcript", ""))
+        intelligible = payload.get("intelligible", payload.get("is_intelligible"))
+        if isinstance(intelligible, str):
+            lowered = intelligible.strip().casefold()
+            if lowered in {"true", "yes", "tak", "1"}:
+                intelligible = True
+            elif lowered in {"false", "no", "nie", "0"}:
+                intelligible = False
+            else:
+                intelligible = None
+        elif not isinstance(intelligible, bool):
+            intelligible = None
+        return (
+            normalize_voice_transcript(text),
+            normalize_voice_confidence(payload.get("confidence")),
+            intelligible,
+        )
+
+    return raw, None, None
 
 
 class AdaptiveEnergyVAD:
@@ -450,6 +504,18 @@ class ServerMicListenerService:
             3.0,
             float(os.getenv("SERVER_MIC_STT_TIMEOUT_SECONDS", "12")),
         )
+        self.stt_min_confidence = min(
+            1.0,
+            max(
+                0.0,
+                float(
+                    os.getenv(
+                        "SERVER_MIC_STT_MIN_CONFIDENCE",
+                        str(DEFAULT_MIN_VOICE_CONFIDENCE),
+                    )
+                ),
+            ),
+        )
         self.on_turn_finished = on_turn_finished
         self.on_session_started = on_session_started
         self.on_session_finished = on_session_finished
@@ -464,12 +530,10 @@ class ServerMicListenerService:
             except Exception as _e:
                 print(f"[SERVER MIC] Voice light feedback setup notice: {_e}")
                 self.voice_light_feedback = None
-        self.use_gemini_live = (
-            str(os.getenv("SERVER_MIC_USE_GEMINI_LIVE", "false")).lower()
-            in {"1", "true", "yes", "on"}
-            if use_gemini_live is None
-            else bool(use_gemini_live)
-        )
+        # Gemini Live conversation mode was retired. Keep the constructor
+        # argument for compatibility with older integrations/tests, but never
+        # allow it to re-enable a second conversation author at runtime.
+        self.use_gemini_live = False
         self.live_model = os.getenv(
             "SERVER_MIC_GEMINI_LIVE_MODEL",
             "models/gemini-2.5-flash-native-audio-preview-12-2025",
@@ -516,6 +580,9 @@ class ServerMicListenerService:
         )
         self.denoiser = AudioDenoiseProcessor(sample_rate=self.sample_rate)
         self._last_transcribe_time = 0.0
+        self._last_stt_confidence: Optional[float] = None
+        self._last_stt_intelligible: Optional[bool] = None
+        self._last_stt_rejection_reason = ""
         self._last_level_log_time = 0.0
         self._level_peak_rms = 0.0
         self._is_running = False
@@ -1025,6 +1092,9 @@ class ServerMicListenerService:
 
     async def transcribe_speech(self, wav_bytes: bytes) -> str:
         """Transcribe speech audio segment using Gemini API."""
+        self._last_stt_confidence = None
+        self._last_stt_intelligible = None
+        self._last_stt_rejection_reason = ""
         if not wav_bytes:
             return ""
 
@@ -1046,11 +1116,19 @@ class ServerMicListenerService:
 
             client = genai.Client(api_key=self.gemini_api_key)
             prompt = (
-                "Transcribe this voice audio accurately in Polish as plain text. "
+                "Transcribe this voice audio accurately in Polish. Return exactly "
+                "one JSON object with keys text, intelligible, and confidence. "
+                "text must contain only the words that are actually audible; "
+                "intelligible must be a boolean; confidence must be a number "
+                "from 0.0 to 1.0 describing how reliably the spoken words were "
+                "heard. "
                 "The speaker is addressing an AI assistant named Monika (common wake words: 'Hej Monika', 'Monika', 'Moniko', 'Okej Monika', 'Monia'). "
-                "Preserve original spoken words accurately. "
+                "Preserve original spoken words accurately; do not repair, infer, "
+                "or replace unclear sounds with plausible words. "
                 "Do not add commentary, labels, quotes, timestamps, or markdown. "
-                "If the audio is completely silent or unintelligible, return an empty string."
+                "If the audio is silent or completely unintelligible, use "
+                "text='' and intelligible=false with confidence <= 0.35. "
+                "A short but clearly spoken word or phrase is valid."
             )
 
             last_exc = None
@@ -1066,10 +1144,25 @@ class ServerMicListenerService:
                         ),
                         timeout=self.stt_timeout,
                     )
-                    text = str(getattr(response, "text", "") or "").strip()
-                    if text.lower() in {"", "unintelligible", "[unintelligible]"}:
+                    raw_text = getattr(response, "text", "") or ""
+                    text, confidence, intelligible = _parse_transcription_response(raw_text)
+                    self._last_stt_confidence = confidence
+                    self._last_stt_intelligible = intelligible
+                    assessment = assess_voice_transcript(
+                        text,
+                        confidence=confidence,
+                        intelligible=intelligible,
+                        min_confidence=self.stt_min_confidence,
+                    )
+                    if not assessment.accepted:
+                        self._last_stt_rejection_reason = assessment.reason
+                        print(
+                            "[SERVER MIC] [STT] Ignoring transcript: "
+                            f"reason={assessment.reason} confidence="
+                            f"{confidence if confidence is not None else 'unknown'}"
+                        )
                         return ""
-                    return text
+                    return assessment.text
                 except Exception as exc:
                     last_exc = exc
                     if "429" in str(exc) or "RESOURCE_EXHAUSTED" in str(exc):
@@ -1943,9 +2036,15 @@ class ServerMicListenerService:
 
         # A standalone wake phrase is already fully classified by the local
         # recognizer.  Avoid a second cloud STT round-trip before saying
-            # "Hm?"; attached commands still go through cloud STT for the
+        # "Hm?"; attached commands still go through cloud STT for the
         # better command transcription quality.
         if local_wake_matched and not local_wake_prompt:
+            # This branch intentionally skips ``transcribe_speech``. Clear
+            # diagnostics from a previous segment so they cannot make this
+            # valid standalone wake look like a rejected STT result.
+            self._last_stt_confidence = None
+            self._last_stt_intelligible = None
+            self._last_stt_rejection_reason = ""
             transcript = local_wake
             print(
                 "[SERVER MIC] [LOCAL] Standalone wake confirmed; "
@@ -1957,6 +2056,16 @@ class ServerMicListenerService:
             transcript = await self.transcribe_speech(wav_bytes)
             stt_ms = (time.perf_counter() - stt_started) * 1000.0
         if not transcript:
+            # Do not fall back to the local wake result after the cloud STT has
+            # explicitly rejected the command as unreliable.  That fallback is
+            # useful for provider failures, but would turn a low-confidence
+            # hallucination back into an actionable prompt.
+            if self._last_stt_rejection_reason:
+                print(
+                    "[SERVER MIC] [IGNORED] Final transcript rejected by the "
+                    f"speech-quality gate ({self._last_stt_rejection_reason})."
+                )
+                return
             # A valid local wake is enough to open the command window even if
             # the cloud transcription request times out or returns no text.
             transcript = local_wake if local_wake_matched else ""
@@ -1968,6 +2077,20 @@ class ServerMicListenerService:
                 "result=no_transcript"
             )
             return
+
+        assessment = assess_voice_transcript(
+            transcript,
+            confidence=self._last_stt_confidence,
+            intelligible=self._last_stt_intelligible,
+            min_confidence=self.stt_min_confidence,
+        )
+        if not assessment.accepted:
+            print(
+                "[SERVER MIC] [IGNORED] Speech-quality gate rejected the "
+                f"transcript ({assessment.reason})."
+            )
+            return
+        transcript = assessment.text
 
         if continuing_session:
             prompt_echo = re.sub(r"[^a-ząćęłńóśźż]+", "", transcript.casefold())

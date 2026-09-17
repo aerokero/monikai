@@ -2,9 +2,10 @@
 
 import json
 import logging
+import re
 import secrets
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -178,6 +179,258 @@ class TaskUpdate(BaseModel):
     then_task_id: Optional[str] = None
     notifications_enabled: Optional[bool] = None
     character_id: Optional[str] = None
+
+
+_TASK_CLOCK_RE = re.compile(
+    r"(?<!\d)(?P<hour>\d{1,2})[:.](?P<minute>[0-5]\d)\s*"
+    r"(?P<ampm>a\.?m\.?|p\.?m\.?)?(?!\w)",
+    re.IGNORECASE,
+)
+_TASK_AMPM_RE = re.compile(
+    r"(?<![\d:])(?P<hour>\d{1,2})\s*"
+    r"(?P<ampm>a\.?m\.?|p\.?m\.?)\b",
+    re.IGNORECASE,
+)
+_TASK_WEEKDAYS = {
+    "monday": 0,
+    "tuesday": 1,
+    "wednesday": 2,
+    "thursday": 3,
+    "friday": 4,
+    "saturday": 5,
+    "sunday": 6,
+    "poniedziałek": 0,
+    "poniedzialek": 0,
+    "wtorek": 1,
+    "środa": 2,
+    "sroda": 2,
+    "czwartek": 3,
+    "piątek": 4,
+    "piatek": 4,
+    "sobota": 5,
+    "niedziela": 6,
+}
+
+
+def _task_parser_now(request: Request) -> datetime:
+    """Return the browser's local clock, with a safe server-local fallback.
+
+    The task form stores a UTC time after converting the draft in the browser,
+    but the parser needs the user's local date for words such as "tomorrow".
+    Browser timezone headers are therefore preferred over the container clock.
+    """
+    now_utc = datetime.now(timezone.utc)
+    tz_name = (request.headers.get("x-tz-name") or "").strip()
+    if tz_name and re.fullmatch(r"[A-Za-z0-9_+./-]{1,80}", tz_name):
+        try:
+            from zoneinfo import ZoneInfo
+            return now_utc.astimezone(ZoneInfo(tz_name))
+        except Exception:
+            pass
+
+    # Older clients may only send the numeric browser offset (minutes east of
+    # UTC). It is enough to resolve relative dates without trusting arbitrary
+    # timezone strings.
+    try:
+        offset = int(request.headers.get("x-tz-offset", ""))
+        if -14 * 60 <= offset <= 14 * 60:
+            return now_utc.astimezone(timezone(timedelta(minutes=offset)))
+    except (TypeError, ValueError):
+        pass
+    return datetime.now().astimezone()
+
+
+def _extract_task_time(description: str) -> Optional[str]:
+    """Extract and normalize a clock time from a natural-language request."""
+    match = _TASK_CLOCK_RE.search(description or "") or _TASK_AMPM_RE.search(description or "")
+    if not match:
+        return None
+    try:
+        hour = int(match.group("hour"))
+        minute = int(match.groupdict().get("minute") or 0)
+    except (TypeError, ValueError):
+        return None
+    ampm = (match.groupdict().get("ampm") or "").replace(".", "").lower()
+    if ampm:
+        if not 1 <= hour <= 12:
+            return None
+        if ampm == "am":
+            hour = 0 if hour == 12 else hour
+        else:
+            hour = 12 if hour == 12 else hour + 12
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _task_instruction_from_description(description: str) -> str:
+    """Remove a reminder preamble while retaining the actual task instruction."""
+    clean = re.sub(r"\s+", " ", (description or "").strip())
+    if not clean:
+        return ""
+    lower = clean.casefold()
+    prefixes = (
+        "please remind me",
+        "remind me",
+        "please notify me",
+        "notify me",
+        "please alert me",
+        "alert me",
+        "przypomnij mi",
+        "powiadom mnie",
+    )
+    for prefix in prefixes:
+        if not lower.startswith(prefix):
+            continue
+        tail = clean[len(prefix):].strip()
+        connector = re.search(
+            r"\b(?:to|that|so that|żeby|aby)\b",
+            tail,
+            re.IGNORECASE,
+        )
+        if connector:
+            tail = tail[connector.end():].strip(" ,:;-–")
+        return tail or clean
+    return clean
+
+
+def _task_weekday_in(text: str) -> Optional[int]:
+    for name, index in _TASK_WEEKDAYS.items():
+        if re.search(rf"(?<!\w){re.escape(name)}(?!\w)", text, re.IGNORECASE):
+            return index
+    return None
+
+
+def _fallback_task_draft(description: str, now: datetime) -> Dict[str, Any]:
+    """Build a usable draft when the configured model does not return JSON.
+
+    This is deliberately conservative: it never creates a task itself. It
+    only pre-fills the same review form as the AI path, preserving the full
+    instruction and extracting the unambiguous scheduling details locally.
+    """
+    instruction = _task_instruction_from_description(description)
+    lower = (description or "").casefold()
+    scheduled_time = _extract_task_time(description) or "09:00"
+    hour, minute = (int(part) for part in scheduled_time.split(":", 1))
+
+    research = bool(re.search(
+        r"\b(?:research|investigate|look into|find out)\b|"
+        r"\b(?:zbadaj|zbad[ać]|sprawdź|sprawdz|dochodzenie)\b",
+        lower,
+    ))
+    schedule = "daily"
+    scheduled_day = None
+    cron_expression = None
+    scheduled_date = None
+
+    # Resolve one-off language against the browser's local clock.
+    relative = re.search(
+        r"\b(?:in|za)\s+(\d+)\s+"
+        r"(minutes?|mins?|hours?|hrs?|days?|weeks?|minut(?:ę|y)?|"
+        r"godzin(?:ę|y)?|dni|tygodni(?:e|a)?)\b",
+        lower,
+    )
+    explicit_date = re.search(
+        r"(?<!\d)(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})(?!\d)",
+        lower,
+    )
+    one_off = bool(relative or explicit_date or re.search(
+        r"\b(?:once|one[- ]time|today|tomorrow|tonight|today|"
+        r"dziś|dzisiaj|jutro|raz)\b",
+        lower,
+    ))
+
+    if relative:
+        amount = int(relative.group(1))
+        unit = relative.group(2).lower()
+        if unit.startswith(("minute", "min", "minut")):
+            delta = timedelta(minutes=amount)
+        elif unit.startswith(("hour", "hr", "godzin")):
+            delta = timedelta(hours=amount)
+        elif unit.startswith(("week", "tygod")):
+            delta = timedelta(weeks=amount)
+        else:
+            delta = timedelta(days=amount)
+        when = now + delta
+        scheduled_time = when.strftime("%H:%M")
+        scheduled_date = when.isoformat(timespec="minutes")
+        schedule = "once"
+    elif one_off:
+        when = now
+        if explicit_date:
+            try:
+                when = when.replace(
+                    year=int(explicit_date.group(1)),
+                    month=int(explicit_date.group(2)),
+                    day=int(explicit_date.group(3)),
+                )
+            except ValueError:
+                when = now
+        elif re.search(r"\b(?:tomorrow|jutro)\b", lower):
+            when = now + timedelta(days=1)
+        when = when.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if not explicit_date and not re.search(r"\b(?:tomorrow|jutro)\b", lower) and when <= now:
+            when += timedelta(days=1)
+        scheduled_time = when.strftime("%H:%M")
+        scheduled_date = when.isoformat(timespec="minutes")
+        schedule = "once"
+    else:
+        weekday = _task_weekday_in(lower)
+        if re.search(r"\b(?:every weekday|weekdays|dni robocze)\b", lower):
+            schedule = "cron"
+            cron_expression = f"{minute} {hour} * * 1-5"
+        elif re.search(r"\b(?:weekly|every week|each week|co tydzień|co tydzien|cotygodniowo)\b", lower) or re.search(
+            r"\b(?:every|each|w)\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
+            r"poniedziałek|poniedzialek|wtorek|środa|sroda|czwartek|piątek|piatek|sobota|niedziela)\b",
+            lower,
+        ):
+            schedule = "weekly"
+            scheduled_day = weekday if weekday is not None else now.weekday()
+        elif re.search(r"\b(?:monthly|every month|each month|co miesiąc|co miesiac|comiesięcznie|comiesiecznie)\b", lower):
+            schedule = "monthly"
+            day_match = re.search(r"\b(?:day|dzień|dzien|on|w)\s+(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?\b", lower)
+            scheduled_day = int(day_match.group(1)) if day_match else now.day
+            scheduled_day = min(max(scheduled_day, 1), 31)
+
+    output_target = "session"
+    if re.search(r"\b(?:email|e-mail|mail me|mailem|emailem|e-maila)\b", lower):
+        output_target = "email"
+    elif re.search(r"\b(?:remind|notify|alert|notification|przypomnij|powiadom|powiadomienie)\b", lower):
+        output_target = "notification"
+
+    title = " ".join(instruction.split()[:6]).strip(" ,.;:-") or "Scheduled task"
+    title = title[:1].upper() + title[1:]
+    draft: Dict[str, Any] = {
+        "task_type": "research" if research else "llm",
+        "name": title[:60],
+        "prompt": instruction or (description or "").strip(),
+        "schedule": schedule,
+        "scheduled_time": scheduled_time,
+        "output_target": output_target,
+        "trigger_type": "schedule",
+    }
+    if scheduled_day is not None:
+        draft["scheduled_day"] = scheduled_day
+    if cron_expression:
+        draft["cron_expression"] = cron_expression
+    if scheduled_date:
+        draft["scheduled_date"] = scheduled_date
+    return draft
+
+
+def _extract_task_json(text: str) -> Optional[Dict[str, Any]]:
+    """Find the first complete JSON object in a model response."""
+    decoder = json.JSONDecoder()
+    for start, char in enumerate(text or ""):
+        if char != "{":
+            continue
+        try:
+            candidate, _end = decoder.raw_decode(text[start:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(candidate, dict):
+            return candidate
+    return None
 
 
 def _display_task_name(t: ScheduledTask) -> str:
@@ -1095,61 +1348,55 @@ def setup_task_routes(task_scheduler) -> APIRouter:
         from src.endpoint_resolver import resolve_endpoint
         from src.llm_core import llm_call_async
         from src.text_helpers import strip_think as _strip_think
-        import json as _json, re as _re
-        from datetime import datetime as _dt
-
         body = await request.json()
         desc = (body.get("description") or "").strip()
         if not desc:
             return {"success": False, "message": "Nothing to parse"}
         user = _owner(request)
 
-        now = _dt.now()
+        now = _task_parser_now(request)
         # Give the model the current date/time + weekday so relative phrasing
         # ("tomorrow", "every Monday", "in an hour") resolves correctly.
-        ctx = now.strftime("%Y-%m-%d %H:%M (%A)")
+        ctx = now.strftime("%Y-%m-%d %H:%M (%A, %Z, UTC%z)")
         sys = (
             "You convert a user's description of a recurring or one-off task into "
             "STRICT JSON for a task scheduler. The current local date/time is "
             f"{ctx}. Output ONLY a JSON object, no prose, no markdown fences.\n\n"
-            "Schema (omit fields you can't infer):\n"
-            "{\n"
-            '  "task_type": "llm" | "research",  // "research" if it asks to research/investigate/find out; else "llm"\n'
-            '  "name": "short 3-6 word title",\n'
-            '  "prompt": "the instruction the AI should run on schedule (or the research question)",\n'
-            '  "schedule": "daily" | "weekly" | "monthly" | "once" | "cron",\n'
-            '  "scheduled_time": "HH:MM",        // 24h LOCAL time\n'
-            '  "scheduled_day": 0,               // weekly: 0=Mon..6=Sun; monthly: 1..31\n'
-            '  "scheduled_date": "YYYY-MM-DDTHH:MM",  // only for "once"\n'
-            '  "cron_expression": "m h dom mon dow",  // only if schedule is "cron"\n'
-            '  "output_target": "session" | "email" | "notification"  // use email when the user asks to email the result\n'
-            "}\n\n"
+            "Use these fields (omit fields you cannot infer): task_type (llm or research), "
+            "name (short title), prompt (the actionable instruction), schedule "
+            "(daily, weekly, monthly, once, or cron), scheduled_time (24-hour LOCAL HH:MM), "
+            "scheduled_day (weekly 0=Mon..6=Sun or monthly 1..31), scheduled_date "
+            "(ISO local date-time only for once), cron_expression (only for cron), and "
+            "output_target (session, email, or notification).\n"
+            "Example of valid output: "
+            '{"task_type":"llm","name":"Review unread email","prompt":"Review my unread email and summarize anything important.","schedule":"daily","scheduled_time":"09:00","output_target":"session"}\n\n'
             "Rules: default schedule to 'daily' if a time is given without a frequency. "
             "Default scheduled_time to '09:00' if none is stated. For 'every weekday' "
-            "use cron '0 H * * 1-5'. Keep the prompt actionable and self-contained."
+            "use a cron expression with minute and hour followed by '* * 1-5'. "
+            "Keep the prompt actionable and self-contained. Return exactly one JSON object; "
+            "never include comments, markdown, or an explanation."
         )
+        fallback = lambda: _fallback_task_draft(desc, now)
         try:
             url, model, headers = resolve_endpoint("utility", owner=user or None)
             if not url:
                 url, model, headers = resolve_endpoint("default", owner=user or None)
             if not (url and model):
-                return {"success": False, "message": "No model endpoint configured"}
+                logger.warning("parse_task: no model endpoint; using deterministic draft fallback")
+                return {"success": True, "draft": fallback()}
             raw = await llm_call_async(
                 url=url, model=model,
                 messages=[{"role": "system", "content": sys},
                           {"role": "user", "content": desc[:1000]}],
-                temperature=0.2, max_tokens=400, headers=headers, timeout=45,
+                temperature=0.2, max_tokens=600, headers=headers, timeout=45,
             )
-            text = _strip_think(raw or "", prose=False, prompt_echo=False).strip()
-            if text.startswith("```"):
-                text = text.strip("`")
-                if text.lower().startswith("json"):
-                    text = text[4:].lstrip()
-            # Pull the first {...} block in case the model added stray text.
-            m = _re.search(r"\{.*\}", text, _re.S)
-            draft = _json.loads(m.group(0) if m else text)
-            if not isinstance(draft, dict):
-                raise ValueError("not an object")
+            text = _strip_think(raw or "", prose=False, prompt_echo=False)
+            draft = _extract_task_json(text)
+            if draft is None:
+                logger.warning(
+                    "parse_task: model returned no valid JSON object; using deterministic draft fallback"
+                )
+                return {"success": True, "draft": fallback()}
             # Whitelist + light validation so the frontend gets clean fields.
             out: Dict[str, Any] = {}
             if draft.get("task_type") in ("llm", "research"):
@@ -1164,18 +1411,32 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             else:
                 out["schedule"] = "daily"
             st = draft.get("scheduled_time")
-            if isinstance(st, str) and _re.match(r"^\d{1,2}:\d{2}$", st.strip()):
-                out["scheduled_time"] = st.strip()
-            if isinstance(draft.get("scheduled_day"), int):
-                out["scheduled_day"] = draft["scheduled_day"]
+            if isinstance(st, str):
+                time_match = re.fullmatch(r"(\d{1,2}):(\d{2})", st.strip())
+                if time_match:
+                    parsed_hour = int(time_match.group(1))
+                    parsed_minute = int(time_match.group(2))
+                    if 0 <= parsed_hour <= 23 and 0 <= parsed_minute <= 59:
+                        out["scheduled_time"] = f"{parsed_hour:02d}:{parsed_minute:02d}"
+            scheduled_day = draft.get("scheduled_day")
+            if isinstance(scheduled_day, int):
+                if out["schedule"] == "weekly" and 0 <= scheduled_day <= 6:
+                    out["scheduled_day"] = scheduled_day
+                elif out["schedule"] == "monthly" and 1 <= scheduled_day <= 31:
+                    out["scheduled_day"] = scheduled_day
             if draft.get("output_target") in ("session", "email", "notification"):
                 out["output_target"] = draft["output_target"]
             out["trigger_type"] = "schedule"
             if not out.get("prompt"):
-                return {"success": False, "message": "Could not extract a task instruction"}
+                logger.warning(
+                    "parse_task: model JSON had no task instruction; using deterministic draft fallback"
+                )
+                return {"success": True, "draft": fallback()}
             return {"success": True, "draft": out}
         except Exception as e:
-            logger.error(f"parse_task failed: {e}")
-            return {"success": False, "message": str(e)}
+            # Drafting is a convenience step; an upstream model outage must
+            # not prevent the user from reviewing and saving a task manually.
+            logger.warning("parse_task: model draft failed; using deterministic fallback: %s", e)
+            return {"success": True, "draft": fallback()}
 
     return router

@@ -847,6 +847,12 @@ async def build_chat_context(
         # what was spoken.  The endpoint/model/persona remain unchanged.
         voice_addendum = (
             "[VOICE CHANNEL]\n"
+            "The user message is an automatic speech-to-text transcript and may "
+            "contain recognition errors. If the transcript is clearly garbled, "
+            "is only disconnected phonetic fragments, or has no recoverable "
+            "meaning, do not guess what the user meant, do not search, and do not "
+            "call tools. Output exactly [VOICE_SILENCE]. A short but clearly "
+            "spoken word or phrase remains valid.\n"
             "Reply in the user's language, following the current conversation "
             "context and language settings. Keep a natural, warm spoken style "
             "and be concise: usually 1–3 short sentences (about 40 words max), "

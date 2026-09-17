@@ -20,21 +20,15 @@ class StubAudioLoop:
     def update_permissions(self, perms):
         self.permissions = perms
 
-    async def wait_until_ready(self, timeout):
-        pass
-
-    async def run(self, start_message):
-        self.started = True
-
-    def stop(self):
-        self.stopped = True
-
-    async def submit_text_turn(self, text, timeout_sec):
+    async def submit_native_turn(self, text, attachment_ids=None, timeout_sec=120.0):
+        _ = attachment_ids, timeout_sec
         self.last_text = text
         if text.strip() == "test_fail":
             raise RuntimeError("Simulated failure")
         return f"Response to: {text}"
 
+    def stop(self):
+        self.stopped = True
 
 class StubMemoryEngine:
 
@@ -151,6 +145,7 @@ def adapter(monkeypatch):
         token="dummy_token",
         settings_getter=lambda: {},
         allowed_channel_ids=[123],
+        conversation_gateway_factory=lambda: object(),
     )
     return bot
 

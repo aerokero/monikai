@@ -26,24 +26,26 @@ const MAX_FILES = 6;
 const MAX_FILE_BYTES = 12 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 30 * 1024 * 1024;
 
-function bytesToBase64(bytes) {
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+async function uploadChatFile(file) {
+  const form = new FormData();
+  form.append('files', file, file.name);
+  const response = await fetch('/api/upload', {
+    method: 'POST',
+    body: form,
+    credentials: 'same-origin',
+  });
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
   }
-  return btoa(binary);
-}
-
-async function fileToAttachmentPayload(file) {
-  const buf = await file.arrayBuffer();
-  const b64 = bytesToBase64(new Uint8Array(buf));
-  return {
-    name: file.name,
-    mime_type: file.type || 'application/octet-stream',
-    data: b64,
-    size: file.size,
-  };
+  if (!response.ok) {
+    throw new Error(payload?.detail || payload?.message || `Upload failed (${response.status})`);
+  }
+  const uploaded = Array.isArray(payload?.files) ? payload.files[0] : null;
+  if (!uploaded?.id) throw new Error('Upload did not return an attachment ID');
+  return uploaded;
 }
 
 function sanitizeUrl(url) {
@@ -168,6 +170,7 @@ const ChatPanel = ({
 
   const [attachments, setAttachments] = useState([]);
   const [attachError, setAttachError] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
   const [prevAgenticLogLength, setPrevAgenticLogLength] = useState(0);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [attachMenuPosition, setAttachMenuPosition] = useState(null);
@@ -269,7 +272,7 @@ const ChatPanel = ({
     [attachments]
   );
   const hasStudyFiles = Array.isArray(studyCatalog?.folders) && studyCatalog.folders.length > 0;
-  const canSend = Boolean((inputValue || '').trim()) || attachments.length > 0;
+  const canSend = !isUploading && (Boolean((inputValue || '').trim()) || attachments.length > 0);
   const dialogueMessages = visibleMessages.slice(-8);
   const userSenderAliases = useMemo(() => {
     const aliases = new Set(['you', 'ty', 'user']);
@@ -372,12 +375,15 @@ const ChatPanel = ({
 
     let payloadAttachments = [];
     if (attachments.length) {
+      setIsUploading(true);
       try {
-        payloadAttachments = await Promise.all(attachments.map((item) => fileToAttachmentPayload(item.file)));
+        payloadAttachments = await Promise.all(attachments.map((item) => uploadChatFile(item.file)));
       } catch {
         setAttachError(t('chat.prepare_failed'));
+        setIsUploading(false);
         return;
       }
+      setIsUploading(false);
     }
 
     handleSend({ key: 'Enter', attachments: payloadAttachments });

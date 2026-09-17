@@ -1,7 +1,12 @@
 // compare/stream.js — SSE streaming to panes
 import state from './state.js';
 import { addFinishBadge } from './vote.js';
-import { getModelCost, renderAskUserCard, safeDisplayImageSrc } from '../chatRenderer.js?v=20260819approvalcontrol1';
+import {
+  getModelCost,
+  renderAskUserCard,
+  safeDisplayImageSrc,
+  updateToolApprovalCardState,
+} from '../chatRenderer.js?v=20260913approvalcontrol3';
 import markdownModule from '../markdown.js';
 import spinnerModule from '../spinner.js';
 import uiModule from '../ui.js';
@@ -489,6 +494,11 @@ async function streamToPane(paneIdx, sessionId, message, aiMsgEl, opts) {
           // Deny ends as a tiny resolution-only stream, so replace the
           // continuation spinner with an explicit pane-local result.
           } else if (json.type === 'tool_approval_resolved') {
+            updateToolApprovalCardState(
+              json.status === 'denied' ? 'deny' : json.decision,
+              hist,
+              json.approval_id || '',
+            );
             if (aiMsgEl._spinner) {
               if (aiMsgEl._spinner.element) aiMsgEl._spinner.destroy();
               aiMsgEl._spinner = null;

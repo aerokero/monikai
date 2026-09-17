@@ -2374,18 +2374,115 @@ export function displayMetrics(messageElement, metrics) {
   if (uiModule) uiModule.scrollHistory();
 }
 
+function _disposeAskUserCard(node) {
+  if (!node) return;
+  if (node._approvalTimer) {
+    clearInterval(node._approvalTimer);
+    node._approvalTimer = null;
+  }
+  node.remove();
+}
+
 /** Remove any unanswered multiple-choice cards currently in the chat. */
 export function removeAskUserCards(root) {
   const scope = root || document.getElementById('chat-history') || document;
-  scope.querySelectorAll('.ask-user-card').forEach((node) => node.remove());
+  scope.querySelectorAll('.ask-user-card').forEach(_disposeAskUserCard);
+}
+
+function _toolApprovalCards(root, approvalId = '') {
+  const scope = root || document.getElementById('chat-history') || document;
+  const cards = Array.from(scope.querySelectorAll('.tool-approval-card'));
+  const key = String(approvalId || '');
+  return key
+    ? cards.filter((card) => card.dataset.approvalId === key)
+    : cards;
+}
+
+/** Put a tool-approval card into its short-lived "sending" state. */
+export function markToolApprovalCardSubmitting(card, label = '') {
+  if (!card || card.dataset.askUserKind !== 'tool_approval') return false;
+  if (card.dataset.approvalState !== 'pending') return false;
+  card.dataset.approvalState = 'submitting';
+  card.classList.add('is-submitting');
+  const status = card.querySelector('.tool-approval-status');
+  if (status) status.textContent = 'Sending approval…';
+  const notice = card.querySelector('.tool-approval-notice');
+  if (notice) {
+    notice.textContent = label
+      ? `Approval sent: ${label}. Waiting for the action to start…`
+      : 'Approval sent. Waiting for the action to start…';
+    notice.classList.add('is-active');
+  }
+  card.querySelectorAll('.ask-user-option').forEach((option) => {
+    option.disabled = true;
+  });
+  return true;
+}
+
+/** Update an existing approval card without adding another chat bubble. */
+export function updateToolApprovalCardState(decision, root, approvalId = '') {
+  const normalized = String(decision || '').trim().toLowerCase();
+  const cards = _toolApprovalCards(root, approvalId);
+  if (!cards.length) return false;
+  const isDenied = normalized === 'deny' || normalized === 'denied';
+  const isExpired = normalized === 'expired' || normalized === 'stale';
+  const state = isExpired ? 'expired' : (isDenied ? 'denied' : 'approved');
+  const statusText = isExpired
+    ? 'Expired'
+    : (isDenied ? 'Rejected' : 'Approved — executing…');
+  const noticeText = isExpired
+    ? 'This approval expired. Ask Monika to request the action again.'
+    : (isDenied
+      ? 'The action was not executed.'
+      : 'The exact approved action is now running.');
+
+  cards.forEach((card) => {
+    if (card._approvalTimer) {
+      clearInterval(card._approvalTimer);
+      card._approvalTimer = null;
+    }
+    card.dataset.approvalState = state;
+    card.classList.remove('is-submitting');
+    card.classList.add(`is-${state}`);
+    const status = card.querySelector('.tool-approval-status');
+    if (status) status.textContent = statusText;
+    const notice = card.querySelector('.tool-approval-notice');
+    if (notice) {
+      notice.textContent = noticeText;
+      notice.classList.add('is-active');
+    }
+    card.querySelectorAll('.ask-user-option').forEach((option) => {
+      option.disabled = true;
+    });
+    const expiry = card.querySelector('.tool-approval-expiry');
+    if (expiry) expiry.textContent = isExpired ? 'No longer available' : 'Decision recorded';
+  });
+  return true;
+}
+
+/** Return the card to an actionable state after a failed transport request. */
+export function resetToolApprovalCard(card) {
+  if (!card || card.dataset.askUserKind !== 'tool_approval') return false;
+  card.dataset.approvalState = 'pending';
+  card.classList.remove('is-submitting', 'is-approved', 'is-denied', 'is-expired');
+  const status = card.querySelector('.tool-approval-status');
+  if (status) status.textContent = 'Waiting for you';
+  const notice = card.querySelector('.tool-approval-notice');
+  if (notice) {
+    notice.textContent = 'Choose an option, or type or say yes/tak or no/nie in the chat.';
+    notice.classList.remove('is-active');
+  }
+  card.querySelectorAll('.ask-user-option').forEach((option) => {
+    option.disabled = false;
+  });
+  return true;
 }
 
 // While a choice card is visible, let plain 1–3 activate the corresponding
 // rendered option. Reuse the option's click path so the question keeps its
 // existing submission semantics. Tool approval cards are excluded: that card
 // exists to make consent deliberate after untrusted context influenced the
-// run, and its first option is the widest grant, so a stray digit must not
-// answer it.
+// run, so a stray digit must not answer it.
 function _handleAskUserShortcut(event) {
   if (
     event.defaultPrevented
@@ -2436,59 +2533,171 @@ export function renderAskUserCard(payload, options) {
 
   removeAskUserCards(chatBox);
 
-  const card = document.createElement('div');
-  card.className = 'ask-user-card';
-  card.setAttribute('role', 'group');
-  card.tabIndex = -1;
   const multi = !!aq.multi;
   const isToolApproval = aq.kind === 'tool_approval' && !!aq.approval_id;
+  const card = document.createElement('div');
+  card.className = 'ask-user-card' + (isToolApproval ? ' tool-approval-card' : '');
+  card.setAttribute('role', 'group');
+  card.tabIndex = -1;
   card.dataset.askUserKind = isToolApproval ? 'tool_approval' : 'question';
+  if (isToolApproval) {
+    card.dataset.approvalId = String(aq.approval_id);
+    card.dataset.approvalState = 'pending';
+  }
   const emojiText = (value) => svgifyEmoji(uiModule.esc(String(value)));
 
   const head = document.createElement('div');
-  head.className = 'ask-user-head';
+  head.className = 'ask-user-head' + (isToolApproval ? ' tool-approval-head' : '');
+  if (isToolApproval) {
+    const identity = document.createElement('div');
+    identity.className = 'tool-approval-identity';
+    identity.innerHTML = phosphorIcon('warning', 18, 'tool-approval-icon');
+    const identityText = document.createElement('div');
+    identityText.className = 'tool-approval-identity-text';
+    const kicker = document.createElement('div');
+    kicker.className = 'tool-approval-kicker';
+    kicker.textContent = 'Confirmation required';
+    const title = document.createElement('div');
+    title.className = 'tool-approval-title';
+    title.textContent = aq.title || 'Review action';
+    identityText.appendChild(kicker);
+    identityText.appendChild(title);
+    identity.appendChild(identityText);
+    head.appendChild(identity);
+
+    const status = document.createElement('span');
+    status.className = 'tool-approval-status';
+    status.textContent = aq.notice ? 'Needs clarification' : 'Waiting for you';
+    head.appendChild(status);
+  }
   const closeBtn = document.createElement('button');
   closeBtn.type = 'button';
   closeBtn.className = 'modal-close ask-user-close';
-  closeBtn.setAttribute('aria-label', 'Dismiss question');
+  closeBtn.setAttribute('aria-label', isToolApproval ? 'Collapse confirmation' : 'Dismiss question');
   closeBtn.addEventListener('click', () => {
-    card.remove();
+    if (isToolApproval) {
+      const collapsed = card.classList.toggle('is-collapsed');
+      closeBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      closeBtn.title = collapsed ? 'Expand confirmation' : 'Collapse confirmation';
+      return;
+    }
+    _disposeAskUserCard(card);
     const input = uiModule.el('message');
     if (input) input.focus();
   });
+  if (isToolApproval) {
+    closeBtn.setAttribute('aria-expanded', 'true');
+    closeBtn.title = 'Collapse confirmation';
+  }
   head.appendChild(closeBtn);
   card.appendChild(head);
 
   const question = document.createElement('div');
-  question.className = 'ask-user-question';
+  question.className = 'ask-user-question' + (isToolApproval ? ' tool-approval-question' : '');
   question.id = `ask-user-q-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
-  question.innerHTML = emojiText(aq.question);
+  question.textContent = isToolApproval
+    ? (aq.summary || aq.question)
+    : '';
+  if (!isToolApproval) question.innerHTML = emojiText(aq.question);
   card.appendChild(question);
   card.setAttribute('aria-labelledby', question.id);
 
   if (isToolApproval && aq.action) {
-    const action = document.createElement('div');
-    action.className = 'ask-user-option-desc';
+    const reason = document.createElement('div');
+    reason.className = 'tool-approval-reason';
+    reason.textContent = aq.notice || aq.description || 'This action needs your explicit approval.';
+    card.appendChild(reason);
+
+    if (aq.risk) {
+      const riskLevel = String(aq.risk_level || 'medium').toLowerCase();
+      const risk = document.createElement('div');
+      risk.className = `tool-approval-risk is-${['low', 'medium', 'high'].includes(riskLevel) ? riskLevel : 'medium'}`;
+      risk.textContent = `Risk: ${String(aq.risk)}`;
+      card.appendChild(risk);
+    }
+
+    const facts = document.createElement('div');
+    facts.className = 'tool-approval-facts';
+    const fact = (label, value, extraClass = '') => {
+      if (value == null || value === '') return;
+      const row = document.createElement('div');
+      row.className = 'tool-approval-fact' + (extraClass ? ` ${extraClass}` : '');
+      const key = document.createElement('span');
+      key.className = 'tool-approval-fact-label';
+      key.textContent = label;
+      const val = document.createElement('span');
+      val.className = 'tool-approval-fact-value';
+      val.textContent = String(value);
+      row.appendChild(key);
+      row.appendChild(val);
+      facts.appendChild(row);
+    };
+    const effectLabels = {
+      read_public: 'Read public data',
+      read_workspace: 'Read workspace',
+      read_private: 'Read private data',
+      write_workspace: 'Change workspace',
+      write_private: 'Change saved data',
+      execute_code: 'Run code',
+      brokered_network_read: 'Read from the web',
+      network_egress: 'Network access',
+      external_side_effect: 'External side effect',
+      ui_side_effect: 'Change the interface',
+      admin_change: 'Change settings',
+      destructive: 'May delete data',
+    };
     const effects = Array.isArray(aq.action.effects)
-      ? aq.action.effects.join(', ')
+      ? aq.action.effects.map((effect) => effectLabels[String(effect)] || String(effect).replace(/_/g, ' ')).join(' · ')
       : '';
-    action.textContent = [
-      aq.action.tool || 'tool',
-      aq.action.content || '',
-      effects ? `Effects: ${effects}` : '',
-      aq.action.workspace ? `Workspace: ${aq.action.workspace}` : '',
-      aq.action.document_id ? `Document: ${aq.action.document_id}` : '',
-      aq.action.document_version != null
-        ? `Document version: ${aq.action.document_version}`
-        : '',
-      aq.action.digest ? `Approval fingerprint: ${aq.action.digest}` : '',
-    ].filter(Boolean).join('\n');
-    action.style.whiteSpace = 'pre-wrap';
-    card.appendChild(action);
+    fact('Action', aq.action.operation || 'Run action');
+    fact('Tool', aq.action.tool || 'tool');
+    fact('Effects', effects);
+    fact('Workspace', aq.action.workspace);
+    fact('Document', aq.action.document_id);
+    fact('Version', aq.action.document_version);
+    fact('Fingerprint', aq.action.digest, 'tool-approval-fingerprint');
+    card.appendChild(facts);
+
+    const technical = document.createElement('details');
+    technical.className = 'tool-approval-technical';
+    const technicalSummary = document.createElement('summary');
+    technicalSummary.textContent = 'Technical details';
+    technical.appendChild(technicalSummary);
+    const raw = document.createElement('pre');
+    raw.textContent = aq.action.content || 'No raw arguments available.';
+    technical.appendChild(raw);
+    card.appendChild(technical);
+
+    const notice = document.createElement('div');
+    notice.className = 'tool-approval-notice';
+    notice.textContent = aq.notice
+      || 'Choose an option, or type or say yes/tak or no/nie in the chat.';
+    card.appendChild(notice);
+
+    const expiry = document.createElement('div');
+    expiry.className = 'tool-approval-expiry';
+    card.appendChild(expiry);
+    const updateExpiry = () => {
+      if (!card.isConnected) {
+        if (card._approvalTimer) clearInterval(card._approvalTimer);
+        card._approvalTimer = null;
+        return;
+      }
+      const remaining = Math.ceil((Number(aq.expires_at || 0) * 1000 - Date.now()) / 1000);
+      if (!Number.isFinite(remaining) || remaining <= 0) {
+        updateToolApprovalCardState('expired', chatBox, aq.approval_id);
+        return;
+      }
+      const minutes = Math.floor(remaining / 60);
+      const seconds = String(remaining % 60).padStart(2, '0');
+      expiry.textContent = `Available for ${minutes}:${seconds}`;
+    };
+    updateExpiry();
+    if (Number(aq.expires_at)) card._approvalTimer = setInterval(updateExpiry, 1000);
   }
 
   const list = document.createElement('div');
-  list.className = 'ask-user-options';
+  list.className = 'ask-user-options' + (isToolApproval ? ' tool-approval-options' : '');
   card.appendChild(list);
 
   const send = (text) => {
@@ -2501,10 +2710,10 @@ export function renderAskUserCard(payload, options) {
         payload: aq,
         card,
       });
-      if (accepted !== false) card.remove();
+      if (accepted !== false) _disposeAskUserCard(card);
       return;
     }
-    card.remove();
+    _disposeAskUserCard(card);
     const input = uiModule.el('message');
     if (input) input.value = text;
     const sendButton = document.querySelector('.send-btn');
@@ -2517,6 +2726,10 @@ export function renderAskUserCard(payload, options) {
     const description = (opt && opt.description) ? String(opt.description) : '';
     const row = document.createElement(multi ? 'label' : 'button');
     row.className = 'ask-user-option';
+    if (isToolApproval) {
+      row.classList.add('tool-approval-option');
+      row.dataset.approvalDecision = String((opt && opt.value) || '').toLowerCase();
+    }
     if (multi) {
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
@@ -2537,6 +2750,7 @@ export function renderAskUserCard(payload, options) {
       row.type = 'button';
       row.addEventListener('click', () => {
         if (isToolApproval) {
+          if (card.dataset.approvalState !== 'pending') return;
           const detail = {
             approval_id: aq.approval_id,
             decision: String((opt && opt.value) || '').toLowerCase(),
@@ -2545,18 +2759,18 @@ export function renderAskUserCard(payload, options) {
               ? String(aq.action.document_id)
               : '',
           };
+          let accepted = true;
           if (onSubmit) {
-            const accepted = onSubmit({
+            accepted = onSubmit({
               kind: 'tool_approval',
               ...detail,
               payload: aq,
               card,
             });
-            if (accepted !== false) card.remove();
           } else {
-            card.remove();
             document.dispatchEvent(new CustomEvent('odysseus:tool-approval', { detail }));
           }
+          if (accepted !== false) markToolApprovalCardSubmitting(card, label);
         } else {
           send(label);
         }
@@ -2606,6 +2820,18 @@ export function renderAskUserCard(payload, options) {
     try { card.focus(); } catch (_) {}
   }
   return card;
+}
+
+function _stripLegacyToolApprovalCopy(text, toolEvents) {
+  if (!Array.isArray(toolEvents) || !toolEvents.some((event) => (
+    event
+    && event.ask_user
+    && event.ask_user.kind === 'tool_approval'
+  ))) return text;
+  return String(text || '')
+    .replace(/(?:^|\n)\s*Allow this task to continue\?\s*/gi, '\n')
+    .replace(/(?:^|\n)\s*Done\s*[—-]\s*Waiting for an exact user approval\.?\s*/gi, '\n')
+    .trim();
 }
 
 /**
@@ -2658,7 +2884,10 @@ export function addMessage(role, content, modelName, metadata) {
       for (let roundNum = firstRound; roundNum <= maxRound; roundNum++) {
         const r = roundNum - 1;
         const txt = r >= 0
-          ? resolveDocumentPlaceholderLinks((roundTexts[r] || '').trim(), metadata)
+          ? _stripLegacyToolApprovalCopy(
+            resolveDocumentPlaceholderLinks((roundTexts[r] || '').trim(), metadata),
+            toolEvents,
+          )
           : '';
 
         if (txt) {
@@ -2775,11 +3004,24 @@ export function addMessage(role, content, modelName, metadata) {
               evDiffHtml = `<details class="agent-tool-output agent-tool-diff"><summary><span class="diff-file">${esc(d.file || 'diff')}</span> <span class="diff-summary-stats">${stat}</span></summary><pre class="diff-pre">${rows}</pre></details>`;
             }
             const node = document.createElement('div');
-            node.className = 'agent-thread-node' + (ok ? '' : ' error');
-            // Hide the raw JSON command when a diff says it better (same as live).
-            const evCmdHtml = (ev.command && !(ev.diff && ev.diff.text)) ? `<pre class="agent-thread-cmd">${esc(ev.command)}</pre>` : '';
-            node.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">${ok ? '\u2713' : '\u2717'}</span><span class="agent-thread-tool">${esc(ev.tool)}</span><span class="agent-thread-status">${ok ? 'done' : 'failed'}</span><span class="agent-thread-chevron">\u25B6</span></div><div class="agent-thread-content">${evCmdHtml}${outHtml}${evDiffHtml}</div>`;
-            // Click handling is delegated globally \u2014 see chat.js init.
+            const evApproval = ev.ask_user && ev.ask_user.kind === 'tool_approval';
+            if (evApproval) {
+              const resolved = String(ev.ask_user.resolved || '').toLowerCase();
+              const approvalStatus = resolved === 'deny'
+                ? 'rejected'
+                : (resolved ? 'approved' : 'needs approval');
+              const approvalSummary = ev.ask_user.summary
+                || ev.ask_user.action?.operation
+                || 'Review the requested action';
+              node.className = 'agent-thread-node approval-event' + (resolved === 'deny' ? ' error' : '');
+              node.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">${phosphorIcon(resolved === 'deny' ? 'x' : 'warning', 13)}</span><span class="agent-thread-tool">Confirmation</span><span class="agent-thread-status">${approvalStatus}</span><span class="agent-thread-chevron">${phosphorIcon('play', 10)}</span></div><div class="agent-thread-content"><div class="approval-event-summary">${esc(approvalSummary)}</div></div>`;
+            } else {
+              node.className = 'agent-thread-node' + (ok ? '' : ' error');
+              // Hide the raw JSON command when a diff says it better (same as live).
+              const evCmdHtml = (ev.command && !(ev.diff && ev.diff.text)) ? `<pre class="agent-thread-cmd">${esc(ev.command)}</pre>` : '';
+              node.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">${ok ? '\u2713' : '\u2717'}</span><span class="agent-thread-tool">${esc(ev.tool)}</span><span class="agent-thread-status">${ok ? 'done' : 'failed'}</span><span class="agent-thread-chevron">\u25B6</span></div><div class="agent-thread-content">${evCmdHtml}${outHtml}${evDiffHtml}</div>`;
+              // Click handling is delegated globally \u2014 see chat.js init.
+            }
             threadWrap.appendChild(node);
           }
           // Check if next round has text — extend line down to connect
@@ -3171,6 +3413,9 @@ const chatRenderer = {
   safeDisplayImageSrc,
   removeAskUserCards,
   renderAskUserCard,
+  markToolApprovalCardSubmitting,
+  updateToolApprovalCardState,
+  resetToolApprovalCard,
   buildSourcesBox,
   buildFindingsBox,
   appendReportButton,

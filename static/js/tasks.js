@@ -2920,7 +2920,17 @@ async function _aiDraftTask(inputEl, btnEl) {
   try {
     const res = await fetch(`${API_BASE}/api/tasks/parse`, {
       method: 'POST', credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        // The API stores task times as UTC, while the natural-language draft
+        // is interpreted in the browser's local timezone. This keeps relative
+        // dates and explicit times aligned with what the user sees.
+        'X-Tz-Offset': String(-new Date().getTimezoneOffset()),
+        'X-Tz-Name': (() => {
+          try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; }
+          catch (_) { return ''; }
+        })(),
+      },
       body: JSON.stringify({ description: desc }),
     });
     const data = await res.json();

@@ -14,6 +14,7 @@ def start_telegram_service(
     kasa_agent=None,
     hue_agent=None,
     home_assistant_agent=None,
+    conversation_gateway_factory=None,
 ):
     channel_config = None
     channel_profile = None
@@ -36,6 +37,7 @@ def start_telegram_service(
         home_assistant_agent=home_assistant_agent,
         channel_config=channel_config,
         channel_profile=channel_profile,
+        conversation_gateway_factory=conversation_gateway_factory,
     )
     telegram_task = None
     if telegram_service:

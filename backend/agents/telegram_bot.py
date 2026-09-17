@@ -2,6 +2,7 @@ import asyncio
 import base64
 import io
 import json
+import mimetypes
 import os
 import re
 import shutil
@@ -103,6 +104,7 @@ class TelegramChatSession:
         home_assistant_agent=None,
         channel_profile=None,
         conversation_session_id=None,
+        conversation_gateway=None,
     ):
         self.chat_id = int(chat_id)
         self.user_label = str(user_label or f"telegram:{chat_id}")
@@ -118,6 +120,7 @@ class TelegramChatSession:
         self.conversation_session_id = str(
             conversation_session_id or f"telegram-{self.chat_id}"
         ).strip()
+        self.conversation_gateway = conversation_gateway
         self.voice_mode = "auto"
         self.audio_loop = None
         self.run_task = None
@@ -125,8 +128,10 @@ class TelegramChatSession:
         self.last_activity_ts = time.monotonic()
 
     async def ensure_started(self):
-        if self.audio_loop and self.run_task and not self.run_task.done():
+        if self.audio_loop and self.conversation_gateway:
             return
+        if self.conversation_gateway is None:
+            raise RuntimeError("Native Odysseus gateway is not configured for Telegram")
 
         self.audio_loop = monikai.AudioLoop(
             video_mode="none",
@@ -141,6 +146,7 @@ class TelegramChatSession:
             conversation_endpoint_id=self.channel_profile.get("endpoint_id"),
             conversation_preset_id=self.channel_profile.get("preset_id"),
             conversation_session_id=self.conversation_session_id,
+            conversation_gateway=self.conversation_gateway,
             channel_tool_scopes=self.channel_profile.get("tool_scopes") if self.channel_profile else None,
             channel_require_confirmation=(
                 self.channel_profile.get("require_confirmation")
@@ -152,28 +158,16 @@ class TelegramChatSession:
         self.audio_loop.hue_agent = self.hue_agent
         self.audio_loop.home_assistant_agent = self.home_assistant_agent
         self.audio_loop.update_permissions((self.settings_getter() or {}).get("tool_permissions") or {})
-        start_message = (
-            "System Notification: You are chatting with the user over Telegram text messages. "
-            "Respond in plain text only. Keep replies concise by default. "
-            "On Telegram, you may sound a little more casual, warm, lowercase and playful than in voice mode, "
-            "if it feels natural for the moment. Keep that text style consistent across messages instead of "
-            "swinging between tweet-like casual and generic assistant phrasing. "
-            "Reply in the user's current language by default, and switch languages naturally if the user does. "
-            "Prefer short, natural replies. Avoid forced holiday mentions, forced cleverness, support-tone phrasing, "
-            "and random foreign insertions that do not sound organic in the current language. "
-            "Do not imply that you can see images or hear audio unless the user explicitly sends them."
-        )
-        overlay = str(self.channel_profile.get("prompt_overlay") or "").strip()
-        if overlay:
-            start_message += f"\nChannel-specific style instructions (follow when compatible with the main persona):\n{overlay}"
-        self.run_task = asyncio.create_task(self.audio_loop.run(start_message=start_message))
-        await self.audio_loop.wait_until_ready(25.0)
+        # This helper owns memory/settings compatibility for the channel, but
+        # it deliberately does not start AudioLoop.run(): Telegram is a native
+        # text/attachment client, not a Gemini Live session.
+        self.run_task = None
 
     async def ask(self, text: str) -> str:
         async with self.lock:
             await self.ensure_started()
             self.last_activity_ts = time.monotonic()
-            reply = await self.audio_loop.submit_text_turn(text, timeout_sec=120.0)
+            reply = await self.audio_loop.submit_native_turn(text, timeout_sec=120.0)
             self.last_activity_ts = time.monotonic()
             return reply
 
@@ -185,9 +179,22 @@ class TelegramChatSession:
         async with self.lock:
             await self.ensure_started()
             self.last_activity_ts = time.monotonic()
-            reply = await self.audio_loop.submit_user_turn(
+            uploaded = await self.conversation_gateway.upload_attachments(
+                attachments or [],
+                session_id=self.conversation_session_id,
+                timeout_sec=90.0,
+            )
+            attachment_ids = [
+                str(item.get("id") or item.get("attachment_id") or "").strip()
+                for item in uploaded
+                if isinstance(item, dict)
+                and str(item.get("id") or item.get("attachment_id") or "").strip()
+            ]
+            if len(attachment_ids) != len(attachments or []):
+                raise RuntimeError("Native attachment upload returned incomplete metadata")
+            reply = await self.audio_loop.submit_native_turn(
                 text=text,
-                attachments=attachments or [],
+                attachment_ids=attachment_ids,
                 timeout_sec=120.0,
             )
             self.last_activity_ts = time.monotonic()
@@ -208,7 +215,7 @@ class TelegramChatSession:
         self.audio_loop = None
 
     def is_active(self) -> bool:
-        return bool(self.audio_loop and self.run_task and not self.run_task.done())
+        return bool(self.audio_loop and self.conversation_gateway)
 
     def get_status_summary(self) -> str:
         active = self.is_active()
@@ -533,6 +540,7 @@ class TelegramBotService:
         allowed_chat_ids: Optional[List[int]] = None,
         allow_groups: bool = False,
         session_idle_sec: float = 1800.0,
+        conversation_gateway_factory=None,
     ):
         self.token = str(token or "").strip()
         self.settings_getter = settings_getter
@@ -545,6 +553,7 @@ class TelegramBotService:
         self.hue_agent = hue_agent
         self.home_assistant_agent = home_assistant_agent
         self.channel_profile = dict(channel_profile or {})
+        self.conversation_gateway_factory = conversation_gateway_factory
         normalized_ids = set()
         if allowed_chat_id is not None:
             normalized_ids.add(int(allowed_chat_id))
@@ -576,6 +585,7 @@ class TelegramBotService:
         home_assistant_agent=None,
         channel_config=None,
         channel_profile=None,
+        conversation_gateway_factory=None,
     ):
         config = dict(channel_config or {})
         token = str(config.get("token") or os.getenv("TELEGRAM_BOT_TOKEN", "")).strip()
@@ -623,6 +633,7 @@ class TelegramBotService:
             allowed_chat_ids=allowed_chat_ids,
             allow_groups=config.get("allow_groups", _env_flag("TELEGRAM_ALLOW_GROUPS", False)),
             session_idle_sec=session_idle_sec,
+            conversation_gateway_factory=conversation_gateway_factory,
         )
 
     async def _api_call(self, method: str, payload: Optional[Dict[str, Any]] = None, timeout_sec: float = 35.0) -> Dict[str, Any]:
@@ -871,30 +882,54 @@ class TelegramBotService:
             file_id = str(document.get("file_id") or "").strip()
             file_name = str(document.get("file_name") or f"{file_id}.bin").strip()
             mime_type = str(document.get("mime_type") or "").strip().lower()
+            guessed_mime = mimetypes.guess_type(file_name)[0] or ""
             if file_id:
                 file_meta = await self._api_call("getFile", {"file_id": file_id}, timeout_sec=20.0)
                 file_path = str((file_meta.get("result") or {}).get("file_path") or "").strip()
                 if file_path:
                     raw = await self._download_telegram_file(file_path)
-                    if mime_type.startswith("image/"):
+                    # Telegram sometimes labels images sent as documents as
+                    # application/octet-stream. Use the filename and a small
+                    # signature check so those images stay multimodal.
+                    is_image = (
+                        mime_type.startswith("image/")
+                        or guessed_mime.startswith("image/")
+                        or raw.startswith((b"\xff\xd8\xff", b"\x89PNG", b"GIF8"))
+                        or (raw.startswith(b"RIFF") and raw[8:12] == b"WEBP")
+                    )
+                    effective_mime = (
+                        mime_type
+                        if mime_type.startswith("image/")
+                        else guessed_mime
+                        if guessed_mime.startswith("image/")
+                        else "image/jpeg"
+                    )
+                    if is_image:
                         attachments.append(
                             {
                                 "name": file_name,
-                                "mime_type": mime_type or "image/jpeg",
+                                "mime_type": effective_mime,
                                 "data": base64.b64encode(raw).decode("utf-8"),
                                 "size": len(raw),
                             }
                         )
                     else:
                         text_content = ""
-                        try:
-                            text_content = raw.decode("utf-8", errors="replace")
-                        except Exception:
-                            text_content = ""
+                        text_like = (
+                            (mime_type or guessed_mime).startswith(("text/", "application/json"))
+                            or file_name.lower().endswith((
+                                ".txt", ".md", ".csv", ".json", ".xml", ".yaml", ".yml",
+                            ))
+                        )
+                        if text_like:
+                            try:
+                                text_content = raw.decode("utf-8", errors="replace")
+                            except Exception:
+                                text_content = ""
                         attachments.append(
                             {
                                 "name": file_name,
-                                "mime_type": mime_type or "text/plain",
+                                "mime_type": mime_type or guessed_mime or "application/octet-stream",
                                 "data": base64.b64encode(raw).decode("utf-8"),
                                 "size": len(raw),
                                 "text_content": text_content,
@@ -945,6 +980,11 @@ class TelegramBotService:
                 hue_agent=self.hue_agent,
                 home_assistant_agent=self.home_assistant_agent,
                 channel_profile=self.channel_profile,
+                conversation_gateway=(
+                    self.conversation_gateway_factory()
+                    if callable(self.conversation_gateway_factory)
+                    else None
+                ),
             )
             self._sessions[chat_id] = session
             return session

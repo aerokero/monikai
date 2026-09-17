@@ -140,10 +140,18 @@ def extract_smart_home_command(text: str, context: str = "") -> dict[str, str] |
 _CALENDAR_ACTION = (
     r"(?:add|adding|create|creating|recreate|recreating|schedule|scheduling|"
     r"reschedule|rescheduling|book|booking|put|set\s+up|make|making|"
-    r"delete|deleting|remove|removing|cancel|cancelling|canceling)"
+    r"delete|deleting|remove|removing|cancel|cancelling|canceling|"
+    r"dodaj\w*|utwórz\w*|utworz\w*|stwórz\w*|stworz\w*|zaplanuj\w*|"
+    r"wpisz\w*|przenieś\w*|przenies\w*|usuń\w*|usun\w*|odwołaj\w*|odwolaj\w*)"
 )
-_CALENDAR_THING = r"(?:calendar|calendar\s+(?:entry|item)|event|meeting|appointment|entry|call)"
-_CALENDAR_READ_THING = r"(?:calendar|schedule|events?|meetings?|appointments?|classes?)"
+_CALENDAR_THING = (
+    r"(?:calendar|calendar\s+(?:entry|item)|event|meeting|appointment|entry|call|"
+    r"kalendarz\w*|wydarzen\w*|spotkan\w*|termin\w*|wizyt\w*|harmonogram\w*)"
+)
+_CALENDAR_READ_THING = (
+    r"(?:calendar|schedule|events?|meetings?|appointments?|classes?|"
+    r"kalendarz\w*|wydarzen\w*|spotkan\w*|termin\w*|wizyt\w*|harmonogram\w*)"
+)
 _EXPLANATORY_PREFIX = re.compile(
     r"^\s*(?:how\s+(?:do|can)\s+i|can\s+you\s+explain|what\s+about|tell\s+me\s+how|show\s+me\s+how)\b",
     re.I,
@@ -151,7 +159,8 @@ _EXPLANATORY_PREFIX = re.compile(
 
 _PANEL = (
     r"(?:calendar|notes?|inbox|email|mail|documents?|docs|library|gallery|"
-    r"settings|cookbook|sessions?|chats?|skills|memories|memory|brain)"
+    r"settings|cookbook|sessions?|chats?|skills|memories|memory|brain|"
+    r"notatk\w*|zadani\w*|kalendarz\w*)"
 )
 
 _ROUTING_PATTERNS: tuple[tuple[str, str, Pattern[str]], ...] = tuple(
@@ -167,6 +176,8 @@ _ROUTING_PATTERNS: tuple[tuple[str, str, Pattern[str]], ...] = tuple(
         ("calendar", "calendar item action request", rf"{_PLEASE}{_CALENDAR_ACTION}\s+(?:it\s+)?(?:a\s+|an\s+)?(?:calendar\s+)?(?:event|meeting|appointment|entry|item|call)\b"),
         ("calendar", "calendar target action request", rf"\b{_CALENDAR_ACTION}\b.{{0,120}}\b(?:to|on|in|into|for)\s+(?:my\s+|the\s+|this\s+)?calendar\b"),
         ("calendar", "put item on calendar request", r"\bput\s+.+\bon\s+(?:my\s+)?calendar\b"),
+        ("calendar", "Polish calendar action request", rf"\b{_CALENDAR_ACTION}\b.{{0,140}}\b{_CALENDAR_THING}\b"),
+        ("calendar", "Polish calendar lookup request", rf"\b(?:co|jakie|które|ktore|pokaż|pokaz|sprawdź|sprawdz|wyświetl|wyswietl|lista)\b.{{0,120}}\b{_CALENDAR_READ_THING}\b"),
 
         # Calendar/event lookup. A question such as "Do I have Taekwondo
         # classes this week?" needs the calendar tool; plain chat cannot know.
@@ -184,6 +195,9 @@ _ROUTING_PATTERNS: tuple[tuple[str, str, Pattern[str]], ...] = tuple(
         ("notes", "add item to notes/todo request", rf"{_PLEASE}(?:add|jot|write\s+down)\b.{{0,120}}\b(?:to|in|into)\s+(?:my\s+|the\s+)?(?:todo(?:\s+list)?|task\s+list|notes?|checklist)\b"),
         ("notes", "set reminder request", rf"{_PLEASE}set\s+(?:a\s+)?reminder\b"),
         ("notes", "assistant reminder request", rf"{_ACTION_QUESTION}set\s+(?:a\s+)?reminder\b"),
+        ("notes", "Polish note/task action request", r"\b(?:dodaj|zapisz|dopisz|utwórz|utworz|stwórz|stworz|ustaw|przypomnij|pamiętaj|pamietaj)\b.{0,140}\b(?:notatk\w*|zadani\w*|todo\w*|checklist\w*|przypomn\w*|listę?\s+zakup\w*)\b"),
+        ("notes", "Polish note/task lookup request", r"\b(?:pokaż|pokaz|wyświetl|wyswietl|sprawdź|sprawdz|lista|znajdź|znajdz|co mam)\b.{0,120}\b(?:notatk\w*|zadani\w*|todo\w*|przypomn\w*|checklist\w*)\b"),
+        ("notes", "Polish reminder or shopping request", r"\b(?:przypomnij\w*|nie\s+zapomnij|kup|kupić|kupic)\b(?:.{0,120})?"),
 
         # Home Assistant / smart-home commands. These are intentionally
         # separate from UI theme commands: “tryb nocny w Home Assistant” is a

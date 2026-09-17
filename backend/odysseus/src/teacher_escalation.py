@@ -770,18 +770,13 @@ async def run_teacher_inline(
         "model": teacher_model,
         "tool": "manage_skills",
         "command": str(skill.get("name") or "teacher-generated skill"),
-        "output": "Waiting for an exact user approval.",
+        "output": "Approval required.",
         "exit_code": None,
         "ask_user": approval,
     }
     persisted_tool_events.append(approval_tool_event)
     persisted_metrics["tool_events"] = persisted_tool_events
     persisted_metrics.setdefault("model", teacher_model)
-    yield (
-        "data: "
-        + json.dumps({"delta": "Review the teacher-generated skill before saving it."})
-        + "\n\n"
-    )
     yield (
         "data: "
         + json.dumps({

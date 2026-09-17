@@ -142,11 +142,6 @@ def register_audio_lifecycle_handlers(
             except Exception:
                 pass
 
-        def on_tool_confirmation(data):
-            tool_name = data.get("tool", "unknown")
-            print(f"[SYSTEM NOTIFICATION] Requesting confirmation for tool: {tool_name}")
-            schedule_emit_to_frontend("tool_confirmation_request", data)
-
         def on_session_update(session_id):
             print(f"[SYSTEM NOTIFICATION] Session updated to: {session_id}")
             schedule_emit_to_frontend("session_update", {"session": session_id})
@@ -267,7 +262,6 @@ def register_audio_lifecycle_handlers(
                 on_video_frame=on_video_frame,
                 on_web_data=on_web_data,
                 on_transcription=on_transcription,
-                on_tool_confirmation=on_tool_confirmation,
                 on_session_update=on_session_update,
                 on_session_prompt=on_session_prompt,
                 on_device_update=on_device_update,

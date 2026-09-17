@@ -8,7 +8,7 @@
 import Storage from './storage.js';
 import uiModule from './ui.js';
 import sessionModule from './sessions.js';
-import chatRenderer from './chatRenderer.js?v=20260819approvalcontrol1';
+import chatRenderer from './chatRenderer.js?v=20260913approvalcontrol3';
 import chatStream from './chatStream.js?v=20260819approvalcontrol1';
 import { addAITTSButton } from './tts-ai.js';
 import markdownModule from './markdown.js';
@@ -90,6 +90,38 @@ import { icon as phosphorIcon } from './iconRegistry.js';
       document_id: String(detail.document_id || ''),
     };
     _submitToolApprovalWhenIdle(_pendingToolApproval.approval_id);
+  });
+
+  // Speech-to-text normally fills the composer, but a pending approval is a
+  // control-plane reply. Submit that transcription automatically so saying
+  // "yes", "tak", "no", or a longer spoken reply does not require a second
+  // click. The server still classifies the text and owns the actual decision.
+  function _submitVoiceApprovalWhenIdle(approvalId, attempt = 0) {
+    if (attempt > 30) return;
+    const card = Array.from(document.querySelectorAll(
+      '#chat-history .tool-approval-card[data-approval-state="pending"]',
+    )).find((candidate) => candidate.dataset.approvalId === approvalId);
+    if (!card) return;
+    const input = document.getElementById('message');
+    if (!input || !input.value.trim()) return;
+    const sendButton = document.querySelector('.send-btn');
+    if (isStreaming || _sendInFlight || !sendButton || sendButton.disabled) {
+      setTimeout(() => _submitVoiceApprovalWhenIdle(approvalId, attempt + 1), 120);
+      return;
+    }
+    sendButton.click();
+  }
+
+  document.addEventListener('odysseus:voice-transcription', (event) => {
+    const text = String(event?.detail?.text || '').trim();
+    if (!text) return;
+    const card = document.querySelector(
+      '#chat-history .tool-approval-card[data-approval-state="pending"]',
+    );
+    if (!card?.dataset.approvalId) return;
+    setTimeout(() => {
+      _submitVoiceApprovalWhenIdle(card.dataset.approvalId);
+    }, 0);
   });
 
   function _fmtContextNumber(n) {
@@ -1569,6 +1601,9 @@ import { icon as phosphorIcon } from './iconRegistry.js';
     
     let abortCtrl = null;
     let streamingTTS = false;
+    let approvalTextCard = null;
+    let approvalTextReply = false;
+    let approvalSettled = false;
     try {
       // Re-enable auto-scroll when user sends a message
       uiModule.setAutoScroll(true);
@@ -1590,7 +1625,19 @@ import { icon as phosphorIcon } from './iconRegistry.js';
 
       const userDisplay = _displayOverride || msg;
       _displayOverride = null;
-      const skipBubble = _hideUserBubble || !!approvalForSend;
+      // A typed reply while the approval card is pending is a control-plane
+      // answer, just like a button click.  Keep it out of the conversation
+      // history and leave the card visible until the server settles it.
+      approvalTextCard = !approvalForSend
+        ? document.querySelector(
+          '#chat-history .tool-approval-card[data-approval-state="pending"]',
+        )
+        : null;
+      approvalTextReply = Boolean(approvalTextCard && msg.trim());
+      if (approvalTextReply) {
+        chatRenderer.markToolApprovalCardSubmitting(approvalTextCard);
+      }
+      const skipBubble = _hideUserBubble || !!approvalForSend || approvalTextReply;
       _hideUserBubble = false;
       // Auto-recovery counter: carries across a turn's auto-continues, but resets
       // when the user genuinely sends a new message (so each task gets a fresh cap).
@@ -2892,6 +2939,12 @@ import { icon as phosphorIcon } from './iconRegistry.js';
                 continue;
               }
               if (json.type === 'tool_approval_resolved') {
+                approvalSettled = true;
+                chatRenderer.updateToolApprovalCardState(
+                  json.status === 'denied' ? 'deny' : json.decision,
+                  document.getElementById('chat-history'),
+                  json.approval_id || '',
+                );
                 _cancelThinkingTimer();
                 _removeThinkingSpinner();
                 if (spinner && spinner.element) spinner.destroy();
@@ -3657,8 +3710,9 @@ import { icon as phosphorIcon } from './iconRegistry.js';
                   }
                   const ok = (json.exit_code === 0 || json.exit_code == null);
                   const cmd = json.command || '';
+                  const liveApproval = json.ask_user && json.ask_user.kind === 'tool_approval';
                   let outHtml = '';
-                  if (json.output && json.output.trim()) {
+                  if (!liveApproval && json.output && json.output.trim()) {
                     outHtml = `<details class="agent-tool-output"><summary>Output</summary><pre>${esc(json.output)}</pre></details>`;
                   }
                   // File-write diff (write_file): show a before/after unified diff.
@@ -3694,8 +3748,16 @@ import { icon as phosphorIcon } from './iconRegistry.js';
                   // click again. Click handling is delegated (see init at
                   // bottom of file) so no per-node listener needed.
                   const _wasOpen = currentToolBubble.classList.contains('open');
-                  currentToolBubble.className = 'agent-thread-node' + (ok ? '' : ' error') + (_wasOpen ? ' open' : '');
-                  currentToolBubble.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">${ok ? phosphorIcon('check', 14) : phosphorIcon('x', 14)}</span><span class="agent-thread-tool">${esc(json.tool)}</span><span class="agent-thread-status">${ok ? 'done' : 'failed'}</span><span class="agent-thread-chevron">${phosphorIcon('play', 10)}</span></div><div class="agent-thread-content">${cmdHtml2}${outHtml}${diffHtml}</div>`;
+                  if (liveApproval) {
+                    const approvalSummary = json.ask_user.summary
+                      || json.ask_user.action?.operation
+                      || 'Review the requested action';
+                    currentToolBubble.className = 'agent-thread-node approval-event';
+                    currentToolBubble.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">${phosphorIcon('warning', 13)}</span><span class="agent-thread-tool">Confirmation</span><span class="agent-thread-status">needs approval</span><span class="agent-thread-chevron">${phosphorIcon('play', 10)}</span></div><div class="agent-thread-content"><div class="approval-event-summary">${esc(approvalSummary)}</div></div>`;
+                  } else {
+                    currentToolBubble.className = 'agent-thread-node' + (ok ? '' : ' error') + (_wasOpen ? ' open' : '');
+                    currentToolBubble.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">${ok ? phosphorIcon('check', 14) : phosphorIcon('x', 14)}</span><span class="agent-thread-tool">${esc(json.tool)}</span><span class="agent-thread-status">${ok ? 'done' : 'failed'}</span><span class="agent-thread-chevron">${phosphorIcon('play', 10)}</span></div><div class="agent-thread-content">${cmdHtml2}${outHtml}${diffHtml}</div>`;
+                  }
                   // Reset so thinking spinner between tools says "Thinking" not the old tool's label
                   _lastToolName = '';
                   uiModule.scrollHistory();
@@ -4295,6 +4357,15 @@ import { icon as phosphorIcon } from './iconRegistry.js';
       } // end if (!_isBgFinal)
 
     } catch (err) {
+      if (!approvalSettled) {
+        if (approvalTextCard) chatRenderer.resetToolApprovalCard(approvalTextCard);
+        if (approvalForSend) {
+          const approvalCard = document.querySelector(
+            `#chat-history .tool-approval-card[data-approval-id="${String(approvalForSend.approval_id).replace(/"/g, '\\"')}"]`,
+          );
+          if (approvalCard) chatRenderer.resetToolApprovalCard(approvalCard);
+        }
+      }
       // If a Stop or timeout was waiting for an identity header and the POST
       // failed before producing one, keep this on the cancellation path. There
       // is no safe headerless server cancel to send, but it must not be turned

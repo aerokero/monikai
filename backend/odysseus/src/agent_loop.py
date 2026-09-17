@@ -1483,7 +1483,9 @@ def _classify_agent_request(messages: List[Dict], last_user: str) -> Dict[str, o
         domains.add("cookbook")
     if has(r"\b(emails?|mails?|gmail|inbox|reply|forward|cc|bcc|send email|compose email|draft email|message chris|message him|message her)\b"):
         domains.add("email")
-    if has(r"\b(notes?|todos?|to-dos?|checklists?|tasks?|task list|remind me|reminders?|buy|pickup|pick up)\b"):
+    if has(r"\b(notes?|todos?|to-dos?|checklists?|tasks?|task list|remind me|reminders?|buy|pickup|pick up|"
+           r"notatk\w*|zadani\w*|przypomn\w*|kalendarz\w*|wydarzen\w*|spotkan\w*|"
+           r"termin\w*|wizyt\w*|harmonogram\w*|kup\w*)\b"):
         domains.add("notes_calendar_tasks")
     if smart_home_command or (
         has(
@@ -1501,9 +1503,12 @@ def _classify_agent_request(messages: List[Dict], last_user: str) -> Dict[str, o
         )
     ):
         domains.add("smart_home")
-    if has(r"\b(every day|every morning|every evening|recurring|automatically|cron|scheduled task|background task)\b"):
+    if has(r"\b(every day|every morning|every evening|recurring|automatically|cron|scheduled task|background task|"
+           r"codzien\w*|co\s+rano|co\s+wieczor\w*|co\s+tydzień|co\s+tydzien|cyklicz\w*|"
+           r"automatycz\w*|zadanie\s+cyklicz\w*|zaplanuj\w*)\b"):
         domains.add("notes_calendar_tasks")
-    if has(r"\b(calendar|event|meeting|appointment|schedule)\b"):
+    if has(r"\b(calendar|event|meeting|appointment|schedule|kalendarz\w*|wydarzen\w*|spotkan\w*|"
+           r"termin\w*|wizyt\w*|harmonogram\w*)\b"):
         domains.add("notes_calendar_tasks")
     _code_write_intent = has(
         r"\b(?:python|javascript|typescript|java|c\+\+|cpp|c#|csharp|rust|go|golang|"
@@ -1928,11 +1933,18 @@ def _minimal_odysseus_doc_messages(messages: List[Dict], active_document, stream
 
 def _looks_like_notes_turn(text: str) -> bool:
     q = (text or "").lower()
-    if re.search(r"\b(notes?|todos?|to-?do|checklists?|reminders?)\b", q):
+    if re.search(r"\b(notes?|todos?|to-?do|checklists?|reminders?|notatk\w*|zadani\w*|"
+                 r"przypomn\w*|list\w*\s+zakup\w*)\b", q):
         return True
-    if re.search(r"\b(?:take|jot|write down|add|create|make)\b.{0,80}\b(?:note|todo|to-?do|checklist|reminder)\b", q):
+    if re.search(r"\b(?:take|jot|write down|add|create|make|dodaj|zapisz|dopisz|utwórz|utworz|"
+                 r"stwórz|stworz|ustaw|przypomnij|pamiętaj|pamietaj)\b.{0,100}\b(?:note|todo|to-?do|"
+                 r"checklist|reminder|notatk\w*|zadani\w*|przypomn\w*|kalendarz\w*|wydarzen\w*|"
+                 r"spotkan\w*|termin\w*)\b", q):
         return True
-    if re.search(r"\b(?:buy|pick ?up|pickup)\b", q) and not re.search(r"\b(?:calendar|event|meeting|appointment|schedule)\b", q):
+    if re.search(r"\b(?:buy|pick ?up|pickup|kup|kupić|kupic)\b", q) and not re.search(
+        r"\b(?:calendar|event|meeting|appointment|schedule|kalendarz\w*|wydarzen\w*|spotkan\w*|termin\w*)\b",
+        q,
+    ):
         return True
     return False
 
@@ -5960,7 +5972,7 @@ async def stream_agent_loop(
                     )
                     desc = f"{block.tool_type}: APPROVAL REQUIRED"
                     result = {
-                        "output": "Waiting for an exact user approval.",
+                        "output": "Approval required.",
                         "exit_code": None,
                         "approval_required": True,
                         "ask_user": pending_approval.public_payload(
@@ -6135,13 +6147,23 @@ async def stream_agent_loop(
                 # The question lives in the tool args. ChatMessage.to_dict()
                 # replays only role+content to the model next turn — tool_event
                 # metadata is dropped — so if the question is never in the saved
-                # assistant text, the model can't see it already asked and will
-                # loop and re-ask after the user answers. Stream it as assistant
-                # text (once) so it persists and is replayed. The card shows the
-                # options only, so this is the single visible copy of the question.
+                # assistant text, a generic ask_user question may be asked again
+                # after the user answers. Stream that question as assistant text
+                # (once) so it persists and is replayed. Exact tool approvals are
+                # different: their sealed action summary/card is the canonical
+                # UI and voice prompt, so adding another assistant bubble creates
+                # a confusing duplicate and must be skipped.
                 _auq = result["ask_user"]
                 _auq_q = (_auq.get("question") or "").strip()
-                if _auq_q and _auq_q not in full_response:
+                _is_sealed_tool_approval = (
+                    isinstance(_auq, dict)
+                    and _auq.get("kind") == "tool_approval"
+                )
+                if (
+                    _auq_q
+                    and not _is_sealed_tool_approval
+                    and _auq_q not in full_response
+                ):
                     _auq_delta = ("\n\n" if full_response.strip() else "") + _auq_q
                     full_response += _auq_delta
                     yield 'data: ' + json.dumps({"delta": _auq_delta}) + '\n\n'
@@ -6455,8 +6477,9 @@ async def stream_agent_loop(
 
         # ask_user posed a question — stop here and wait for the user's choice.
         # Don't feed tool results back or advance a round; the user's selection
-        # arrives as the next message and the agent resumes from there. The
-        # question text is already in the streamed response, so it persists.
+        # arrives as the next message and the agent resumes from there. Generic
+        # ask_user text is persisted in the response; sealed tool approvals are
+        # persisted in the structured tool event instead.
         if _awaiting_user:
             break
 

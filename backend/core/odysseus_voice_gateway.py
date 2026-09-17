@@ -4,14 +4,25 @@ from __future__ import annotations
 
 import json
 import logging
+import base64
+import binascii
+import mimetypes
 import os
 import secrets
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 
+from backend.conversation.voice_quality import voice_transcript_is_usable
+
 
 logger = logging.getLogger(__name__)
+
+_VOICE_SILENCE_MARKERS = {
+    "[voice_silence]",
+    "voice_silence",
+    "[silent]",
+}
 
 
 class OdysseusVoiceGateway:
@@ -87,6 +98,19 @@ class OdysseusVoiceGateway:
         if manager is None:
             raise RuntimeError("Odysseus session manager is not initialized")
 
+        # The bridge runs in single-user mode. Native route ownership and
+        # upload ownership must use the same primary user as the existing
+        # workspace sessions; otherwise a freshly created voice/channel
+        # session is created ownerless and the native route rejects it.
+        owner = None
+        auth_manager = getattr(getattr(self.app, "state", None), "auth_manager", None)
+        get_primary_user = getattr(auth_manager, "get_primary_user", None)
+        if callable(get_primary_user):
+            try:
+                owner = get_primary_user()
+            except Exception:
+                owner = None
+
         try:
             session = manager.get_session(session_id)
         except (KeyError, LookupError):
@@ -95,12 +119,16 @@ class OdysseusVoiceGateway:
                 name="Live Voice",
                 endpoint_url=endpoint_url,
                 model=model,
-                owner=None,
+                owner=owner,
             )
 
         session.endpoint_url = endpoint_url
         session.model = model
         session.headers = {}
+        if owner and not getattr(session, "owner", None):
+            # Claim only legacy ownerless channel sessions in single-user
+            # mode; never overwrite an existing owner's session.
+            session.owner = owner
 
         # Keep the DB row in sync with the in-memory session.  Native auth
         # resolution still obtains the encrypted provider key from the
@@ -113,6 +141,8 @@ class OdysseusVoiceGateway:
             if stored is not None:
                 stored.endpoint_url = endpoint_url
                 stored.model = model
+                if owner and not stored.owner:
+                    stored.owner = owner
                 db.commit()
         finally:
             db.close()
@@ -149,7 +179,17 @@ class OdysseusVoiceGateway:
             elif event_type == "ask_user":
                 data = event.get("data") or {}
                 if isinstance(data, dict):
-                    asked_question = str(data.get("question") or "").strip() or None
+                    asked_question = (
+                        str(
+                            data.get("voice_prompt")
+                            or data.get("question")
+                            or ""
+                        ).strip()
+                        or None
+                    )
+                    notice = str(data.get("notice") or "").strip()
+                    if notice and asked_question and notice not in asked_question:
+                        asked_question = f"{notice} {asked_question}"
             elif event_type == "agent_terminal":
                 data = event.get("data") or {}
                 failure = data.get("failure") if isinstance(data, dict) else None
@@ -171,6 +211,11 @@ class OdysseusVoiceGateway:
             raise RuntimeError(stream_error)
 
         answer = "".join(answer_parts).strip()
+        if answer.casefold() in _VOICE_SILENCE_MARKERS:
+            # The voice prompt gives the text author a closed way to say that
+            # an ASR fragment has no recoverable meaning. Never speak the
+            # marker and never turn it into the generic tool fallback below.
+            return ""
         if not answer and asked_question:
             # Voice has no clickable approval/clarification card. Speaking the
             # question keeps the interaction usable; the next spoken turn can
@@ -191,6 +236,7 @@ class OdysseusVoiceGateway:
         self,
         text: str,
         *,
+        attachment_ids: Optional[List[str]] = None,
         timeout_sec: float = 120.0,
         model: Optional[str] = None,
         endpoint_id: Optional[str] = None,
@@ -198,8 +244,21 @@ class OdysseusVoiceGateway:
         session_id: Optional[str] = None,
     ) -> str:
         prompt = str(text or "").strip()
-        if not prompt:
-            raise ValueError("voice turn text cannot be empty")
+        normalized_attachment_ids = [
+            str(item).strip()
+            for item in (attachment_ids or [])
+            if str(item or "").strip()
+        ]
+        if not prompt and not normalized_attachment_ids:
+            raise ValueError("voice turn text or attachments cannot be empty")
+        if prompt and not voice_transcript_is_usable(prompt):
+            # This is the final cheap boundary before a voice transcript can
+            # reach context building, search, or tools. Providers that do not
+            # expose confidence still get protection for empty/explicitly
+            # unintelligible results; confidence-aware providers reject those
+            # earlier in their STT adapter.
+            logger.info("[VOICE STT] dropping unusable transcript before generation")
+            return ""
         self.configure(
             model=model,
             endpoint_id=endpoint_id,
@@ -237,6 +296,10 @@ class OdysseusVoiceGateway:
             "voice_mode": True,
             "voice_transport_token": self._voice_transport_token,
         }
+        if normalized_attachment_ids:
+            # The native route accepts attachment IDs, never inline bytes. The
+            # upload route has already performed type/size/ownership checks.
+            payload["attachments"] = json.dumps(normalized_attachment_ids)
         transport = httpx.ASGITransport(app=self.app)
         timeout = httpx.Timeout(max(5.0, float(timeout_sec or 120.0)))
         async with httpx.AsyncClient(
@@ -257,3 +320,88 @@ class OdysseusVoiceGateway:
             raise RuntimeError(f"Odysseus voice turn failed ({response.status_code}): {detail}")
         answer = self._stream_result(response)
         return answer
+
+    async def upload_attachments(
+        self,
+        attachments: Optional[List[Dict[str, Any]]],
+        *,
+        session_id: Optional[str] = None,
+        timeout_sec: float = 90.0,
+    ) -> List[Dict[str, Any]]:
+        """Persist raw channel attachments through the native upload route.
+
+        Telegram/other non-browser channels receive bytes from their provider,
+        while the native chat pipeline deliberately consumes only durable
+        upload IDs. Keeping this conversion here makes every channel use the
+        exact same upload validation, vision and document-processing code.
+        Existing ``id`` references are passed through unchanged.
+        """
+        items = [item for item in (attachments or []) if isinstance(item, dict)]
+        if not items:
+            return []
+
+        ordered: List[Optional[Dict[str, Any]]] = []
+        multipart = []
+        for item in items:
+            existing_id = str(item.get("id") or item.get("attachment_id") or "").strip()
+            if existing_id and not item.get("data"):
+                ordered.append({**item, "id": existing_id})
+                continue
+
+            encoded = item.get("data")
+            if not encoded:
+                raise ValueError(f"attachment {item.get('name') or 'unnamed'} has no data")
+            if isinstance(encoded, bytes):
+                encoded = encoded.decode("ascii", errors="strict")
+            encoded = str(encoded).strip()
+            if encoded.startswith("data:") and "," in encoded:
+                encoded = encoded.split(",", 1)[1]
+            try:
+                raw = base64.b64decode(encoded, validate=True)
+            except (ValueError, binascii.Error) as exc:
+                raise ValueError(f"attachment {item.get('name') or 'unnamed'} is not valid base64") from exc
+            if not raw:
+                raise ValueError(f"attachment {item.get('name') or 'unnamed'} is empty")
+
+            name = str(item.get("name") or "attachment.bin").strip() or "attachment.bin"
+            mime = str(item.get("mime_type") or item.get("mime") or "").strip().lower()
+            mime = mime or mimetypes.guess_type(name)[0] or "application/octet-stream"
+            multipart.append(("files", (name, raw, mime)))
+            ordered.append(None)
+
+        if not multipart:
+            return [item for item in ordered if item is not None]
+
+        form = {}
+        if session_id:
+            form["session_id"] = str(session_id)
+        transport = httpx.ASGITransport(app=self.app)
+        timeout = httpx.Timeout(max(5.0, float(timeout_sec or 90.0)))
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://odysseus.internal",
+            timeout=timeout,
+        ) as client:
+            response = await client.post("/api/upload", data=form, files=multipart)
+
+        if response.status_code >= 400:
+            try:
+                detail: Any = response.json() if response.content else {}
+            except (TypeError, ValueError, json.JSONDecodeError):
+                detail = response.text[:500]
+            raise RuntimeError(f"Odysseus attachment upload failed ({response.status_code}): {detail}")
+
+        try:
+            result = response.json()
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise RuntimeError("Odysseus attachment upload returned invalid JSON") from exc
+        uploaded = result.get("files") if isinstance(result, dict) else None
+        if not isinstance(uploaded, list) or len(uploaded) != len(multipart):
+            raise RuntimeError("Odysseus attachment upload returned incomplete file metadata")
+        if not all(isinstance(item, dict) for item in uploaded):
+            raise RuntimeError("Odysseus attachment upload returned invalid file metadata")
+        uploaded_iter = iter(uploaded)
+        result_items: List[Dict[str, Any]] = []
+        for item in ordered:
+            result_items.append(item if item is not None else next(uploaded_iter))
+        return result_items

@@ -168,83 +168,24 @@ class ServerVoiceChatSession:
         return model, endpoint_id, persona_id
 
     async def ensure_started(self) -> None:
-        if self.audio_loop and self.run_task and not self.run_task.done():
-            return
-        conversation_model, conversation_endpoint_id, conversation_preset_id = (
-            self._conversation_route()
-        )
-        self.audio_loop = monikai.AudioLoop(
-            video_mode="none",
-            calendar_manager=self.calendar_manager,
-            reminder_manager=self.reminder_manager,
-            spotify_manager=self.spotify_manager,
-            personality=self.personality,
-            enable_audio_io=False,
-            auto_allow_tools_without_confirmation=True,
-            session_manager=self.session_store.manager,
-            conversation_gateway=self.conversation_gateway,
-            conversation_model=conversation_model,
-            conversation_endpoint_id=conversation_endpoint_id,
-            conversation_preset_id=conversation_preset_id,
-            conversation_session_id=self.session_store.manager.get_current_session_id(),
-        )
-        self.audio_loop.kasa_agent = self.kasa_agent
-        self.audio_loop.hue_agent = self.hue_agent
-        self.audio_loop.home_assistant_agent = self.home_assistant_agent
-        self.audio_loop.update_permissions(
-            (self.settings_getter() or {}).get("tool_permissions") or {}
-        )
-        self.run_task = asyncio.create_task(
-            self.audio_loop.run(
-                start_message=(
-                    "System Notification: You are talking to the user through the "
-                    "microphone and speaker connected to the server. Treat this as a "
-                    "normal Monika conversation with access to your usual memory and "
-                    "tools. Reply in the user's language, keep spoken replies concise "
-                    "and natural, and never mention transcription or transport details."
-                )
-            ),
-            name="server-voice-conversation",
-        )
-        await self.audio_loop.wait_until_ready(25.0)
+        if self.conversation_gateway is None:
+            raise RuntimeError("Native Odysseus gateway is not configured for server voice")
+        if not self.session_store.manager.get_current_session_id():
+            await self.session_store.begin()
 
     async def ask(self, text: str) -> str:
         async with self.lock:
-            # The native gateway already owns the complete text/tool/history
-            # pipeline.  Starting an AudioLoop here would open an unnecessary
-            # Gemini Live transport first, add startup latency, and make the
-            # selected text route look as if it were being overridden.  Keep
-            # the legacy AudioLoop path only for installations without the
-            # native gateway.
-            if self.conversation_gateway is not None:
-                session_id = self.session_store.manager.get_current_session_id()
-                if not session_id:
-                    session_id = await self.session_store.begin()
-                model, endpoint_id, persona_id = self._conversation_route()
-                return await self.conversation_gateway.generate(
-                    text,
-                    timeout_sec=120.0,
-                    model=model,
-                    endpoint_id=endpoint_id,
-                    persona_id=persona_id,
-                    session_id=str(session_id),
-                )
-
             await self.ensure_started()
-            # Keep the always-on channel aligned with the current web picker.
-            # This intentionally follows the selected endpoint/model; it does
-            # not silently fall back to a different provider after an error.
-            (
-                self.audio_loop.conversation_model,
-                self.audio_loop.conversation_endpoint_id,
-                self.audio_loop.conversation_preset_id,
-            ) = self._conversation_route()
-            # Every wake activation owns a new canonical web session. AudioLoop
-            # itself stays warm, so update its routing key before each turn.
-            self.audio_loop.conversation_session_id = str(
-                self.session_store.manager.get_current_session_id() or ""
+            session_id = self.session_store.manager.get_current_session_id()
+            model, endpoint_id, persona_id = self._conversation_route()
+            return await self.conversation_gateway.generate(
+                text,
+                timeout_sec=120.0,
+                model=model,
+                endpoint_id=endpoint_id,
+                persona_id=persona_id,
+                session_id=str(session_id or ""),
             )
-            return await self.audio_loop.submit_text_turn(text, timeout_sec=120.0)
 
     @property
     def uses_canonical_history(self) -> bool:

@@ -30,6 +30,7 @@ class DiscordChatSession:
         home_assistant_agent=None,
         hue_agent=None,
         channel_profile=None,
+        conversation_gateway=None,
     ):
         self.channel_id = int(channel_id)
         self.channel_label = str(channel_label or f"discord:{channel_id}")
@@ -41,6 +42,7 @@ class DiscordChatSession:
         self.home_assistant_agent = home_assistant_agent
         self.hue_agent = hue_agent
         self.channel_profile = dict(channel_profile or {})
+        self.conversation_gateway = conversation_gateway
         # Keep Discord history isolated from Telegram, local voice and other
         # Discord channels while still reusing the native Odysseus gateway.
         self.conversation_session_id = f"discord-{self.channel_id}"
@@ -50,8 +52,10 @@ class DiscordChatSession:
         self.last_activity_ts = time.monotonic()
 
     async def ensure_started(self):
-        if self.audio_loop and self.run_task and not self.run_task.done():
+        if self.audio_loop and self.conversation_gateway:
             return
+        if self.conversation_gateway is None:
+            raise RuntimeError("Native Odysseus gateway is not configured for Discord")
 
         self.audio_loop = monikai.AudioLoop(
             video_mode="none",
@@ -65,6 +69,7 @@ class DiscordChatSession:
             conversation_endpoint_id=self.channel_profile.get("endpoint_id"),
             conversation_preset_id=self.channel_profile.get("preset_id"),
             conversation_session_id=self.conversation_session_id,
+            conversation_gateway=self.conversation_gateway,
             channel_tool_scopes=self.channel_profile.get("tool_scopes") if self.channel_profile else None,
             channel_require_confirmation=(
                 self.channel_profile.get("require_confirmation")
@@ -75,26 +80,15 @@ class DiscordChatSession:
         self.audio_loop.home_assistant_agent = self.home_assistant_agent
         self.audio_loop.hue_agent = self.hue_agent
         self.audio_loop.update_permissions((self.settings_getter() or {}).get("tool_permissions") or {})
-        start_message = (
-            "System Notification: You are chatting with the user over Discord text messages. "
-            "Respond in plain text only. Keep replies concise by default. "
-            "On Discord, you may sound a little more casual, warm, and playful, "
-            "if it feels natural for the moment. Keep that text style consistent. "
-            "Reply in the user's current language by default. "
-            "Prefer short, natural replies. "
-            "Do not imply that you can see images or hear audio unless the user explicitly sends them."
-        )
-        overlay = str(self.channel_profile.get("prompt_overlay") or "").strip()
-        if overlay:
-            start_message += f"\nChannel-specific style instructions (follow when compatible with the main persona):\n{overlay}"
-        self.run_task = asyncio.create_task(self.audio_loop.run(start_message=start_message))
-        await self.audio_loop.wait_until_ready(25.0)
+        # Discord is a native text client. Keep AudioLoop only as the shared
+        # manager/helper object; never open the retired Gemini Live loop.
+        self.run_task = None
 
     async def ask(self, text: str) -> str:
         async with self.lock:
             await self.ensure_started()
             self.last_activity_ts = time.monotonic()
-            reply = await self.audio_loop.submit_text_turn(text, timeout_sec=120.0)
+            reply = await self.audio_loop.submit_native_turn(text, timeout_sec=120.0)
             self.last_activity_ts = time.monotonic()
             return reply
 
@@ -113,7 +107,7 @@ class DiscordChatSession:
         self.audio_loop = None
 
     def is_active(self) -> bool:
-        return bool(self.audio_loop and self.run_task and not self.run_task.done())
+        return bool(self.audio_loop and self.conversation_gateway)
 
     def get_status_summary(self) -> str:
         active = self.is_active()
@@ -332,6 +326,7 @@ class DiscordChannelAdapter(discord.Client):
         home_assistant_agent=None,
         hue_agent=None,
         channel_profile=None,
+        conversation_gateway_factory=None,
         allowed_channel_ids: list[int] = None,
         allowed_guild_ids: list[int] = None,
         allowed_user_ids: list[int] = None,
@@ -352,6 +347,7 @@ class DiscordChannelAdapter(discord.Client):
         self.home_assistant_agent = home_assistant_agent
         self.hue_agent = hue_agent
         self.channel_profile = dict(channel_profile or {})
+        self.conversation_gateway_factory = conversation_gateway_factory
         self.allowed_channel_ids = allowed_channel_ids or []
         self.allowed_guild_ids = allowed_guild_ids or []
         self.allowed_user_ids = allowed_user_ids or []
@@ -530,6 +526,11 @@ class DiscordChannelAdapter(discord.Client):
                 home_assistant_agent=self.home_assistant_agent,
                 hue_agent=self.hue_agent,
                 channel_profile=self.channel_profile,
+                conversation_gateway=(
+                    self.conversation_gateway_factory()
+                    if callable(self.conversation_gateway_factory)
+                    else None
+                ),
             )
             self._sessions[chat_id] = session
             return session

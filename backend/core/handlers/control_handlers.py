@@ -1,20 +1,7 @@
 import asyncio
 
 
-def register_control_handlers(sio, *, get_audio_loop, shutdown_and_exit):
-    @sio.event
-    async def confirm_tool(sid, data):
-        # data: { "id": "...", "confirmed": True/False }
-        request_id = data.get("id")
-        confirmed = data.get("confirmed", False)
-
-        print(f"[SERVER DEBUG] Received confirmation response for {request_id}: {confirmed}")
-
-        audio_loop = get_audio_loop()
-        if audio_loop:
-            audio_loop.resolve_tool_confirmation(request_id, confirmed)
-        else:
-            print("Audio loop not active, cannot resolve confirmation.")
+def register_control_handlers(sio, *, shutdown_and_exit):
 
     @sio.event
     async def shutdown(sid, data=None):

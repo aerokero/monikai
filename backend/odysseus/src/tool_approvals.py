@@ -11,9 +11,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import secrets
 import threading
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -84,6 +86,288 @@ def _normalized_continuation_query(value: Any) -> str:
     # session history. Keep the pending copy bounded because approvals are held
     # in memory until consumed or expired.
     return str(value or "").strip()[:_MAX_APPROVAL_CONTINUATION_QUERY_CHARS]
+
+
+# These phrases are deliberately conservative.  An approval is a control
+# decision, not a natural-language instruction parser: only short, clearly
+# affirmative/negative replies are resolved locally.  Anything else remains
+# ambiguous and can use the sealed-action classifier below without ever
+# changing the action itself.
+_APPROVAL_YES = frozenset(
+    {
+        "tak",
+        "yes",
+        "y",
+        "ok",
+        "okay",
+        "okej",
+        "potwierdzam",
+        "potwierdz",
+        "zgadzam sie",
+        "wykonaj",
+        "zrob to",
+        "do it",
+        "go ahead",
+        "proceed",
+        "approve",
+        "approved",
+        "allow",
+        "continue",
+        "kontynuuj",
+        "mozesz",
+        "smialo",
+        "jasne",
+        "pewnie",
+    }
+)
+_APPROVAL_NO = frozenset(
+    {
+        "nie",
+        "no",
+        "n",
+        "anuluj",
+        "cancel",
+        "stop",
+        "odrzuc",
+        "odrzucam",
+        "odmowa",
+        "odmawiam",
+        "nie zgadzam sie",
+        "nie rob tego",
+        "nie wykonuj",
+        "dont",
+        "do not",
+        "do not continue",
+        "not now",
+        "reject",
+    }
+)
+_APPROVAL_YES_COMPOUND = frozenset(
+    {
+        "tak zrob to",
+        "tak wykonaj",
+        "tak kontynuuj",
+        "tak mozesz",
+        "tak smialo",
+        "tak potwierdzam",
+        "yes do it",
+        "yes go ahead",
+        "yes proceed",
+        "yes continue",
+        "yes you can",
+        "ok do it",
+        "okay do it",
+        "okej zrob to",
+        "potwierdzam wykonaj",
+        "zgadzam sie wykonaj",
+        "please do it",
+        "please proceed",
+        "go ahead and do it",
+    }
+)
+_APPROVAL_NO_COMPOUND = frozenset(
+    {
+        "nie anuluj",
+        "nie rob tego",
+        "nie wykonuj",
+        "nie kontynuuj",
+        "nie zgadzam sie",
+        "no dont",
+        "no do not",
+        "no cancel",
+        "no stop",
+        "do not do it",
+        "dont do it",
+    }
+)
+_APPROVAL_SESSION_REPLY = re.compile(
+    r"^(?:tak|yes|ok|okay|okej|potwierdzam|zgadzam sie|approve|approved|"
+    r"allow|zezwalam|pozwalam)\s+"
+    r"(?:dla tej rozmowy|w tej rozmowie|na te rozmowe|dla tej sesji|w tej sesji|"
+    r"for this chat|in this chat|for this session|in this session)$",
+    re.IGNORECASE,
+)
+
+
+def _normalize_approval_reply(value: Any) -> str:
+    """Normalize a short typed/STT reply without interpreting its meaning."""
+
+    text = unicodedata.normalize("NFKC", str(value or "")).casefold()
+    # Diacritic-insensitive matching makes STT variants such as ``zgadzam się``
+    # and ``zgadzam sie`` equivalent while retaining the original reply for
+    # the optional model fallback.
+    text = "".join(
+        char
+        for char in unicodedata.normalize("NFKD", text)
+        if not unicodedata.combining(char)
+    )
+    text = text.replace("’", "'")
+    text = re.sub(r"[^\w\s']+", " ", text, flags=re.UNICODE)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def deterministic_tool_approval_decision(value: Any) -> str | None:
+    """Resolve only an unambiguous approval reply from a closed vocabulary.
+
+    Returns ``approve_task``, ``approve_session``, ``deny`` or ``None``.  The
+    latter intentionally means "let the contextual classifier decide"; it is
+    never permission to execute an action.
+    """
+
+    text = _normalize_approval_reply(value)
+    if not text:
+        return None
+
+    # A session-wide grant must include an affirmative phrase.  A bare
+    # ``session``/``dla tej rozmowy`` is not enough to widen permission.
+    if _APPROVAL_SESSION_REPLY.fullmatch(text):
+        return "approve_session"
+    if text in _APPROVAL_NO or text in _APPROVAL_NO_COMPOUND:
+        return "deny"
+    if text in _APPROVAL_YES:
+        return "approve_task"
+    if text in _APPROVAL_YES_COMPOUND:
+        return "approve_task"
+    return None
+
+
+_DISPLAY_TOOL_NAMES = {
+    "manage_tasks": "scheduled task",
+    "manage_calendar": "calendar",
+    "manage_notes": "note",
+    "manage_memory": "memory",
+    "manage_documents": "document",
+    "manage_session": "chat session",
+    "manage_settings": "settings",
+    "send_email": "email",
+    "reply_to_email": "email reply",
+    "delete_email": "email",
+    "home_assistant_control": "home device",
+    "bash": "terminal command",
+    "python": "Python script",
+    "write_file": "file change",
+    "edit_file": "file change",
+}
+_DISPLAY_OPERATION_LABELS = {
+    "create": "Create",
+    "add": "Add",
+    "create_event": "Create calendar event",
+    "update": "Update",
+    "update_event": "Update calendar event",
+    "edit": "Edit",
+    "delete": "Delete",
+    "delete_event": "Delete calendar event",
+    "pause": "Pause",
+    "resume": "Resume",
+    "run": "Run",
+    "send": "Send",
+    "reply": "Send reply",
+    "reset": "Reset",
+}
+
+
+def _display_args(content: Any) -> dict[str, Any]:
+    if isinstance(content, dict):
+        payload = dict(content)
+    else:
+        try:
+            payload = json.loads(str(content or ""))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return {}
+    if not isinstance(payload, dict):
+        return {}
+    if len(payload) == 1 and isinstance(payload.get("body"), dict):
+        payload = payload["body"]
+    return payload
+
+
+def _display_value(value: Any, limit: int = 180) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    if len(text) > limit:
+        return text[: max(1, limit - 1)].rstrip() + "…"
+    return text
+
+
+def _approval_display(tool_name: Any, content: Any, effects: Any) -> dict[str, str]:
+    """Create display-only copy for an approval card.
+
+    This helper intentionally extracts a few well-known fields instead of
+    presenting model JSON as prose.  The raw sealed input remains available in
+    the collapsed technical section and is never used as authorization.
+    """
+
+    tool = str(tool_name or "tool").strip() or "tool"
+    args = _display_args(content)
+    action = _display_value(args.get("action"), 60).lower()
+    operation = _DISPLAY_OPERATION_LABELS.get(action, action.replace("_", " ").title())
+    name = _display_value(
+        args.get("name")
+        or args.get("title")
+        or args.get("subject")
+        or args.get("task")
+        or args.get("action_name"),
+        120,
+    )
+    prompt = _display_value(args.get("prompt") or args.get("description"), 180)
+
+    if tool == "manage_tasks" and action in {"create", ""}:
+        summary = "Create a scheduled task"
+        if name:
+            summary += f' “{name}”'
+        if prompt and prompt.casefold() != name.casefold():
+            summary += f' to “{prompt}”'
+        schedule = _display_value(args.get("schedule"), 40)
+        scheduled_time = _display_value(args.get("scheduled_time") or args.get("time"), 20)
+        if schedule or scheduled_time:
+            summary += " (" + " at ".join(part for part in (schedule, scheduled_time) if part) + ")"
+        operation = "Create scheduled task"
+    elif tool == "manage_calendar" and action in {"create_event", "create"}:
+        summary = "Create a calendar event"
+        if name:
+            summary += f' “{name}”'
+        event_time = _display_value(args.get("start") or args.get("start_time") or args.get("date"), 80)
+        if event_time:
+            summary += f" at {event_time}"
+        operation = "Create calendar event"
+    elif tool == "manage_notes" and action in {"add", "create", ""}:
+        summary = "Add a note"
+        if name:
+            summary += f' “{name}”'
+        operation = "Add note"
+    elif tool in {"send_email", "reply_to_email", "bulk_email"}:
+        summary = "Send an email"
+        if name:
+            summary += f' to “{name}”'
+        operation = "Send email"
+    else:
+        subject = _DISPLAY_TOOL_NAMES.get(tool, tool.replace("_", " "))
+        summary = operation + (f" using {subject}" if operation else f"Use {subject}")
+        if name:
+            summary += f' “{name}”'
+
+    effect_values = {str(effect or "").strip().lower() for effect in (effects or ())}
+    if "destructive" in effect_values:
+        risk = "This may permanently delete or overwrite data."
+        risk_level = "high"
+    elif "external_side_effect" in effect_values:
+        risk = "This will cause an action outside MonikAI."
+        risk_level = "high"
+    elif "admin_change" in effect_values:
+        risk = "This will change an app, account, or system setting."
+        risk_level = "high"
+    elif effect_values & {"write_private", "write_workspace", "execute_code"}:
+        risk = "This will change saved data or run code."
+        risk_level = "medium"
+    else:
+        risk = "This action needs your explicit approval before it continues."
+        risk_level = "medium"
+
+    return {
+        "operation": operation or "Run action",
+        "summary": summary,
+        "risk": risk,
+        "risk_level": risk_level,
+    }
 
 
 def _canonical_digest(payload: dict[str, Any]) -> str:
@@ -163,46 +447,62 @@ class PendingToolApproval:
     selected_tools: tuple[str, ...] = ()
     continuation_query: str = ""
 
-    def public_payload(self, *, reason: str | None = None) -> dict[str, Any]:
-        return {
+    def public_payload(
+        self,
+        *,
+        reason: str | None = None,
+        notice: str | None = None,
+    ) -> dict[str, Any]:
+        display = _approval_display(self.tool_name, self.content, self.effects)
+        payload = {
             "kind": "tool_approval",
             "approval_id": self.approval_id,
             # The browser already owns this chat id. Persisting it with the
             # resolved card lets history-derived session grants remain bound to
             # this exact chat and prevents inheritance by a forked session.
             "session_id": self.session_id,
-            "question": "Allow this task to continue?",
+            "title": "Confirmation required",
+            "question": "Review this action before it runs.",
             "description": reason or (
                 "Untrusted context influenced this run, so continuing with "
                 "otherwise-gated actions needs your explicit approval."
             ),
+            # These fields are presentation-only.  The server still uses the
+            # opaque approval record and digest below as the authority.
+            "summary": display["summary"],
+            "risk": display["risk"],
+            "risk_level": display["risk_level"],
+            "voice_prompt": (
+                f'{display["summary"]}. Say yes or tak to approve, '
+                "no or nie to reject, or say yes for this chat / tak dla tej rozmowy."
+            ),
+            "status": "pending",
+            "created_at": self.created_at,
+            "expires_at": self.expires_at,
             "options": [
                 {
-                    "label": "Allow for this task",
+                    "label": "Approve for this task",
                     "value": TASK_APPROVAL_DECISION,
                     "description": (
-                        "Execute the sealed action and allow every otherwise-gated "
-                        "action needed to finish this request. Current tool, account, "
-                        "workspace, and sandbox restrictions still apply."
+                        "Run it and allow gated steps needed to finish this request."
                     ),
                 },
                 {
-                    "label": "Allow for this chat session",
+                    "label": "Allow for this chat",
                     "value": CHAT_SESSION_APPROVAL_DECISION,
                     "description": (
-                        "Execute the sealed action and stop asking at this gate for "
-                        "later requests in this chat. Current tool, account, workspace, "
-                        "and sandbox restrictions still apply."
+                        "Run it and do not ask again at this gate in this chat."
                     ),
                 },
                 {
-                    "label": "Deny",
+                    "label": "Reject",
                     "value": DENY_APPROVAL_DECISION,
-                    "description": "Do not execute the proposed action.",
+                    "description": "Do not run this action.",
                 },
             ],
             "action": {
                 "tool": self.tool_name,
+                "operation": display["operation"],
                 # Show the complete sealed input so approval never hides
                 # trailing lines.  This is not read back as authority.
                 "content": self.content,
@@ -213,6 +513,10 @@ class PendingToolApproval:
                 "document_version": self.document_version,
             },
         }
+        if notice:
+            payload["notice"] = str(notice).strip()[:500]
+            payload["status"] = "needs_clarification"
+        return payload
 
 
 @dataclass

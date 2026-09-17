@@ -285,10 +285,12 @@ async def lifespan(app: FastAPI):
         input_dev = SETTINGS.get("server_mic_device_index", None)
         output_dev = SETTINGS.get("server_mic_output_index", None)
         wake_req = str(os.getenv("SERVER_MIC_WAKE_WORD_REQUIRED", "false")).lower() in {"1", "true", "yes"}
-        use_live = str(os.getenv("SERVER_MIC_USE_GEMINI_LIVE", "false")).lower() in {"1", "true", "yes", "on"}
+        # The listener performs local wake/VAD + STT, then hands text to the
+        # native Odysseus gateway above. The retired Gemini Live conversation
+        # branch is intentionally not configurable here.
 
         async def _server_voice_turn(user_text: str, assistant_text: str):
-            if use_live or server_voice_chat.uses_canonical_history:
+            if server_voice_chat.uses_canonical_history:
                 await server_voice_sessions.record_turn(user_text, assistant_text)
             else:
                 # ServerVoiceChatSession persisted this turn through AudioLoop.
@@ -318,7 +320,6 @@ async def lifespan(app: FastAPI):
             on_session_started=server_voice_sessions.begin,
             on_session_finished=server_voice_sessions.end,
             on_turn_finished=_server_voice_turn,
-            use_gemini_live=use_live,
             hue_agent=hue_agent,
             home_assistant_agent=home_assistant_agent,
             voice_light_feedback=voice_light_feedback,
@@ -329,6 +330,18 @@ async def lifespan(app: FastAPI):
         print(f"[SERVER] ServerMicListenerService initialization notice: {exc}")
         server_mic_listener = None
 
+    def _new_channel_conversation_gateway(channel_name):
+        """Create an isolated native gateway for a non-browser channel."""
+        from .odysseus_voice_gateway import OdysseusVoiceGateway
+
+        return OdysseusVoiceGateway(
+            app,
+            model=SETTINGS.get("text_model"),
+            endpoint_id=SETTINGS.get("text_endpoint_id"),
+            persona_id=SETTINGS.get("text_persona_id"),
+            session_id=f"{channel_name}-pending",
+        )
+
     telegram_service, telegram_task = start_telegram_service(
         lambda: SETTINGS,
         calendar_manager=calendar_manager,
@@ -338,6 +351,7 @@ async def lifespan(app: FastAPI):
         server_mic_listener=server_mic_listener,
         hue_agent=hue_agent,
         home_assistant_agent=home_assistant_agent,
+        conversation_gateway_factory=lambda: _new_channel_conversation_gateway("telegram"),
     )
 
     discord_service, discord_task = start_discord_service(
@@ -348,6 +362,7 @@ async def lifespan(app: FastAPI):
         personality=personality_system,
         home_assistant_agent=home_assistant_agent,
         hue_agent=hue_agent,
+        conversation_gateway_factory=lambda: _new_channel_conversation_gateway("discord"),
     )
 
     # v2 Soul Engine — initialize db + personality + discovery engines.
@@ -700,7 +715,6 @@ register_calendar_reminder_handlers(
 
 register_control_handlers(
     sio,
-    get_audio_loop=lambda: audio_loop,
     shutdown_and_exit=_shutdown_and_exit,
 )
 

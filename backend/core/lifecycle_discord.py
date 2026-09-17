@@ -17,6 +17,7 @@ def start_discord_service(
     personality,
     home_assistant_agent=None,
     hue_agent=None,
+    conversation_gateway_factory=None,
 ):
     channel_config = None
     channel_profile = None
@@ -58,6 +59,7 @@ def start_discord_service(
             home_assistant_agent=home_assistant_agent,
             hue_agent=hue_agent,
             channel_profile=channel_profile,
+            conversation_gateway_factory=conversation_gateway_factory,
         )
         discord_task = asyncio.create_task(discord_service.start_bot())
         print("[SERVER] Discord bot service started.")

@@ -142,3 +142,16 @@ def test_native_voice_gateway_does_not_speak_thinking_deltas():
     )
 
     assert OdysseusVoiceGateway._stream_result(response) == "Gotowe."
+
+
+def test_native_voice_gateway_drops_voice_silence_marker():
+    response = httpx.Response(
+        200,
+        content=(
+            'data: {"delta":"[VOICE_SILENCE]"}\n\n'
+            "data: [DONE]\n\n"
+        ),
+        request=httpx.Request("POST", "http://odysseus.internal/api/chat_stream"),
+    )
+
+    assert OdysseusVoiceGateway._stream_result(response) == ""

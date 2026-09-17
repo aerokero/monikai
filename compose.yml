@@ -28,13 +28,8 @@ services:
       SERVER_MIC_TTS_LANGUAGE: "${SERVER_MIC_TTS_LANGUAGE:-pl}"
       SERVER_MIC_TTS_TIMEOUT_SECONDS: "30"
       SERVER_MIC_STT_TIMEOUT_SECONDS: "12"
-      # Default path: local wake gate -> STT -> Monika's full conversation/tool stack.
-      # Set to "true" only for the lower-latency Gemini Live compatibility mode.
-      SERVER_MIC_USE_GEMINI_LIVE: "false"
+      SERVER_MIC_STT_MIN_CONFIDENCE: "${SERVER_MIC_STT_MIN_CONFIDENCE:-0.60}"
       SERVER_MIC_FOLLOWUP_TIMEOUT: "8.0"
-      SERVER_MIC_GEMINI_LIVE_MODEL: "models/gemini-2.5-flash-native-audio-preview-12-2025"
-      SERVER_MIC_LIVE_IDLE_TIMEOUT_SECONDS: "20"
-      SERVER_MIC_LIVE_MAX_SESSION_SECONDS: "60"
       SERVER_MIC_VOSK_MODEL_PATH: "/app/data/vosk-model"
       SERVER_MIC_WAKE_CONFIDENCE: "0.72"
       SERVER_MIC_PARTIAL_WAKE_STABILITY_FRAMES: "3"

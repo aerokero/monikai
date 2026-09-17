@@ -86,6 +86,18 @@ def _ensure_builtin_model_endpoints() -> None:
     finally:
         db.close()
 
+
+def _mount_upload_routes(app: FastAPI, upload_handler) -> None:
+    """Mount the native upload API and retain its maintenance coroutine."""
+    from routes.upload_routes import setup_upload_routes
+
+    upload_router, upload_rate_cleanup = setup_upload_routes(upload_handler)
+    app.include_router(upload_router)
+    # The bridge is initialized before lifespan starts, so expose the
+    # coroutine for lifecycle code instead of creating a task during import.
+    app.state.upload_rate_cleanup = upload_rate_cleanup
+
+
 def init_and_register_odysseus_backend(app: FastAPI):
     """Initializes all Odysseus components and mounts full native routers."""
     try:
@@ -208,7 +220,17 @@ def init_and_register_odysseus_backend(app: FastAPI):
         except Exception as e:
             logger.warning("session_routes mount error: %s", e)
 
-        # 5. Mount Models Router (Settings -> Add Models, Providers, Discovery)
+        # 5. Mount Upload Router.  The chat composer uploads raw files first
+        # and sends only the returned native upload IDs with the message.  If
+        # this router is omitted, the frontend receives a 404 from
+        # POST /api/upload and can never send an image or document.
+        try:
+            _mount_upload_routes(app, upload_handler)
+            logger.info("Odysseus upload_routes mounted")
+        except Exception as e:
+            logger.warning("upload_routes mount error: %s", e)
+
+        # 6. Mount Models Router (Settings -> Add Models, Providers, Discovery)
         try:
             from routes.model_routes import setup_model_routes
             app.include_router(setup_model_routes(model_discovery))
@@ -216,7 +238,7 @@ def init_and_register_odysseus_backend(app: FastAPI):
         except Exception as e:
             logger.warning("model_routes mount error: %s", e)
 
-        # 6. Mount Email Router (IMAP/SMTP/Gmail/Outlook/Urgency/Unread)
+        # 7. Mount Email Router (IMAP/SMTP/Gmail/Outlook/Urgency/Unread)
         try:
             from routes.email_routes import setup_email_routes
             app.include_router(setup_email_routes())
@@ -224,7 +246,7 @@ def init_and_register_odysseus_backend(app: FastAPI):
         except Exception as e:
             logger.warning("email_routes mount error: %s", e)
 
-        # 7. Mount Calendar Router (CalDAV/ICS/Events)
+        # 8. Mount Calendar Router (CalDAV/ICS/Events)
         try:
             from routes.calendar_routes import setup_calendar_routes
             app.include_router(setup_calendar_routes(upload_handler=upload_handler))
@@ -232,7 +254,7 @@ def init_and_register_odysseus_backend(app: FastAPI):
         except Exception as e:
             logger.warning("calendar_routes mount error: %s", e)
 
-        # 8. Mount Notes Router
+        # 9. Mount Notes Router
         try:
             from routes.note.note_routes import setup_note_routes
             app.include_router(setup_note_routes(task_scheduler, upload_handler=upload_handler))
@@ -240,7 +262,7 @@ def init_and_register_odysseus_backend(app: FastAPI):
         except Exception as e:
             logger.warning("note_routes mount error: %s", e)
 
-        # 9. Mount Documents / Artifacts Router
+        # 10. Mount Documents / Artifacts Router
         try:
             from routes.document.document_routes import setup_document_routes
             app.include_router(setup_document_routes(session_manager, upload_handler))
@@ -248,7 +270,7 @@ def init_and_register_odysseus_backend(app: FastAPI):
         except Exception as e:
             logger.warning("document_routes mount error: %s", e)
 
-        # 10. Mount Task & Notifications Router
+        # 11. Mount Task & Notifications Router
         try:
             from routes.task.task_routes import setup_task_routes
             app.include_router(setup_task_routes(task_scheduler))
@@ -256,7 +278,7 @@ def init_and_register_odysseus_backend(app: FastAPI):
         except Exception as e:
             logger.warning("task_routes mount error: %s", e)
 
-        # 11. Mount Deep Research Router
+        # 12. Mount Deep Research Router
         try:
             from routes.research.research_routes import setup_research_routes
             app.include_router(setup_research_routes(research_handler, session_manager=session_manager))
@@ -264,7 +286,7 @@ def init_and_register_odysseus_backend(app: FastAPI):
         except Exception as e:
             logger.warning("research_routes mount error: %s", e)
 
-        # 12. Mount User Preferences & Settings Router
+        # 13. Mount User Preferences & Settings Router
         try:
             from routes.prefs_routes import setup_prefs_routes
             app.include_router(setup_prefs_routes())
@@ -272,7 +294,7 @@ def init_and_register_odysseus_backend(app: FastAPI):
         except Exception as e:
             logger.warning("prefs_routes mount error: %s", e)
 
-        # 13. Mount Vault & Secure Storage Router
+        # 14. Mount Vault & Secure Storage Router
         try:
             from routes.vault.vault_routes import setup_vault_routes
             app.include_router(setup_vault_routes())
@@ -280,7 +302,7 @@ def init_and_register_odysseus_backend(app: FastAPI):
         except Exception as e:
             logger.warning("vault_routes mount error: %s", e)
 
-        # 14. Mount Contacts Router (CardDAV)
+        # 15. Mount Contacts Router (CardDAV)
         try:
             from routes.contacts.contacts_routes import setup_contacts_routes
             app.include_router(setup_contacts_routes())
@@ -288,7 +310,7 @@ def init_and_register_odysseus_backend(app: FastAPI):
         except Exception as e:
             logger.warning("contacts_routes mount error: %s", e)
 
-        # 15. Mount Memory Router
+        # 16. Mount Memory Router
         try:
             from routes.memory.memory_routes import setup_memory_routes
             app.include_router(setup_memory_routes(memory_manager, session_manager, memory_vector=memory_vector))
@@ -296,7 +318,7 @@ def init_and_register_odysseus_backend(app: FastAPI):
         except Exception as e:
             logger.warning("memory_routes mount error: %s", e)
 
-        # 16. Mount MCP & Skills Router
+        # 17. Mount MCP & Skills Router
         try:
             from routes.mcp.mcp_routes import setup_mcp_routes
             from routes.skills_routes import setup_skills_routes
@@ -306,7 +328,7 @@ def init_and_register_odysseus_backend(app: FastAPI):
         except Exception as e:
             logger.warning("mcp/skills mount error: %s", e)
 
-        # 17. Mount Gallery Router
+        # 18. Mount Gallery Router
         try:
             from routes.gallery.gallery_routes import setup_gallery_routes
             app.include_router(setup_gallery_routes())
@@ -314,7 +336,7 @@ def init_and_register_odysseus_backend(app: FastAPI):
         except Exception as e:
             logger.warning("gallery_routes mount error: %s", e)
 
-        # 18. Mount Hardware Fit / Cookbook Router
+        # 19. Mount Hardware Fit / Cookbook Router
         try:
             from routes.hwfit_routes import setup_hwfit_routes
             from routes.cookbook_routes import setup_cookbook_routes
@@ -324,7 +346,7 @@ def init_and_register_odysseus_backend(app: FastAPI):
         except Exception as e:
             logger.warning("hwfit/cookbook mount error: %s", e)
 
-        # 19. Diagnostics (service health and terminal log viewer)
+        # 20. Diagnostics (service health and terminal log viewer)
         try:
             from routes.diagnostics_routes import setup_diagnostics_routes
 

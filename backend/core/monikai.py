@@ -79,6 +79,7 @@ from backend.conversation.speech import (
 from backend.conversation.providers import GeminiTextProvider
 from backend.soul.lorebook import LoreLearningEngine
 from backend.conversation.routing import requires_capability_runtime
+from backend.conversation.voice_quality import voice_transcript_is_usable
 from backend.conversation.tools import (
     CONVERSATION_TOOL_DEFINITIONS,
     ConversationToolRequest,
@@ -1114,6 +1115,52 @@ class AudioLoop:
     async def wait_until_ready(self, timeout_sec: float = 20.0):
         await asyncio.wait_for(self._session_ready.wait(), timeout=max(1.0, float(timeout_sec or 20.0)))
 
+    async def submit_native_turn(
+        self,
+        text: Optional[str] = None,
+        *,
+        attachment_ids: Optional[List[str]] = None,
+        timeout_sec: float = 90.0,
+    ) -> str:
+        """Submit one turn to the native Odysseus agent and publish its answer.
+
+        This is the only programmatic text/attachment entry point. Gemini Live
+        may still transport microphone audio and ASR for the desktop, but it is
+        never used to author a reply and never receives attachment bytes.
+        """
+        cleaned = str(text or "").strip()
+        normalized_ids = [
+            str(item).strip()
+            for item in (attachment_ids or [])
+            if str(item or "").strip()
+        ]
+        if not cleaned and not normalized_ids:
+            raise ValueError("text or attachments are required")
+        gateway = getattr(self, "conversation_gateway", None)
+        if gateway is None:
+            raise RuntimeError("Native Odysseus gateway is not configured")
+
+        self.mark_user_activity(cleaned or "[attachments]")
+        self._last_user_text = cleaned
+        self._last_user_ts = time.monotonic()
+        self._fallback_web_agent_triggered_for_turn = False
+
+        reply = await self._generate_odysseus_reply(
+            cleaned,
+            attachment_ids=normalized_ids,
+            timeout_sec=max(20.0, float(timeout_sec or 0.0)),
+        )
+        if reply:
+            await self.deliver_authored_reply(reply, speak=True)
+        self._last_programmatic_turn_trace = {
+            "user": cleaned,
+            "attachments": list(normalized_ids),
+            "author": "odysseus",
+            "speech": dict(self._last_speech_trace or {}),
+            "response": str(reply or "").strip(),
+        }
+        return str(reply or "").strip()
+
     async def submit_user_turn(
         self,
         text: Optional[str] = None,
@@ -1121,188 +1168,27 @@ class AudioLoop:
         attachments: Optional[List[Dict[str, Any]]] = None,
         timeout_sec: float = 90.0,
     ) -> str:
-        cleaned = str(text or "").strip()
-        normalized_attachments = []
+        """Compatibility-shaped wrapper that accepts native attachment IDs only."""
+        attachment_ids = []
         for item in attachments or []:
+            if isinstance(item, str):
+                attachment_ids.append(item)
+                continue
             if not isinstance(item, dict):
                 continue
-            data = item.get("data")
-            mime_type = str(item.get("mime_type") or "application/octet-stream").strip() or "application/octet-stream"
-            name = str(item.get("name") or "unnamed").strip() or "unnamed"
-            size = item.get("size")
-            if not data:
-                continue
-            normalized_attachments.append(
-                {
-                    "name": name,
-                    "mime_type": mime_type,
-                    "data": data,
-                    "size": size,
-                }
-            )
-
-        if not cleaned and not normalized_attachments:
-            raise ValueError("text or attachments are required")
-        if not self.session:
-            raise RuntimeError("session is not ready")
-
-        canonical_text_author = self._uses_canonical_text_author()
-        if canonical_text_author and normalized_attachments:
-            # The native Odysseus gateway currently accepts text/ASR turns.
-            # Keeping attachments on the legacy Live path would make Gemini
-            # a second response author, so fail explicitly until the native
-            # attachment contract is wired here as well.
-            raise ValueError(
-                "attachments are not supported by the canonical Odysseus voice gateway"
-            )
-
-        if cleaned and not canonical_text_author:
-            try:
-                await self._maybe_send_morning_dream_seed(force=False)
-            except Exception:
-                pass
-
-        self.mark_user_activity(cleaned or ("[attachments]" if normalized_attachments else ""))
-        self._last_user_text = cleaned
-        self._last_user_ts = time.monotonic()
-        self._fallback_web_agent_triggered_for_turn = False  # Reset for new user input
-
-        attachment_names = [a["name"] for a in normalized_attachments if a.get("name")]
-        attachment_note = ""
-        if attachment_names:
-            joined = ", ".join(attachment_names[:4])
-            if len(attachment_names) > 4:
-                joined += ", ..."
-            attachment_note = f"[Załączniki: {joined}]"
-
-        user_log_text = cleaned
-        if attachment_note:
-            user_log_text = f"{cleaned}\n\n{attachment_note}".strip() if cleaned else attachment_note
-
-        if self.session_manager and user_log_text and not canonical_text_author:
-            self.session_manager.log_chat("User", user_log_text)
-        if getattr(self, "personality", None) and not canonical_text_author:
-            try:
-                self.personality.observe_message("User", cleaned or attachment_note or "[attachment]")
-            except Exception:
-                pass
-        if cleaned and getattr(self, "memory_engine", None) and not canonical_text_author:
-            try:
-                self.memory_engine.auto_extract_from_user_text(cleaned)
-            except Exception:
-                pass
-
-        if normalized_attachments:
-            try:
-                summary = []
-                for a in normalized_attachments:
-                    size = a.get("size")
-                    size_str = f"{size} bytes" if isinstance(size, int) else "unknown size"
-                    summary.append(f"{a['name']} ({a['mime_type']}, {size_str})")
-                await self.session.send(
-                    input=("System Notification: User attached files: " + "; ".join(summary)),
-                    end_of_turn=False,
-                )
-            except Exception:
-                pass
-
-            for a in normalized_attachments:
-                payload = {
-                    "mime_type": a["mime_type"],
-                    "data": a["data"],
-                }
-                try:
-                    await self.session.send(input=payload, end_of_turn=False)
-                except Exception:
-                    pass
-
-        # Record interaction metadata. Memory stays tool-driven and is not
-        # injected into every ordinary message.
-        if cleaned and not canonical_text_author:
-            from backend.core.runtimes.v2_runtime import get as _v2_get
-            _v2 = _v2_get()
-            if not _v2:
-                raise RuntimeError("MonikAI v2 runtime is not active")
-            await _v2.observe_turn()
-
-        # Canonical Live/bridge path: Odysseus authors the text; this class
-        # only publishes it and optionally renders the immutable text.
-        if cleaned and canonical_text_author:
-            reply = await self._generate_odysseus_reply(
-                cleaned,
-                timeout_sec=max(20.0, float(timeout_sec or 0.0)),
-            )
-            if reply:
-                await self.deliver_authored_reply(reply, speak=True)
-            self._last_programmatic_turn_trace = {
-                "user": cleaned,
-                "author": "odysseus",
-                "speech": dict(self._last_speech_trace or {}),
-                "response": str(reply or "").strip(),
-            }
-            return str(reply or "").strip()
-
-        # Compatibility path for Telegram, Discord and older integrations
-        # that have not supplied the native gateway yet.
-        if cleaned and not normalized_attachments and self._dedicated_speech_enabled():
-            tool_outcome = await self.author_tool_turn(cleaned)
-            reply = tool_outcome.reply if (tool_outcome.handled and tool_outcome.reply) else None
-            if not reply:
-                reply = await self.thinker.prepare_spoken_reply(
-                    cleaned,
-                    # Czat tekstowy: każda wiadomość zasługuje na odpowiedź,
-                    # nie koliduje z mową i może spokojnie poczekać dłużej
-                    # niż tura głosowa.
-                    timeout_sec=max(20.0, float(timeout_sec or 0.0) * 0.25),
-                    drop_backchannel=False,
-                    require_idle_turn=False,
-                )
-            if reply:
-                await self.deliver_authored_reply(reply, speak=False)
-                self.thinker.mark_voice_delivered()
-            self._last_programmatic_turn_trace = {
-                "user": cleaned,
-                "thinker": dict(getattr(self.thinker, "last_trace", {}) or {}),
-                "speech": dict(self._last_speech_trace or {}),
-                "tool": dict(self._last_tool_trace or {}),
-                "response": str(reply or "").strip(),
-            }
-            return str(reply or "").strip()
-
-        # Explicit compatibility mode keeps the old Live renderer.
-        thinker_brief = None
-        if cleaned and getattr(self, "thinker", None) is not None:
-            try:
-                thinker_brief = await self.thinker.think_for_text(cleaned)
-                if thinker_brief:
-                    await self.session.send(input=thinker_brief, end_of_turn=False)
-            except Exception as exc:
-                print(f"[THINKER] programmatic path failed: {exc}")
-
-        future = asyncio.get_running_loop().create_future()
-        self._pending_ai_turn_futures.append(future)
-        try:
-            if cleaned:
-                await self.session.send(input=cleaned, end_of_turn=True)
-            else:
-                await self.session.send(
-                    input="System Notification: User sent attachments without additional text.",
-                    end_of_turn=True,
-                )
-            result = await asyncio.wait_for(future, timeout=max(5.0, float(timeout_sec or 90.0)))
-            self._last_programmatic_turn_trace = {
-                "user": cleaned,
-                "thinker": dict(getattr(self.thinker, "last_trace", {}) or {}),
-                "response": str(result or "").strip(),
-            }
-            return str(result or "").strip()
-        except Exception:
-            with suppress(ValueError):
-                self._pending_ai_turn_futures.remove(future)
-            raise
+            attachment_id = str(item.get("id") or item.get("attachment_id") or "").strip()
+            if item.get("data") and not attachment_id:
+                raise ValueError("raw attachment bytes must be uploaded before submitting the turn")
+            if attachment_id:
+                attachment_ids.append(attachment_id)
+        return await self.submit_native_turn(
+            text,
+            attachment_ids=attachment_ids,
+            timeout_sec=timeout_sec,
+        )
 
     async def submit_text_turn(self, text: str, timeout_sec: float = 90.0) -> str:
-        return await self.submit_user_turn(text=text, attachments=None, timeout_sec=timeout_sec)
+        return await self.submit_native_turn(text=text, timeout_sec=timeout_sec)
 
     def _dedicated_speech_enabled(self) -> bool:
         speech = APP_SETTINGS.get("speech") or {}
@@ -1315,13 +1201,20 @@ class AudioLoop:
     def _uses_canonical_text_author(self) -> bool:
         return getattr(self, "conversation_gateway", None) is not None
 
-    async def _generate_odysseus_reply(self, text: str, *, timeout_sec: float) -> str:
+    async def _generate_odysseus_reply(
+        self,
+        text: str,
+        *,
+        attachment_ids: Optional[List[str]] = None,
+        timeout_sec: float,
+    ) -> str:
         gateway = getattr(self, "conversation_gateway", None)
         if gateway is None:
             return ""
         return await asyncio.wait_for(
             gateway.generate(
                 text,
+                attachment_ids=attachment_ids,
                 timeout_sec=max(5.0, float(timeout_sec or 90.0)),
                 # Empty channel overrides explicitly reset to the gateway
                 # defaults. Without passing the empty value, a custom model
@@ -1929,7 +1822,9 @@ class AudioLoop:
             # that exact text afterwards.
             system_instruction = (
                 "You are an audio input transport for another assistant. "
-                "Transcribe the user's speech accurately. Do not answer, "
+                "Transcribe the user's speech accurately. If the audio is "
+                "silent or unintelligible, do not guess or turn noise into "
+                "plausible words; emit no usable transcript. Do not answer, "
                 "continue the conversation, call tools, or invent a reply."
             )
             thinking_config = _build_voice_renderer_thinking_config()
@@ -2049,6 +1944,31 @@ class AudioLoop:
         self._cancel_voice_finalize()
         self._voice_finalize_task = asyncio.create_task(self._finalize_manual_voice_turn())
 
+    async def _discard_manual_voice_turn(self, reason: str = "unusable_transcript") -> None:
+        """Close an ASR activity without authoring, speaking, or persisting a reply."""
+        # The Live transport may still emit a response after activity_end. Keep
+        # it muted for this turn so a rejected transcript cannot leak a
+        # fallback answer through the audio renderer.
+        self._suppress_spoken_output = True
+        if getattr(self, "_manual_voice_activity_open", False):
+            try:
+                if getattr(self, "out_queue", None):
+                    await self.out_queue.put({"activity_end": True})
+                elif getattr(self, "session", None):
+                    await self.session.send_realtime_input(activity_end=types.ActivityEnd())
+            except Exception as exc:
+                print(f"[VOICE] Failed to close rejected activity: {exc}")
+            self._manual_voice_activity_open = False
+        try:
+            self.thinker.update_voice_transcript("")
+        except Exception:
+            pass
+        self._last_speech_trace = {
+            "status": "ignored",
+            "reason": str(reason or "unusable_transcript"),
+        }
+        print(f"[VOICE] Ignoring voice turn ({reason or 'unusable_transcript'}).")
+
     async def _finalize_manual_voice_turn(self) -> None:
         """Author once, close ASR activity, then use speech-only delivery."""
         current_task = asyncio.current_task()
@@ -2060,6 +1980,11 @@ class AudioLoop:
                 if self.chat_buffer.get("sender") == "Ty"
                 else self._last_input_transcription
             )
+            assessment_text = str(text or "").strip()
+            if not voice_transcript_is_usable(assessment_text):
+                await self._discard_manual_voice_turn("unusable_transcript")
+                return
+            text = assessment_text
             if self._uses_canonical_text_author():
                 # The Live model closes ASR activity only.  It is not given an
                 # authored brief and cannot rewrite the Odysseus response.

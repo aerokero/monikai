@@ -68,7 +68,10 @@ from src.tool_policy import (
     is_web_search_explicitly_denied,
     web_search_enabled_for_turn,
 )
-from src.tool_approvals import tool_approval_store
+from src.tool_approvals import (
+    deterministic_tool_approval_decision,
+    tool_approval_store,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -144,30 +147,34 @@ def _mark_tool_approval_resolved(sess, approval_id: Any, decision: Any) -> bool:
         db.close()
 
 
-async def _tool_approval_resolution_stream(decision: str) -> AsyncGenerator[str, None]:
-    yield f"data: {json.dumps({'type': 'tool_approval_resolved', 'decision': decision})}\n\n"
+async def _tool_approval_resolution_stream(
+    decision: str,
+    approval_id: Any = None,
+) -> AsyncGenerator[str, None]:
+    event = {
+        "type": "tool_approval_resolved",
+        "decision": decision,
+        "status": "denied" if str(decision).strip().lower() == "deny" else "approved",
+    }
+    if approval_id:
+        event["approval_id"] = str(approval_id)
+    yield f"data: {json.dumps(event)}\n\n"
     yield "data: [DONE]\n\n"
 
 
 async def _tool_approval_clarification_stream(pending: Any) -> AsyncGenerator[str, None]:
     """Keep the sealed card alive when the classifier cannot decide safely."""
-    yield (
-        "data: "
-        + json.dumps(
-            {
-                "delta": (
-                    "Nie mam pewności, czy chcesz kontynuować tę czynność. "
-                    "Potwierdź proszę zgodę albo odmowę, a wtedy zareaguję."
-                )
-            },
-            ensure_ascii=False,
-        )
-        + "\n\n"
+    clarification = (
+        "I couldn't determine your choice. Approve or reject the action, "
+        "or type yes/tak or no/nie."
     )
     yield (
         "data: "
         + json.dumps(
-            {"type": "ask_user", "data": pending.public_payload()},
+            {
+                "type": "ask_user",
+                "data": pending.public_payload(notice=clarification),
+            },
             ensure_ascii=False,
         )
         + "\n\n"
@@ -386,15 +393,29 @@ async def _classify_tool_approval_reply(reply: Any, pending: Any, sess: Any) -> 
     if not user_reply:
         return "ambiguous"
 
+    local_decision = deterministic_tool_approval_decision(user_reply)
+    if local_decision:
+        logger.info(
+            "[tool-approval] deterministic decision=%s tool=%s session=%s",
+            local_decision,
+            getattr(pending, "tool_name", "tool"),
+            getattr(pending, "session_id", ""),
+        )
+        return local_decision
+
     endpoint_url = str(getattr(sess, "endpoint_url", "") or "").strip()
     model = str(getattr(sess, "model", "") or "").strip()
     if not endpoint_url or not model:
         logger.warning("[tool-approval] classifier skipped: session route is incomplete")
         return "ambiguous"
 
+    pending_payload = pending.public_payload()
     classifier_input = json.dumps(
         {
-            "approval_question": "Allow this task to continue?",
+            "approval_question": pending_payload.get(
+                "question", "Review this action before it runs."
+            ),
+            "action_summary": pending_payload.get("summary", ""),
             "pending_tool": str(getattr(pending, "tool_name", "tool") or "tool"),
             "user_reply": user_reply[:4000],
         },
@@ -1528,7 +1549,7 @@ def setup_chat_routes(
                 )
             if decision == "deny":
                 return StreamingResponse(
-                    _tool_approval_resolution_stream(decision),
+                    _tool_approval_resolution_stream(decision, tool_approval_id),
                     media_type="text/event-stream",
                 )
             # Approval is a control-plane continuation, not a new user turn.
@@ -1880,6 +1901,23 @@ def setup_chat_routes(
 
             # Register active stream for partial-save safety net
             _active_streams[session] = {"status": "streaming", "partial": "", "query": message, "is_research": effective_do_research, "mode": _effective_mode}
+
+            # A consumed approval is a control-plane event.  Let the web and
+            # compare clients settle the existing card before the resumed
+            # agent stream starts; no synthetic "Yes" user message is needed.
+            if tool_approval_continuation and pending_tool_approval:
+                yield (
+                    "data: "
+                    + json.dumps(
+                        {
+                            "type": "tool_approval_resolved",
+                            "approval_id": pending_tool_approval.approval_id,
+                            "decision": tool_approval_decision,
+                            "status": "approved",
+                        }
+                    )
+                    + "\n\n"
+                )
 
             # The client sent a workspace the server refused to bind (deleted
             # folder, file path, sensitive dir, filesystem root). Tell it up

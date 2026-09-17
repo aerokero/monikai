@@ -383,6 +383,10 @@ _NEGATED_MUTATION_RE = re.compile(
     r"turn\s+on|turn\s+off|switch\s+on|switch\s+off)",
     re.IGNORECASE,
 )
+_HYPOTHETICAL_MUTATION_RE = re.compile(
+    r"\b(?:przykład|przyklad|example|hypotetycz\w*|hypothetical)\b",
+    re.IGNORECASE,
+)
 _CREATE_EVENT_INTENT_RE = re.compile(
     r"\b(dodaj|wpisz|zapisz|utwórz|utworz|stwórz|stworz|add|create|schedule)"
     r".{0,36}\b(kalendar\w*|wydarzen\w*|event)\b|"
@@ -553,7 +557,7 @@ def validate_planned_tool_request(
     }
     if request.name not in mutating:
         return True
-    if _NEGATED_MUTATION_RE.search(value):
+    if _NEGATED_MUTATION_RE.search(value) or _HYPOTHETICAL_MUTATION_RE.search(value):
         return False
     if request.name == "create_reminder":
         return bool(_CREATE_REMINDER_INTENT_RE.search(value))
