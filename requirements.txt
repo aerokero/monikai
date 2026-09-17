@@ -23,8 +23,6 @@ taskgroup
 exceptiongroup
 # Browser Automation
 playwright
-# Smart Home
-python-kasa
 # Discord bridge
 discord.py
 # Utilities

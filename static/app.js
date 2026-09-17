@@ -32,6 +32,7 @@ import { UI_VIS_DEFAULT_OFF, resolveVisibility } from './js/ui_visibility.js';
 import tasksModule from './js/tasks.js?v=20260723tasksbulkfeedback1';
 import calendarModule from './js/calendar.js';
 import notesModule from './js/notes.js';
+import savingsModule from './js/savings.js?v=20260917savings18';
 import adminModule from './js/admin.js?v=20260716openrouter3';
 import settingsModule from './js/settings.js?v=20260815approvalsave1';
 // Eagerly bind unified minimize/restore behavior across all tool modals.
@@ -84,6 +85,7 @@ function hydrateCanonicalIcons(root = document) {
     ['#rail-memory', 'brain'],
     ['#rail-notes', 'note'],
     ['#rail-tasks', 'checkCircle'],
+    ['#rail-savings', 'wallet'],
     ['#rail-theme', 'palette'],
     ['#rail-settings', 'gear'],
     // The floating/mobile menu buttons are part of the navigation shell;
@@ -98,6 +100,7 @@ function hydrateCanonicalIcons(root = document) {
     ['#tool-calendar-btn', 'calendar'],
     ['#tool-notes-btn', 'note'],
     ['#tool-tasks-btn', 'checkCircle'],
+    ['#tool-savings-btn', 'wallet'],
     ['#tool-memory-btn', 'brain'],
     ['#tool-compare-btn', 'columns'],
     ['#tool-cookbook-btn', 'book'],
@@ -341,6 +344,7 @@ function initRailHoverLabels() {
     'rail-memory': 'Brain',
     'rail-notes': 'Notes',
     'rail-tasks': 'Tasks',
+    'rail-savings': 'Savings',
     'rail-theme': 'Theme',
     'rail-settings': 'Settings',
   };
@@ -886,7 +890,7 @@ function initializeEventListeners() {
       };
 
       // Dynamic modals (removed from DOM on close)
-      const dynamicModals = ['library-modal', 'archive-modal', 'doclib-modal', 'gallery-modal', 'tasks-modal', 'email-lib-modal'];
+      const dynamicModals = ['library-modal', 'archive-modal', 'doclib-modal', 'gallery-modal', 'tasks-modal', 'email-lib-modal', 'savings-modal'];
       for (const id of dynamicModals) {
         const m = document.getElementById(id);
         if (id === 'gallery-modal') {
@@ -934,7 +938,7 @@ function initializeEventListeners() {
     'memory-modal': null,
     'theme-modal': null,
   };
-  const _dynamicModalIds = ['library-modal', 'archive-modal', 'doclib-modal', 'gallery-modal', 'tasks-modal'];
+  const _dynamicModalIds = ['library-modal', 'archive-modal', 'doclib-modal', 'gallery-modal', 'tasks-modal', 'savings-modal'];
   function dismissModal(modal) {
     if (!modal || modal.classList.contains('hidden')) return;
     if (modal.id === 'gallery-modal') {
@@ -1254,6 +1258,12 @@ function initializeEventListeners() {
     setInterval(() => notesModule.refreshDueBadge(), 5 * 60 * 1000);
   }
 
+  // Savings / Money workspace
+  const toolSavingsBtn = el('tool-savings-btn');
+  if (toolSavingsBtn && savingsModule) {
+    toolSavingsBtn.addEventListener('click', () => savingsModule.toggleSavings());
+  }
+
   // URL-based panel routing — bookmark /calendar, /notes, /cookbook etc
   // and the matching tool opens automatically on page load.
   const urlPath = window.location.pathname;
@@ -1376,6 +1386,7 @@ function initializeEventListeners() {
     '/memory':   () => document.getElementById('tool-memory-btn')?.click(),
     '/gallery':  () => document.getElementById('tool-gallery-btn')?.click(),
     '/tasks':    () => document.getElementById('tool-tasks-btn')?.click(),
+    '/savings':  () => document.getElementById('tool-savings-btn')?.click(),
     '/library':  () => sessionModule && sessionModule.openLibrary && sessionModule.openLibrary(),
   };
   const _opener = _routeOpen[urlPath];
@@ -4046,6 +4057,7 @@ function startOdysseusApp() {
     'rail-tasks':     'tool-tasks-btn',
     'rail-calendar':  'tool-calendar-btn',
     'rail-notes':     'tool-notes-btn',
+    'rail-savings':   'tool-savings-btn',
     'rail-memory':    'tool-memory-btn',
     'rail-theme':     'tool-theme-btn',
     'rail-email':     'email-section-title',

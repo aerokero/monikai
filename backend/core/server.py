@@ -94,6 +94,7 @@ from .routers.models_http_router import register_models_http_routes
 from .routers.mcp_http_router import register_mcp_http_routes
 from .routers.research_http_router import register_research_http_routes
 from .routers.workspace_http_router import register_workspace_http_routes
+from .routers.savings_http_router import register_savings_http_routes
 from .routers.voice_http_router import register_voice_http_routes
 from .routers.odysseus_http_router import register_odysseus_http_routes
 from .routers.study_http_router import register_study_http_routes
@@ -467,6 +468,7 @@ register_models_http_routes(app)
 register_mcp_http_routes(app)
 register_research_http_routes(app, emit_to_frontend=_emit_to_frontend)
 register_voice_http_routes(app)
+register_savings_http_routes(app)
 
 try:
     from backend.odysseus_bridge import init_and_register_odysseus_backend
@@ -538,6 +540,7 @@ SPA_ROUTES = [
     "/calendar",
     "/email",
     "/tasks",
+    "/savings",
     "/library",
     "/memory",
     "/gallery",

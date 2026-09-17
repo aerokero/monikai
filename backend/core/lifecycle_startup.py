@@ -1,7 +1,12 @@
 import asyncio
 from dataclasses import asdict
 
-from ..agents.hue_agent import HueAgent
+try:
+    from ..agents.hue_agent import HueAgent
+except ModuleNotFoundError:
+    # Hue is an optional integration. Keep the server bootable when the
+    # integration module is not included in a deployment.
+    HueAgent = None
 from ..agents.home_assistant_agent import HomeAssistantAgent
 from ..agents.spotify_manager import SpotifyManager
 from ..integrations.games.minecraft_agent import MinecraftBotManager
@@ -10,7 +15,7 @@ from .runtimes.minecraft_runtime import load_minecraft_bot_config
 
 async def initialize_smart_home_agents(settings: dict):
     hue_config = settings.get("smart_home", {}).get("hue", {})
-    if hue_config.get("bridge_ip") and hue_config.get("api_key"):
+    if HueAgent and hue_config.get("bridge_ip") and hue_config.get("api_key"):
         print("[SERVER] Startup: Initializing Hue Agent...")
         hue_agent = HueAgent(
             bridge_ip=hue_config.get("bridge_ip"),
