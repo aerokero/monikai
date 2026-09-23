@@ -40,7 +40,7 @@ class TTSRouter:
         self.providers[name] = synthesizer
 
     def set_provider(self, name: str) -> bool:
-        if name in self.providers:
+        if name in self.providers or name in {"local", "xtts", "browser", "disabled"}:
             self.default_provider = name
             return True
         return False
@@ -53,11 +53,15 @@ class TTSRouter:
             self.selected_models[provider] = model
 
     def get_status(self) -> Dict[str, Any]:
+        available = list(self.providers.keys())
+        for extra in ("local", "xtts"):
+            if extra not in available:
+                available.append(extra)
         return {
             "current_provider": self.default_provider,
             "selected_voices": self.selected_voices,
             "selected_models": self.selected_models,
-            "available_providers": list(self.providers.keys()),
+            "available_providers": available,
             "gemini_configured": bool(os.environ.get("GEMINI_API_KEY")),
             "elevenlabs_configured": bool(os.environ.get("ELEVENLABS_API_KEY")),
         }

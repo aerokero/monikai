@@ -365,7 +365,7 @@ def _ensure_native_session(session_id: str, prompt: str = "", model: str = DEFAU
             else:
                 if not row.owner:
                     row.owner = "bartosz"
-                if not row.name or row.name in ("Monika Chat", "Nobody", "New Chat") or str(row.name).startswith("New Chat"):
+                if not row.name or row.name in ("Monika Chat", "Nobody", "New Chat", "Live Voice") or str(row.name).startswith("New Chat") or str(row.name).startswith("Live Voice"):
                     row.name = (title[:32] + "...") if len(title) > 32 else title
                 row.endpoint_url = row.endpoint_url or "/api/chat_stream"
                 row.model = _canonical_model(model) or row.model or DEFAULT_TEXT_MODEL
@@ -667,7 +667,7 @@ def register_odysseus_http_routes(app: FastAPI, emit_to_frontend=None):
                         sess_row.message_count = (sess_row.message_count or 0) + 2
 
                         clean_title = prompt.strip().replace("\n", " ")
-                        if clean_title and (not sess_row.name or sess_row.name in ("Monika Chat", "Nobody", "New Chat") or str(sess_row.name).startswith("New Chat")):
+                        if clean_title and (not sess_row.name or sess_row.name in ("Monika Chat", "Nobody", "New Chat", "Live Voice") or str(sess_row.name).startswith("New Chat") or str(sess_row.name).startswith("Live Voice")):
                             sess_row.name = (clean_title[:32] + "...") if len(clean_title) > 32 else clean_title
 
                         db_sess.commit()

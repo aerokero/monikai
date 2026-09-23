@@ -668,7 +668,13 @@ html.ody-sidebar-off #sidebar {
   min-height: var(--chat-pill-height);
   box-sizing: border-box;
   display: flex;
-  align-items: center;
+  /* Markdown messages can contain several direct children (paragraphs,
+     lists, attachment cards). Keep them in one readable vertical flow;
+     without this, flexbox lays those blocks out side by side and squeezes
+     their text into narrow columns. */
+  flex-direction: column !important;
+  align-items: stretch !important;
+  justify-content: center !important;
   color: var(--fg) !important;
   box-shadow: none !important;
   line-height: 1.5 !important;

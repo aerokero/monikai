@@ -59,3 +59,47 @@ def test_voice_http_endpoints():
     select_res = client.post("/api/v1/voice/select", json={"provider": "gemini", "voice": "Leda"})
     assert select_res.status_code == 200
     assert select_res.json()["ok"] is True
+
+    # 3. Select xtts provider
+    select_xtts = client.post("/api/v1/voice/select", json={"provider": "xtts", "voice": "monika", "model": "XTTS-v2"})
+    assert select_xtts.status_code == 200
+    assert select_xtts.json()["ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_voice_output_service_xtts(monkeypatch):
+    from backend.conversation.voice_output import VoiceOutputService
+
+    service = VoiceOutputService()
+    monkeypatch.setattr(
+        service,
+        "_settings",
+        lambda: {
+            "tts_enabled": True,
+            "tts_provider": "xtts",
+            "tts_model": "XTTS-v2",
+            "tts_voice": "monika",
+            "tts_speed": "1",
+            "tts_language": "pl",
+            "tts_volume": 1.0,
+            "tts_auto_read": False,
+        },
+    )
+
+    fake_wav = b"RIFF" + b"\x00" * 36 + b"data" + b"\x00" * 48000
+    mock_tts = type("MockTTSService", (), {
+        "available": True,
+        "synthesize": lambda self, text, language=None, provider=None: fake_wav,
+    })()
+
+    monkeypatch.setattr("backend.odysseus.services.tts.tts_service.get_tts_service", lambda: mock_tts)
+
+    status = service.get_status()
+    assert status["provider"] == "xtts"
+    assert "xtts" in status["available_providers"]
+    assert status["available"] is True
+
+    rendered = await service.synthesize("Cześć, tu Monika!")
+    assert rendered.audio == fake_wav
+    assert rendered.sample_rate == 24000
+

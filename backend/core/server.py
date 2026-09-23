@@ -341,6 +341,7 @@ async def lifespan(app: FastAPI):
             endpoint_id=SETTINGS.get("text_endpoint_id"),
             persona_id=SETTINGS.get("text_persona_id"),
             session_id=f"{channel_name}-pending",
+            session_name=channel_name.capitalize(),
         )
 
     telegram_service, telegram_task = start_telegram_service(

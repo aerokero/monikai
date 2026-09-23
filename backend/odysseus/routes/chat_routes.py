@@ -66,6 +66,7 @@ from src.tool_policy import (
     WEB_TOOL_NAMES,
     build_effective_tool_policy,
     is_web_search_explicitly_denied,
+    tool_toggle_enabled,
     web_search_enabled_for_turn,
 )
 from src.tool_approvals import (
@@ -982,7 +983,7 @@ def setup_chat_routes(
         message = chat_request.message
         session = chat_request.session
         att_ids = chat_request.attachments or []
-        use_web = chat_request.use_web
+        use_web = tool_toggle_enabled(chat_request.use_web)
         use_research = chat_request.use_research
         time_filter = chat_request.time_filter
         preset_id = chat_request.preset_id
@@ -1197,7 +1198,11 @@ def setup_chat_routes(
         message = form_data.get("message")
         session = form_data.get("session")
         attachments = form_data.get("attachments")
-        use_web = form_data.get("use_web")
+        use_web = tool_toggle_enabled(
+            form_data.get("use_web")
+            if form_data.get("use_web") is not None
+            else (body or {}).get("use_web")
+        )
         use_research = form_data.get("use_research")
         time_filter = form_data.get("time_filter")
         preset_id = form_data.get("preset_id")

@@ -322,6 +322,19 @@ class ChatHandler:
         if not session.name:
             derived = " ".join(message.split()[:5])
             session.name = "Chat: " + derived if derived else "Chat"
+            if hasattr(self, "session_manager") and self.session_manager:
+                try:
+                    self.session_manager.update_session_name(session.id, session.name)
+                except Exception:
+                    pass
+        elif session.name == "Live Voice":
+            derived = " ".join(message.split()[:5])
+            session.name = "Live Voice: " + derived if derived else "Live Voice"
+            if hasattr(self, "session_manager") and self.session_manager:
+                try:
+                    self.session_manager.update_session_name(session.id, session.name)
+                except Exception:
+                    pass
 
     def trim_history_if_needed(self, session):
         if len(session.history) > MAX_CONTEXT_MESSAGES:

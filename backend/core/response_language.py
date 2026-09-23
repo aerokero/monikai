@@ -36,11 +36,14 @@ def response_language_instruction(value: Any = None) -> str:
     )
     if language == "auto":
         return (
-            "Respond in the same language as the user's latest message. "
-            "Switch languages when the user clearly switches languages. "
-            "Do not translate unless asked."
+            "LANGUAGE POLICY (CRITICAL): "
+            "Dynamically match the exact language used by the user in their latest message. "
+            "If the user writes or speaks in Polish, your reply MUST be entirely in natural Polish. "
+            "If the user writes or speaks in English, your reply MUST be in English. "
+            "Always follow the user's language shifts immediately. "
+            "Never reply in English to a message written in Polish, and never translate unless explicitly requested."
         )
     return (
-        f"Respond in {SUPPORTED_RESPONSE_LANGUAGES[language]}. "
+        f"LANGUAGE POLICY: Respond in {SUPPORTED_RESPONSE_LANGUAGES[language]}. "
         "Keep the selected language unless the user explicitly asks for another one."
     )

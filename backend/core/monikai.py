@@ -1500,7 +1500,7 @@ class AudioLoop:
         try:
             renderer = getattr(self, "voice_output_service", None)
             renderer_status = {}
-            if renderer is None and canonical:
+            if renderer is None:
                 try:
                     from backend.conversation.voice_output import get_voice_output_service
 
@@ -1508,7 +1508,7 @@ class AudioLoop:
                 except Exception:
                     renderer = None
 
-            if canonical and renderer is not None:
+            if renderer is not None:
                 renderer_status = renderer.get_status()
                 if renderer_status.get("provider") in {"disabled", "browser"} or not renderer_status.get("available"):
                     self._last_speech_trace = {
@@ -1521,22 +1521,9 @@ class AudioLoop:
                 model = str(renderer_status.get("model") or model).strip()
                 voice = str(renderer_status.get("voice") or voice).strip()
 
-            if renderer is not None and canonical:
-                # The canonical TTS settings are owned by Odysseus.  Passing
-                # the legacy MonikAI speech values here would silently force
-                # Gemini and make the read-aloud picker appear ineffective.
+            if renderer is not None:
                 rendered = await asyncio.wait_for(
                     renderer.synthesize(text),
-                    timeout=timeout_sec,
-                )
-            elif renderer is not None:
-                rendered = await asyncio.wait_for(
-                    renderer.synthesize(
-                        text,
-                        provider=provider,
-                        voice=voice,
-                        model=model,
-                    ),
                     timeout=timeout_sec,
                 )
             else:
@@ -1552,10 +1539,12 @@ class AudioLoop:
                     timeout=timeout_sec,
                 )
             playback_audio = rendered.audio
-            if canonical:
+            try:
                 from backend.conversation.voice_output import speech_to_live_pcm
 
                 playback_audio = speech_to_live_pcm(rendered)
+            except Exception as e:
+                print(f"[AI LIVE] PCM unwrap failed: {e}; using raw audio buffer")
 
             # Live output and dedicated TTS share raw PCM transport. Keep
             # chunks reasonably small for Socket.IO and local playback.

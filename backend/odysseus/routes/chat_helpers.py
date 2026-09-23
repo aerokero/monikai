@@ -24,6 +24,7 @@ from src.auth_helpers import effective_user
 from src.prompt_security import untrusted_context_message
 from src.attachment_refs import attachment_ref
 from src.constants import DATA_DIR
+from src.tool_policy import tool_toggle_enabled
 from routes.prefs_routes import _load_for_user as load_prefs_for_user
 
 from fastapi import HTTPException
@@ -31,7 +32,9 @@ from fastapi import HTTPException
 logger = logging.getLogger(__name__)
 
 _CASUAL_OPENING_RE = re.compile(
-    r"^\s*(?:h+i+|hey+|hello+|yo+|sup+|what'?s up|wass?up|hiya|howdy|"
+    r"^\s*(?:h+i+|hey+|hej+|hello+|yo+|sup+|what'?s up|wass?up|hiya|howdy|"
+    r"cześć|czesc|siema+|siemanko|witaj+|dzień dobry|dzien dobry|dobry wieczór|dobry wieczor|"
+    r"dobranoc|dzięki|dzieki|dziękuję|dziekuje|"
     r"lol|lmao|haha+|hehe+|thanks?|thank you|ty|idk|dunno|meh|bruh|bro)\b(?P<tail>.*)$",
     re.IGNORECASE,
 )
@@ -353,6 +356,12 @@ def needs_auto_name(name: str) -> bool:
         return True
     if name.startswith("Chat:") or name == "Chat":
         return True
+    if name.startswith("Live Voice:") or name == "Live Voice":
+        return True
+    if name.startswith("Voice:") or name == "Voice":
+        return True
+    if name.startswith("New Chat") or name == "New Chat":
+        return True
     # Default frontend name: "modelname HH:MM:SS AM/PM"
     if re.match(r"^.+ \d{1,2}:\d{2}:\d{2}(\s*(AM|PM))?$", name, re.IGNORECASE):
         return True
@@ -382,6 +391,7 @@ async def auto_name_session(session_manager, sess):
             return
 
         owner = getattr(sess, "owner", None)
+        resolve_session_auth(sess, sess.id, owner=owner)
         t_url, t_model, t_headers = resolve_task_endpoint(
             sess.endpoint_url, sess.model, sess.headers, owner=owner
         )
@@ -398,7 +408,7 @@ async def auto_name_session(session_manager, sess):
             t_url,
             t_model,
             [
-                {"role": "system", "content": "Generate a short title (3-6 words, no quotes) for a conversation that starts with this message. Reply with ONLY the title, nothing else. Do NOT include any thinking, reasoning, or explanation — just the title."},
+                {"role": "system", "content": "Generate a short title (3-6 words, no quotes) for a conversation that starts with this message, in the same language as the message. Reply with ONLY the title, nothing else. Do NOT include any thinking, reasoning, or explanation — just the title."},
                 {"role": "user", "content": first_msg},
             ],
             temperature=0.3,
@@ -412,9 +422,29 @@ async def auto_name_session(session_manager, sess):
         # via the central helper.
         from src.text_helpers import strip_think
         title = strip_think(title, prose=False, prompt_echo=False)
+        title = re.sub(r"^(?:title|tytuł)\s*:\s*", "", title, flags=re.IGNORECASE).strip()
+        title = re.sub(r"^#+\s*", "", title).strip()
+        title = title.strip("*_`~\"' ")
         if title and len(title) < 80:
             session_manager.update_session_name(sess.id, title)
             logger.info(f"Auto-named session {sess.id}: {title}")
+
+            # Keep Monika session meta.json title in sync if this is a voice/channel session
+            try:
+                from backend.core.session_manager import SessionManager as MonikaSessionManager
+                from src.constants import DATA_DIR as ODY_DATA_DIR
+                data_parent = Path(ODY_DATA_DIR).parent
+                sessions_root = data_parent / "sessions"
+                if not sessions_root.exists():
+                    sessions_root = Path(__file__).resolve().parents[4] / "data" / "sessions"
+                if sessions_root.exists():
+                    for day_dir in sessions_root.glob("????-??-??"):
+                        sess_path = day_dir / sess.id
+                        if sess_path.is_dir():
+                            MonikaSessionManager.update_meta_for(sess_path, title=title)
+                            break
+            except Exception as meta_err:
+                logger.debug("Could not sync meta.json title for %s: %s", sess.id, meta_err)
 
     except Exception as e:
         import traceback
@@ -864,10 +894,15 @@ async def build_chat_context(
             part for part in (preset_system_prompt, voice_addendum) if part
         )
 
+    _web_enabled = (
+        tool_toggle_enabled(use_web)
+        and not agent_mode
+        and not skip_web
+    )
     _preface_kwargs = dict(
         message=_ctx_msg,
         session=sess,
-        use_web=use_web and not skip_web,
+        use_web=_web_enabled,
         use_memory=mem_enabled,
         time_filter=time_filter,
         preset_system_prompt=preset_system_prompt,

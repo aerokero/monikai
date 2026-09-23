@@ -44,6 +44,7 @@ class OdysseusVoiceGateway:
         endpoint_id: Optional[str] = None,
         persona_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        session_name: Optional[str] = None,
     ):
         self.app = app
         self._default_model = str(model or os.getenv("ODYSSEUS_LIVE_TEXT_MODEL") or "gemini-2.5-flash").strip()
@@ -53,6 +54,7 @@ class OdysseusVoiceGateway:
         self.endpoint_id = self._default_endpoint_id
         self.persona_id = self._default_persona_id
         self.session_id = str(session_id or os.getenv("ODYSSEUS_LIVE_SESSION_ID") or "monikai-live").strip()
+        self.session_name = str(session_name or "Live Voice").strip()
         # The native chat route is reached through an in-process ASGI request.
         # Keep a per-process marker so only this gateway can enable the
         # Live-Voice-only Home Assistant auto-approval policy.
@@ -65,6 +67,7 @@ class OdysseusVoiceGateway:
         endpoint_id: Optional[str] = None,
         persona_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        session_name: Optional[str] = None,
     ) -> None:
         if model is not None:
             self.model = str(model).strip() or self._default_model
@@ -74,6 +77,8 @@ class OdysseusVoiceGateway:
             self.persona_id = str(persona_id).strip() or self._default_persona_id
         if session_id:
             self.session_id = str(session_id).strip()
+        if session_name:
+            self.session_name = str(session_name).strip()
 
     def _endpoint(self):
         components = getattr(getattr(self.app, "state", None), "odysseus_components", {}) or {}
@@ -116,7 +121,7 @@ class OdysseusVoiceGateway:
         except (KeyError, LookupError):
             session = manager.create_session(
                 session_id=session_id,
-                name="Live Voice",
+                name=self.session_name,
                 endpoint_url=endpoint_url,
                 model=model,
                 owner=owner,
@@ -124,7 +129,7 @@ class OdysseusVoiceGateway:
 
         session.endpoint_url = endpoint_url
         session.model = model
-        session.headers = {}
+        session.headers = getattr(session, "headers", None) or {}
         if owner and not getattr(session, "owner", None):
             # Claim only legacy ownerless channel sessions in single-user
             # mode; never overwrite an existing owner's session.
@@ -284,8 +289,8 @@ class OdysseusVoiceGateway:
             "message": prompt,
             "session": active_session_id,
             "preset_id": self.persona_id or "monika",
-            "use_web": False,
-            "use_research": False,
+            "use_web": "false",
+            "use_research": "false",
             "selected_endpoint_id": self.endpoint_id,
             # Live voice is always the Agent channel. Keep the normal user and
             # administrator privilege gates in the native route, but expose
@@ -293,7 +298,7 @@ class OdysseusVoiceGateway:
             "mode": "agent",
             "allow_web_search": "true",
             "allow_bash": "true",
-            "voice_mode": True,
+            "voice_mode": "true",
             "voice_transport_token": self._voice_transport_token,
         }
         if normalized_attachment_ids:

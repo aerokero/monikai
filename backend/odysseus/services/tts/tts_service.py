@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import httpx
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -508,6 +509,89 @@ class _PiperPipeline:
             return None
 
 
+XTTS_SERVER_URL_ENV = "XTTS_SERVER_URL"
+XTTS_DEFAULT_SPEAKER_ENV = "XTTS_DEFAULT_SPEAKER"
+XTTS_DEFAULT_LANGUAGE_ENV = "XTTS_DEFAULT_LANGUAGE"
+
+DEFAULT_XTTS_URL = "http://192.168.1.10:8020"
+DEFAULT_XTTS_SPEAKER = "monika"
+DEFAULT_XTTS_LANGUAGE = "pl"
+
+
+def _xtts_server_url() -> str:
+    return str(os.getenv(XTTS_SERVER_URL_ENV, DEFAULT_XTTS_URL) or DEFAULT_XTTS_URL).strip().rstrip("/")
+
+
+def _xtts_default_speaker() -> str:
+    return str(os.getenv(XTTS_DEFAULT_SPEAKER_ENV, DEFAULT_XTTS_SPEAKER) or DEFAULT_XTTS_SPEAKER).strip()
+
+
+def _xtts_default_language() -> str:
+    return str(os.getenv(XTTS_DEFAULT_LANGUAGE_ENV, DEFAULT_XTTS_LANGUAGE) or DEFAULT_XTTS_LANGUAGE).strip().lower()
+
+
+class _XTTSClient:
+    """Client for local Coqui XTTS-v2 server (e.g. daswer123/xtts-api-server)."""
+
+    def __init__(self, base_url: Optional[str] = None):
+        self.base_url = (base_url or _xtts_server_url()).rstrip("/")
+        self._last_health_check = 0.0
+        self._is_available = False
+
+    @property
+    def available(self) -> bool:
+        now = time.time()
+        if now - self._last_health_check < 15.0:
+            return self._is_available
+
+        self._last_health_check = now
+        try:
+            r = httpx.get(f"{self.base_url}/languages", timeout=2.5)
+            self._is_available = r.status_code == 200
+        except Exception:
+            self._is_available = False
+        return self._is_available
+
+    def synthesize(
+        self,
+        text: str,
+        speaker: Optional[str] = None,
+        language: Optional[str] = None,
+        speed: float = 1.0,
+    ) -> Optional[bytes]:
+        speaker_name = str(speaker or _xtts_default_speaker()).strip()
+        lang = str(language or _xtts_default_language()).strip().lower()
+        if lang == "auto":
+            lang = _xtts_default_language()
+
+        payload = {
+            "text": str(text)[:5000],
+            "speaker_wav": speaker_name,
+            "language": lang,
+        }
+
+        try:
+            url = f"{self.base_url}/tts_to_audio/"
+            r = httpx.post(url, json=payload, timeout=60.0)
+            if r.status_code == 200 and r.content and r.content[:4] == b"RIFF":
+                logger.info(
+                    "XTTS-v2 synthesis succeeded: %d bytes (speaker=%s, lang=%s)",
+                    len(r.content),
+                    speaker_name,
+                    lang,
+                )
+                return r.content
+            logger.warning(
+                "XTTS synthesis returned status=%d (content length=%d)",
+                r.status_code,
+                len(r.content),
+            )
+            return None
+        except Exception as exc:
+            logger.warning("XTTS synthesis request failed: %s", exc)
+            return None
+
+
 class _PolishKokoroG2P:
     """Polish espeak-ng G2P with the Kokoro vocabulary compatibility map."""
 
@@ -559,6 +643,7 @@ class TTSService:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._kokoro = None  # lazy-init
         self._piper = None  # lazy-init; loaded only for Polish synthesis
+        self._xtts = None  # lazy-init; local/remote Coqui XTTS-v2 client
 
         try:
             self.max_cache_bytes = int(os.getenv("ODYSSEUS_TTS_CACHE_MAX_BYTES", 500 * 1024 * 1024))
@@ -575,9 +660,17 @@ class TTSService:
         voice = str(saved.get("tts_voice", "alloy") or "alloy").strip()
         language = normalize_tts_language(saved.get("tts_language", "auto"))
 
+        if provider == "xtts" or model.lower() in ("xtts", "xtts-v2", "coqui_xtts", "coqui-xtts"):
+            provider = "xtts"
+            model = "XTTS-v2"
+            if not voice or voice in GENERIC_KOKORO_VOICES:
+                voice = _xtts_default_speaker()
+            if language == "auto":
+                language = _xtts_default_language()
+
         # Restore old/local Kokoro profiles in memory. This also prevents a
         # stale Piper profile from taking over after the renderer rollback.
-        if (
+        elif (
             provider == "local"
             and (
                 (
@@ -618,6 +711,9 @@ class TTSService:
                 (kokoro is not None and kokoro.available)
                 or bool(shutil.which("espeak-ng"))
             )
+        if provider == "xtts":
+            xtts = self._get_xtts()
+            return xtts is not None and xtts.available
         if isinstance(provider, str) and provider.startswith("endpoint:"):
             return True  # assume reachable; errors surface at synthesis time
         return False
@@ -640,7 +736,7 @@ class TTSService:
         # Include the Polish mode as well so switching between the experimental
         # neural path and espeak cannot return stale audio from the other path.
         raw = (
-            f"v4|{provider}|{model}|{voice}|{speed}|{language}|"
+            f"v5|{provider}|{model}|{voice}|{speed}|{language}|"
             f"{_kokoro_polish_mode()}|{_piper_model_id()}|{text}"
         )
         return hashlib.sha256(raw.encode()).hexdigest()
@@ -722,6 +818,11 @@ class TTSService:
             self._piper = _PiperPipeline()
         return self._piper
 
+    def _get_xtts(self):
+        if self._xtts is None:
+            self._xtts = _XTTSClient()
+        return self._xtts
+
     # ── API endpoint ──
 
     def _synthesize_api(self, text: str, endpoint_id: str, model: str, voice: str, speed: float = 1.0) -> Optional[bytes]:
@@ -777,7 +878,7 @@ class TTSService:
         # configured Kokoro voice as the source of truth in that case.
         # A Piper locale is not a Kokoro language prefix (``pl`` would
         # otherwise be mistaken for Portuguese because Kokoro uses ``p``).
-        if str(voice or "").lower().startswith("pl_pl-"):
+        if str(voice or "").lower().startswith("pl_pl-") or str(voice or "").lower() == "monika":
             return "pl"
         return kokoro_language_for_voice(voice) or "auto"
 
@@ -932,13 +1033,42 @@ class TTSService:
 
         audio_data = None
 
-        if provider == "local":
-            if selected_language != "pl" or _kokoro_polish_mode() == "experimental":
+        if provider == "xtts":
+            xtts = self._get_xtts()
+            if xtts and xtts.available:
+                audio_data = xtts.synthesize(
+                    text,
+                    speaker=voice,
+                    language=selected_language,
+                    speed=speed,
+                )
+            if not audio_data:
+                logger.warning("XTTS-v2 synthesis failed or unavailable; falling back to local Kokoro/espeak")
                 kokoro = self._get_kokoro()
                 if kokoro and kokoro.available:
                     audio_data = kokoro.synthesize_raw(
                         text,
-                        voice,
+                        "af_heart",
+                        language=selected_language,
+                    )
+                if not audio_data and _espeak_voice(selected_language):
+                    audio_data = self._synthesize_with_espeak(text, selected_language, speed)
+        elif provider == "local":
+            xtts = self._get_xtts()
+            if xtts and xtts.available and (voice.lower() == "monika" or settings.get("tts_provider") == "xtts"):
+                audio_data = xtts.synthesize(
+                    text,
+                    speaker=voice,
+                    language=selected_language,
+                    speed=speed,
+                )
+            if not audio_data and (selected_language != "pl" or _kokoro_polish_mode() == "experimental"):
+                kokoro = self._get_kokoro()
+                if kokoro and kokoro.available:
+                    kokoro_voice = "af_heart" if (voice.lower() not in KOKORO_POLISH_EXPERIMENTAL_VOICES and not kokoro_language_for_voice(voice)) else voice
+                    audio_data = kokoro.synthesize_raw(
+                        text,
+                        kokoro_voice,
                         language=selected_language,
                     )
                 else:
@@ -996,7 +1126,13 @@ class TTSService:
             "cache_size_mb": round(cache_size / (1024 * 1024), 2),
         }
 
-        if provider == "local":
+        if provider == "xtts":
+            xtts = self._get_xtts()
+            stats["model"] = "Coqui XTTS-v2"
+            stats["xtts_url"] = xtts.base_url if xtts else _xtts_server_url()
+            stats["xtts_available"] = xtts.available if xtts else False
+            stats["xtts_speaker"] = stats["voice"]
+        elif provider == "local":
             kokoro = self._get_kokoro()
             stats["model"] = (
                 "Kokoro-82M (GPU/CPU)"

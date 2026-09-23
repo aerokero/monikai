@@ -9,6 +9,7 @@ from src.chat_helpers import extract_urls
 from src.youtube_handler import is_youtube_url
 from src.search import comprehensive_web_search, fetch_webpage_content
 from src.prompt_security import UNTRUSTED_CONTEXT_POLICY, untrusted_context_message
+from src.tool_policy import tool_toggle_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -388,9 +389,9 @@ class ChatProcessor:
             except Exception as e:
                 logger.warning(f"RAG retrieval failed: {e}")
 
-        # Add web search if enabled
+        # Add web search if enabled (chat mode only; agent mode uses native web tools)
         web_sources = []
-        if use_web:
+        if tool_toggle_enabled(use_web) and not agent_mode:
             try:
                 from src.llm_core import llm_call
 

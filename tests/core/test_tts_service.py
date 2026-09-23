@@ -139,3 +139,71 @@ def test_explicit_local_provider_overrides_a_different_saved_provider(monkeypatc
         language="pl",
     )
     assert audio and audio[:4] == b"RIFF"
+
+
+def test_xtts_provider_settings_and_synthesis(monkeypatch):
+    service = TTSService(cache_dir=tempfile.mkdtemp())
+    monkeypatch.setattr(
+        service,
+        "_load_settings",
+        lambda: {
+            "tts_enabled": True,
+            "tts_provider": "xtts",
+            "tts_model": "XTTS-v2",
+            "tts_voice": "monika",
+            "tts_speed": "1",
+            "tts_language": "pl",
+        },
+    )
+
+    class FakeXTTS:
+        available = True
+
+        def synthesize(self, text, speaker=None, language=None, speed=1.0):
+            assert text == "Cześć, jak się masz?"
+            assert speaker == "monika"
+            assert language == "pl"
+            return b"RIFFfake-xtts-audio-bytes"
+
+    xtts_calls = []
+    monkeypatch.setattr(service, "_get_xtts", lambda: xtts_calls.append(True) or FakeXTTS())
+    assert service.available is True
+
+    audio = service.synthesize("Cześć, jak się masz?", use_cache=False)
+    assert audio == b"RIFFfake-xtts-audio-bytes"
+    assert len(xtts_calls) == 2
+
+
+def test_xtts_fallback_to_local_when_unavailable(monkeypatch):
+    service = TTSService(cache_dir=tempfile.mkdtemp())
+    monkeypatch.setattr(
+        service,
+        "_load_settings",
+        lambda: {
+            "tts_enabled": True,
+            "tts_provider": "xtts",
+            "tts_model": "XTTS-v2",
+            "tts_voice": "monika",
+            "tts_speed": "1",
+            "tts_language": "pl",
+        },
+    )
+
+    class FakeUnavailableXTTS:
+        available = False
+
+        def synthesize(self, text, speaker=None, language=None, speed=1.0):
+            return None
+
+    class FakeKokoro:
+        available = True
+
+        def synthesize_raw(self, text, voice, *, language):
+            return b"RIFFfake-kokoro-fallback"
+
+    monkeypatch.setattr(service, "_get_xtts", lambda: FakeUnavailableXTTS())
+    monkeypatch.setattr(service, "_get_kokoro", lambda: FakeKokoro())
+
+    audio = service.synthesize("Fallback test.", use_cache=False)
+    assert audio == b"RIFFfake-kokoro-fallback"
+

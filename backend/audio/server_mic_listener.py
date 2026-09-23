@@ -488,7 +488,7 @@ class ServerMicListenerService:
         # Server playback uses the canonical local Kokoro renderer. Keep Gemini as the code-level
         # fallback for installations without a working local model.
         self.tts_provider = str(
-            os.getenv("SERVER_MIC_TTS_PROVIDER", "local") or "local"
+            os.getenv("SERVER_MIC_TTS_PROVIDER", "auto") or "auto"
         ).strip().lower()
         # The always-on server microphone is normally used in Polish, but this
         # remains an environment setting so the same deployment can be switched
@@ -1367,19 +1367,29 @@ class ServerMicListenerService:
 
         total_started = time.perf_counter()
 
-        if self.tts_provider in {"local", "kokoro"}:
+        if self.tts_provider in {"local", "kokoro", "xtts", "auto"}:
             try:
                 from backend.conversation.voice_output import (
                     get_voice_output_service,
                     speech_to_live_pcm,
                 )
 
-                print("[SERVER MIC] [TTS] Synthesizing with local renderer (Kokoro/espeak)...")
+                service = get_voice_output_service()
+                status = service.get_status()
+                configured = status.get("provider") or "xtts"
+                if self.tts_provider == "xtts" or (self.tts_provider in {"local", "auto", "kokoro"} and configured in {"xtts", "local"}):
+                    provider_to_use = configured
+                elif self.tts_provider != "kokoro":
+                    provider_to_use = self.tts_provider
+                else:
+                    provider_to_use = "local"
+
+                print(f"[SERVER MIC] [TTS] Synthesizing with {provider_to_use} renderer (voice={status.get('voice', 'default')})...")
                 synthesis_started = time.perf_counter()
                 rendered = await asyncio.wait_for(
-                    get_voice_output_service().synthesize(
+                    service.synthesize(
                         text,
-                        provider="local",
+                        provider=provider_to_use,
                         **(
                             {"language": self.tts_language}
                             if self.tts_language and self.tts_language != "auto"
@@ -1391,7 +1401,7 @@ class ServerMicListenerService:
                 synthesis_ms = (time.perf_counter() - synthesis_started) * 1000.0
                 pcm_audio = speech_to_live_pcm(rendered)
                 print(
-                    f"[SERVER MIC] [TTS] Local audio ready ({len(pcm_audio)} bytes, "
+                    f"[SERVER MIC] [TTS] {provider_to_use} audio ready ({len(pcm_audio)} bytes, "
                     f"24000Hz, synth={synthesis_ms:.0f}ms). Starting playback..."
                 )
                 playback_started = time.perf_counter()
@@ -1404,7 +1414,7 @@ class ServerMicListenerService:
                 else:
                     await self.play_audio_locally(pcm_audio, sample_rate=24000)
                 print(
-                    "[SERVER MIC] [TTS TIMING] provider=local "
+                    f"[SERVER MIC] [TTS TIMING] provider={provider_to_use} "
                     f"synthesis={synthesis_ms:.0f}ms "
                     f"playback={(time.perf_counter() - playback_started) * 1000.0:.0f}ms "
                     f"total={(time.perf_counter() - total_started) * 1000.0:.0f}ms"
@@ -1412,7 +1422,7 @@ class ServerMicListenerService:
                 return
             except Exception as exc:
                 print(
-                    f"[SERVER MIC] [TTS] Local renderer unavailable ({exc}); "
+                    f"[SERVER MIC] [TTS] {self.tts_provider} renderer unavailable ({exc}); "
                     "falling back to Gemini."
                 )
 

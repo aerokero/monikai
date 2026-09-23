@@ -56,9 +56,9 @@ DEFAULT_SETTINGS = {
     # Read-aloud defaults to the local Kokoro renderer with its experimental
     # Polish G2P path; espeak-ng remains the fallback.
     "tts_enabled": True,
-    "tts_provider": "local",
-    "tts_model": "Kokoro",
-    "tts_voice": "af_heart",
+    "tts_provider": "xtts",
+    "tts_model": "XTTS-v2",
+    "tts_voice": "monika",
     "tts_language": "pl",
     "tts_speed": "1",
     "tts_volume": 1.0,
@@ -142,9 +142,9 @@ DEFAULT_SETTINGS = {
     # "live_renderer" only as an explicit compatibility rollback.
     "speech": {
         "delivery_mode": "dedicated_tts",
-        "provider": "local",
-        "model": "Kokoro",
-        "voice": "af_heart",
+        "provider": "xtts",
+        "model": "XTTS-v2",
+        "voice": "monika",
         "language": "pl",
         "timeout_sec": 20.0,
     },
