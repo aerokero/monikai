@@ -50,8 +50,7 @@ services:
       KOKORO_POLISH_MODE: "${KOKORO_POLISH_MODE:-experimental}"
       HF_HOME: "/app/data/huggingface"
       XTTS_SERVER_URL: "${XTTS_SERVER_URL:-http://192.168.1.10:8020}"
-      XTTS_DEFAULT_SPEAKER: "${XTTS_DEFAULT_SPEAKER:-monika}"
-      XTTS_DEFAULT_LANGUAGE: "${XTTS_DEFAULT_LANGUAGE:-pl}"
+      XTTS_DEFAULT_SPEAKER: "${XTTS_DEFAULT_SPEAKER:-leda}"
 
     # Use the LAN resolver so split-DNS names such as ha.tosutosu.pl work
     # from inside the container as well as from the host. Override this when

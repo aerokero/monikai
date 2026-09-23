@@ -186,10 +186,8 @@ class VoiceOutputService:
         elif provider == "xtts":
             if not model or model.lower() in {"tts-1", "kokoro"}:
                 model = "XTTS-v2"
-            if not voice or voice.lower() in kokoro_voices or voice in {"alloy", "21m00Tcm4TlvDq8ikWAM"}:
-                voice = "monika"
-            if language == "auto":
-                language = "pl"
+            if not voice or voice.lower() in kokoro_voices or voice in {"alloy", "21m00Tcm4TlvDq8ikWAM"} or voice.lower() == "monika":
+                voice = "leda"
         return {
             "tts_enabled": settings.get("tts_enabled", True),
             "tts_provider": provider,
@@ -301,8 +299,8 @@ class VoiceOutputService:
             audio = await asyncio.to_thread(
                 get_tts_service().synthesize,
                 speech_text,
+                voice=selected_voice,
                 language=selected_language,
-                provider=target,
             )
             if not audio:
                 raise RuntimeError(f"Provider '{target}' returned no audio")

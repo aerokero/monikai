@@ -272,7 +272,10 @@ async def test_server_mic_can_render_replies_with_local_kokoro(monkeypatch):
         output.writeframes(raw_pcm)
 
     class FakeVoiceOutput:
-        async def synthesize(self, text, *, provider):
+        def get_status(self):
+            return {"provider": "local", "voice": "af_heart"}
+
+        async def synthesize(self, text, *, provider, voice=None, **kwargs):
             assert text == "Słucham?"
             assert provider == "local"
             return SynthesizedSpeech(

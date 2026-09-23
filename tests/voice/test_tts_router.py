@@ -60,8 +60,8 @@ def test_voice_http_endpoints():
     assert select_res.status_code == 200
     assert select_res.json()["ok"] is True
 
-    # 3. Select xtts provider
-    select_xtts = client.post("/api/v1/voice/select", json={"provider": "xtts", "voice": "monika", "model": "XTTS-v2"})
+    # 3. Select xtts provider with leda
+    select_xtts = client.post("/api/v1/voice/select", json={"provider": "xtts", "voice": "leda", "model": "XTTS-v2"})
     assert select_xtts.status_code == 200
     assert select_xtts.json()["ok"] is True
 
@@ -78,7 +78,7 @@ async def test_voice_output_service_xtts(monkeypatch):
             "tts_enabled": True,
             "tts_provider": "xtts",
             "tts_model": "XTTS-v2",
-            "tts_voice": "monika",
+            "tts_voice": "leda",
             "tts_speed": "1",
             "tts_language": "pl",
             "tts_volume": 1.0,
@@ -87,19 +87,29 @@ async def test_voice_output_service_xtts(monkeypatch):
     )
 
     fake_wav = b"RIFF" + b"\x00" * 36 + b"data" + b"\x00" * 48000
+    captured_kwargs = {}
+
+    def fake_synthesize(self, text, voice=None, language=None, provider=None, **kwargs):
+        captured_kwargs["voice"] = voice
+        captured_kwargs["provider"] = provider
+        return fake_wav
+
     mock_tts = type("MockTTSService", (), {
         "available": True,
-        "synthesize": lambda self, text, language=None, provider=None: fake_wav,
+        "synthesize": fake_synthesize,
     })()
 
     monkeypatch.setattr("backend.odysseus.services.tts.tts_service.get_tts_service", lambda: mock_tts)
 
     status = service.get_status()
     assert status["provider"] == "xtts"
+    assert status["voice"] == "leda"
     assert "xtts" in status["available_providers"]
     assert status["available"] is True
 
-    rendered = await service.synthesize("Cześć, tu Monika!")
+    rendered = await service.synthesize("Cześć, tu Monika!", voice="leda")
     assert rendered.audio == fake_wav
     assert rendered.sample_rate == 24000
+    assert captured_kwargs["voice"] == "leda"
+    assert captured_kwargs["provider"] == "xtts"
 

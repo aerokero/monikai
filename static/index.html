@@ -1733,7 +1733,11 @@
                   <option value="sage">Sage</option>
                   <option value="shimmer">Shimmer</option>
                 </select>
-                <input id="set-ttsVoiceInput" type="text" placeholder="Leda" style="flex:1;padding:5px;display:none;">
+                <input id="set-ttsVoiceInput" type="text" placeholder="Leda" list="set-ttsVoiceList" style="flex:1;padding:5px;display:none;">
+                <datalist id="set-ttsVoiceList">
+                  <option value="Leda">Leda (XTTS-v2 / Gemini)</option>
+                  <option value="Sulafat">Sulafat (XTTS-v2 / Gemini)</option>
+                </datalist>
               </div>
               <div id="set-ttsSpeedRow" style="display:flex;align-items:center;gap:0.75rem;">
                 <label class="settings-label">Speed</label>

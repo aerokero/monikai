@@ -1390,6 +1390,7 @@ class ServerMicListenerService:
                     service.synthesize(
                         text,
                         provider=provider_to_use,
+                        voice=status.get("voice"),
                         **(
                             {"language": self.tts_language}
                             if self.tts_language and self.tts_language != "auto"

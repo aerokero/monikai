@@ -792,7 +792,7 @@ async function initTtsSettings() {
   }
   function getVoice() {
     if (provSel.value === 'local' && (!voiceInput.value || /^pl_PL-gosia/i.test(voiceInput.value))) return 'af_heart';
-    if (provSel.value === 'xtts' && !voiceInput.value) return 'monika';
+    if (provSel.value === 'xtts' && (!voiceInput.value || voiceInput.value.toLowerCase() === 'monika')) return 'Leda';
     return isEndpoint() ? voiceSelect.value : voiceInput.value;
   }
   function volumePercent(raw) {
@@ -847,6 +847,9 @@ async function initTtsSettings() {
         (!settings.tts_voice || /^pl_PL-gosia/i.test(settings.tts_voice))) {
       voiceInput.value = 'af_heart';
     }
+    if (provSel.value === 'xtts' && (!settings.tts_voice || settings.tts_voice.toLowerCase() === 'monika')) {
+      voiceInput.value = 'Leda';
+    }
     if (settings.tts_speed) { speedSelect.value = settings.tts_speed; }
     if (volumeRange && settings.tts_volume != null) volumeRange.value = String(volumePercent(settings.tts_volume));
     if (ttsEnabledToggle) ttsEnabledToggle.checked = settings.tts_enabled !== false;
@@ -869,7 +872,7 @@ async function initTtsSettings() {
         tts_enabled: ttsEnabledToggle ? ttsEnabledToggle.checked : true,
         tts_provider: provSel.value,
         tts_model: getModel() || (isGemini() ? 'gemini-2.5-flash-preview-tts' : (isElevenLabs() ? 'eleven_multilingual_v2' : (isXTTS() ? 'XTTS-v2' : 'tts-1'))),
-        tts_voice: getVoice() || (isGemini() ? 'Leda' : (isXTTS() ? 'monika' : 'alloy')),
+        tts_voice: getVoice() || (isGemini() ? 'Leda' : (isXTTS() ? 'Leda' : 'alloy')),
         tts_language: languageSelect ? (languageSelect.value || 'auto') : 'auto',
         tts_speed: speedSelect.value || '1',
         tts_volume: getVolume(),
