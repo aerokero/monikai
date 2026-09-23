@@ -514,7 +514,8 @@ XTTS_DEFAULT_SPEAKER_ENV = "XTTS_DEFAULT_SPEAKER"
 XTTS_DEFAULT_LANGUAGE_ENV = "XTTS_DEFAULT_LANGUAGE"
 
 DEFAULT_XTTS_URL = "http://192.168.1.10:8020"
-DEFAULT_XTTS_SPEAKER = "leda"
+DEFAULT_XTTS_SPEAKER = "monika"
+DEFAULT_XTTS_LANGUAGE = "pl"
 
 
 def _xtts_server_url() -> str:
@@ -551,7 +552,7 @@ class _XTTSClient:
             self._is_available = False
         return self._is_available
 
-    def get_speakers(self) -> list:
+    def synthesize(
         self,
         text: str,
         speaker: Optional[str] = None,
@@ -559,7 +560,7 @@ class _XTTSClient:
         speed: float = 1.0,
     ) -> Optional[bytes]:
         speaker_name = str(speaker or _xtts_default_speaker()).strip()
-        # Fall back to default speaker if empty or legacy monika
+        lang = str(language or _xtts_default_language()).strip().lower()
         if lang == "auto":
             lang = _xtts_default_language()
 
@@ -662,8 +663,9 @@ class TTSService:
         if provider == "xtts" or model.lower() in ("xtts", "xtts-v2", "coqui_xtts", "coqui-xtts"):
             provider = "xtts"
             model = "XTTS-v2"
-            if not voice or voice.lower() == "monika" or (voice in GENERIC_KOKORO_VOICES and voice.lower() not in {"leda", "sulafat"}):
+            if not voice or voice in GENERIC_KOKORO_VOICES:
                 voice = _xtts_default_speaker()
+            if language == "auto":
                 language = _xtts_default_language()
 
         # Restore old/local Kokoro profiles in memory. This also prevents a
@@ -1002,15 +1004,16 @@ class TTSService:
         use_cache: bool = True,
         language: Optional[str] = None,
         provider: Optional[str] = None,
-        voice: Optional[str] = None,
     ) -> Optional[bytes]:
+        settings = self._load_settings()
         if settings.get("tts_enabled") is False:
             return None
         provider = str(provider or settings["tts_provider"] or "disabled").strip().lower()
         model = settings["tts_model"]
-        voice = str(voice or settings.get("tts_voice", "leda") or "leda").strip()
-        if provider == "xtts" or model.lower() in ("xtts", "xtts-v2", "coqui_xtts", "coqui-xtts"):
-            if not voice or voice.lower() == "monika" or (voice in GENERIC_KOKORO_VOICES and voice.lower() not in {"leda", "sulafat"}):
+        voice = settings["tts_voice"]
+        speed = _safe_speed(settings.get("tts_speed", "1"))
+        selected_language = self._resolve_language(
+            text,
             language if language is not None else settings.get("tts_language", "auto"),
             voice,
         )
@@ -1129,9 +1132,9 @@ class TTSService:
             stats["xtts_url"] = xtts.base_url if xtts else _xtts_server_url()
             stats["xtts_available"] = xtts.available if xtts else False
             stats["xtts_speaker"] = stats["voice"]
-            stats["xtts_speakers"] = xtts.get_speakers() if xtts else ["leda", "sulafat"]
         elif provider == "local":
             kokoro = self._get_kokoro()
+            stats["model"] = (
                 "Kokoro-82M (GPU/CPU)"
                 if (kokoro and kokoro.available)
                 else (
