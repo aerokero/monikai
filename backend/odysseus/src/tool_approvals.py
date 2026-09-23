@@ -817,6 +817,29 @@ class ToolApprovalStore:
             # this deterministic if that storage policy changes later.
             return max(matches, key=lambda pending: pending.created_at)
 
+    def peek_latest_for_owner(
+        self,
+        *,
+        owner: Any,
+    ) -> PendingToolApproval | None:
+        """Return the most recently created pending approval for an owner.
+
+        Used by voice channels (such as Live Voice) where short confirmation
+        replies may arrive after a transport-level session rotation.
+        """
+        now = time.time()
+        normalized_owner = _normalized_owner(owner)
+        with self._lock:
+            self._purge_expired_locked(now)
+            matches = [
+                pending
+                for pending in self._pending.values()
+                if pending.owner == normalized_owner
+            ]
+            if not matches:
+                return None
+            return max(matches, key=lambda pending: pending.created_at)
+
     def retire_for_session(self, *, owner: Any, session_id: Any) -> bool:
         """Discard pending actions superseded by an ordinary user turn.
 

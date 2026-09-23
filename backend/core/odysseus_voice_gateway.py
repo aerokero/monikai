@@ -221,14 +221,14 @@ class OdysseusVoiceGateway:
             # an ASR fragment has no recoverable meaning. Never speak the
             # marker and never turn it into the generic tool fallback below.
             return ""
-        if not answer and asked_question:
+        if asked_question:
             # Voice has no clickable approval/clarification card. Speaking the
             # question keeps the interaction usable; the next spoken turn can
             # resolve the pending approval in the same canonical session.
-            answer = asked_question
-        if not answer and approval_resolution:
+            answer = f"{answer} {asked_question}".strip() if answer else asked_question
+        elif not answer and approval_resolution:
             answer = approval_resolution
-        if not answer and tool_names:
+        elif not answer and tool_names:
             # The native agent uses this same fallback when a tool completed
             # without a final prose delta. Keep the voice channel responsive.
             answer = "Done."

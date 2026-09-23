@@ -106,7 +106,6 @@ _register(
 _register(
     {"web_fetch"},
     ToolEffect.BROKERED_NETWORK_READ,
-    ToolEffect.NETWORK_EGRESS,
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
 _register(

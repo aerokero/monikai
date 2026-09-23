@@ -1474,6 +1474,16 @@ def setup_chat_routes(
                 owner=owner,
                 session_id=session,
             )
+            if pending_for_reply is None and trusted_live_voice:
+                pending_for_reply = tool_approval_store.peek_latest_for_owner(
+                    owner=owner,
+                )
+                if pending_for_reply is not None:
+                    session = pending_for_reply.session_id
+                    try:
+                        sess = session_manager.get_session(session)
+                    except Exception:
+                        pass
             if pending_for_reply is not None:
                 classifier_decision = await _classify_tool_approval_reply(
                     message,

@@ -303,3 +303,54 @@ async def test_auto_name_session_renames_voice_session(monkeypatch):
     )
 
 
+def test_native_voice_gateway_speaks_asked_question_when_answer_has_preface():
+    response = httpx.Response(
+        200,
+        content=(
+            'data: {"delta":"Szukam pogody dla Krakowa na jutro."}\n\n'
+            'data: {"type":"ask_user","data":{"voice_prompt":"Use web fetch. Say yes or tak to approve."}}\n\n'
+            "data: [DONE]\n\n"
+        ),
+        request=httpx.Request("POST", "http://odysseus.internal/api/chat_stream"),
+    )
+
+    answer = OdysseusVoiceGateway._stream_result(response)
+    assert "Szukam pogody dla Krakowa na jutro." in answer
+    assert "Use web fetch. Say yes or tak to approve." in answer
+
+
+@pytest.mark.asyncio
+async def test_server_voice_store_preserves_session_while_approval_pending(tmp_path):
+    from src.tool_approvals import tool_approval_store
+    from src.tool_capabilities import capabilities_for_tool
+
+    store = ServerVoiceSessionStore(tmp_path)
+    session_id = await store.begin()
+
+    approval = tool_approval_store.create(
+        owner="bartosz",
+        session_id=session_id,
+        origin_run_id="run_1",
+        tool_name="home_assistant_control",
+        content='{"action": "turn_off"}',
+        workspace="",
+        external_untrusted_context_seen=True,
+        capabilities=capabilities_for_tool("home_assistant_control"),
+    )
+
+    try:
+        await store.end()
+        assert store.manager.get_current_session_id() == session_id
+
+        next_session_id = await store.begin()
+        assert next_session_id == session_id
+    finally:
+        tool_approval_store.consume(
+            approval.approval_id,
+            decision="approve_task",
+            owner="bartosz",
+            session_id=session_id,
+        )
+
+
+

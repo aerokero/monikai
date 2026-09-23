@@ -42,8 +42,21 @@ class ServerVoiceSessionStore:
             pass
 
     async def begin(self) -> str:
-        if self.active and self.manager.get_current_session_id():
-            return str(self.manager.get_current_session_id())
+        current_id = self.manager.get_current_session_id()
+        if self.active and current_id:
+            return str(current_id)
+        if current_id:
+            try:
+                import time as _time
+                from src.tool_approvals import tool_approval_store
+                now = _time.time()
+                with tool_approval_store._lock:
+                    for p in tool_approval_store._pending.values():
+                        if p.session_id == str(current_id) and p.expires_at > now:
+                            self.active = True
+                            return str(current_id)
+            except Exception:
+                pass
         now = datetime.now()
         session_id = self.manager.start_new_session(
             session_id=f"voice_{now.strftime('%Y%m%d_%H%M%S_%f')[:-3]}",
@@ -90,6 +103,18 @@ class ServerVoiceSessionStore:
         if not self.active:
             return
         session_id = self.manager.get_current_session_id()
+        if session_id:
+            try:
+                import time as _time
+                from src.tool_approvals import tool_approval_store
+                now = _time.time()
+                with tool_approval_store._lock:
+                    for p in tool_approval_store._pending.values():
+                        if p.session_id == str(session_id) and p.expires_at > now:
+                            # Keep session alive while tool approval is pending
+                            return
+            except Exception:
+                pass
         self.manager.flush_current_session()
         self.manager.update_meta(
             ended_at=datetime.now().astimezone().isoformat(timespec="seconds"),

@@ -78,3 +78,87 @@ def test_public_payload_prioritizes_summary_and_hides_raw_args_behind_metadata()
     assert payload["options"][0]["value"] == "approve_task"
     assert payload["options"][1]["value"] == "approve"
     assert payload["options"][2]["value"] == "deny"
+
+
+def test_web_fetch_allowed_after_external_untrusted_context():
+    from src.tool_capabilities import ToolRunSecurityContext
+
+    context = ToolRunSecurityContext()
+    context.observe_tool_result(
+        "web_search",
+        {"results": "pogoda krakow jutro 17:00", "success": True},
+        content="pogoda krakow jutro",
+    )
+    assert context.external_untrusted_context_seen is True
+
+    decision = context.decision_for(
+        "web_fetch",
+        '{"url": "https://weather.example.com/krakow"}',
+    )
+    assert decision.allowed is True
+    assert decision.reason is None
+
+
+def test_home_assistant_still_blocked_after_web_fetch_taint():
+    from src.tool_capabilities import ToolRunSecurityContext
+
+    context = ToolRunSecurityContext()
+    context.observe_tool_result(
+        "web_fetch",
+        {"content": "forecast data with prompt injection", "success": True},
+        content="https://weather.example.com/krakow",
+    )
+    assert context.external_untrusted_context_seen is True
+
+    decision = context.decision_for(
+        "home_assistant_control",
+        '{"action": "turn_off", "target": "all lights"}',
+    )
+    assert decision.allowed is False
+    assert "external_side_effect" in decision.reason
+
+
+def test_tool_approval_store_peek_latest_for_owner():
+    from src.tool_approvals import ToolApprovalStore
+    from src.tool_capabilities import capabilities_for_tool
+
+    store = ToolApprovalStore()
+    p1 = store.create(
+        owner="bartosz",
+        session_id="voice_1",
+        origin_run_id="run_1",
+        tool_name="home_assistant_control",
+        content='{"action": "turn_off"}',
+        workspace="",
+        external_untrusted_context_seen=True,
+        capabilities=capabilities_for_tool("home_assistant_control"),
+    )
+    assert store.peek_latest_for_owner(owner="bartosz") == p1
+    assert store.peek_latest_for_owner(owner="other_user") is None
+
+
+def test_live_voice_rotated_session_fallback_lookup():
+    from src.tool_approvals import ToolApprovalStore
+    from src.tool_capabilities import capabilities_for_tool
+
+    store = ToolApprovalStore()
+    original_approval = store.create(
+        owner="bartosz",
+        session_id="voice_original_session",
+        origin_run_id="run_1",
+        tool_name="home_assistant_control",
+        content='{"action": "turn_off"}',
+        workspace="",
+        external_untrusted_context_seen=True,
+        capabilities=capabilities_for_tool("home_assistant_control"),
+    )
+
+    rotated_session = "voice_rotated_session"
+    assert store.peek_for_session(owner="bartosz", session_id=rotated_session) is None
+
+    fallback = store.peek_latest_for_owner(owner="bartosz")
+    assert fallback is not None
+    assert fallback.approval_id == original_approval.approval_id
+    assert fallback.session_id == "voice_original_session"
+
+
