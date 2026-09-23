@@ -289,6 +289,42 @@ function normalizeState(raw) {
   };
 }
 
+function isCustomLedger(state) {
+  if (!state) return false;
+  if (Array.isArray(state.transactions)) {
+    for (const t of state.transactions) {
+      if (!String(t.id).startsWith('seed-') || t.source === 'bank-statement') {
+        return true;
+      }
+    }
+    if (state.transactions.length !== 7) return true;
+  }
+  if (Array.isArray(state.wallets)) {
+    if (state.wallets.length !== 3) return true;
+    const [w1, w2, w3] = state.wallets;
+    if (
+      w1?.name !== 'Main account' || w1?.balance !== 3420 || w1?.savings !== 1800 || w1?.debt !== 9400 ||
+      w2?.name !== 'Cash wallet' || w2?.balance !== 460 || w2?.savings !== 0 ||
+      w3?.name !== 'Assets / investing' || w3?.balance !== 1250 || w3?.savings !== 3380
+    ) {
+      return true;
+    }
+  }
+  if (state.settings) {
+    if (
+      state.settings.income !== 5650 ||
+      state.settings.monthlyLimit !== 2800 ||
+      state.settings.payday !== 25 ||
+      state.settings.savingsTarget !== 850 ||
+      state.settings.savingsGoal !== 10000 ||
+      state.settings.emergencyFund !== 5180
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function loadState() {
   try {
     return normalizeState(JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'));
@@ -298,13 +334,110 @@ function loadState() {
 }
 
 let _state = loadState();
+let _saveTimer = null;
+let _isSyncing = false;
+let _hasSyncedInitial = false;
 
-function saveState() {
+const _syncChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('odysseus_savings_sync') : null;
+if (_syncChannel) {
+  _syncChannel.onmessage = (event) => {
+    if (event.data?.type === 'savings_updated' && !_dialog) {
+      syncWithServer();
+    }
+  };
+}
+
+let _isPushing = false;
+async function pushStateToServer() {
+  if (_isPushing) return;
+  _isPushing = true;
+  try {
+    const payload = JSON.parse(JSON.stringify(_state));
+    await fetch('/api/savings/ledger', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    _syncChannel?.postMessage({ type: 'savings_updated' });
+  } catch (error) {
+    console.warn('Savings state could not be synced to server:', error);
+  } finally {
+    _isPushing = false;
+  }
+}
+
+function saveState(immediate = false) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(_state));
   } catch (error) {
-    console.warn('Savings state could not be saved:', error);
+    console.warn('Savings state could not be saved to localStorage:', error);
   }
+  if (_saveTimer) {
+    clearTimeout(_saveTimer);
+    _saveTimer = null;
+  }
+  if (immediate) {
+    pushStateToServer();
+  } else {
+    _saveTimer = setTimeout(pushStateToServer, 350);
+  }
+}
+
+async function syncWithServer() {
+  if (_isSyncing) return;
+  _isSyncing = true;
+  try {
+    const res = await fetch('/api/savings/ledger');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.initialized && data.ledger) {
+      _state = normalizeState(data.ledger);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(_state));
+      } catch (_) {}
+      _hasSyncedInitial = true;
+      if (_open && !_dialog) {
+        if (_expenseWalletId !== 'all' && !_state.wallets.some((w) => w.id === _expenseWalletId)) {
+          _expenseWalletId = _state.wallets[0]?.id || 'all';
+        }
+        render();
+      }
+    } else {
+      if (isCustomLedger(_state)) {
+        console.log('[Savings] Auto-migrating custom local ledger to server...');
+        await pushStateToServer();
+        _hasSyncedInitial = true;
+      }
+    }
+  } catch (err) {
+    console.warn('[Savings] Server sync check failed (using local cache):', err);
+  } finally {
+    _isSyncing = false;
+  }
+}
+
+if (typeof window !== 'undefined') {
+  syncWithServer();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') syncWithServer();
+  });
+  window.addEventListener('focus', () => {
+    syncWithServer();
+  });
+  window.addEventListener('beforeunload', () => {
+    if (_saveTimer) {
+      clearTimeout(_saveTimer);
+      _saveTimer = null;
+      try {
+        fetch('/api/savings/ledger', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(_state),
+          keepalive: true,
+        });
+      } catch (_) {}
+    }
+  });
 }
 
 function selectedMonth() {
@@ -489,6 +622,15 @@ function recordDailySnapshot() {
     daysToPayday: info.days,
   };
   const index = _state.dailyHistory.findIndex((item) => item.date === date);
+  const existing = index >= 0 ? _state.dailyHistory[index] : null;
+  if (
+    existing &&
+    existing.balance === entry.balance &&
+    Math.abs(existing.dailyLimit - entry.dailyLimit) < 0.001 &&
+    existing.daysToPayday === entry.daysToPayday
+  ) {
+    return;
+  }
   if (index >= 0) _state.dailyHistory[index] = entry;
   else _state.dailyHistory.push(entry);
   _state.dailyHistory = _state.dailyHistory
@@ -1523,6 +1665,7 @@ export function openSavings() {
   };
   document.addEventListener('keydown', _escHandler, true);
   render();
+  syncWithServer();
   // Savings opens as a right-side workspace panel, matching Notes. The
   // shared dock keeps the chat/workspace visible and reserves the panel's
   // width instead of placing a large floating modal over the screen.

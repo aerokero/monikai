@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 import io
+import sys
 import wave
+from pathlib import Path
+
+_ODY_ROOT = Path(__file__).resolve().parents[2] / "backend" / "odysseus"
+if str(_ODY_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ODY_ROOT))
 
 import pytest
 

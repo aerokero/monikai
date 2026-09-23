@@ -99,3 +99,4 @@ data/odysseus/tts_cache/
 # OS
 .DS_Store
 Thumbs.db
+data/savings_ledger.json

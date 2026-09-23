@@ -469,8 +469,7 @@ register_models_http_routes(app)
 register_mcp_http_routes(app)
 register_research_http_routes(app, emit_to_frontend=_emit_to_frontend)
 register_voice_http_routes(app)
-register_savings_http_routes(app)
-
+register_savings_http_routes(app, emit_to_frontend=_emit_to_frontend)
 try:
     from backend.odysseus_bridge import init_and_register_odysseus_backend
     init_and_register_odysseus_backend(app)
