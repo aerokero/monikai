@@ -29,10 +29,12 @@ class VoiceLightFeedbackController:
         ha_agent: Any,
         entity_id: str = "light.kuchnia_zarowka_1_ts0505b",
         enabled: bool = True,
+        brightness_scale: float = 1.0,
     ):
         self.ha_agent = ha_agent
         self.entity_id = entity_id
         self.enabled = enabled
+        self.brightness_scale = max(0.1, min(2.0, float(brightness_scale)))
         self.current_state = VoiceFeedbackState.IDLE
         self._saved_initial_state: Optional[Dict[str, Any]] = None
         self._pulse_task: Optional[asyncio.Task] = None
@@ -40,25 +42,26 @@ class VoiceLightFeedbackController:
 
         # Color & Pulse profiles
         # (RGB tuple, min_brightness, max_brightness, transition_sec, step_sleep_sec)
+        # Defaults are intentionally subtle (ambient room glow, not harsh ceiling floodlight)
         self._profiles = {
             VoiceFeedbackState.LISTENING: {
                 "rgb": (0, 75, 230),         # Darker blue / cobalt cyan
-                "min_bri": 65,
-                "max_bri": 150,
+                "min_bri": 15,
+                "max_bri": 50,
                 "transition": 1.1,
                 "interval": 1.2,
             },
             VoiceFeedbackState.THINKING: {
-                "rgb": (140, 230, 255),      # Very bright light blue / glowing cyan
-                "min_bri": 170,
-                "max_bri": 255,
-                "transition": 0.5,
-                "interval": 0.6,
+                "rgb": (140, 230, 255),      # Light blue / glowing cyan
+                "min_bri": 25,
+                "max_bri": 60,
+                "transition": 0.6,
+                "interval": 0.7,
             },
             VoiceFeedbackState.SPEAKING: {
                 "rgb": (0, 230, 115),        # Monika's vibrant emerald green
-                "min_bri": 100,
-                "max_bri": 240,
+                "min_bri": 30,
+                "max_bri": 75,
                 "transition": 0.6,
                 "interval": 0.7,
             },
@@ -125,8 +128,8 @@ class VoiceLightFeedbackController:
             return
 
         rgb = profile["rgb"]
-        min_bri = profile["min_bri"]
-        max_bri = profile["max_bri"]
+        min_bri = max(5, min(255, int(round(profile["min_bri"] * self.brightness_scale))))
+        max_bri = max(min_bri, min(255, int(round(profile["max_bri"] * self.brightness_scale))))
         transition = profile["transition"]
         interval = profile["interval"]
 
@@ -156,10 +159,18 @@ class VoiceLightFeedbackController:
         except Exception as exc:
             print(f"[VOICE LIGHT] Pulse animation error for {state.value}: {exc}")
 
-    def update_config(self, *, enabled: Optional[bool] = None, entity_id: Optional[str] = None) -> None:
+    def update_config(
+        self,
+        *,
+        enabled: Optional[bool] = None,
+        entity_id: Optional[str] = None,
+        brightness_scale: Optional[float] = None,
+    ) -> None:
         """Update controller settings dynamically."""
         if enabled is not None:
             self.enabled = bool(enabled)
         if entity_id:
             self.entity_id = entity_id
+        if brightness_scale is not None:
+            self.brightness_scale = max(0.1, min(2.0, float(brightness_scale)))
 

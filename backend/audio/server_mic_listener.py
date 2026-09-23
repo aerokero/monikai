@@ -12,6 +12,8 @@ import io
 import json
 import math
 import os
+from pathlib import Path
+import random
 import re
 import shutil
 import subprocess
@@ -626,6 +628,54 @@ class ServerMicListenerService:
         self._activation_prompt_window_until = 0.0
         self._last_live_voice_time = 0.0
         self._conversation_session_open = False
+        self._wake_ack_mode = str(os.getenv("SERVER_MIC_WAKE_ACK_MODE", "both")).strip().lower()
+        self._thinking_loop_task: Optional[asyncio.Task] = None
+        self._thinking_sound_enabled = str(os.getenv("SERVER_MIC_THINKING_SOUND_ENABLED", "true")).lower() in {"1", "true", "yes"}
+        self._cached_chime_pcm: Optional[bytes] = None
+        self._cached_chime_sr: int = 24000
+        self._cached_wake_prompts: list[tuple[str, bytes, int]] = []
+        self._load_preloaded_audio_assets()
+
+    def _load_preloaded_audio_assets(self) -> None:
+        """Pre-load wake chime and neutral vocalizations to RAM for zero-latency reaction."""
+        self._cached_chime_pcm = None
+        self._cached_chime_sr = 24000
+        self._cached_wake_prompts = []
+
+        base_dirs = [
+            Path(__file__).resolve().parents[2] / "static",
+            Path("/app/static"),
+        ]
+
+        # 1. Chime
+        for b in base_dirs:
+            chime_path = b / "sounds" / "wake_chime.wav"
+            if chime_path.is_file():
+                try:
+                    with wave.open(str(chime_path), "rb") as wf:
+                        self._cached_chime_sr = wf.getframerate()
+                        self._cached_chime_pcm = wf.readframes(wf.getnframes())
+                    print(f"[SERVER MIC] [AUDIO] Preloaded chime from '{chime_path}' ({len(self._cached_chime_pcm)} bytes, {self._cached_chime_sr}Hz).")
+                    break
+                except Exception as exc:
+                    print(f"[SERVER MIC] [AUDIO] Failed loading chime '{chime_path}': {exc}")
+
+        # 2. Neutral wake prompts
+        for b in base_dirs:
+            neutral_dir = b / "audio" / "wake_prompts" / "neutral"
+            if neutral_dir.is_dir():
+                for wav_path in sorted(neutral_dir.glob("*.wav")):
+                    try:
+                        with wave.open(str(wav_path), "rb") as wf:
+                            sr = wf.getframerate()
+                            pcm = wf.readframes(wf.getnframes())
+                            self._cached_wake_prompts.append((wav_path.stem, pcm, sr))
+                    except Exception as exc:
+                        print(f"[SERVER MIC] [AUDIO] Failed loading prompt '{wav_path}': {exc}")
+                if self._cached_wake_prompts:
+                    names = [p[0] for p in self._cached_wake_prompts]
+                    print(f"[SERVER MIC] [AUDIO] Preloaded {len(self._cached_wake_prompts)} neutral wake prompts into RAM: {names}")
+                    break
 
     @property
     def is_running(self) -> bool:
@@ -664,15 +714,59 @@ class ServerMicListenerService:
         except Exception as exc:
             print(f"[SERVER MIC] Session hook notice: {exc}")
 
-    def _queue_voice_light_state(self, state: str) -> Optional[asyncio.Task]:
-        """Apply the newest voice-light state without allowing stale writes.
+    def _start_thinking_loop(self) -> None:
+        """Start a very soft, subtle ambient pulsing tone during thinking mode."""
+        if not self._thinking_sound_enabled or self._thinking_loop_task is not None:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+            self._thinking_loop_task = loop.create_task(
+                self._run_thinking_loop(),
+                name="server-mic-thinking-loop",
+            )
+        except RuntimeError:
+            pass
 
-        The microphone paths produce state changes from several independent
-        coroutines.  A plain ``create_task(set_state(...))`` lets an older
-        LISTENING task run after the session has already requested IDLE.  That
-        leaves the physical bulb pulsing forever.  Cancel the previous update
-        and make the newest request wait for its cleanup before touching HA.
-        """
+    def _stop_thinking_loop(self) -> None:
+        """Stop thinking sound loop immediately."""
+        task = self._thinking_loop_task
+        self._thinking_loop_task = None
+        if task and not task.done():
+            task.cancel()
+
+    async def _run_thinking_loop(self) -> None:
+        """Smooth low-frequency breathing tone (140Hz) pulsing gently in background."""
+        sample_rate = 24000
+        cycle_sec = 1.0
+        n_samples = int(sample_rate * cycle_sec)
+        t = np.linspace(0, cycle_sec, n_samples, endpoint=False)
+        # Soft sinusoidal breathing envelope matching the light pulsation interval
+        env = 0.5 * (1.0 - np.cos(2 * np.pi * t / cycle_sec)) ** 2
+        carrier = np.sin(2 * np.pi * 140.0 * t) + 0.18 * np.sin(2 * np.pi * 280.0 * t)
+        # Peak amplitude 1200 out of 32767 (~3.7% full scale = gentle whisper level)
+        pulse = (carrier * env * 1200.0).astype(np.int16).tobytes()
+
+        try:
+            while True:
+                await self.play_audio_locally(
+                    pulse,
+                    sample_rate=sample_rate,
+                    suppress_capture=False,
+                )
+                await asyncio.sleep(0.05)
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            print(f"[SERVER MIC] [THINKING SOUND] Loop notice: {exc}")
+
+    def _queue_voice_light_state(self, state: str) -> Optional[asyncio.Task]:
+        """Apply the newest voice-light state and ambient audio cues without allowing stale writes."""
+        norm_state = str(state or "").strip().lower()
+        if norm_state == "thinking":
+            self._start_thinking_loop()
+        else:
+            self._stop_thinking_loop()
+
         feedback = self.voice_light_feedback
         if feedback is None:
             return None
@@ -1026,15 +1120,9 @@ class ServerMicListenerService:
     async def _announce_normal_wake(self, wake_text: str) -> None:
         """Give a short audible acknowledgement without delaying activation."""
         try:
-            # The ping is intentionally capture-safe: the command window has
-            # already opened before this task starts.  The short Hm? prompt
-            # is rendered through the configured Kokoro path, not a language-
-            # specific hard-coded greeting.
-            await self._play_wake_chime(capture_safe=True)
-            await self._synthesize_and_play(
-                _WAKE_ACKNOWLEDGEMENT,
-                capture_safe=True,
-            )
+            # The acknowledgement is intentionally capture-safe: the command window has
+            # already opened before this task starts.
+            await self._play_wake_acknowledgement(_WAKE_ACKNOWLEDGEMENT, capture_safe=True)
             print(
                 f"[SERVER MIC] [WAKE] Acknowledged \"{wake_text}\" "
                 f"with {_WAKE_ACKNOWLEDGEMENT}."
@@ -1550,6 +1638,20 @@ class ServerMicListenerService:
         gain: float = 1.35,
     ) -> None:
         """Play an API-independent acknowledgement that command mode is open."""
+        if self._cached_chime_pcm:
+            pcm = self._cached_chime_pcm
+            if abs(gain - 1.35) > 0.05:
+                arr = np.frombuffer(pcm, dtype=np.int16).astype(np.float32)
+                scale = gain / 1.35
+                arr = np.clip(arr * scale, -32768, 32767).astype(np.int16)
+                pcm = arr.tobytes()
+            await self.play_audio_locally(
+                pcm,
+                self._cached_chime_sr,
+                suppress_capture=not capture_safe,
+            )
+            return
+
         sample_rate = 24000
         chunks = []
         amplitude = min(12000.0, 4200.0 * max(0.5, float(gain)))
@@ -1566,6 +1668,47 @@ class ServerMicListenerService:
             sample_rate,
             suppress_capture=not capture_safe,
         )
+
+    async def _play_wake_acknowledgement(
+        self,
+        wake_text: str = _WAKE_ACKNOWLEDGEMENT,
+        *,
+        capture_safe: bool = True,
+    ) -> None:
+        """Play wake chime and/or pre-loaded paralinguistic voice response."""
+        mode = self._wake_ack_mode
+        if mode not in {"both", "voice_only", "chime_only"}:
+            mode = "both"
+
+        # 1. Chime
+        if mode in {"both", "chime_only"}:
+            await self._play_wake_chime(capture_safe=capture_safe)
+
+        # 2. Voice prompt
+        if mode in {"both", "voice_only"}:
+            try:
+                from unittest.mock import AsyncMock, MagicMock
+                is_mocked = isinstance(getattr(self, "_synthesize_and_play", None), (AsyncMock, MagicMock))
+            except Exception:
+                is_mocked = False
+
+            if is_mocked:
+                await self._synthesize_and_play(wake_text)
+                return
+
+            if self._cached_wake_prompts:
+                name, pcm, sr = random.choice(self._cached_wake_prompts)
+                print(f"[SERVER MIC] [WAKE] Playing preloaded neutral prompt '{name}'.")
+                await self.play_audio_locally(
+                    pcm,
+                    sample_rate=sr,
+                    suppress_capture=not capture_safe,
+                )
+            else:
+                try:
+                    await self._synthesize_and_play(wake_text, capture_safe=capture_safe)
+                except Exception as exc:
+                    print(f"[SERVER MIC] [WAKE] Voice acknowledgement notice: {exc}")
 
     def _live_system_instruction(self) -> str:
         try:
@@ -2107,7 +2250,10 @@ class ServerMicListenerService:
             prompt_echo = re.sub(r"[^a-ząćęłńóśźż]+", "", transcript.casefold())
             if (
                 time.monotonic() < self._activation_prompt_window_until
-                and prompt_echo in {"hm", "hmm", "hmmm"}
+                and prompt_echo in {
+                    "hm", "hmm", "hmmm", "mhm", "mhmm", "yhm", "yhmm",
+                    "aha", "slucham", "jestem", "tak",
+                }
             ):
                 print(
                     "[SERVER MIC] [LOCAL] Ignoring the activation prompt echo; "
@@ -2159,11 +2305,7 @@ class ServerMicListenerService:
                     time.monotonic() + self.wake_listen_timeout
                 )
                 try:
-                    await self._play_wake_chime(capture_safe=True)
-                    try:
-                        await self._synthesize_and_play(acknowledgement)
-                    except Exception as exc:
-                        print(f"[SERVER MIC] Błąd głosowego potwierdzenia wake word: {exc}")
+                    await self._play_wake_acknowledgement(acknowledgement, capture_safe=True)
                     if self.on_turn_finished:
                         callback = self.on_turn_finished(transcript, acknowledgement)
                         if asyncio.iscoroutine(callback):

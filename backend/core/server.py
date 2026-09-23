@@ -95,6 +95,7 @@ from .routers.mcp_http_router import register_mcp_http_routes
 from .routers.research_http_router import register_research_http_routes
 from .routers.workspace_http_router import register_workspace_http_routes
 from .routers.savings_http_router import register_savings_http_routes
+from .routers.wardrobe_http_router import register_wardrobe_http_routes
 from .routers.voice_http_router import register_voice_http_routes
 from .routers.odysseus_http_router import register_odysseus_http_routes
 from .routers.study_http_router import register_study_http_routes
@@ -303,10 +304,12 @@ async def lifespan(app: FastAPI):
             try:
                 from backend.agents.voice_light_feedback import VoiceLightFeedbackController
                 target_entity = vlf_cfg.get("entity_id", "light.kuchnia_zarowka_1_ts0505b")
+                bri_scale = float(vlf_cfg.get("brightness_scale", os.getenv("VOICE_LIGHT_BRIGHTNESS_SCALE", "1.0")))
                 voice_light_feedback = VoiceLightFeedbackController(
                     ha_agent=home_assistant_agent,
                     entity_id=target_entity,
                     enabled=vlf_cfg.get("enabled", True),
+                    brightness_scale=bri_scale,
                 )
                 print(f"[SERVER] VoiceLightFeedbackController initialized for '{target_entity}'.")
             except Exception as e:
@@ -470,6 +473,7 @@ register_mcp_http_routes(app)
 register_research_http_routes(app, emit_to_frontend=_emit_to_frontend)
 register_voice_http_routes(app)
 register_savings_http_routes(app, emit_to_frontend=_emit_to_frontend)
+register_wardrobe_http_routes(app, emit_to_frontend=_emit_to_frontend)
 try:
     from backend.odysseus_bridge import init_and_register_odysseus_backend
     init_and_register_odysseus_backend(app)

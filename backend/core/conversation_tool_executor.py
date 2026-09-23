@@ -423,6 +423,25 @@ class CoreConversationToolExecutor:
                     limit,
                 )
                 rendered = json.dumps(recent, ensure_ascii=False)
+            elif request.name == "set_monika_appearance":
+                from backend.core.routers.wardrobe_http_router import save_wardrobe_state
+                _payload = {}
+                args = request.arguments
+                if args.get("outfit"):
+                    _payload["outfit"] = str(args["outfit"]).strip()
+                if args.get("hair_style"):
+                    _payload["hairStyle"] = str(args["hair_style"]).strip()
+                if args.get("ahoge"):
+                    _payload["ahoge"] = str(args["ahoge"]).strip()
+                if args.get("background"):
+                    _payload["background"] = str(args["background"]).strip()
+
+                saved = save_wardrobe_state(_payload)
+                rendered = (
+                    f"Monika's appearance updated: outfit={saved.get('outfit')}, "
+                    f"hair={saved.get('hairStyle')}, ahoge={saved.get('ahoge')}, "
+                    f"background={saved.get('background')}."
+                )
             elif request.name in {"list_smart_devices", "control_light"}:
                 if self._smart_home is None:
                     raise RuntimeError("Smart-home system unavailable.")

@@ -3966,6 +3966,33 @@ class AudioLoop:
                                         types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str})
                                     )
 
+                                elif fc.name == "set_monika_appearance":
+                                    try:
+                                        from backend.core.routers.wardrobe_http_router import save_wardrobe_state
+                                        _payload = {}
+                                        if fc.args.get("outfit"):
+                                            _payload["outfit"] = str(fc.args["outfit"]).strip()
+                                        if fc.args.get("hair_style"):
+                                            _payload["hairStyle"] = str(fc.args["hair_style"]).strip()
+                                        if fc.args.get("ahoge"):
+                                            _payload["ahoge"] = str(fc.args["ahoge"]).strip()
+                                        if fc.args.get("background"):
+                                            _payload["background"] = str(fc.args["background"]).strip()
+
+                                        saved = save_wardrobe_state(_payload)
+                                        if hasattr(self, "_sio") and self._sio:
+                                            await self._sio.emit("set_wardrobe", saved)
+                                        result_str = (
+                                            f"Monika's appearance updated: outfit={saved.get('outfit')}, "
+                                            f"hair={saved.get('hairStyle')}, ahoge={saved.get('ahoge')}, "
+                                            f"background={saved.get('background')}."
+                                        )
+                                    except Exception as e:
+                                        result_str = f"Error updating appearance: {e}"
+                                    function_responses.append(
+                                        types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str})
+                                    )
+
                                 elif fc.name == "minecraft_goals":
                                     try:
                                         from backend.core.runtimes.v2_runtime import get as _v2_get

@@ -591,6 +591,113 @@ class _XTTSClient:
             logger.warning("XTTS synthesis request failed: %s", exc)
             return None
 
+POCKET_DEFAULT_TEMP = 0.70
+POCKET_DEFAULT_STEPS = 2
+
+
+class _PocketTTSPipeline:
+    """CPU-friendly local Polish neural TTS using pocket-tts."""
+
+    def __init__(self):
+        self._model = None
+        self._voice_states = {}
+        self._lock = threading.Lock()
+
+    @property
+    def available(self) -> bool:
+        try:
+            import pocket_tts  # noqa: F401
+            return True
+        except Exception:
+            return False
+
+    def get_speakers(self) -> list:
+        return ["Leda", "Sulafat"]
+
+    def _resolve_reference_audio(self, voice_name: str) -> Optional[Path]:
+        name = str(voice_name or "leda").strip().lower()
+        candidates = [
+            Path("/app/static/voice_samples") / f"ref_{name}.wav",
+            Path(__file__).resolve().parents[4] / "static" / "voice_samples" / f"ref_{name}.wav",
+            Path(__file__).resolve().parents[4] / "static" / "voice_samples" / "ref_leda.wav",
+        ]
+        for c in candidates:
+            if c.is_file():
+                return c
+        return None
+
+    def synthesize(
+        self,
+        text: str,
+        voice: Optional[str] = "Leda",
+        speed: float = 1.0,
+        temperature: float = POCKET_DEFAULT_TEMP,
+        steps: int = POCKET_DEFAULT_STEPS,
+    ) -> Optional[bytes]:
+        try:
+            from pocket_tts import TTSModel
+            import io
+            import scipy.io.wavfile
+            import numpy as np
+        except Exception as exc:
+            logger.warning("Pocket TTS import failed: %s", exc)
+            return None
+
+        clean_text = str(text or "").strip()
+        if not clean_text:
+            return None
+
+        with self._lock:
+            if self._model is None:
+                try:
+                    logger.info("Loading Pocket TTS model (hf://shefowl/pocket-tts-polish-6l/config.yaml)...")
+                    self._model = TTSModel.load_model(
+                        config="hf://shefowl/pocket-tts-polish-6l/config.yaml",
+                        temp=float(temperature),
+                        sampler_decode_steps=int(steps),
+                    )
+                    logger.info("Pocket TTS model loaded successfully")
+                except Exception as exc:
+                    logger.warning("Failed to load Pocket TTS model: %s", exc)
+                    return None
+
+            voice_key = str(voice or "leda").strip().lower()
+            if voice_key not in self._voice_states:
+                ref_path = self._resolve_reference_audio(voice_key)
+                if ref_path:
+                    try:
+                        self._voice_states[voice_key] = self._model.get_state_for_audio_prompt(str(ref_path))
+                        logger.info("Cached Pocket TTS voice state: %s", voice_key)
+                    except Exception as exc:
+                        logger.warning("Failed to encode audio prompt for Pocket TTS (%s): %s", voice_key, exc)
+                if voice_key not in self._voice_states and self._voice_states:
+                    self._voice_states[voice_key] = next(iter(self._voice_states.values()))
+
+            state = self._voice_states.get(voice_key)
+            if state is None:
+                logger.warning("No voice state available for Pocket TTS voice '%s'", voice_key)
+                return None
+
+            try:
+                audio_tensor = self._model.generate_audio(state, clean_text)
+                sr = getattr(self._model, "sample_rate", 24000)
+                audio_np = (audio_tensor.detach().cpu().numpy() * 32767.0).clip(-32768, 32767).astype(np.int16)
+                buf = io.BytesIO()
+                scipy.io.wavfile.write(buf, sr, audio_np)
+                data = buf.getvalue()
+                logger.info(
+                    "Pocket TTS synthesis succeeded: %d bytes (voice=%s, temp=%.2f, steps=%d, speed=%.2f)",
+                    len(data),
+                    voice_key,
+                    temperature,
+                    steps,
+                    speed,
+                )
+                return data
+            except Exception as exc:
+                logger.warning("Pocket TTS audio generation failed: %s", exc)
+                return None
+
 
 class _PolishKokoroG2P:
     """Polish espeak-ng G2P with the Kokoro vocabulary compatibility map."""
@@ -644,6 +751,7 @@ class TTSService:
         self._kokoro = None  # lazy-init
         self._piper = None  # lazy-init; loaded only for Polish synthesis
         self._xtts = None  # lazy-init; local/remote Coqui XTTS-v2 client
+        self._pocket = None  # lazy-init; local pocket-tts client
 
         try:
             self.max_cache_bytes = int(os.getenv("ODYSSEUS_TTS_CACHE_MAX_BYTES", 500 * 1024 * 1024))
@@ -667,6 +775,12 @@ class TTSService:
                 voice = _xtts_default_speaker()
             if language == "auto":
                 language = _xtts_default_language()
+        elif provider in ("pocket", "pocket-tts") or model.lower() in ("pocket", "pocket-tts", "pocket-tts-polish-6l"):
+            provider = "pocket"
+            if not model or model.lower() in ("tts-1", "kokoro", "xtts-v2"):
+                model = "pocket-tts-polish-6l"
+            if not voice or voice in GENERIC_KOKORO_VOICES:
+                voice = "Leda"
 
         # Restore old/local Kokoro profiles in memory. This also prevents a
         # stale Piper profile from taking over after the renderer rollback.
@@ -693,6 +807,8 @@ class TTSService:
             # ``auto`` follows an explicit language when supplied and otherwise
             # uses high-confidence text detection (Polish diacritics/scripts).
             "tts_language": language,
+            "tts_pocket_temperature": float(saved.get("tts_pocket_temperature", POCKET_DEFAULT_TEMP)),
+            "tts_pocket_steps": int(saved.get("tts_pocket_steps", POCKET_DEFAULT_STEPS)),
         }
 
     @property
@@ -714,6 +830,9 @@ class TTSService:
         if provider == "xtts":
             xtts = self._get_xtts()
             return xtts is not None and xtts.available
+        if provider in ("pocket", "pocket-tts"):
+            pocket = self._get_pocket()
+            return pocket is not None and pocket.available
         if isinstance(provider, str) and provider.startswith("endpoint:"):
             return True  # assume reachable; errors surface at synthesis time
         return False
@@ -728,6 +847,8 @@ class TTSService:
         voice: str,
         speed: float = 1.0,
         language: str = "auto",
+        temperature: float = POCKET_DEFAULT_TEMP,
+        steps: int = POCKET_DEFAULT_STEPS,
     ) -> str:
         # Language is part of the audio identity.  Without it, a Polish
         # fallback could reuse an earlier English rendering of the same text.
@@ -736,8 +857,8 @@ class TTSService:
         # Include the Polish mode as well so switching between the experimental
         # neural path and espeak cannot return stale audio from the other path.
         raw = (
-            f"v5|{provider}|{model}|{voice}|{speed}|{language}|"
-            f"{_kokoro_polish_mode()}|{_piper_model_id()}|{text}"
+            f"v6|{provider}|{model}|{voice}|{speed}|{language}|"
+            f"{temperature}|{steps}|{_kokoro_polish_mode()}|{_piper_model_id()}|{text}"
         )
         return hashlib.sha256(raw.encode()).hexdigest()
 
@@ -822,6 +943,11 @@ class TTSService:
         if self._xtts is None:
             self._xtts = _XTTSClient()
         return self._xtts
+
+    def _get_pocket(self):
+        if self._pocket is None:
+            self._pocket = _PocketTTSPipeline()
+        return self._pocket
 
     # ── API endpoint ──
 
@@ -1004,6 +1130,8 @@ class TTSService:
         use_cache: bool = True,
         language: Optional[str] = None,
         provider: Optional[str] = None,
+        voice: Optional[str] = None,
+        speed: Optional[float] = None,
     ) -> Optional[bytes]:
         settings = self._load_settings()
         if settings.get("tts_enabled") is False:
@@ -1011,6 +1139,9 @@ class TTSService:
         provider = str(provider or settings["tts_provider"] or "disabled").strip().lower()
         model = settings["tts_model"]
         voice = str(voice or settings.get("tts_voice", "leda") or "leda").strip()
+        speed = _safe_speed(speed if speed is not None else settings.get("tts_speed", "1"))
+        pocket_temp = float(settings.get("tts_pocket_temperature", POCKET_DEFAULT_TEMP))
+        pocket_steps = int(settings.get("tts_pocket_steps", POCKET_DEFAULT_STEPS))
         selected_language = self._resolve_language(
             text,
             language if language is not None else settings.get("tts_language", "auto"),
@@ -1024,7 +1155,16 @@ class TTSService:
             text = text[:5000]
 
         if use_cache:
-            key = self._cache_key(text, provider, model, voice, speed, selected_language)
+            key = self._cache_key(
+                text,
+                provider,
+                model,
+                voice,
+                speed,
+                selected_language,
+                temperature=pocket_temp,
+                steps=pocket_steps,
+            )
             cached = self._get_cached(key)
             if cached:
                 logger.info(f"TTS cache hit ({len(text)} chars)")
@@ -1032,7 +1172,31 @@ class TTSService:
 
         audio_data = None
 
-        if provider == "xtts":
+        if provider == "local":
+            if selected_language != "pl" or _kokoro_polish_mode() == "experimental":
+                kokoro = self._get_kokoro()
+                if kokoro and kokoro.available:
+                    try:
+                        audio_data = kokoro.synthesize_raw(
+                            text,
+                            voice,
+                            language=selected_language,
+                            speed=speed,
+                        )
+                    except TypeError:
+                        audio_data = kokoro.synthesize_raw(
+                            text,
+                            voice,
+                            language=selected_language,
+                        )
+                else:
+                    logger.warning("Kokoro TTS not available")
+
+            # If Kokoro is unavailable (or explicitly switched to fallback),
+            # keep the Polish pronunciation through espeak-ng.
+            if not audio_data and _espeak_voice(selected_language):
+                audio_data = self._synthesize_with_espeak(text, selected_language, speed)
+        elif provider == "xtts":
             xtts = self._get_xtts()
             if xtts and xtts.available:
                 audio_data = xtts.synthesize(
@@ -1053,13 +1217,14 @@ class TTSService:
                 if not audio_data and _espeak_voice(selected_language):
                     audio_data = self._synthesize_with_espeak(text, selected_language, speed)
         elif provider in ("pocket", "pocket-tts"):
-            xtts = self._get_xtts()
-            if xtts and xtts.available and (voice.lower() == "monika" or settings.get("tts_provider") == "xtts"):
-                audio_data = xtts.synthesize(
+            pocket = self._get_pocket()
+            if pocket and pocket.available:
+                audio_data = pocket.synthesize(
                     text,
-                    speaker=voice,
-                    language=selected_language,
+                    voice=voice,
                     speed=speed,
+                    temperature=pocket_temp,
+                    steps=pocket_steps,
                 )
             if not audio_data and (selected_language != "pl" or _kokoro_polish_mode() == "experimental"):
                 kokoro = self._get_kokoro()
@@ -1069,6 +1234,7 @@ class TTSService:
                         text,
                         kokoro_voice,
                         language=selected_language,
+                        speed=speed,
                     )
                 else:
                     logger.warning("Kokoro TTS not available")
@@ -1085,7 +1251,16 @@ class TTSService:
             return None
 
         if audio_data and use_cache:
-            key = self._cache_key(text, provider, model, voice, speed, selected_language)
+            key = self._cache_key(
+                text,
+                provider,
+                model,
+                voice,
+                speed,
+                selected_language,
+                temperature=pocket_temp,
+                steps=pocket_steps,
+            )
             self._put_cache(key, audio_data)
 
         return audio_data
@@ -1125,13 +1300,7 @@ class TTSService:
             "cache_size_mb": round(cache_size / (1024 * 1024), 2),
         }
 
-        if provider == "xtts":
-            xtts = self._get_xtts()
-            stats["model"] = "Coqui XTTS-v2"
-            stats["xtts_url"] = xtts.base_url if xtts else _xtts_server_url()
-            stats["xtts_available"] = xtts.available if xtts else False
-            stats["xtts_speaker"] = stats["voice"]
-            stats["xtts_speakers"] = xtts.get_speakers() if xtts else ["Leda", "Sulafat"]
+        if provider == "local":
             kokoro = self._get_kokoro()
             stats["model"] = (
                 "Kokoro-82M (GPU/CPU)"
@@ -1151,6 +1320,19 @@ class TTSService:
             stats["polish_kokoro_mode"] = _kokoro_polish_mode()
             stats["polish_kokoro_voices"] = sorted(KOKORO_POLISH_EXPERIMENTAL_VOICES)
             stats["espeak_fallback"] = bool(shutil.which("espeak-ng") or shutil.which("espeak"))
+        elif provider == "xtts":
+            xtts = self._get_xtts()
+            stats["model"] = "Coqui XTTS-v2"
+            stats["xtts_url"] = xtts.base_url if xtts else _xtts_server_url()
+            stats["xtts_available"] = xtts.available if xtts else False
+            stats["xtts_speaker"] = stats["voice"]
+            stats["xtts_speakers"] = xtts.get_speakers() if xtts else ["Leda", "Sulafat"]
+        elif provider in ("pocket", "pocket-tts"):
+            pocket = self._get_pocket()
+            stats["model"] = "Kyutai Pocket TTS (shefowl CPU)"
+            stats["pocket_available"] = pocket.available if pocket else False
+            stats["pocket_voice"] = stats["voice"]
+            stats["pocket_voices"] = pocket.get_speakers() if pocket else ["Leda", "Sulafat"]
         elif provider == "browser":
             stats["model"] = "Browser (Web Speech API)"
         elif provider.startswith("endpoint:"):

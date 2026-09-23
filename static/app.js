@@ -28,6 +28,7 @@ import memoryModule from './js/memory.js?v=20260722memoryloading1';
 import voiceRecorderModule from './js/voiceRecorder.js?v=20260913approvalcontrol3';
 import censorModule from './js/censor.js';
 import galleryModule from './js/gallery.js';
+import wardrobeModule from './js/wardrobe.js';
 import { UI_VIS_DEFAULT_OFF, resolveVisibility } from './js/ui_visibility.js';
 import tasksModule from './js/tasks.js?v=20260723tasksbulkfeedback1';
 import calendarModule from './js/calendar.js';
@@ -81,6 +82,7 @@ function hydrateCanonicalIcons(root = document) {
     ['#rail-research', 'search'],
     ['#rail-email', 'mail'],
     ['#rail-gallery', 'image'],
+    ['#rail-wardrobe', 'hanger'],
     ['#rail-archive', 'book'],
     ['#rail-memory', 'brain'],
     ['#rail-notes', 'note'],
@@ -97,6 +99,7 @@ function hydrateCanonicalIcons(root = document) {
     ['#sidebar-search-btn', 'search'],
     ['#tool-library-btn', 'book'],
     ['#tool-gallery-btn', 'image'],
+    ['#tool-wardrobe-btn', 'hanger'],
     ['#tool-calendar-btn', 'calendar'],
     ['#tool-notes-btn', 'note'],
     ['#tool-tasks-btn', 'checkCircle'],
@@ -340,6 +343,7 @@ function initRailHoverLabels() {
     'rail-research': 'Research',
     'rail-email': 'Email',
     'rail-gallery': 'Gallery',
+    'rail-wardrobe': 'Wardrobe',
     'rail-archive': 'Library',
     'rail-memory': 'Brain',
     'rail-notes': 'Notes',
@@ -890,7 +894,7 @@ function initializeEventListeners() {
       };
 
       // Dynamic modals (removed from DOM on close)
-      const dynamicModals = ['library-modal', 'archive-modal', 'doclib-modal', 'gallery-modal', 'tasks-modal', 'email-lib-modal', 'savings-modal'];
+      const dynamicModals = ['library-modal', 'archive-modal', 'doclib-modal', 'gallery-modal', 'wardrobe-modal', 'tasks-modal', 'email-lib-modal', 'savings-modal'];
       for (const id of dynamicModals) {
         const m = document.getElementById(id);
         if (id === 'gallery-modal') {
@@ -938,7 +942,7 @@ function initializeEventListeners() {
     'memory-modal': null,
     'theme-modal': null,
   };
-  const _dynamicModalIds = ['library-modal', 'archive-modal', 'doclib-modal', 'gallery-modal', 'tasks-modal', 'savings-modal'];
+  const _dynamicModalIds = ['library-modal', 'archive-modal', 'doclib-modal', 'gallery-modal', 'wardrobe-modal', 'tasks-modal', 'savings-modal'];
   function dismissModal(modal) {
     if (!modal || modal.classList.contains('hidden')) return;
     if (modal.id === 'gallery-modal') {
@@ -1212,6 +1216,15 @@ function initializeEventListeners() {
     });
   }
 
+  // Wardrobe tool button
+  const toolWardrobeBtn = el('tool-wardrobe-btn');
+  if (toolWardrobeBtn) {
+    toolWardrobeBtn.addEventListener('click', () => {
+      if (!wardrobeModule) return;
+      wardrobeModule.toggleWardrobe();
+    });
+  }
+
   // Tasks tool button
   const toolTasksBtn = el('tool-tasks-btn');
   if (toolTasksBtn) {
@@ -1385,6 +1398,7 @@ function initializeEventListeners() {
     },
     '/memory':   () => document.getElementById('tool-memory-btn')?.click(),
     '/gallery':  () => document.getElementById('tool-gallery-btn')?.click(),
+    '/wardrobe': () => document.getElementById('tool-wardrobe-btn')?.click(),
     '/tasks':    () => document.getElementById('tool-tasks-btn')?.click(),
     '/savings':  () => document.getElementById('tool-savings-btn')?.click(),
     '/library':  () => sessionModule && sessionModule.openLibrary && sessionModule.openLibrary(),
@@ -4054,6 +4068,7 @@ function startOdysseusApp() {
     'rail-cookbook':   'tool-cookbook-btn',
     'rail-archive':   'tool-library-btn',
     'rail-gallery':   'tool-gallery-btn',
+    'rail-wardrobe':  'tool-wardrobe-btn',
     'rail-tasks':     'tool-tasks-btn',
     'rail-calendar':  'tool-calendar-btn',
     'rail-notes':     'tool-notes-btn',

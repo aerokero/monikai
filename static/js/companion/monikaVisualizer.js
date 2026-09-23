@@ -2,7 +2,18 @@
  * Pixel-Perfect Monika Visualizer for Odysseus AI Workspace
  * Renders MAS layered Monika (Hair, Body, Outfit, Arms, Face, Eyes, Mouth, Ahoge, Table)
  * with animated blinking, talking, breathing and time-of-day room transitions.
+ * Fully supports Wardrobe customization (outfit, hairStyle, ahoge, background).
  */
+
+export const OUTFITS_WITH_ARMS = new Set([
+  'def',
+  'blazerless',
+  'blackdress',
+  'blackpinkdress',
+  'marisa',
+  'santa',
+  'spider_lingerie',
+]);
 
 export class MonikaVisualizer {
   constructor() {
@@ -10,19 +21,26 @@ export class MonikaVisualizer {
     this.isBlinking = false;
     this.isSpeaking = false;
     this.mood = 'neutral'; // 'neutral', 'happy', 'love', 'thinking'
-    this.hairStyle = 'down'; // 'down' or 'def'
-    this.outfit = 'bath_towel_white'; // 'bath_towel_white' or 'def'
     this.pose = 'rest'; // 'rest', 'crossed', 'steepling', 'point'
-    this.ahoge = 'ahoge_curl'; // 'ahoge_curl' or null
     
+    // Wardrobe state loaded from localStorage with sensible defaults
+    this.outfit = localStorage.getItem('monikai_wardrobe_outfit') || 'def';
+    this.hairStyle = localStorage.getItem('monikai_wardrobe_hair') || 'def';
+    this.ahoge = localStorage.getItem('monikai_wardrobe_ahoge') || 'ahoge_curl';
+    this.background = localStorage.getItem('monikai_wardrobe_bg') || 'auto';
+    this.autoMode = localStorage.getItem('monikai_wardrobe_auto') === 'true';
+
     this.init();
   }
 
   init() {
     this.mountStage();
-    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) this.startBlinkLoop();
-    this.updateBackground();
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      this.startBlinkLoop();
+    }
+    this.renderWardrobe();
     this.listenToOdysseusEvents();
+    this.listenToWardrobeEvents();
   }
 
   mountStage() {
@@ -48,42 +66,50 @@ export class MonikaVisualizer {
         <img class="m-layer" src="/static/vn/monika/t/chair-def.png" alt="" />
         
         <!-- Layer 2: Hair Back -->
-        <img id="m-layer-hair-back" class="m-layer" src="/static/vn/monika/h/down/0.png" alt="" />
+        <img id="m-layer-hair-back" class="m-layer" src="/static/vn/monika/h/${this.hairStyle}/0.png" alt="" />
         
         <!-- Layer 3: Body Base -->
         <img class="m-layer" src="/static/vn/monika/b/body-def-0.png" alt="" />
         
         <!-- Layer 4: Outfit Base -->
-        <img id="m-layer-outfit-0" class="m-layer" src="/static/vn/monika/c/bath_towel_white/body-def-0.png" alt="" />
+        <img id="m-layer-outfit-0" class="m-layer" src="/static/vn/monika/c/${this.outfit}/body-def-0.png" alt="" />
         
         <!-- Layer 5: Body Upper -->
         <img class="m-layer" src="/static/vn/monika/b/body-def-1.png" alt="" />
         
         <!-- Layer 6: Outfit Upper -->
-        <img id="m-layer-outfit-1" class="m-layer" src="/static/vn/monika/c/bath_towel_white/body-def-1.png" alt="" />
+        <img id="m-layer-outfit-1" class="m-layer" src="/static/vn/monika/c/${this.outfit}/body-def-1.png" alt="" />
         
-        <!-- Layer 7: Arms (Left & Right Rest Pose) -->
+        <!-- Layer 7 & 8: Table Desk & Shadow -->
+        <img class="m-layer" src="/static/vn/monika/t/table-def.png" alt="" />
+        <img class="m-layer" src="/static/vn/monika/t/table-def-s.png" alt="" />
+
+        <!-- Layer 9: Body Arms (Left & Right Skin) -->
         <img id="m-layer-arm-l" class="m-layer" src="/static/vn/monika/b/arms-left-rest-10.png" alt="" />
         <img id="m-layer-arm-r" class="m-layer" src="/static/vn/monika/b/arms-right-restpoint-10.png" alt="" />
         
-        <!-- Layer 8: Head Base -->
+        <!-- Layer 10: Outfit Arms (Sleeves for sleeved outfits) -->
+        <img id="m-layer-outfit-arm-l" class="m-layer" src="" alt="" style="display:none;" />
+        <img id="m-layer-outfit-arm-r" class="m-layer" src="" alt="" style="display:none;" />
+
+        <!-- Layer 11: Head Base -->
         <img class="m-layer" src="/static/vn/monika/b/body-def-head.png" alt="" />
         
-        <!-- Layer 9: Face Elements -->
+        <!-- Layer 12: Face Elements -->
         <img class="m-layer" src="/static/vn/monika/f/face-nose-def.png" alt="" />
         <img id="m-layer-blush" class="m-layer" src="/static/vn/monika/f/face-blush-shade.png" style="opacity:0.6" alt="" />
         <img id="m-layer-eyes" class="m-layer" src="/static/vn/monika/f/face-eyes-normal.png" alt="" />
         <img id="m-layer-brows" class="m-layer" src="/static/vn/monika/f/face-eyebrows-mid.png" alt="" />
         <img id="m-layer-mouth" class="m-layer" src="/static/vn/monika/f/face-mouth-smile.png" alt="" />
         
-        <!-- Layer 10: Hair Front / Bangs -->
-        <img id="m-layer-hair-front" class="m-layer" src="/static/vn/monika/h/down/10.png" alt="" />
+        <!-- Layer 13: Hair Front / Bangs -->
+        <img id="m-layer-hair-front" class="m-layer" src="/static/vn/monika/h/${this.hairStyle}/10.png" alt="" />
         
-        <!-- Layer 11: Ahoge Accessory -->
-        <img id="m-layer-ahoge" class="m-layer" src="/static/vn/monika/a/ahoge_curl/0.png" alt="" />
-        
-        <!-- Layer 12: Desk / Table -->
-        <img class="m-layer" src="/static/vn/monika/t/table-def.png" alt="" />
+        <!-- Layer 14: Ribbon / Hair Accessory -->
+        <img id="m-layer-ribbon" class="m-layer" src="/static/vn/monika/a/ribbon_def/0.png" alt="" style="display:none;" />
+
+        <!-- Layer 15: Ahoge Accessory -->
+        <img id="m-layer-ahoge" class="m-layer" src="" alt="" style="display:none;" />
       </div>
       <div class="monika-vn-atmosphere"></div>
     `;
@@ -91,6 +117,7 @@ export class MonikaVisualizer {
     // Insert at the beginning of chat container so it renders under messages & composer
     chatContainer.insertBefore(this.stage, chatContainer.firstChild);
     this.applyStyles();
+    this.renderWardrobe();
   }
 
   applyStyles() {
@@ -184,6 +211,61 @@ export class MonikaVisualizer {
     `;
   }
 
+  renderWardrobe() {
+    // 1. Hair layers
+    const hairBack = document.getElementById('m-layer-hair-back');
+    const hairFront = document.getElementById('m-layer-hair-front');
+    if (hairBack) hairBack.src = `/static/vn/monika/h/${this.hairStyle}/0.png`;
+    if (hairFront) hairFront.src = `/static/vn/monika/h/${this.hairStyle}/10.png`;
+
+    // 2. Ribbon layer (ponytail 'def' has classic white ribbon)
+    const ribbonEl = document.getElementById('m-layer-ribbon');
+    if (ribbonEl) {
+      if (this.hairStyle === 'def') {
+        ribbonEl.src = '/static/vn/monika/a/ribbon_def/0.png';
+        ribbonEl.style.display = 'block';
+      } else {
+        ribbonEl.style.display = 'none';
+      }
+    }
+
+    // 3. Outfit layers
+    const outfit0 = document.getElementById('m-layer-outfit-0');
+    const outfit1 = document.getElementById('m-layer-outfit-1');
+    if (outfit0) outfit0.src = `/static/vn/monika/c/${this.outfit}/body-def-0.png`;
+    if (outfit1) outfit1.src = `/static/vn/monika/c/${this.outfit}/body-def-1.png`;
+
+    // 4. Arm sleeves (conditional on outfit having sleeves)
+    const armL = document.getElementById('m-layer-outfit-arm-l');
+    const armR = document.getElementById('m-layer-outfit-arm-r');
+    const hasArms = OUTFITS_WITH_ARMS.has(this.outfit);
+    if (armL && armR) {
+      if (hasArms) {
+        armL.src = `/static/vn/monika/c/${this.outfit}/arms-left-rest-10.png`;
+        armR.src = `/static/vn/monika/c/${this.outfit}/arms-right-restpoint-10.png`;
+        armL.style.display = 'block';
+        armR.style.display = 'block';
+      } else {
+        armL.style.display = 'none';
+        armR.style.display = 'none';
+      }
+    }
+
+    // 5. Ahoge layer
+    const ahogeEl = document.getElementById('m-layer-ahoge');
+    if (ahogeEl) {
+      if (this.ahoge && this.ahoge !== 'none') {
+        ahogeEl.src = `/static/vn/monika/a/${this.ahoge}/0.png`;
+        ahogeEl.style.display = 'block';
+      } else {
+        ahogeEl.style.display = 'none';
+      }
+    }
+
+    // 6. Background
+    this.updateBackground();
+  }
+
   startBlinkLoop() {
     const blink = () => {
       const eyesEl = document.getElementById('m-layer-eyes');
@@ -209,13 +291,105 @@ export class MonikaVisualizer {
   }
 
   updateBackground() {
-    const hour = new Date().getHours();
-    const isNight = hour >= 20 || hour < 6;
     const room = document.getElementById('monika-vn-room');
-    if (room) {
+    if (!room) return;
+
+    if (this.background && this.background !== 'auto') {
+      const bgUrl = this.background.startsWith('/') 
+        ? this.background 
+        : `/static/vn/location/${this.background}`;
+      room.style.backgroundImage = `url('${bgUrl}')`;
+    } else {
+      // Auto mode: Day/night based on system clock
+      const hour = new Date().getHours();
+      const isNight = hour >= 20 || hour < 6;
       const bg = isNight ? '/static/vn/location/bg_room_night.png' : '/static/vn/location/bg_room.png';
       room.style.backgroundImage = `url('${bg}')`;
     }
+  }
+
+  // --- Wardrobe Public API ---
+
+  setOutfit(outfitKey, save = true) {
+    if (!outfitKey) return;
+    this.outfit = outfitKey;
+    if (save) {
+      localStorage.setItem('monikai_wardrobe_outfit', outfitKey);
+    }
+    this.renderWardrobe();
+    this.emitWardrobeChange();
+  }
+
+  setHairStyle(hairKey, save = true) {
+    if (!hairKey) return;
+    this.hairStyle = hairKey;
+    if (save) {
+      localStorage.setItem('monikai_wardrobe_hair', hairKey);
+    }
+    this.renderWardrobe();
+    this.emitWardrobeChange();
+  }
+
+  setAhoge(ahogeKey, save = true) {
+    this.ahoge = ahogeKey || 'none';
+    if (save) {
+      localStorage.setItem('monikai_wardrobe_ahoge', this.ahoge);
+    }
+    this.renderWardrobe();
+    this.emitWardrobeChange();
+  }
+
+  setBackground(bgKey, save = true) {
+    if (!bgKey) return;
+    this.background = bgKey;
+    if (save) {
+      localStorage.setItem('monikai_wardrobe_bg', bgKey);
+    }
+    this.updateBackground();
+    this.emitWardrobeChange();
+  }
+
+  setWardrobe(config = {}, save = true) {
+    if (config.outfit !== undefined) this.outfit = config.outfit;
+    if (config.hairStyle !== undefined) this.hairStyle = config.hairStyle;
+    if (config.ahoge !== undefined) this.ahoge = config.ahoge;
+    if (config.background !== undefined) this.background = config.background;
+    if (config.autoMode !== undefined) this.autoMode = !!config.autoMode;
+
+    if (save) {
+      if (config.outfit !== undefined) localStorage.setItem('monikai_wardrobe_outfit', this.outfit);
+      if (config.hairStyle !== undefined) localStorage.setItem('monikai_wardrobe_hair', this.hairStyle);
+      if (config.ahoge !== undefined) localStorage.setItem('monikai_wardrobe_ahoge', this.ahoge);
+      if (config.background !== undefined) localStorage.setItem('monikai_wardrobe_bg', this.background);
+      if (config.autoMode !== undefined) localStorage.setItem('monikai_wardrobe_auto', String(this.autoMode));
+    }
+
+    this.renderWardrobe();
+    this.emitWardrobeChange();
+  }
+
+  getWardrobeState() {
+    return {
+      outfit: this.outfit,
+      hairStyle: this.hairStyle,
+      ahoge: this.ahoge,
+      background: this.background,
+      autoMode: this.autoMode,
+    };
+  }
+
+  emitWardrobeChange() {
+    window.dispatchEvent(new CustomEvent('monikai:wardrobe-updated', {
+      detail: this.getWardrobeState()
+    }));
+  }
+
+  listenToWardrobeEvents() {
+    window.addEventListener('monikai:set-wardrobe', (e) => {
+      if (e.detail) {
+        this.setWardrobe(e.detail);
+      }
+    });
   }
 
   listenToOdysseusEvents() {

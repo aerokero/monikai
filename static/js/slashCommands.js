@@ -1369,6 +1369,7 @@ async function _cmdOpen(args, ctx) {
     }
     const targets = {
       gallery: ['tool-gallery-btn', 'rail-gallery'],
+      wardrobe: ['tool-wardrobe-btn', 'rail-wardrobe'],
       notes: ['tool-notes-btn', 'rail-notes'],
       tasks: ['tool-tasks-btn', 'rail-tasks'],
       library: ['tool-library-btn', 'rail-archive'],
@@ -6037,6 +6038,13 @@ const COMMANDS = {
     help: 'Open Gallery',
     handler: (args, ctx) => _cmdToolPanel('gallery', args, ctx),
     usage: '/gallery'
+  },
+  wardrobe: {
+    alias: ['closet', 'outfits'],
+    category: 'Tools',
+    help: 'Open Wardrobe (Monika clothes & appearance)',
+    handler: (args, ctx) => _cmdToolPanel('wardrobe', args, ctx),
+    usage: '/wardrobe'
   },
   research: {
     alias: [],

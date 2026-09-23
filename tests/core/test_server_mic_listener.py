@@ -566,3 +566,122 @@ def test_live_mutations_require_explicit_current_utterance():
     assert service._live_tool_is_explicitly_requested(
         "control_light", light_args, "Włącz światło w salonie"
     )
+
+
+def test_preloaded_audio_assets_loaded_at_startup():
+    service = ServerMicListenerService()
+    assert service._cached_chime_pcm is not None
+    assert len(service._cached_chime_pcm) > 0
+    assert service._cached_chime_sr == 24000
+    assert len(service._cached_wake_prompts) >= 4
+    prompt_names = {p[0] for p in service._cached_wake_prompts}
+    assert "hm_inquisitive" in prompt_names
+    assert "hm_short" in prompt_names
+    assert "mhm_soft" in prompt_names
+    assert "yhm_casual" in prompt_names
+
+
+@pytest.mark.asyncio
+async def test_play_wake_chime_uses_preloaded_cache():
+    service = ServerMicListenerService()
+    service.play_audio_locally = AsyncMock()
+
+    await service._play_wake_chime(capture_safe=True)
+
+    service.play_audio_locally.assert_awaited_once_with(
+        service._cached_chime_pcm,
+        service._cached_chime_sr,
+        suppress_capture=False,
+    )
+
+
+@pytest.mark.asyncio
+async def test_play_wake_acknowledgement_modes():
+    service = ServerMicListenerService()
+    service.play_audio_locally = AsyncMock()
+
+    # 1. Mode "both" (default) -> chime + voice
+    service._wake_ack_mode = "both"
+    await service._play_wake_acknowledgement(capture_safe=True)
+    assert service.play_audio_locally.await_count == 2
+    # First call is chime
+    assert service.play_audio_locally.await_args_list[0].args[0] == service._cached_chime_pcm
+    # Second call is one of the neutral prompts
+    prompt_pcms = [p[1] for p in service._cached_wake_prompts]
+    assert service.play_audio_locally.await_args_list[1].args[0] in prompt_pcms
+
+    # 2. Mode "chime_only"
+    service.play_audio_locally.reset_mock()
+    service._wake_ack_mode = "chime_only"
+    await service._play_wake_acknowledgement(capture_safe=True)
+    assert service.play_audio_locally.await_count == 1
+    assert service.play_audio_locally.await_args_list[0].args[0] == service._cached_chime_pcm
+
+    # 3. Mode "voice_only"
+    service.play_audio_locally.reset_mock()
+    service._wake_ack_mode = "voice_only"
+    await service._play_wake_acknowledgement(capture_safe=True)
+    assert service.play_audio_locally.await_count == 1
+    assert service.play_audio_locally.await_args_list[0].args[0] in prompt_pcms
+
+
+@pytest.mark.asyncio
+async def test_thinking_sound_loop_lifecycle():
+    service = ServerMicListenerService()
+    service.play_audio_locally = AsyncMock()
+
+    # Trigger thinking state
+    service._queue_voice_light_state("thinking")
+    await asyncio.sleep(0.01)
+    assert service._thinking_loop_task is not None
+    assert not service._thinking_loop_task.done()
+
+    # Transition to speaking state -> thinking loop cancels
+    service._queue_voice_light_state("speaking")
+    await asyncio.sleep(0.01)
+    assert service._thinking_loop_task is None
+
+
+@pytest.mark.asyncio
+async def test_prompt_echo_suppression_handles_neutral_fillers():
+    mock_handler = AsyncMock(return_value="Pogoda jest dobra")
+    service = ServerMicListenerService(
+        conversation_handler=mock_handler,
+        require_wake_word=True,
+    )
+    fake_pcm = _generate_pcm_frame(440.0, 500, amplitude=2000.0)
+
+    # Establish an open conversation session within the prompt window
+    service._conversation_session_open = True
+    service._awaiting_command_until = time.monotonic() + 10.0
+    service._activation_prompt_window_until = time.monotonic() + 10.0
+
+    # Test that neutral echoes ("mhm", "yhm", "tak", "aha") are suppressed
+    for echo_word in ["mhm", "yhm", "aha", "tak"]:
+        service.transcribe_speech = AsyncMock(return_value=echo_word)
+        await service._handle_speech_segment(fake_pcm)
+        mock_handler.assert_not_awaited()
+
+    # But an actual command is dispatched
+    service.transcribe_speech = AsyncMock(return_value="jaka jest pogoda")
+    await service._handle_speech_segment(fake_pcm)
+    mock_handler.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_voice_light_feedback_controller_brightness_scaling():
+    from backend.agents.voice_light_feedback import VoiceLightFeedbackController
+    mock_ha = AsyncMock()
+    controller = VoiceLightFeedbackController(ha_agent=mock_ha, brightness_scale=0.5)
+
+    # In THINKING state, base max_bri is 60 -> scaled by 0.5 is 30
+    await controller.set_state("thinking")
+    await asyncio.sleep(0.01)
+
+    mock_ha.set_light_state.assert_awaited()
+    first_call_kwargs = mock_ha.set_light_state.await_args_list[0].kwargs
+    assert first_call_kwargs.get("brightness") == 30
+    assert first_call_kwargs.get("rgb_color") == (140, 230, 255)
+
+    await controller.set_state("idle")
+

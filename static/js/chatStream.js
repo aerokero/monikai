@@ -184,6 +184,11 @@ export function handleUIControl(uiData) {
           var fn = mod.openGallery || (mod.default && mod.default.openGallery);
           if (fn) fn();
         }).catch(function(){});
+      } else if (panel === 'wardrobe') {
+        import('./wardrobe.js').then(function(mod) {
+          var fn = mod.openWardrobe || (mod.default && mod.default.openWardrobe);
+          if (fn) fn();
+        }).catch(function(){});
       } else if (panel === 'email') {
         import('./emailLibrary.js?v=20260815approvalsave1').then(function(mod) {
           var fn = mod.openEmailLibrary || (mod.default && mod.default.openEmailLibrary);
@@ -210,6 +215,11 @@ export function handleUIControl(uiData) {
         var ids = { memories: 'tool-memory-btn', skills: 'skills-btn', settings: 'open-settings-btn' };
         var btn = document.getElementById(ids[panel]);
         if (btn) btn.click();
+      }
+
+    } else if (uiEvent === 'set_wardrobe' || uiData.ui_event === 'set_wardrobe') {
+      if (window.monikaVisualizer) {
+        window.monikaVisualizer.setWardrobe(uiData);
       }
 
     } else if (uiEvent === 'open_email_reply' || uiData.ui_event === 'open_email_reply') {

@@ -860,14 +860,44 @@ async def do_ui_control(content: str, session_id: Optional[str] = None, owner: O
             "llm": "cookbook",
             "serve": "cookbook",
             "serving": "cookbook",
+            "wardrobe": "wardrobe",
+            "closet": "wardrobe",
+            "clothes": "wardrobe",
+            "outfits": "wardrobe",
         }
         target = _panel_aliases.get(panel)
         if not target:
-            return {"error": f"Unknown panel '{panel}'. Valid: documents, gallery, email, sessions, notes, memories, skills, settings, cookbook."}
+            return {"error": f"Unknown panel '{panel}'. Valid: documents, gallery, wardrobe, email, sessions, notes, memories, skills, settings, cookbook."}
         return {
             "ui_event": "open_panel",
             "panel": target,
             "results": f"Opening {target} panel",
+        }
+
+    elif action == "set_wardrobe":
+        outfit = None
+        hair = None
+        ahoge = None
+        bg = None
+        for part in parts[1:]:
+            if "=" in part:
+                k, v = part.split("=", 1)
+                k, v = k.strip().lower(), v.strip()
+                if k in ("outfit", "clothes"):
+                    outfit = v
+                elif k in ("hair", "hairstyle"):
+                    hair = v
+                elif k in ("ahoge", "cowlick"):
+                    ahoge = v
+                elif k in ("bg", "background", "scene"):
+                    bg = v
+        return {
+            "ui_event": "set_wardrobe",
+            "outfit": outfit,
+            "hairStyle": hair,
+            "ahoge": ahoge,
+            "background": bg,
+            "results": f"Monika wardrobe updated (outfit={outfit}, hair={hair}, ahoge={ahoge}, background={bg})",
         }
 
     elif action == "open_email_reply":

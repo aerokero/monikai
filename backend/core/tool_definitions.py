@@ -537,6 +537,36 @@ set_scene_tool = {
     },
 }
 
+set_monika_appearance_tool = {
+    "name": "set_monika_appearance",
+    "description": (
+        "Changes Monika's outfit, hairstyle, ahoge, or background scene in the wardrobe. "
+        "Use with intention: wear something cozy when relaxing, formal for studying, "
+        "change hairstyles, or set festive outfits (e.g. Christmas, Halloween, Summer)."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "outfit": {
+                "type": "STRING",
+                "description": "Outfit ID: 'def' (school uniform), 'blazerless', 'sundress_white', 'blackdress', 'blackpinkdress', 'new_years_dress', 'marisa' (witch), 'santa', 'santa_lingerie', 'vday_lingerie', 'spider_lingerie', 'bath_towel_white'.",
+            },
+            "hair_style": {
+                "type": "STRING",
+                "description": "Hairstyle ID: 'def' (ponytail with ribbon), 'down', 'braided', 'downtiedstrand', 'wet'.",
+            },
+            "ahoge": {
+                "type": "STRING",
+                "description": "Ahoge cowlick ID: 'none', 'ahoge_curl', 'ahoge_heart', 'ahoge_bent', 'ahoge_double', 'ahoge_lightning', 'ahoge_sharp', 'ahoge_simple', 'ahoge_small', 'ahoge_swoop', 'ahoge_twisty'.",
+            },
+            "background": {
+                "type": "STRING",
+                "description": "Background scene file: 'bg_room.png', 'bg_room_night.png', 'bg_kitchen.png', 'bg_kitchen_night.png', 'bg_school.png', 'bg_school_2.png', 'bg_school_corridor.png', 'bg_outside.png', 'bg_outside_night.png', 'bg_outside_2.png', 'bg_outside_2_night.png', 'bg_sea.png', 'bg_sea_night.png', 'bg_mountain.png', 'bg_closet.png', 'bg_restaurant.png', or 'auto'.",
+            },
+        },
+    },
+}
+
 minecraft_goals_tool = {
     "name": "minecraft_goals",
     "description": "Your own goals in the Minecraft world — things YOU want to build or do there (not the user's tasks). action='list' shows open goals, 'add' saves a new goal, 'complete' marks one done (by text fragment). Use naturally: when you decide you want to finish the garden by the base, add it; when it's done, complete it.",
@@ -585,6 +615,7 @@ _RESERVED_TOOL_NAMES = {
     "get_work_memory", "update_personality", "update_work_memory",
     "commit_work_memory", "clear_work_memory",
     "get_weather", "request_program_shutdown",
+    "set_monika_appearance",
 }
 
 _extra_decls: list = []
@@ -646,6 +677,7 @@ tools = [
             get_world_snapshot_tool,
             minecraft_goals_tool,
             set_scene_tool,
+            set_monika_appearance_tool,
             request_program_shutdown_tool,
         ]
         + _extra_decls
