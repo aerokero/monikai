@@ -34,6 +34,8 @@ class TTSRequest(BaseModel):
     text: str
     format: str = "audio"
     language: Optional[str] = None
+    provider: Optional[str] = None
+    voice: Optional[str] = None
 
 
 def register_voice_http_routes(app):
@@ -167,6 +169,8 @@ def register_voice_http_routes(app):
             rendered = await get_voice_output_service().synthesize(
                 req.text,
                 language=req.language,
+                provider=req.provider,
+                voice=req.voice,
             )
             audio = rendered.audio
             mime = rendered.mime_type.split(";", 1)[0]

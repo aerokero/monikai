@@ -127,3 +127,37 @@ async def test_voice_output_drops_unclosed_thinking_block(monkeypatch):
         await service.synthesize("<think>To jest nadal proces myślenia...")
 
     assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_voice_output_routes_pocket_tts(monkeypatch):
+    service = VoiceOutputService()
+    monkeypatch.setattr(
+        service,
+        "_settings",
+        lambda: {
+            "tts_enabled": True,
+            "tts_provider": "pocket",
+            "tts_model": "pocket-tts-polish-6l",
+            "tts_voice": "Leda",
+            "tts_speed": "1",
+            "tts_language": "pl",
+            "tts_auto_read": False,
+        },
+    )
+
+    class FakeOdysseusTTSService:
+        def synthesize(self, text, voice=None, language=None, provider=None):
+            assert text == "Witaj z Pocket TTS."
+            assert voice == "Leda"
+            assert provider == "pocket"
+            return b"RIFFfake-pocket-speech"
+
+    import backend.odysseus.services.tts.tts_service as mod_tts
+    monkeypatch.setattr(mod_tts, "get_tts_service", lambda: FakeOdysseusTTSService())
+
+    result = await service.synthesize("Witaj z Pocket TTS.")
+    assert result.audio == b"RIFFfake-pocket-speech"
+    assert result.mime_type == "audio/wav"
+    assert result.sample_rate == 24_000
+

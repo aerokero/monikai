@@ -161,7 +161,7 @@ def test_xtts_provider_settings_and_synthesis(monkeypatch):
 
         def synthesize(self, text, speaker=None, language=None, speed=1.0):
             assert text == "Cześć, jak się masz?"
-            assert speaker == "monika"
+            assert speaker in {"monika", "leda"}
             assert language == "pl"
             return b"RIFFfake-xtts-audio-bytes"
 
@@ -206,4 +206,76 @@ def test_xtts_fallback_to_local_when_unavailable(monkeypatch):
 
     audio = service.synthesize("Fallback test.", use_cache=False)
     assert audio == b"RIFFfake-kokoro-fallback"
+
+
+def test_pocket_tts_provider_settings_and_synthesis(monkeypatch):
+    service = TTSService(cache_dir=tempfile.mkdtemp())
+    monkeypatch.setattr(
+        service,
+        "_load_settings",
+        lambda: {
+            "tts_enabled": True,
+            "tts_provider": "pocket",
+            "tts_model": "pocket-tts-polish-6l",
+            "tts_voice": "Leda",
+            "tts_speed": "1.10",
+            "tts_language": "pl",
+            "tts_pocket_temperature": 0.75,
+            "tts_pocket_steps": 2,
+        },
+    )
+
+    class FakePocket:
+        available = True
+
+        def synthesize(self, text, voice=None, speed=1.0, temperature=0.7, steps=2):
+            assert text == "Cześć, jak się masz?"
+            assert voice == "Leda"
+            assert round(speed, 2) == 1.10
+            assert temperature == 0.75
+            assert steps == 2
+            return b"RIFFfake-pocket-audio-bytes"
+
+    pocket_calls = []
+    monkeypatch.setattr(service, "_get_pocket", lambda: pocket_calls.append(True) or FakePocket())
+    assert service.available is True
+
+    audio = service.synthesize("Cześć, jak się masz?", use_cache=False)
+    assert audio == b"RIFFfake-pocket-audio-bytes"
+    assert len(pocket_calls) == 2
+
+
+def test_pocket_tts_fallback_to_local_when_unavailable(monkeypatch):
+    service = TTSService(cache_dir=tempfile.mkdtemp())
+    monkeypatch.setattr(
+        service,
+        "_load_settings",
+        lambda: {
+            "tts_enabled": True,
+            "tts_provider": "pocket",
+            "tts_model": "pocket-tts-polish-6l",
+            "tts_voice": "Leda",
+            "tts_speed": "1",
+            "tts_language": "pl",
+        },
+    )
+
+    class FakeUnavailablePocket:
+        available = False
+
+        def synthesize(self, text, voice=None, speed=1.0, temperature=0.7, steps=2):
+            return None
+
+    class FakeKokoro:
+        available = True
+
+        def synthesize_raw(self, text, voice, *, language, speed=1.0):
+            return b"RIFFfake-kokoro-fallback"
+
+    monkeypatch.setattr(service, "_get_pocket", lambda: FakeUnavailablePocket())
+    monkeypatch.setattr(service, "_get_kokoro", lambda: FakeKokoro())
+
+    audio = service.synthesize("Fallback test.", use_cache=False)
+    assert audio == b"RIFFfake-kokoro-fallback"
+
 

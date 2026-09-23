@@ -186,12 +186,10 @@ class VoiceOutputService:
         elif provider == "xtts":
             if not model or model.lower() in {"tts-1", "kokoro"}:
                 model = "XTTS-v2"
-            if not voice or voice.lower() in kokoro_voices or voice in {"alloy", "21m00Tcm4TlvDq8ikWAM"}:
-                voice = "monika"
-            if language == "auto":
-                language = "pl"
-        return {
-            "tts_enabled": settings.get("tts_enabled", True),
+            if not voice or voice.lower() in kokoro_voices or voice in {"alloy", "21m00Tcm4TlvDq8ikWAM"} or voice.lower() == "monika":
+                voice = "Leda"
+        elif provider in {"pocket", "pocket-tts"}:
+            if not model or model.lower() in {"tts-1", "kokoro", "xtts-v2"}:
             "tts_provider": provider,
             "tts_model": model,
             "tts_voice": voice,
@@ -212,19 +210,18 @@ class VoiceOutputService:
             available = enabled and bool(os.environ.get("GEMINI_API_KEY"))
         elif provider == "elevenlabs":
             available = enabled and bool(os.environ.get("ELEVENLABS_API_KEY"))
-        elif provider in {"local", "xtts"} or provider.startswith("endpoint:"):
+        elif provider in {"local", "xtts", "pocket", "pocket-tts"} or provider.startswith("endpoint:"):
             try:
                 from backend.odysseus.services.tts.tts_service import get_tts_service
-
                 available = enabled and bool(get_tts_service().available)
             except Exception:
                 available = False
         else:
             available = False
 
-        return {
-            "available": available,
-            "ready": available,
+        xtts_speakers = None
+        pocket_voices = None
+        try:
             "provider": provider,
             "model": settings["tts_model"],
             "voice": settings["tts_voice"],
@@ -232,11 +229,10 @@ class VoiceOutputService:
             "speed": settings["tts_speed"],
             "volume": settings["tts_volume"],
             "auto_read": settings["tts_auto_read"],
-            "available_providers": ["disabled", "browser", "gemini", "elevenlabs", "local", "xtts"],
+            "available_providers": ["disabled", "browser", "gemini", "elevenlabs", "local", "xtts", "pocket"],
+            "xtts_speakers": xtts_speakers or ["Leda", "Sulafat"],
+            "pocket_voices": pocket_voices or ["Leda", "Sulafat"],
             "gemini_configured": bool(os.environ.get("GEMINI_API_KEY")),
-            "elevenlabs_configured": bool(os.environ.get("ELEVENLABS_API_KEY")),
-        }
-
     async def synthesize(
         self,
         text: str,
@@ -294,18 +290,17 @@ class VoiceOutputService:
                 router_kwargs["language"] = selected_language
             return await self.router.synthesize(**router_kwargs)
 
-        if target in {"local", "xtts"} or target.startswith("endpoint:"):
+        if target in {"local", "xtts", "pocket", "pocket-tts"} or target.startswith("endpoint:"):
             from backend.odysseus.services.tts.tts_service import get_tts_service
 
             selected_language = language if language is not None else settings.get("tts_language", "auto")
             audio = await asyncio.to_thread(
-                get_tts_service().synthesize,
                 speech_text,
+                voice=selected_voice,
                 language=selected_language,
                 provider=target,
             )
             if not audio:
-                raise RuntimeError(f"Provider '{target}' returned no audio")
             return SynthesizedSpeech(
                 audio=audio,
                 mime_type=_audio_mime(audio),

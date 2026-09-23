@@ -1692,6 +1692,7 @@
                   <option value="elevenlabs">ElevenLabs</option>
                   <option value="local">Kokoro TTS</option>
                   <option value="xtts">XTTS-v2 (Coqui)</option>
+                  <option value="pocket">Pocket TTS (shefowl CPU)</option>
                 </select>
               </div>
               <div id="set-ttsLanguageRow" style="display:flex;align-items:center;gap:0.75rem;">
@@ -1722,32 +1723,31 @@
               </div>
               <div id="set-ttsVoiceRow" style="display:flex;align-items:center;gap:0.75rem;">
                 <label class="settings-label">Voice</label>
-                <select id="set-ttsVoiceSelect" class="settings-select">
-                  <option value="alloy">Alloy</option>
-                  <option value="ash">Ash</option>
-                  <option value="coral">Coral</option>
-                  <option value="echo">Echo</option>
-                  <option value="fable">Fable</option>
-                  <option value="nova">Nova</option>
-                  <option value="onyx">Onyx</option>
-                  <option value="sage">Sage</option>
-                  <option value="shimmer">Shimmer</option>
-                </select>
-                <input id="set-ttsVoiceInput" type="text" placeholder="Leda" list="set-ttsVoiceList" style="flex:1;padding:5px;display:none;">
-                <datalist id="set-ttsVoiceList">
+                <select id="set-ttsVoiceSelect" class="settings-select" style="flex:1;">
                   <option value="Leda">Leda (XTTS-v2 / Gemini)</option>
                   <option value="Sulafat">Sulafat (XTTS-v2 / Gemini)</option>
-                </datalist>
+                </select>
+                <input id="set-ttsVoiceInput" type="text" placeholder="Leda" style="flex:1;padding:5px;display:none;">
               </div>
               <div id="set-ttsSpeedRow" style="display:flex;align-items:center;gap:0.75rem;">
                 <label class="settings-label">Speed</label>
-                <select id="set-ttsSpeedSelect" class="settings-select">
-                  <option value="0.5">0.5x</option>
-                  <option value="0.75">0.75x</option>
-                  <option value="1" selected>1x (normal)</option>
-                  <option value="1.25">1.25x</option>
-                  <option value="1.5">1.5x</option>
-                  <option value="2">2x</option>
+                <div style="display:flex;align-items:center;gap:0.6rem;flex:1;">
+                  <input id="set-ttsSpeedRange" type="range" min="0.5" max="2.0" step="0.05" value="1.0" style="flex:1;min-width:120px;">
+                  <span id="set-ttsSpeedValue" style="min-width:38px;text-align:right;font-size:11px;color:var(--fg);cursor:pointer;" title="Click to reset to 1.00x">1.00x</span>
+                </div>
+              </div>
+              <div id="set-ttsPocketTempRow" style="display:none;align-items:center;gap:0.75rem;">
+                <label class="settings-label">Temperature</label>
+                <div style="display:flex;align-items:center;gap:0.6rem;flex:1;">
+                  <input id="set-ttsPocketTempRange" type="range" min="0.1" max="1.0" step="0.05" value="0.70" style="flex:1;min-width:120px;">
+                  <span id="set-ttsPocketTempValue" style="min-width:38px;text-align:right;font-size:11px;color:var(--fg);cursor:pointer;" title="Click to reset to 0.70">0.70</span>
+                </div>
+              </div>
+              <div id="set-ttsPocketStepsRow" style="display:none;align-items:center;gap:0.75rem;">
+                <label class="settings-label">Quality / Steps</label>
+                <select id="set-ttsPocketStepsSelect" class="settings-select" style="flex:1;">
+                  <option value="2">2 kroki (wyższa jakość, domyślne)</option>
+                  <option value="1">1 krok (najszybszy)</option>
                 </select>
               </div>
               <div id="set-ttsVolumeRow" style="display:flex;align-items:center;gap:0.75rem;">
@@ -2688,7 +2688,7 @@
 <script type="module" src="/static/js/search-chat.js"></script>
 <script type="module" src="/static/js/theme.js"></script>
 <script type="module" src="/static/js/censor.js"></script>
-<script type="module" src="/static/js/settings.js?v=20260815approvalsave1"></script>
+<script type="module" src="/static/js/settings.js?v=20260923pocket2"></script>
 <script type="module" src="/static/js/assistant.js"></script>
   <script type="module" src="/static/app.js?v=20260917savings18"></script>  <!-- app.js must be LAST -->
 <script type="module" src="/static/js/a11y.js"></script>

@@ -1367,7 +1367,7 @@ class ServerMicListenerService:
 
         total_started = time.perf_counter()
 
-        if self.tts_provider in {"local", "kokoro", "xtts", "auto"}:
+        if self.tts_provider in {"local", "kokoro", "xtts", "pocket", "auto"}:
             try:
                 from backend.conversation.voice_output import (
                     get_voice_output_service,
@@ -1377,7 +1377,7 @@ class ServerMicListenerService:
                 service = get_voice_output_service()
                 status = service.get_status()
                 configured = status.get("provider") or "xtts"
-                if self.tts_provider == "xtts" or (self.tts_provider in {"local", "auto", "kokoro"} and configured in {"xtts", "local"}):
+                if self.tts_provider in {"xtts", "pocket"} or (self.tts_provider in {"local", "auto", "kokoro"} and configured in {"xtts", "local", "pocket"}):
                     provider_to_use = configured
                 elif self.tts_provider != "kokoro":
                     provider_to_use = self.tts_provider

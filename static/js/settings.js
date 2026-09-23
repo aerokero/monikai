@@ -771,9 +771,15 @@ async function initTtsSettings() {
   var voiceSelect = el('set-ttsVoiceSelect');
   var voiceInput = el('set-ttsVoiceInput');
   var modelRow = el('set-ttsModelRow');
-  var voiceRow = el('set-ttsVoiceRow');
+  var speedRange = el('set-ttsSpeedRange');
+  var speedValue = el('set-ttsSpeedValue');
   var speedSelect = el('set-ttsSpeedSelect');
   var speedRow = el('set-ttsSpeedRow');
+  var pocketTempRow = el('set-ttsPocketTempRow');
+  var pocketTempRange = el('set-ttsPocketTempRange');
+  var pocketTempValue = el('set-ttsPocketTempValue');
+  var pocketStepsRow = el('set-ttsPocketStepsRow');
+  var pocketStepsSelect = el('set-ttsPocketStepsSelect');
   var volumeRange = el('set-ttsVolumeRange');
   var volumeValue = el('set-ttsVolumeValue');
   var ttsMsg = el('set-ttsSettingsMsg');
@@ -781,19 +787,126 @@ async function initTtsSettings() {
   var ttsAutoReadToggle = el('set-ttsAutoReadToggle');
   var ttsConfigWrap = provSel ? provSel.closest('div[style*="flex-direction"]') : null;
 
+  var PROVIDER_VOICES = {
+    pocket: [
+      { id: 'Leda', name: 'Leda (Pocket TTS)' },
+      { id: 'Sulafat', name: 'Sulafat (Pocket TTS)' }
+    ],
+    xtts: [
+      { id: 'Leda', name: 'Leda (XTTS-v2 / Gemini)' },
+      { id: 'Sulafat', name: 'Sulafat (XTTS-v2 / Gemini)' }
+    ],
+    gemini: [
+      { id: 'Leda', name: 'Leda' },
+      { id: 'Sulafat', name: 'Sulafat' },
+      { id: 'Aoede', name: 'Aoede' },
+      { id: 'Kore', name: 'Kore' },
+      { id: 'Puck', name: 'Puck' },
+      { id: 'Charon', name: 'Charon' },
+      { id: 'Fenrir', name: 'Fenrir' }
+    ],
+    local: [
+      { id: 'af_heart', name: 'af_heart (Default)' },
+      { id: 'af_bella', name: 'af_bella' },
+      { id: 'af_sarah', name: 'af_sarah' },
+      { id: 'af_nicole', name: 'af_nicole' },
+      { id: 'af_sky', name: 'af_sky' },
+      { id: 'bf_emma', name: 'bf_emma (British)' },
+      { id: 'bf_isabella', name: 'bf_isabella' }
+    ],
+    endpoint: [
+      { id: 'alloy', name: 'Alloy' },
+      { id: 'ash', name: 'Ash' },
+      { id: 'coral', name: 'Coral' },
+      { id: 'echo', name: 'Echo' },
+      { id: 'fable', name: 'Fable' },
+      { id: 'nova', name: 'Nova' },
+      { id: 'onyx', name: 'Onyx' },
+      { id: 'sage', name: 'Sage' },
+      { id: 'shimmer', name: 'Shimmer' }
+    ],
+    elevenlabs: [
+      { id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel' }
+    ]
+  };
+
   function isEndpoint() { return provSel.value.startsWith('endpoint:'); }
   function isGemini() { return provSel.value === 'gemini'; }
   function isElevenLabs() { return provSel.value === 'elevenlabs'; }
   function isXTTS() { return provSel.value === 'xtts'; }
+  function isPocket() { return provSel.value === 'pocket'; }
   function getModel() {
     if (provSel.value === 'local') return 'Kokoro';
     if (provSel.value === 'xtts') return 'XTTS-v2';
+    if (provSel.value === 'pocket') return 'pocket-tts-polish-6l';
     return isEndpoint() ? modelSelect.value : modelInput.value;
   }
   function getVoice() {
-    if (provSel.value === 'local' && (!voiceInput.value || /^pl_PL-gosia/i.test(voiceInput.value))) return 'af_heart';
-    if (provSel.value === 'xtts' && (!voiceInput.value || voiceInput.value.toLowerCase() === 'monika')) return 'Leda';
-    return isEndpoint() ? voiceSelect.value : voiceInput.value;
+    if (voiceSelect && voiceSelect.style.display !== 'none') {
+      if (voiceSelect.value === '__custom__') return (voiceInput.value || '').trim();
+      return voiceSelect.value;
+    }
+    return (voiceInput ? voiceInput.value : '').trim();
+  }
+  function syncVoiceInputVisibility() {
+    var isCustom = voiceSelect && voiceSelect.value === '__custom__';
+    if (voiceInput) voiceInput.style.display = isCustom ? '' : 'none';
+  }
+  function populateVoiceOptions(preferredVoice) {
+    var prov = provSel.value;
+    var list = [];
+    if (isEndpoint()) {
+      list = PROVIDER_VOICES.endpoint;
+    } else if (PROVIDER_VOICES[prov]) {
+      list = PROVIDER_VOICES[prov].slice();
+    } else if (prov === 'browser' && 'speechSynthesis' in window) {
+      var bVoices = window.speechSynthesis.getVoices();
+      list = bVoices.map(function(v) { return { id: v.name, name: v.name + (v.lang ? ' (' + v.lang + ')' : '') }; });
+    }
+
+    voiceSelect.innerHTML = '';
+    var target = (preferredVoice || voiceSelect.value || voiceInput.value || '').trim();
+    if ((prov === 'xtts' || prov === 'pocket') && (!target || target.toLowerCase() === 'monika')) target = 'Leda';
+    if (prov === 'gemini' && !target) target = 'Leda';
+    if (prov === 'local' && (!target || /^pl_PL-gosia/i.test(target))) target = 'af_heart';
+
+    var matched = false;
+    list.forEach(function(item) {
+      var opt = document.createElement('option');
+      opt.value = item.id;
+      opt.textContent = item.name;
+      if (item.id.toLowerCase() === target.toLowerCase()) {
+        opt.selected = true;
+        matched = true;
+      }
+      voiceSelect.appendChild(opt);
+    });
+
+    if (target && !matched && target !== '__custom__') {
+      var customOpt = document.createElement('option');
+      customOpt.value = target;
+      customOpt.textContent = target;
+      customOpt.selected = true;
+      voiceSelect.appendChild(customOpt);
+      matched = true;
+    }
+
+    if (isElevenLabs() || prov === 'local') {
+      var otherOpt = document.createElement('option');
+      otherOpt.value = '__custom__';
+      otherOpt.textContent = 'Custom Voice ID…';
+      if (target === '__custom__') { otherOpt.selected = true; matched = true; }
+      voiceSelect.appendChild(otherOpt);
+    }
+
+    if (!matched && voiceSelect.options.length > 0) {
+      voiceSelect.selectedIndex = 0;
+    }
+
+    if (voiceInput) {
+      voiceInput.value = voiceSelect.value === '__custom__' ? (target === '__custom__' ? '' : target) : voiceSelect.value;
+    }
+    syncVoiceInputVisibility();
   }
   function volumePercent(raw) {
     var value = Number(raw);
@@ -807,20 +920,42 @@ async function initTtsSettings() {
   function syncVolumeLabel() {
     if (volumeValue && volumeRange) volumeValue.textContent = `${volumeRange.value}%`;
   }
+  function getSpeed() {
+    if (speedRange) {
+      var val = parseFloat(speedRange.value || '1.0');
+      return (isNaN(val) ? 1.0 : val).toFixed(2);
+    }
+    if (speedSelect) return speedSelect.value || '1';
+    return '1.00';
+  }
+  function syncSpeedLabel() {
+    if (speedValue && speedRange) {
+      var val = parseFloat(speedRange.value || '1.0');
+      speedValue.textContent = (isNaN(val) ? 1.0 : val).toFixed(2) + 'x';
+    }
+  }
+  function syncPocketTempLabel() {
+    if (pocketTempValue && pocketTempRange) {
+      var val = parseFloat(pocketTempRange.value || '0.70');
+      pocketTempValue.textContent = (isNaN(val) ? 0.70 : val).toFixed(2);
+    }
+  }
 
   function updateVisibility() {
     var prov = provSel.value;
     modelRow.style.display = (isEndpoint() || isGemini() || isElevenLabs()) ? 'flex' : 'none';
     voiceRow.style.display = prov === 'disabled' ? 'none' : 'flex';
     speedRow.style.display = prov === 'disabled' ? 'none' : 'flex';
+    if (pocketTempRow) pocketTempRow.style.display = isPocket() ? 'flex' : 'none';
+    if (pocketStepsRow) pocketStepsRow.style.display = isPocket() ? 'flex' : 'none';
     if (isEndpoint()) {
       modelSelect.style.display = ''; modelInput.style.display = 'none';
-      voiceSelect.style.display = ''; voiceInput.style.display = 'none';
     } else {
-      modelSelect.style.display = 'none'; modelInput.style.display = '';
-      voiceSelect.style.display = 'none'; voiceInput.style.display = prov === 'disabled' ? 'none' : '';
+      modelSelect.style.display = 'none';
       modelInput.style.display = (isGemini() || isElevenLabs()) ? '' : 'none';
     }
+    voiceSelect.style.display = prov === 'disabled' ? 'none' : '';
+    syncVoiceInputVisibility();
   }
 
   var ttsKeywords = ['tts', 'audio'];
@@ -840,22 +975,71 @@ async function initTtsSettings() {
     var settings = await settingsRes.json();
     if (settings.tts_provider) provSel.value = settings.tts_provider;
     if (settings.tts_model) { modelSelect.value = settings.tts_model; modelInput.value = settings.tts_model; }
-    if (settings.tts_voice) { voiceSelect.value = settings.tts_voice; voiceInput.value = settings.tts_voice; }
     if (languageSelect && settings.tts_language) languageSelect.value = settings.tts_language;
     // Restore the previous Kokoro profile if a stale Piper profile is stored.
+    var initVoice = settings.tts_voice;
     if (provSel.value === 'local' && languageSelect && languageSelect.value === 'pl' &&
-        (!settings.tts_voice || /^pl_PL-gosia/i.test(settings.tts_voice))) {
-      voiceInput.value = 'af_heart';
+        (!initVoice || /^pl_PL-gosia/i.test(initVoice))) {
+      initVoice = 'af_heart';
     }
-    if (provSel.value === 'xtts' && (!settings.tts_voice || settings.tts_voice.toLowerCase() === 'monika')) {
-      voiceInput.value = 'Leda';
+    if ((provSel.value === 'xtts' || provSel.value === 'pocket') && (!initVoice || initVoice.toLowerCase() === 'monika')) {
+      initVoice = 'Leda';
     }
-    if (settings.tts_speed) { speedSelect.value = settings.tts_speed; }
+    populateVoiceOptions(initVoice);
+    if (settings.tts_speed) {
+      if (speedRange) {
+        var spVal = parseFloat(settings.tts_speed);
+        if (!isNaN(spVal) && spVal >= 0.5 && spVal <= 2.0) speedRange.value = String(spVal);
+      }
+      if (speedSelect) speedSelect.value = settings.tts_speed;
+    }
+    if (pocketTempRange && settings.tts_pocket_temperature != null) {
+      var ptVal = parseFloat(settings.tts_pocket_temperature);
+      if (!isNaN(ptVal) && ptVal >= 0.1 && ptVal <= 1.0) pocketTempRange.value = String(ptVal);
+    }
+    if (pocketStepsSelect && settings.tts_pocket_steps != null) {
+      pocketStepsSelect.value = String(settings.tts_pocket_steps);
+    }
     if (volumeRange && settings.tts_volume != null) volumeRange.value = String(volumePercent(settings.tts_volume));
     if (ttsEnabledToggle) ttsEnabledToggle.checked = settings.tts_enabled !== false;
     if (ttsAutoReadToggle) ttsAutoReadToggle.checked = settings.tts_auto_read === true;
   } catch (e) { console.warn('Failed to load TTS settings', e); }
   syncVolumeLabel();
+  syncSpeedLabel();
+  syncPocketTempLabel();
+
+  // Dynamically augment XTTS / Pocket speakers from /api/tts/stats if available
+  try {
+    fetch('/api/tts/stats', { credentials: 'same-origin' })
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(stats) {
+        if (stats && Array.isArray(stats.xtts_speakers) && stats.xtts_speakers.length > 0) {
+          PROVIDER_VOICES.xtts = stats.xtts_speakers.map(function(s) {
+            var cap = s.charAt(0).toUpperCase() + s.slice(1);
+            return { id: cap, name: cap + ' (XTTS-v2 / Gemini)' };
+          });
+          if (provSel.value === 'xtts') {
+            populateVoiceOptions(getVoice());
+          }
+        }
+        if (stats && Array.isArray(stats.pocket_voices) && stats.pocket_voices.length > 0) {
+          PROVIDER_VOICES.pocket = stats.pocket_voices.map(function(s) {
+            var cap = s.charAt(0).toUpperCase() + s.slice(1);
+            return { id: cap, name: cap + ' (Pocket TTS)' };
+          });
+          if (provSel.value === 'pocket') {
+            populateVoiceOptions(getVoice());
+          }
+        }
+      })
+      .catch(function() {});
+  } catch (_) {}
+
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.onvoiceschanged = function() {
+      if (provSel.value === 'browser') populateVoiceOptions(getVoice());
+    };
+  }
 
   function syncTtsDisabled() {
     var off = ttsEnabledToggle && !ttsEnabledToggle.checked;
@@ -868,16 +1052,23 @@ async function initTtsSettings() {
 
   async function saveTTS() {
     try {
-      await _postSettings({
+      var payload = {
         tts_enabled: ttsEnabledToggle ? ttsEnabledToggle.checked : true,
         tts_provider: provSel.value,
-        tts_model: getModel() || (isGemini() ? 'gemini-2.5-flash-preview-tts' : (isElevenLabs() ? 'eleven_multilingual_v2' : (isXTTS() ? 'XTTS-v2' : 'tts-1'))),
-        tts_voice: getVoice() || (isGemini() ? 'Leda' : (isXTTS() ? 'Leda' : 'alloy')),
+        tts_model: getModel() || (isGemini() ? 'gemini-2.5-flash-preview-tts' : (isElevenLabs() ? 'eleven_multilingual_v2' : (isXTTS() ? 'XTTS-v2' : (isPocket() ? 'pocket-tts-polish-6l' : 'tts-1')))),
+        tts_voice: getVoice() || (isGemini() ? 'Leda' : (isXTTS() || isPocket() ? 'Leda' : 'alloy')),
         tts_language: languageSelect ? (languageSelect.value || 'auto') : 'auto',
-        tts_speed: speedSelect.value || '1',
+        tts_speed: getSpeed(),
         tts_volume: getVolume(),
         tts_auto_read: ttsAutoReadToggle ? ttsAutoReadToggle.checked : false,
-      });
+      };
+      if (pocketTempRange) {
+        payload.tts_pocket_temperature = parseFloat(pocketTempRange.value || '0.70');
+      }
+      if (pocketStepsSelect) {
+        payload.tts_pocket_steps = parseInt(pocketStepsSelect.value || '2', 10);
+      }
+      await _postSettings(payload);
       ttsMsg.textContent = 'Saved'; ttsMsg.style.color = 'var(--fg)'; setTimeout(() => { ttsMsg.textContent = ''; }, 2000);
       if (window.aiTTSManager) window.aiTTSManager.checkAvailability();
     } catch (e) { ttsMsg.textContent = 'Failed to save'; ttsMsg.style.color = 'var(--red)'; }
@@ -891,29 +1082,64 @@ async function initTtsSettings() {
   provSel.addEventListener('change', function() {
     var prov = provSel.value;
     if (prov === 'local') {
-      if (!languageSelect || languageSelect.value === 'auto' || languageSelect.value === 'pl') {
-        voiceInput.value = 'af_heart';
-      }
       modelInput.value = 'Kokoro';
     }
-    else if (prov === 'gemini') { voiceInput.value = 'Leda'; modelInput.value = 'gemini-2.5-flash-preview-tts'; }
-    else if (prov === 'elevenlabs') { voiceInput.value = '21m00Tcm4TlvDq8ikWAM'; modelInput.value = 'eleven_multilingual_v2'; }
-    else if (isEndpoint()) { voiceSelect.value = 'alloy'; modelSelect.value = 'tts-1'; }
-    else if (prov === 'browser') { voiceInput.value = ''; voiceInput.placeholder = 'OS default voice'; }
+    else if (prov === 'gemini') { modelInput.value = 'gemini-2.5-flash-preview-tts'; }
+    else if (prov === 'elevenlabs') { modelInput.value = 'eleven_multilingual_v2'; }
+    else if (prov === 'pocket') {
+      modelInput.value = 'pocket-tts-polish-6l';
+      if (languageSelect) languageSelect.value = 'pl';
+    }
+    else if (isEndpoint()) { modelSelect.value = 'tts-1'; }
+    else if (prov === 'browser') { if (voiceInput) voiceInput.placeholder = 'OS default voice'; }
+    populateVoiceOptions();
     updateVisibility();
-    saveTTS();
+    saveAndClearCache();
   });
   modelSelect.addEventListener('change', saveAndClearCache);
   modelInput.addEventListener('change', saveTTS);
-  voiceSelect.addEventListener('change', saveAndClearCache);
-  voiceInput.addEventListener('change', saveTTS);
-  if (languageSelect) languageSelect.addEventListener('change', function() {
-    if (provSel.value === 'local' && languageSelect.value === 'pl') {
-      voiceInput.value = 'af_heart';
+  voiceSelect.addEventListener('change', function() {
+    syncVoiceInputVisibility();
+    if (voiceSelect.value !== '__custom__') {
+      if (voiceInput) voiceInput.value = voiceSelect.value;
     }
     saveAndClearCache();
   });
-  speedSelect.addEventListener('change', saveAndClearCache);
+  voiceInput.addEventListener('change', saveTTS);
+  if (languageSelect) languageSelect.addEventListener('change', function() {
+    if (provSel.value === 'local' && languageSelect.value === 'pl') {
+      populateVoiceOptions('af_heart');
+    }
+    saveAndClearCache();
+  });
+  if (speedRange) {
+    speedRange.addEventListener('input', syncSpeedLabel);
+    speedRange.addEventListener('change', saveAndClearCache);
+  }
+  if (pocketTempRange) {
+    pocketTempRange.addEventListener('input', syncPocketTempLabel);
+    pocketTempRange.addEventListener('change', saveAndClearCache);
+  }
+  if (pocketTempValue && pocketTempRange) {
+    pocketTempValue.addEventListener('click', function() {
+      pocketTempRange.value = '0.70';
+      syncPocketTempLabel();
+      saveAndClearCache();
+    });
+  }
+  if (pocketStepsSelect) {
+    pocketStepsSelect.addEventListener('change', saveAndClearCache);
+  }
+  if (speedSelect) speedSelect.addEventListener('change', saveAndClearCache);
+  if (speedValue) {
+    speedValue.addEventListener('click', function() {
+      if (speedRange) {
+        speedRange.value = '1.0';
+        syncSpeedLabel();
+        saveAndClearCache();
+      }
+    });
+  }
   if (volumeRange) {
     volumeRange.addEventListener('input', syncVolumeLabel);
     volumeRange.addEventListener('change', saveTTS);
@@ -941,10 +1167,11 @@ async function initTtsSettings() {
       }
       var previewLanguage = languageSelect ? (languageSelect.value || 'auto') : 'auto';
       var testText = (previewLanguage === 'pl' || previewLanguage === 'auto')
-        ? 'Cześć, jestem Monika. Miło Cię słyszeć.'
+        ? 'Cześć! Miło Cię słyszeć.'
         : 'Hello, this is a test of text to speech.';
       previewPlaying = true; previewBtn.textContent = 'Loading...';
       try {
+        await saveTTS();
         if (prov === 'browser') {
           if (!('speechSynthesis' in window)) throw new Error('Browser TTS not supported');
           var utt = new SpeechSynthesisUtterance(testText);
@@ -966,7 +1193,7 @@ async function initTtsSettings() {
             });
             if (languageMatch) utt.voice = languageMatch;
           }
-          utt.rate = parseFloat(speedSelect.value) || 1;
+          utt.rate = parseFloat(getSpeed()) || 1;
           utt.volume = getVolume();
           previewBtn.textContent = 'Stop'; previewBtn.style.borderColor = 'var(--red, #e55)';
           await new Promise(function(resolve, reject) {
@@ -978,7 +1205,7 @@ async function initTtsSettings() {
           var res = await fetch('/api/tts/synthesize', {
             method: 'POST', credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: testText, format: 'audio', language: previewLanguage })
+            body: JSON.stringify({ text: testText, format: 'audio', language: previewLanguage, provider: prov, voice: getVoice() })
           });
           if (!res.ok) { var err = await res.json().catch(function() { return {}; }); throw new Error(err.detail?.message || 'Synthesis failed'); }
           var blob = await res.blob();
