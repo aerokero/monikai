@@ -775,9 +775,9 @@ html.ody-sidebar-off #sidebar {
   position: absolute;
   top: 100%;
   left: 12px;
-  right: 12px;
-  width: auto;
-  max-width: none;
+  right: auto;
+  width: fit-content;
+  max-width: calc(100% - 24px);
   min-width: 0;
   box-sizing: border-box;
   display: flex;
@@ -785,7 +785,7 @@ html.ody-sidebar-off #sidebar {
   gap: 4px;
   flex-wrap: nowrap;
   margin-top: 4px;
-  padding: 2px 4px;
+  padding: 2px 6px;
   border-radius: 999px;
   background: var(--message-action-bg, var(--panel));
   opacity: 0;
@@ -814,6 +814,7 @@ html.ody-sidebar-off #sidebar {
 }
 #chat-history .msg .msg-footer .ctx-ring {
   flex: 0 0 auto;
+  margin-left: 0;
 }
 #chat-history .msg .msg-footer button { display:inline-flex !important; align-items:center; justify-content:center; min-width:28px; min-height:28px; color:var(--fg) !important; background:transparent !important; border:0 !important; }
 #chat-history .msg:hover,

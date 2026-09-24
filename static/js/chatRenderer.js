@@ -2123,16 +2123,19 @@ export function displayMetrics(messageElement, metrics) {
       : responseTime != null
         ? `${responseTime}s`
         : '';
-  if (!metricsLabel) return;
-  metricsContainer.textContent = metricsLabel;
-  metricsContainer.style.cursor = 'pointer';
-  metricsContainer.title = 'Click for details';
+  if (!metricsLabel && !ctxPct) return;
+  if (metricsLabel) {
+    metricsContainer.textContent = metricsLabel;
+    metricsContainer.style.cursor = 'pointer';
+    metricsContainer.title = 'Click for details';
+  }
   const metricsDivider = document.createElement('span');
   metricsDivider.className = 'metrics-divider';
   metricsDivider.textContent = ' | ';
   metricsDivider.style.color = 'var(--color-muted-alt)';
   metricsDivider.style.pointerEvents = 'none';
-  metricsContainer.addEventListener('click', (e) => {
+  if (metricsLabel) {
+    metricsContainer.addEventListener('click', (e) => {
     e.stopPropagation();
     document.querySelectorAll('.ctx-popup').forEach(p => { if (typeof p._dismiss === 'function') p._dismiss(); else p.remove(); });
 
@@ -2197,6 +2200,7 @@ export function displayMetrics(messageElement, metrics) {
 
     bindMenuDismiss(popup, () => popup.remove());
   });
+  }
 
   // Store real context length for model info popup
   if (metrics.context_length && metrics.model) {
@@ -2326,14 +2330,16 @@ export function displayMetrics(messageElement, metrics) {
       popup.style.visibility = 'hidden';
       document.body.appendChild(popup);
       const pr = popup.getBoundingClientRect();
-      // Position above the ring, right-aligned
-      popup.style.left = Math.max(8, rect.right - pr.width) + 'px';
+      popup.style.left = rect.left + 'px';
       const spaceAbove = rect.top;
-      if (spaceAbove >= pr.height + 8) {
+      const spaceBelow = window.innerHeight - rect.bottom;
+      if (spaceAbove >= pr.height + 8 || spaceAbove > spaceBelow) {
         popup.style.top = (rect.top - pr.height - 8) + 'px';
       } else {
         popup.style.top = (rect.bottom + 8) + 'px';
       }
+      if (pr.right > window.innerWidth - 8) popup.style.left = (window.innerWidth - pr.width - 8) + 'px';
+      if (parseFloat(popup.style.left) < 8) popup.style.left = '8px';
       popup.style.visibility = '';
 
       bindMenuDismiss(popup, () => popup.remove(), (ev) => !popup.contains(ev.target) && ev.target !== ctxRing && !ctxRing.contains(ev.target));
@@ -2350,24 +2356,17 @@ export function displayMetrics(messageElement, metrics) {
   }
   if (footer) {
     const actions = footer.querySelector('.msg-actions');
+    const hasMetrics = Boolean(metricsLabel);
     if (actions) {
-      footer.insertBefore(metricsDivider, actions);
-      footer.insertBefore(metricsContainer, metricsDivider);
+      if (hasMetrics) footer.insertBefore(metricsContainer, actions);
+      if (ctxRing) footer.insertBefore(ctxRing, actions);
+      if (hasMetrics || ctxRing) footer.insertBefore(metricsDivider, actions);
     } else {
-      footer.appendChild(metricsContainer);
-      footer.appendChild(metricsDivider);
-    }
-    if (ctxRing) {
-      const ctxDiv = document.createElement('span');
-      ctxDiv.textContent = ' | ';
-      ctxDiv.style.color = 'var(--color-muted-alt)';
-      ctxDiv.style.pointerEvents = 'none';
-      ctxDiv.className = 'ctx-divider';
-      footer.appendChild(ctxDiv);
-      footer.appendChild(ctxRing);
+      if (hasMetrics) footer.appendChild(metricsContainer);
+      if (ctxRing) footer.appendChild(ctxRing);
     }
   } else {
-    messageElement.appendChild(metricsContainer);
+    if (metricsLabel) messageElement.appendChild(metricsContainer);
     if (ctxRing) messageElement.appendChild(ctxRing);
   }
 

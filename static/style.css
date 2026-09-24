@@ -3774,15 +3774,15 @@ body.bg-pattern-sparkles {
       margin-top: 4px;
       margin-left: 2px;
     }
-    /* Context usage ring — right side of footer */
+    /* Context usage ring */
     .ctx-ring {
       display: inline-flex;
       align-items: center;
       gap: 3px;
-      margin-left: auto;
+      margin-left: 0;
       line-height: 0;
       opacity: 0.6;
-      cursor: default;
+      cursor: pointer;
       transition: opacity 0.15s;
       --ctx-stroke: var(--color-muted, #888);
     }

@@ -560,8 +560,9 @@ export function addAITTSButton(messageElement, text) {
     var ICON_LOADING = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="9" stroke-dasharray="42" stroke-dashoffset="12" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.8s" repeatCount="indefinite"/></circle></svg>';
 
     const playButton = document.createElement('button');
-    playButton.className = 'ai-tts-button';
+    playButton.className = 'ai-tts-button msg-action-btn';
     playButton.type = 'button';
+    playButton.dataset.action = 'tts';
     const unavailableTitle = 'Read aloud — enable TTS in Settings';
     playButton.title = 'Read aloud';
     playButton.innerHTML = ICON_PLAY;
@@ -605,7 +606,15 @@ export function addAITTSButton(messageElement, text) {
         mgr.enqueue(text, playButton, resetButton);
     });
 
-    actions.appendChild(playButton);
+    const copyBtn = actions.querySelector('.footer-copy-btn, [data-action="copy"]');
+    const moreBtn = actions.querySelector('.msg-more-btn');
+    if (copyBtn) {
+        copyBtn.after(playButton);
+    } else if (moreBtn) {
+        actions.insertBefore(playButton, moreBtn);
+    } else {
+        actions.appendChild(playButton);
+    }
 }
 
 // Stop audio when navigating away
