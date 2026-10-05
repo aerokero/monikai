@@ -37,6 +37,9 @@ class VoiceLightFeedbackController:
         self.brightness_scale = max(0.1, min(2.0, float(brightness_scale)))
         self.current_state = VoiceFeedbackState.IDLE
         self._saved_initial_state: Optional[Dict[str, Any]] = None
+        # Set when something else (e.g. "turn off all lights") switched the
+        # indicator bulb off mid-interaction; we must not light it again.
+        self._external_off = False
         self._pulse_task: Optional[asyncio.Task] = None
         self._state_lock = asyncio.Lock()
 
@@ -114,7 +117,8 @@ class VoiceLightFeedbackController:
                         print(f"[VOICE LIGHT] Error restoring state: {exc}")
                     finally:
                         self._saved_initial_state = None
-            else:
+                self._external_off = False
+            elif not self._external_off:
                 # Start pulse animation task for active state
                 self._pulse_task = asyncio.create_task(
                     self._run_pulse_animation(new_state),
@@ -145,6 +149,16 @@ class VoiceLightFeedbackController:
             toggle = False
             while True:
                 await asyncio.sleep(interval)
+                # Our own pulses always keep the bulb on, so "off" here means
+                # the user (or a tool call) turned it off: respect that.
+                try:
+                    live = await self.ha_agent.get_entity_raw_state(self.entity_id)
+                except Exception:
+                    live = None
+                if live and str(live.get("state", "")).lower() == "off":
+                    self._external_off = True
+                    self._saved_initial_state = live
+                    return
                 target_bri = min_bri if toggle else max_bri
                 toggle = not toggle
 

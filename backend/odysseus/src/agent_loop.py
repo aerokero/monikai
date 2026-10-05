@@ -6293,7 +6293,7 @@ async def stream_agent_loop(
                 except Exception:
                     _notes_action = ""
                 _notes_text = ""
-                if not result.get("error"):
+                if not result.get("error") and not result.get("approval_required"):
                     if _notes_action in {"list", "search", "find", "view", "lis"}:
                         _notes_text = _note_list_summary_from_tool_output(
                             result.get("output") or result.get("results") or result.get("content") or ""
@@ -6326,7 +6326,7 @@ async def stream_agent_loop(
                 except Exception:
                     _tasks_action = ""
                 _tasks_text = ""
-                if not result.get("error"):
+                if not result.get("error") and not result.get("approval_required"):
                     _tasks_text = str(
                         result.get("response")
                         or result.get("output")

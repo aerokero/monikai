@@ -74,7 +74,7 @@ def test_public_payload_prioritizes_summary_and_hides_raw_args_behind_metadata()
     assert "Opera GX reward reminder" in payload["summary"]
     assert "14:30" in payload["summary"]
     assert payload["action"]["content"].startswith('{"action":"create"')
-    assert "yes for this chat / tak dla tej rozmowy" in payload["voice_prompt"]
+    assert "tak dla tej rozmowy" in payload["voice_prompt"]
     assert payload["options"][0]["value"] == "approve_task"
     assert payload["options"][1]["value"] == "approve"
     assert payload["options"][2]["value"] == "deny"

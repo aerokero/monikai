@@ -432,6 +432,17 @@ def find_best_input_device(
     return target_idx, target_info.get("name", f"device_{target_idx}"), chosen_sr
 
 
+def _release_output_stream(stream) -> None:
+    """Abort and close a sounddevice output stream; safe to call repeatedly."""
+    if stream is None:
+        return
+    for action in ("abort", "close"):
+        try:
+            getattr(stream, action)()
+        except Exception:
+            pass
+
+
 def find_best_output_device(preferred_index: Optional[int] = None) -> Optional[int]:
     """Find best output device index with max_output_channels > 0."""
     if not _SOUNDDEVICE_AVAILABLE:
@@ -1316,7 +1327,19 @@ class ServerMicListenerService:
 
             duration_sec = len(mono_samples) / float(target_sr)
 
+            # The HDA codec powers down after ~10s idle (snd_hda_intel
+            # power_save) and drops the first samples when a stream reopens.
+            # A short silent lead-in absorbs that; the tail keeps the final
+            # syllable from being clipped when the stream is stopped.
+            _frame_bytes = target_channels * 2
+            playback_bytes = (
+                bytes(int(target_sr * 0.25) * _frame_bytes)
+                + playback_bytes
+                + bytes(int(target_sr * 0.10) * _frame_bytes)
+            )
+
             if _SOUNDDEVICE_AVAILABLE:
+                stream = None
                 try:
                     kwargs = {
                         "samplerate": target_sr,
@@ -1336,6 +1359,11 @@ class ServerMicListenerService:
                     return
                 except Exception as exc:
                     print(f"[SERVER MIC] SoundDevice playback failed on '{dev_name}': {exc}")
+                finally:
+                    # A stream left open (cancelled task, failed write) keeps the
+                    # ALSA hw device locked until the container restarts, and every
+                    # later open fails with "Device unavailable".
+                    _release_output_stream(stream)
 
             if _PYAUDIO_AVAILABLE:
                 p = pyaudio.PyAudio()
@@ -1437,17 +1465,58 @@ class ServerMicListenerService:
                 try:
                     await asyncio.to_thread(stream.stop)
                     await asyncio.to_thread(stream.close)
-                except Exception:
+                except BaseException:
                     pass
+                finally:
+                    # Safety net when stop/close was cancelled or failed.
+                    _release_output_stream(stream)
             await asyncio.sleep(0.15)
             self._is_speaking = False
             self.vad.reset_segment()
+
+    async def _warm_up_tts(self) -> None:
+        """Load the local Pocket model once at startup.
+
+        Without this the first reply after every restart waits ~8s while the
+        model and voice state load, which looks like Monika froze.
+        """
+        if self.tts_provider not in {"local", "xtts", "pocket", "auto"}:
+            return
+        try:
+            from backend.conversation.voice_output import get_voice_output_service
+
+            service = get_voice_output_service()
+            status = service.get_status()
+            provider = status.get("provider") or "xtts"
+            if provider != "pocket":
+                return
+            started = time.perf_counter()
+            await asyncio.wait_for(
+                service.synthesize(
+                    "Dzień dobry.",
+                    provider=provider,
+                    voice=status.get("voice"),
+                    **(
+                        {"language": self.tts_language}
+                        if self.tts_language and self.tts_language != "auto"
+                        else {}
+                    ),
+                ),
+                timeout=max(60.0, float(self.tts_timeout)),
+            )
+            print(
+                "[SERVER MIC] [TTS] Pocket warm-up done "
+                f"in {(time.perf_counter() - started) * 1000.0:.0f}ms."
+            )
+        except Exception as exc:
+            print(f"[SERVER MIC] [TTS] Warm-up skipped: {exc}")
 
     async def _synthesize_and_play(
         self,
         text: str,
         *,
         capture_safe: bool = False,
+        announce_speaking: bool = False,
     ) -> None:
         """Synthesize one reply and play it through the server audio device."""
         if not text or text.startswith("("):
@@ -1494,6 +1563,8 @@ class ServerMicListenerService:
                     f"24000Hz, synth={synthesis_ms:.0f}ms). Starting playback..."
                 )
                 playback_started = time.perf_counter()
+                if announce_speaking and self.voice_light_feedback:
+                    self._queue_voice_light_state("speaking")
                 if capture_safe:
                     await self.play_audio_locally(
                         pcm_audio,
@@ -1535,6 +1606,8 @@ class ServerMicListenerService:
                     f"{result.sample_rate}Hz, synth={synthesis_ms:.0f}ms). Starting playback..."
                 )
                 playback_started = time.perf_counter()
+                if announce_speaking and self.voice_light_feedback:
+                    self._queue_voice_light_state("speaking")
                 if capture_safe:
                     await self.play_audio_locally(
                         result.audio,
@@ -2266,7 +2339,16 @@ class ServerMicListenerService:
             # The preceding turn opened follow-up window or was wake word. Accept without repeating name.
             matched, prompt = True, transcript
             self._awaiting_command_until = 0.0
-            print("[SERVER MIC] [CONVERSATION] Follow-up turn received.")
+            # A bare "Hej Monika" while the window is open is a re-wake, not a
+            # command: acknowledge it and keep listening instead of running a
+            # full model + TTS turn for a greeting.
+            if self.require_wake_word:
+                bare_wake, bare_prompt = self.extract_wake_word(transcript)
+                if bare_wake and not bare_prompt:
+                    prompt = ""
+                    print("[SERVER MIC] [CONVERSATION] Bare wake phrase in follow-up window; re-acknowledging.")
+            if prompt:
+                print("[SERVER MIC] [CONVERSATION] Follow-up turn received.")
         else:
             # Clear an expired window before processing a fresh wake word.
             self._awaiting_command_until = 0.0
@@ -2349,9 +2431,7 @@ class ServerMicListenerService:
                 if reply_text and not reply_text.startswith("("):
                     tts_started = time.perf_counter()
                     try:
-                        if self.voice_light_feedback:
-                            self._queue_voice_light_state("speaking")
-                        await self._synthesize_and_play(reply_text)
+                        await self._synthesize_and_play(reply_text, announce_speaking=True)
                     except Exception as exc:
                         print(f"[SERVER MIC] Błąd syntezy mowy: {exc}")
                     finally:
@@ -2421,6 +2501,9 @@ class ServerMicListenerService:
                 stream.start()
 
                 print(f"[SERVER MIC] [OK] Listening stream started on '{dev_name}' (device={dev_idx}, rate={dev_sr}Hz, wake_word={self.require_wake_word}, denoise=True).")
+                self._warmup_task = asyncio.create_task(
+                    self._warm_up_tts(), name="server-mic-tts-warmup"
+                )
                 if self.use_gemini_live:
                     print(
                         "[SERVER MIC] [LIVE] Local wake -> Gemini Live enabled "

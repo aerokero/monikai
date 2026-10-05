@@ -591,8 +591,13 @@ class _XTTSClient:
             logger.warning("XTTS synthesis request failed: %s", exc)
             return None
 
-POCKET_DEFAULT_TEMP = 0.70
-POCKET_DEFAULT_STEPS = 2
+# Tuned against the Polish Vosk model on Pocket output (word coverage of the
+# spoken sentence): temp 0.70 / steps 2 / eos -4.0 clipped or garbled about
+# 60% of the words; this combination keeps roughly 65-75%.  The default
+# EOS threshold of -4.0 ends sentences early; 0.0 starts to run away.
+POCKET_DEFAULT_TEMP = 0.50
+POCKET_DEFAULT_STEPS = 4
+POCKET_EOS_THRESHOLD = -0.5
 
 
 class _PocketTTSPipeline:
@@ -655,6 +660,7 @@ class _PocketTTSPipeline:
                         config="hf://shefowl/pocket-tts-polish-6l/config.yaml",
                         temp=float(temperature),
                         sampler_decode_steps=int(steps),
+                        eos_threshold=POCKET_EOS_THRESHOLD,
                     )
                     logger.info("Pocket TTS model loaded successfully")
                 except Exception as exc:

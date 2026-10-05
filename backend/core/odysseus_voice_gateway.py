@@ -193,6 +193,8 @@ class OdysseusVoiceGateway:
                         or None
                     )
                     notice = str(data.get("notice") or "").strip()
+                    if notice.startswith("I couldn't determine your choice"):
+                        notice = "Nie zrozumiałam. Powiedz tak lub nie."
                     if notice and asked_question and notice not in asked_question:
                         asked_question = f"{notice} {asked_question}"
             elif event_type == "agent_terminal":

@@ -288,6 +288,29 @@ def _display_value(value: Any, limit: int = 180) -> str:
     return text
 
 
+def _voice_summary_pl(tool_name: Any, content: Any, display: dict[str, str]) -> str:
+    """Short Polish description of a pending action for spoken approval."""
+    tool = str(tool_name or "").strip()
+    args = _display_args(content)
+    action = _display_value(args.get("action"), 60).lower()
+    name = _display_value(
+        args.get("name") or args.get("title") or args.get("subject"), 80
+    )
+    if tool == "print_text":
+        text = "Wydrukować dokument"
+    elif tool == "manage_tasks" and action in {"create", ""}:
+        text = "Utworzyć zaplanowane zadanie"
+    elif tool == "manage_calendar" and action in {"create_event", "create"}:
+        text = "Dodać wydarzenie do kalendarza"
+    elif tool == "manage_notes" and action in {"add", "create", ""}:
+        text = "Dodać notatkę"
+    elif tool in {"send_email", "reply_to_email", "bulk_email"}:
+        text = "Wysłać e-mail"
+    else:
+        text = "Wykonać tę czynność"
+    return f"{text} „{name}”" if name else text
+
+
 def _approval_display(tool_name: Any, content: Any, effects: Any) -> dict[str, str]:
     """Create display-only copy for an approval card.
 
@@ -483,12 +506,14 @@ class PendingToolApproval:
             "summary": display["summary"],
             "risk": display["risk"],
             "risk_level": display["risk_level"],
+            # Spoken by the Polish voice persona, so keep it Polish and short.
             "voice_prompt": (
-                f'{display["summary"]}. Say yes or tak to approve, no or nie to reject.'
+                f'{_voice_summary_pl(self.tool_name, self.content, display)}? '
+                "Powiedz tak lub nie."
                 if self.tool_name == "print_text"
                 else (
-                    f'{display["summary"]}. Say yes or tak to approve, '
-                    "no or nie to reject, or say yes for this chat / tak dla tej rozmowy."
+                    f'{_voice_summary_pl(self.tool_name, self.content, display)}? '
+                    "Powiedz tak, nie, albo tak dla tej rozmowy."
                 )
             ),
             "status": "pending",
