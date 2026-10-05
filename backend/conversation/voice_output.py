@@ -18,6 +18,7 @@ from typing import Any, Dict, Optional
 
 from backend.audio.tts_router import TTSRouter, get_tts_router
 from backend.conversation.speech import SynthesizedSpeech
+from backend.conversation.speech_text import prepare_for_speech
 
 
 DEFAULT_GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts"
@@ -262,7 +263,7 @@ class VoiceOutputService:
         if not str(text or "").strip():
             raise ValueError("speech text cannot be empty")
 
-        speech_text = _strip_thinking_for_tts(text)
+        speech_text = prepare_for_speech(_strip_thinking_for_tts(text))
         if not speech_text:
             raise ValueError("speech text contains no speakable content")
 

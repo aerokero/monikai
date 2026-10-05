@@ -936,8 +936,8 @@ async function initTtsSettings() {
   }
   function syncPocketTempLabel() {
     if (pocketTempValue && pocketTempRange) {
-      var val = parseFloat(pocketTempRange.value || '0.50');
-      pocketTempValue.textContent = (isNaN(val) ? 0.50 : val).toFixed(2);
+      var val = parseFloat(pocketTempRange.value || '0.70');
+      pocketTempValue.textContent = (isNaN(val) ? 0.70 : val).toFixed(2);
     }
   }
 
@@ -1063,10 +1063,10 @@ async function initTtsSettings() {
         tts_auto_read: ttsAutoReadToggle ? ttsAutoReadToggle.checked : false,
       };
       if (pocketTempRange) {
-        payload.tts_pocket_temperature = parseFloat(pocketTempRange.value || '0.50');
+        payload.tts_pocket_temperature = parseFloat(pocketTempRange.value || '0.70');
       }
       if (pocketStepsSelect) {
-        payload.tts_pocket_steps = parseInt(pocketStepsSelect.value || '4', 10);
+        payload.tts_pocket_steps = parseInt(pocketStepsSelect.value || '2', 10);
       }
       await _postSettings(payload);
       ttsMsg.textContent = 'Saved'; ttsMsg.style.color = 'var(--fg)'; setTimeout(() => { ttsMsg.textContent = ''; }, 2000);
@@ -1122,7 +1122,7 @@ async function initTtsSettings() {
   }
   if (pocketTempValue && pocketTempRange) {
     pocketTempValue.addEventListener('click', function() {
-      pocketTempRange.value = '0.50';
+      pocketTempRange.value = '0.70';
       syncPocketTempLabel();
       saveAndClearCache();
     });

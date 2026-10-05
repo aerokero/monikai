@@ -887,6 +887,9 @@ async def build_chat_context(
             "context and language settings. Keep a natural, warm spoken style "
             "and be concise: usually 1–3 short sentences (about 40 words max), "
             "with no markdown and no mention of transport or transcription. "
+            "Write for the ear: spell out units, symbols, abbreviations and "
+            "numeric ranges as words in the reply language (never %, °, →, "
+            "km/h and the like), and use plain sentences instead of lists.\n"
             "Use tools normally; after a successful operation, confirm it in "
             "one short sentence. Do not omit an important result merely to be brief."
         )
@@ -1395,6 +1398,7 @@ def run_post_response_tasks(
         _extraction_jobs.append(("memory", extract_and_store(
             sess, memory_manager, memory_vector,
             t_url, t_model, t_headers,
+            character_name=character_name,
         )))
 
     # Skill extraction from complex agent runs. Only when the user actually

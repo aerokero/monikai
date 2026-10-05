@@ -591,13 +591,46 @@ class _XTTSClient:
             logger.warning("XTTS synthesis request failed: %s", exc)
             return None
 
-# Tuned against the Polish Vosk model on Pocket output (word coverage of the
-# spoken sentence): temp 0.70 / steps 2 / eos -4.0 clipped or garbled about
-# 60% of the words; this combination keeps roughly 65-75%.  The default
-# EOS threshold of -4.0 ends sentences early; 0.0 starts to run away.
-POCKET_DEFAULT_TEMP = 0.50
-POCKET_DEFAULT_STEPS = 4
-POCKET_EOS_THRESHOLD = -0.5
+POCKET_DEFAULT_TEMP = 0.70
+POCKET_DEFAULT_STEPS = 2
+
+# Pocket handles short utterances well but cuts off or garbles long ones: its
+# own sentence chunking passes up to ~50 tokens at once, and a typical 4-sentence
+# reply came out at 25-50% of its real length with the tail missing.  Feeding it
+# clause-sized pieces (measured on the Polish model: full-length audio and ~3x
+# more intelligible words) fixes that.  Splitting only uses punctuation, so it
+# is language-neutral.
+POCKET_MAX_CHUNK_CHARS = 70
+POCKET_GAP_SENTENCE_SEC = 0.25
+POCKET_GAP_CLAUSE_SEC = 0.10
+
+
+def _split_for_pocket(text: str, max_chars: int = POCKET_MAX_CHUNK_CHARS) -> list[tuple[str, bool]]:
+    """Split text into (piece, ends_sentence) units of at most ~max_chars."""
+    import re
+
+    pieces_out: list[tuple[str, bool]] = []
+    for sentence in re.split(r"(?<=[.!?…])\s+", text.strip()):
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        if len(sentence) <= max_chars:
+            pieces_out.append((sentence, True))
+            continue
+        clauses = [c for c in re.split(r"(?<=[,;:])\s+|\s+[–—]\s+", sentence) if c]
+        merged: list[str] = []
+        current = ""
+        for clause in clauses:
+            if current and len(current) + 1 + len(clause) > max_chars:
+                merged.append(current)
+                current = clause
+            else:
+                current = f"{current} {clause}".strip()
+        if current:
+            merged.append(current)
+        for index, piece in enumerate(merged):
+            pieces_out.append((piece, index == len(merged) - 1))
+    return pieces_out
 
 
 class _PocketTTSPipeline:
@@ -660,7 +693,6 @@ class _PocketTTSPipeline:
                         config="hf://shefowl/pocket-tts-polish-6l/config.yaml",
                         temp=float(temperature),
                         sampler_decode_steps=int(steps),
-                        eos_threshold=POCKET_EOS_THRESHOLD,
                     )
                     logger.info("Pocket TTS model loaded successfully")
                 except Exception as exc:
@@ -685,9 +717,20 @@ class _PocketTTSPipeline:
                 return None
 
             try:
-                audio_tensor = self._model.generate_audio(state, clean_text)
                 sr = getattr(self._model, "sample_rate", 24000)
-                audio_np = (audio_tensor.detach().cpu().numpy() * 32767.0).clip(-32768, 32767).astype(np.int16)
+                segments = []
+                for piece, ends_sentence in _split_for_pocket(clean_text):
+                    audio_tensor = self._model.generate_audio(state, piece)
+                    segments.append(
+                        (audio_tensor.detach().cpu().numpy() * 32767.0)
+                        .clip(-32768, 32767)
+                        .astype(np.int16)
+                    )
+                    gap = POCKET_GAP_SENTENCE_SEC if ends_sentence else POCKET_GAP_CLAUSE_SEC
+                    segments.append(np.zeros(int(sr * gap), dtype=np.int16))
+                if not segments:
+                    return None
+                audio_np = np.concatenate(segments[:-1])
                 buf = io.BytesIO()
                 scipy.io.wavfile.write(buf, sr, audio_np)
                 data = buf.getvalue()
@@ -863,7 +906,7 @@ class TTSService:
         # Include the Polish mode as well so switching between the experimental
         # neural path and espeak cannot return stale audio from the other path.
         raw = (
-            f"v6|{provider}|{model}|{voice}|{speed}|{language}|"
+            f"v8|{provider}|{model}|{voice}|{speed}|{language}|"
             f"{temperature}|{steps}|{_kokoro_polish_mode()}|{_piper_model_id()}|{text}"
         )
         return hashlib.sha256(raw.encode()).hexdigest()

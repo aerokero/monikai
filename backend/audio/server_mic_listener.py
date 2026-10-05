@@ -1327,17 +1327,6 @@ class ServerMicListenerService:
 
             duration_sec = len(mono_samples) / float(target_sr)
 
-            # The HDA codec powers down after ~10s idle (snd_hda_intel
-            # power_save) and drops the first samples when a stream reopens.
-            # A short silent lead-in absorbs that; the tail keeps the final
-            # syllable from being clipped when the stream is stopped.
-            _frame_bytes = target_channels * 2
-            playback_bytes = (
-                bytes(int(target_sr * 0.25) * _frame_bytes)
-                + playback_bytes
-                + bytes(int(target_sr * 0.10) * _frame_bytes)
-            )
-
             if _SOUNDDEVICE_AVAILABLE:
                 stream = None
                 try:
@@ -1490,17 +1479,18 @@ class ServerMicListenerService:
             provider = status.get("provider") or "xtts"
             if provider != "pocket":
                 return
+            # Bypass the audio cache: a cache hit would skip loading the model.
+            from backend.odysseus.services.tts.tts_service import get_tts_service
+
             started = time.perf_counter()
             await asyncio.wait_for(
-                service.synthesize(
-                    "Dzień dobry.",
+                asyncio.to_thread(
+                    get_tts_service().synthesize,
+                    # Output is discarded; only loading the model matters.
+                    "OK.",
+                    use_cache=False,
                     provider=provider,
                     voice=status.get("voice"),
-                    **(
-                        {"language": self.tts_language}
-                        if self.tts_language and self.tts_language != "auto"
-                        else {}
-                    ),
                 ),
                 timeout=max(60.0, float(self.tts_timeout)),
             )
@@ -1521,6 +1511,16 @@ class ServerMicListenerService:
         """Synthesize one reply and play it through the server audio device."""
         if not text or text.startswith("("):
             return
+
+        if announce_speaking:
+            # Spoken replies stay short; the full text remains in the chat.
+            from backend.conversation.speech_text import (
+                prepare_for_speech,
+                truncate_for_speech,
+            )
+
+            max_chars = int(os.getenv("SERVER_MIC_TTS_MAX_CHARS", "600"))
+            text = truncate_for_speech(prepare_for_speech(text), max_chars) or text
 
         total_started = time.perf_counter()
 

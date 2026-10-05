@@ -79,6 +79,10 @@ EXTRACT_SYSTEM_PROMPT = (
     "Rules:\n"
     "- MAX 2 facts per conversation — only the most important\n"
     "- Only extract facts the USER stated or clearly implied\n"
+    "- The ASSISTANT is a separate entity (an AI character), never the user. Anything the "
+    "assistant says about itself, and anything the user says about the assistant (including "
+    "'you are ...', 'your name is ...'), describes the assistant: its name, gender, age, "
+    "personality or backstory must NEVER be stored as facts about the user\n"
     "- Each fact must be a single short sentence (under 15 words)\n"
     "- If a fact is similar to something likely already known, skip it\n"
     "- If nothing durable was revealed, return []\n\n"
@@ -89,6 +93,24 @@ EXTRACT_SYSTEM_PROMPT = (
 
 # How many recent messages to include for extraction
 CONTEXT_WINDOW = 6
+
+
+def _build_extract_prompt(character_name: Optional[str]) -> str:
+    """Extraction system prompt, grounded in the active persona when known.
+
+    The assistant's identity comes from the preset in use (``character_name``),
+    not from a constant, so any persona gets the same protection against its own
+    attributes being filed as facts about the user.
+    """
+    name = (character_name or "").strip()
+    if not name:
+        return EXTRACT_SYSTEM_PROMPT
+    return (
+        EXTRACT_SYSTEM_PROMPT
+        + f"\n\nIn this conversation the ASSISTANT is the character \"{name}\". "
+        f"Its name, gender, age and anything it says about itself are facts about "
+        f"{name}, not about the user. Only the USER lines describe the user."
+    )
 
 AUDIT_SYSTEM_PROMPT = (
     "You are a memory database curator. Be CONSERVATIVE: remove only TRUE "
@@ -282,6 +304,7 @@ async def extract_and_store(
     endpoint_url: str,
     model: str,
     headers: Optional[dict] = None,
+    character_name: Optional[str] = None,
 ):
     """Extract facts from recent conversation and store them.
 
@@ -334,6 +357,11 @@ async def extract_and_store(
         # the model actually extract. Controlled repro on this model: 0/6 trials
         # with the old structure vs 6/6 with this one. The skill extractor flattens
         # for the same reason.
+        _assistant_label = (
+            f"ASSISTANT ({character_name.strip()})" if (character_name or "").strip()
+            else "ASSISTANT"
+        )
+
         def _flatten_msg(m):
             c = m.get("content", "")
             if isinstance(c, list):
@@ -341,11 +369,17 @@ async def extract_and_store(
                     b.get("text", "") for b in c
                     if isinstance(b, dict) and b.get("type") == "text"
                 )
-            return f"{m.get('role', '?')}: {c}"
+            role = m.get("role", "?")
+            label = (
+                "USER" if role == "user"
+                else _assistant_label if role == "assistant"
+                else str(role)
+            )
+            return f"{label}: {c}"
 
         transcript = "\n\n".join(_flatten_msg(m) for m in stripped_recent)
         extraction_messages = [
-            {"role": "system", "content": EXTRACT_SYSTEM_PROMPT},
+            {"role": "system", "content": _build_extract_prompt(character_name)},
             {"role": "user", "content": (
                 "Conversation to analyze:\n\n" + transcript
                 + "\n\nReturn the JSON array of durable facts now (or [] if none)."
