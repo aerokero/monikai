@@ -310,7 +310,14 @@ def _approval_display(tool_name: Any, content: Any, effects: Any) -> dict[str, s
     )
     prompt = _display_value(args.get("prompt") or args.get("description"), 180)
 
-    if tool == "manage_tasks" and action in {"create", ""}:
+    preview_text = ""
+    preview_title = ""
+    if tool == "print_text":
+        preview_text = str(args.get("text") or "")[:100_000]
+        preview_title = str(args.get("title") or "MonikAI print job")[:120]
+        summary = f'Print “{preview_title}” on Canon TS3700'
+        operation = "Print text document"
+    elif tool == "manage_tasks" and action in {"create", ""}:
         summary = "Create a scheduled task"
         if name:
             summary += f' “{name}”'
@@ -362,12 +369,16 @@ def _approval_display(tool_name: Any, content: Any, effects: Any) -> dict[str, s
         risk = "This action needs your explicit approval before it continues."
         risk_level = "medium"
 
-    return {
+    display = {
         "operation": operation or "Run action",
         "summary": summary,
         "risk": risk,
         "risk_level": risk_level,
     }
+    if tool == "print_text":
+        display["preview_title"] = preview_title
+        display["preview_text"] = preview_text
+    return display
 
 
 def _canonical_digest(payload: dict[str, Any]) -> str:
@@ -473,8 +484,12 @@ class PendingToolApproval:
             "risk": display["risk"],
             "risk_level": display["risk_level"],
             "voice_prompt": (
-                f'{display["summary"]}. Say yes or tak to approve, '
-                "no or nie to reject, or say yes for this chat / tak dla tej rozmowy."
+                f'{display["summary"]}. Say yes or tak to approve, no or nie to reject.'
+                if self.tool_name == "print_text"
+                else (
+                    f'{display["summary"]}. Say yes or tak to approve, '
+                    "no or nie to reject, or say yes for this chat / tak dla tej rozmowy."
+                )
             ),
             "status": "pending",
             "created_at": self.created_at,
@@ -487,13 +502,13 @@ class PendingToolApproval:
                         "Run it and allow gated steps needed to finish this request."
                     ),
                 },
-                {
+                *([] if self.tool_name == "print_text" else [{
                     "label": "Allow for this chat",
                     "value": CHAT_SESSION_APPROVAL_DECISION,
                     "description": (
                         "Run it and do not ask again at this gate in this chat."
                     ),
-                },
+                }]),
                 {
                     "label": "Reject",
                     "value": DENY_APPROVAL_DECISION,
@@ -503,6 +518,8 @@ class PendingToolApproval:
             "action": {
                 "tool": self.tool_name,
                 "operation": display["operation"],
+                "preview_title": display.get("preview_title"),
+                "preview_text": display.get("preview_text"),
                 # Show the complete sealed input so approval never hides
                 # trailing lines.  This is not read back as authority.
                 "content": self.content,

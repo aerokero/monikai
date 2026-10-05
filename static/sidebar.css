@@ -754,6 +754,184 @@ html.ody-sidebar-off #sidebar {
 #chat-history .msg.msg-ai { --message-action-bg: var(--ai-bubble-bg, var(--panel)); }
 #chat-history .msg.msg-user { --message-action-bg: var(--user-bubble-bg, var(--panel)); }
 
+/* Agent tool execution thread card */
+#chat-history .agent-thread {
+  align-self: flex-start !important;
+  margin: 4px 0 6px 12px !important;
+  padding: 6px 8px !important;
+  width: fit-content !important;
+  min-width: 240px !important;
+  max-width: min(82%, 800px) !important;
+  box-sizing: border-box !important;
+  background: var(--ai-bubble-bg, var(--panel)) !important;
+  border: 1px solid color-mix(in srgb, var(--border, #444) 30%, transparent) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+
+#chat-history .agent-thread + .agent-thread {
+  margin-top: 3px !important;
+}
+
+/* Explicitly disable all dots and timeline lines */
+#chat-history .agent-thread::before,
+#chat-history .agent-thread::after,
+#chat-history .agent-thread-dot {
+  content: none !important;
+  display: none !important;
+}
+
+#chat-history .agent-thread-node {
+  position: relative !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+#chat-history .agent-thread-node + .agent-thread-node {
+  margin-top: 3px !important;
+}
+
+#chat-history .agent-thread-header {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 6px 14px !important;
+  border-radius: 12px !important;
+  cursor: pointer !important;
+  user-select: none !important;
+  transition: background 0.15s ease !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+#chat-history .agent-thread-header:hover {
+  background: color-mix(in srgb, var(--fg) 6%, transparent) !important;
+}
+
+#chat-history .agent-thread-tool {
+  font-weight: 600 !important;
+  font-size: 0.82rem !important;
+  color: var(--fg) !important;
+  letter-spacing: 0.3px !important;
+}
+
+#chat-history .agent-thread-icon {
+  font-size: 0.9em !important;
+  color: var(--fg) !important;
+  opacity: 0.9 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 18px !important;
+  height: 18px !important;
+  flex-shrink: 0 !important;
+}
+
+#chat-history .agent-thread-node.error .agent-thread-icon {
+  color: var(--color-error, var(--red)) !important;
+  opacity: 1 !important;
+}
+
+#chat-history .agent-thread-node.approval-event .agent-thread-icon {
+  color: var(--accent, #e5a50a) !important;
+  opacity: 1 !important;
+}
+
+#chat-history .agent-thread-status {
+  font-size: 0.72rem !important;
+  font-weight: 500 !important;
+  padding: 1px 7px !important;
+  border-radius: 999px !important;
+  background: color-mix(in srgb, var(--fg) 8%, transparent) !important;
+  color: var(--color-muted-alt, #aaa) !important;
+  line-height: 1.4 !important;
+  opacity: 0.95 !important;
+}
+
+#chat-history .agent-thread-node:not(.error):not(.running):not(.approval-event) .agent-thread-status,
+#chat-history .agent-thread-status.done {
+  background: color-mix(in srgb, var(--green, #50fa7b) 15%, transparent) !important;
+  color: var(--green, #50fa7b) !important;
+}
+
+#chat-history .agent-thread-node.approval-event .agent-thread-status {
+  background: color-mix(in srgb, var(--accent, #e5a50a) 15%, transparent) !important;
+  color: var(--accent, #e5a50a) !important;
+}
+
+#chat-history .agent-thread-node.approval-event.is-approved .agent-thread-status,
+#chat-history .agent-thread-node.approval-event .agent-thread-status.approved {
+  background: color-mix(in srgb, var(--green, #50fa7b) 15%, transparent) !important;
+  color: var(--green, #50fa7b) !important;
+}
+
+#chat-history .agent-thread-node.error .agent-thread-status,
+#chat-history .agent-thread-status.failed {
+  background: color-mix(in srgb, var(--color-error, var(--red)) 18%, transparent) !important;
+  color: var(--color-error, var(--red)) !important;
+}
+
+#chat-history .agent-thread-chevron {
+  margin-left: auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 16px !important;
+  height: 16px !important;
+  color: var(--fg) !important;
+  opacity: 0.45 !important;
+  flex-shrink: 0 !important;
+  transition: transform 0.2s ease, opacity 0.2s ease !important;
+}
+
+#chat-history .agent-thread-node.open .agent-thread-chevron {
+  transform: rotate(90deg) !important;
+  opacity: 0.85 !important;
+}
+
+#chat-history .agent-thread-header:hover .agent-thread-chevron {
+  opacity: 0.85 !important;
+}
+
+#chat-history .agent-thread-content {
+  padding: 4px 6px 6px 6px !important;
+}
+
+#chat-history .agent-thread-cmd {
+  background: color-mix(in srgb, var(--fg) 6%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--border) 40%, transparent) !important;
+  border-radius: 8px !important;
+  font-size: 0.8em !important;
+  padding: 6px 10px !important;
+  color: var(--fg) !important;
+}
+
+#chat-history .agent-tool-output {
+  background: color-mix(in srgb, var(--fg) 4%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--border, #444) 35%, transparent) !important;
+  border-radius: 8px !important;
+}
+
+#chat-history .agent-tool-output summary {
+  color: var(--fg) !important;
+  background: color-mix(in srgb, var(--fg) 6%, transparent) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--border, #444) 25%, transparent) !important;
+}
+
+#chat-history .agent-tool-output summary:hover {
+  background: color-mix(in srgb, var(--fg) 10%, transparent) !important;
+}
+
+#chat-history .agent-tool-output summary::after {
+  color: var(--color-muted-alt, #888) !important;
+}
+
+#chat-history .agent-tool-output[open] {
+  background: color-mix(in srgb, var(--fg) 4%, transparent) !important;
+}
+
 
 /* Shared shell behavior for every workspace view. */
 #sidebar .section-header-flex:focus-within .section-collapse-btn,

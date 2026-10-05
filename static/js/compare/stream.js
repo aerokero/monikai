@@ -6,7 +6,7 @@ import {
   renderAskUserCard,
   safeDisplayImageSrc,
   updateToolApprovalCardState,
-} from '../chatRenderer.js?v=20260913approvalcontrol3';
+} from '../chatRenderer.js?v=20260924toolaxis1';
 import markdownModule from '../markdown.js';
 import spinnerModule from '../spinner.js';
 import uiModule from '../ui.js';

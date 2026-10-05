@@ -12,8 +12,7 @@ import { bindMenuDismiss } from './escMenuStack.js';
 import { loadPanel } from './panels.js';
 import { matchModelKey } from './model/matchKey.js';
 import { getTools } from './appConfig.js';
-import { icon as phosphorIcon } from './iconRegistry.js';
-
+import { icon as phosphorIcon, getToolPhosphorIcon } from './iconRegistry.js';
 const SEARCH_ICON = phosphorIcon('search', 14);
 const REPORT_ICON = phosphorIcon('file', 14);
 const CHAT_ABOUT_ICON = phosphorIcon('chat', 14);
@@ -2615,6 +2614,20 @@ export function renderAskUserCard(payload, options) {
       card.appendChild(risk);
     }
 
+    if (aq.action.tool === 'print_text' && typeof aq.action.preview_text === 'string') {
+      const preview = document.createElement('section');
+      preview.className = 'tool-print-preview';
+      const previewHeading = document.createElement('div');
+      previewHeading.className = 'tool-print-preview-heading';
+      previewHeading.textContent = `Podgląd wydruku · ${aq.action.preview_title || 'Dokument'}`;
+      const previewText = document.createElement('pre');
+      previewText.className = 'tool-print-preview-text';
+      previewText.textContent = aq.action.preview_text;
+      preview.appendChild(previewHeading);
+      preview.appendChild(previewText);
+      card.appendChild(preview);
+    }
+
     const facts = document.createElement('div');
     facts.className = 'tool-approval-facts';
     const fact = (label, value, extraClass = '') => {
@@ -2881,26 +2894,26 @@ export function addMessage(role, content, modelName, metadata) {
 
       const firstRound = (toolsByRound[0] || []).length ? 0 : 1;
       for (let roundNum = firstRound; roundNum <= maxRound; roundNum++) {
-        const r = roundNum - 1;
-        const txt = r >= 0
+        const roundIdx = roundNum - 1;
+        const txt = roundIdx >= 0
           ? _stripLegacyToolApprovalCopy(
-            resolveDocumentPlaceholderLinks((roundTexts[r] || '').trim(), metadata),
+            resolveDocumentPlaceholderLinks((roundTexts[roundIdx] || '').trim(), metadata),
             toolEvents,
           )
           : '';
 
         if (txt) {
           const wrap = document.createElement('div');
-          wrap.className = 'msg msg-ai' + (r > 0 ? ' msg-continuation' : '');
+          wrap.className = 'msg msg-ai' + (roundIdx > 0 ? ' msg-continuation' : '');
           const roleEl = document.createElement('div');
           roleEl.className = 'role';
           const pair = replyModelPair(modelName, metadata);
-          const contModel = roundModels[r] || pair.actualModel || pair.requestedModel;
-          const contEndpointId = r < roundEndpointIds.length
-            ? roundEndpointIds[r]
+          const contModel = roundModels[roundIdx] || pair.actualModel || pair.requestedModel;
+          const contEndpointId = roundIdx < roundEndpointIds.length
+            ? roundEndpointIds[roundIdx]
             : pair.actualEndpointId;
-          const contEndpointLabel = r < roundEndpointLabels.length
-            ? roundEndpointLabels[r]
+          const contEndpointLabel = roundIdx < roundEndpointLabels.length
+            ? roundEndpointLabels[roundIdx]
             : pair.actualEndpointLabel;
           let roundLabel = modelRouteLabel(
             pair.requestedModel,
@@ -2923,14 +2936,14 @@ export function addMessage(role, content, modelName, metadata) {
               + ' (' + pair.requestedEndpointLabel + ' -> ' + contEndpointLabel + ')';
           }
           applyModelColor(roleEl, contModel);
-          if (r === 0) roleEl.appendChild(roleTimestamp(metadata?.timestamp));
+          if (roundIdx === 0) roleEl.appendChild(roleTimestamp(metadata?.timestamp));
           wrap.appendChild(roleEl);
           const body = document.createElement('div');
           body.className = 'body';
           // Check if this is the last text round — sources go on top of final response
           var agentSourcesPrefix = '';
           var isLastTextRound = true;
-          for (let rr = r + 1; rr < maxRound; rr++) {
+          for (let rr = roundIdx + 1; rr < maxRound; rr++) {
             if ((roundTexts[rr] || '').trim()) { isLastTextRound = false; break; }
           }
           var agentFindingsSuffix = '';
@@ -3012,19 +3025,20 @@ export function addMessage(role, content, modelName, metadata) {
               const approvalSummary = ev.ask_user.summary
                 || ev.ask_user.action?.operation
                 || 'Review the requested action';
-              node.className = 'agent-thread-node approval-event' + (resolved === 'deny' ? ' error' : '');
-              node.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">${phosphorIcon(resolved === 'deny' ? 'x' : 'warning', 13)}</span><span class="agent-thread-tool">Confirmation</span><span class="agent-thread-status">${approvalStatus}</span><span class="agent-thread-chevron">${phosphorIcon('play', 10)}</span></div><div class="agent-thread-content"><div class="approval-event-summary">${esc(approvalSummary)}</div></div>`;
+              node.className = 'agent-thread-node approval-event' + (resolved === 'deny' ? ' error' : (resolved ? ' is-approved' : ''));
+              node.innerHTML = `<div class="agent-thread-header"><span class="agent-thread-icon">${phosphorIcon('warning', 15)}</span><span class="agent-thread-tool">Confirmation</span><span class="agent-thread-status ${approvalStatus.replace(/\s+/g, '-')}">${approvalStatus}</span><span class="agent-thread-chevron">${phosphorIcon('caretRight', 12)}</span></div><div class="agent-thread-content"><div class="approval-event-summary">${esc(approvalSummary)}</div></div>`;
             } else {
               node.className = 'agent-thread-node' + (ok ? '' : ' error');
-              // Hide the raw JSON command when a diff says it better (same as live).
               const evCmdHtml = (ev.command && !(ev.diff && ev.diff.text)) ? `<pre class="agent-thread-cmd">${esc(ev.command)}</pre>` : '';
-              node.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">${ok ? '\u2713' : '\u2717'}</span><span class="agent-thread-tool">${esc(ev.tool)}</span><span class="agent-thread-status">${ok ? 'done' : 'failed'}</span><span class="agent-thread-chevron">\u25B6</span></div><div class="agent-thread-content">${evCmdHtml}${outHtml}${evDiffHtml}</div>`;
-              // Click handling is delegated globally \u2014 see chat.js init.
+              const toolIcon = phosphorIcon(getToolPhosphorIcon(ev.tool), 15);
+              const statusText = ok ? 'done' : 'failed';
+              node.innerHTML = `<div class="agent-thread-header"><span class="agent-thread-icon">${toolIcon}</span><span class="agent-thread-tool">${esc(ev.tool)}</span><span class="agent-thread-status ${statusText}">${statusText}</span><span class="agent-thread-chevron">${phosphorIcon('caretRight', 12)}</span></div><div class="agent-thread-content">${evCmdHtml}${outHtml}${evDiffHtml}</div>`;
+              // Click handling is delegated globally — see chat.js init.
             }
             threadWrap.appendChild(node);
           }
           // Check if next round has text — extend line down to connect
-          const nextTxt = (roundTexts[r + 1] || '').trim();
+          const nextTxt = (roundTexts[roundIdx + 1] || '').trim();
           if (nextTxt) threadWrap.classList.add('has-bottom');
           lastWrap = threadWrap;
 
@@ -3083,8 +3097,8 @@ export function addMessage(role, content, modelName, metadata) {
     const wrap = document.createElement('div');
     wrap.className = 'msg ' + (role === 'user' ? 'msg-user' : 'msg-ai');
 
-    const r = document.createElement('div');
-    r.className = 'role';
+    const roleEl = document.createElement('div');
+    roleEl.className = 'role';
     const isSlash = metadata?.source === 'slash';
     const isCompacted = metadata?.compacted;
     const replyModels = replyModelPair(modelName, metadata);
@@ -3105,7 +3119,7 @@ export function addMessage(role, content, modelName, metadata) {
     } else if (metadata?.character_name && role !== 'user' && !isSlash && !isCompacted) {
       _roleText = metadata.character_name;
     }
-    r.textContent = _roleText;
+    roleEl.textContent = _roleText;
     if (role !== 'user') {
       const endpointChanged = Boolean(
         replyModels.requestedEndpointId
@@ -3113,11 +3127,11 @@ export function addMessage(role, content, modelName, metadata) {
         && replyModels.requestedEndpointId !== replyModels.actualEndpointId
       );
       if (!isSlash && !isCompacted && replyModels.requestedModel && resolvedModel && (!sameModelName(replyModels.requestedModel, resolvedModel) || endpointChanged)) {
-        r.title = replyModels.requestedModel + ' -> ' + resolvedModel
+        roleEl.title = replyModels.requestedModel + ' -> ' + resolvedModel
           + ' (' + replyModels.requestedEndpointLabel + ' -> ' + replyModels.actualEndpointLabel + ')';
       }
-      if (!isSlash && !isCompacted) applyModelColor(r, resolvedModel);
-      r.appendChild(roleTimestamp(metadata?.timestamp));
+      if (!isSlash && !isCompacted) applyModelColor(roleEl, resolvedModel);
+      roleEl.appendChild(roleTimestamp(metadata?.timestamp));
     }
 
     const b = document.createElement('div');
@@ -3218,7 +3232,7 @@ export function addMessage(role, content, modelName, metadata) {
       }
     }
 
-    wrap.appendChild(r);
+    wrap.appendChild(roleEl);
     wrap.appendChild(b);
 
     // Add stopped indicator + continue button for messages that were stopped by user

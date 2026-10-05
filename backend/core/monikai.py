@@ -3608,6 +3608,8 @@ class AudioLoop:
                                 "read_file",
                                 "list_smart_devices",
                                 "control_light",
+                                "get_print_status",
+                                "print_text",
                                 "manage_shopping_list",
                                 "get_random_fact",
                                 "get_random_greeting",
@@ -3650,6 +3652,8 @@ class AudioLoop:
                                     continue
 
                                 confirmation_required = self._conversation_tool_requires_confirmation(fc.name)
+                                if fc.name == "print_text":
+                                    confirmation_required = True
                                 if fc.name.startswith("minecraft_"):
                                     confirmation_required = False
                                 if fc.name == "manage_agent_job":
@@ -3694,7 +3698,7 @@ class AudioLoop:
                                             )
                                             continue
                                     else:
-                                        if self._channel_confirmation_requires_interactive_approval(fc.name):
+                                        if fc.name == "print_text" or self._channel_confirmation_requires_interactive_approval(fc.name):
                                             function_responses.append(
                                                 types.FunctionResponse(
                                                     id=fc.id,
@@ -3946,6 +3950,58 @@ class AudioLoop:
                                             name=fc.name,
                                             response={"result": result.result},
                                         )
+                                    )
+
+                                elif fc.name == "get_print_status":
+                                    printer = os.environ.get("CUPS_PRINTER", "Canon_TS3700")
+                                    try:
+                                        result = subprocess.run(
+                                            ["lpstat", "-p", printer, "-l"],
+                                            capture_output=True,
+                                            text=True,
+                                            timeout=8,
+                                            check=False,
+                                        )
+                                        if result.returncode == 0:
+                                            result_str = result.stdout.strip() or f"Printer {printer}: no status details."
+                                        else:
+                                            result_str = (result.stderr or result.stdout).strip() or f"Unable to query printer {printer}."
+                                    except Exception as e:
+                                        result_str = f"Could not query printer status: {e}"
+                                    function_responses.append(
+                                        types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str})
+                                    )
+
+                                elif fc.name == "print_text":
+                                    title = str(fc.args.get("title") or "MonikAI print job").strip()[:120]
+                                    content = str(fc.args.get("text") or "")
+                                    printer = os.environ.get("CUPS_PRINTER", "Canon_TS3700")
+                                    if not content.strip():
+                                        result_str = "Print cancelled: document text is empty."
+                                    elif len(content) > 100_000:
+                                        result_str = "Print cancelled: document exceeds the 100,000 character limit."
+                                    else:
+                                        try:
+                                            import tempfile
+                                            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".txt") as document:
+                                                document.write(content)
+                                                document.flush()
+                                                result = subprocess.run(
+                                                    ["lp", "-d", printer, "-t", title, document.name],
+                                                    capture_output=True,
+                                                    text=True,
+                                                    timeout=30,
+                                                    check=False,
+                                                )
+                                            result_str = result.stdout.strip() if result.returncode == 0 else (result.stderr or result.stdout).strip()
+                                            if result.returncode == 0:
+                                                result_str = f"Print job submitted to {printer}: {result_str}"
+                                            elif not result_str:
+                                                result_str = f"Print job could not be submitted to {printer}."
+                                        except Exception as e:
+                                            result_str = f"Print job could not be submitted: {e}"
+                                    function_responses.append(
+                                        types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str})
                                     )
 
                                 elif fc.name == "set_scene":

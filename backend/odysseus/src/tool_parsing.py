@@ -230,6 +230,8 @@ def _normalize_dsml(text: str) -> str:
 
 # Map model tool names to our tool types
 _TOOL_NAME_MAP = {
+    "get_print_status": "get_print_status",
+    "print_text": "print_text",
     "shell": "bash",
     "bash": "bash",
     "terminal": "bash",

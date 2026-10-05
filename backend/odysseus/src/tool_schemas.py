@@ -35,6 +35,29 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "get_print_status",
+            "description": "Read the configured CUPS printer status and pending print jobs without changing anything.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "print_text",
+            "description": "Prepare a plain-text print job on the configured Canon printer. This always requires the user to approve the exact title and text in the confirmation card before the job is sent. Use only when the user explicitly asks to print.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Short print-queue title."},
+                    "text": {"type": "string", "description": "Exact plain text to print, maximum 100,000 characters."}
+                },
+                "required": ["title", "text"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "bash",
             "description": "Run a shell command (full access). Prefer a dedicated tool whenever one fits the job (reading, writing, editing, searching, or listing files); use bash only for what no dedicated tool covers (installs, git, builds, running programs, system info). Do NOT create or edit files via bash redirects/heredocs/sed -- use the dedicated file tools.",
             "parameters": {

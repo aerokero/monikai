@@ -71,6 +71,11 @@ function numberValue(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function paydayValue(value, fallback = 25) {
+  const parsed = value == null || value === '' ? fallback : Number(value);
+  return Math.min(31, Math.max(1, Math.round(Number.isFinite(parsed) ? parsed : fallback)));
+}
+
 function parseMoney(value) {
   const raw = String(value ?? '')
     .replace(/(PLN|zł| zł)/gi, '')
@@ -111,7 +116,7 @@ function localDateKey(date = new Date()) {
 }
 
 function paydayDateFor(reference = new Date(), payday = 25) {
-  const day = Math.min(31, Math.max(1, Math.round(numberValue(payday, 25))));
+  const day = paydayValue(payday);
   const current = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate(), 12);
   const dateInMonth = (year, month) => new Date(
     year,
@@ -132,16 +137,13 @@ function daysUntilPayday(reference = new Date(), payday = 25) {
 }
 
 function paydayInfo() {
-  const date = paydayDateFor(new Date(), _state?.settings?.payday || 25);
+  const day = paydayValue(_state?.settings?.payday);
+  const date = paydayDateFor(new Date(), day);
   return {
     date,
-    days: daysUntilPayday(new Date(), _state?.settings?.payday || 25),
+    days: daysUntilPayday(new Date(), day),
     label: date.toLocaleDateString('en-US', { day: 'numeric', month: 'long' }),
   };
-}
-
-function paydayInputValue() {
-  return localDateKey(paydayInfo().date);
 }
 
 function dateLabel(value) {
@@ -221,6 +223,7 @@ function normalizeState(raw) {
   const fallback = defaultState();
   if (!raw || typeof raw !== 'object') return fallback;
   const settings = { ...fallback.settings, ...(raw.settings || {}) };
+  settings.payday = paydayValue(settings.payday);
   const wallets = Array.isArray(raw.wallets) && raw.wallets.length
     ? raw.wallets.map((wallet, index) => {
       const rawBalance = numberValue(wallet.balance);
@@ -337,6 +340,8 @@ let _state = loadState();
 let _saveTimer = null;
 let _isSyncing = false;
 let _hasSyncedInitial = false;
+let _localRevision = 0;
+let _lastPushedRevision = 0;
 
 const _syncChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('odysseus_savings_sync') : null;
 if (_syncChannel) {
@@ -351,27 +356,40 @@ let _isPushing = false;
 async function pushStateToServer() {
   if (_isPushing) return;
   _isPushing = true;
+  const revision = _localRevision;
   try {
     const payload = JSON.parse(JSON.stringify(_state));
-    await fetch('/api/savings/ledger', {
+    const response = await fetch('/api/savings/ledger', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    _lastPushedRevision = Math.max(_lastPushedRevision, revision);
     _syncChannel?.postMessage({ type: 'savings_updated' });
   } catch (error) {
     console.warn('Savings state could not be synced to server:', error);
   } finally {
     _isPushing = false;
+    // A change may have happened while the previous request was in flight.
+    // Queue the newer state instead of silently dropping it.
+    if (_localRevision > revision && !_saveTimer) {
+      _saveTimer = setTimeout(() => {
+        _saveTimer = null;
+        pushStateToServer();
+      }, 350);
+    }
   }
 }
 
-function saveState(immediate = false) {
+function saveState(immediate = false, trackRevision = true) {
+  if (trackRevision) _localRevision += 1;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(_state));
   } catch (error) {
     console.warn('Savings state could not be saved to localStorage:', error);
   }
+  if (!trackRevision) return;
   if (_saveTimer) {
     clearTimeout(_saveTimer);
     _saveTimer = null;
@@ -379,17 +397,25 @@ function saveState(immediate = false) {
   if (immediate) {
     pushStateToServer();
   } else {
-    _saveTimer = setTimeout(pushStateToServer, 350);
+    _saveTimer = setTimeout(() => {
+      _saveTimer = null;
+      pushStateToServer();
+    }, 350);
   }
 }
 
 async function syncWithServer() {
-  if (_isSyncing) return;
+  // Never replace a state that has not reached the server yet. This is
+  // especially important during the initial GET, which can finish after a
+  // user has already changed the payday in the open dialog.
+  if (_isSyncing || _isPushing || _localRevision > _lastPushedRevision) return;
   _isSyncing = true;
+  const revisionAtRequest = _localRevision;
   try {
     const res = await fetch('/api/savings/ledger');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+    if (_localRevision !== revisionAtRequest || _isPushing || _localRevision > _lastPushedRevision) return;
     if (data.initialized && data.ledger) {
       _state = normalizeState(data.ledger);
       try {
@@ -488,13 +514,13 @@ function snapshotFor(key) {
         : liveTransactions.length ? liveExpenses : (stored.cleared ? 0 : stored.expenses),
       income: stored.incomeOverride != null
         ? Math.max(0, numberValue(stored.incomeOverride))
-        : liveIncome > 0 ? liveIncome : (stored.cleared ? 0 : stored.income),
+        : liveTransactions.length ? liveIncome : (stored.cleared ? 0 : stored.income),
       cleared: stored.cleared === true && !liveTransactions.length,
     };
   }
   return {
     key,
-    income: liveIncome || (key === CURRENT_MONTH ? numberValue(_state.settings.income) : 0),
+    income: liveTransactions.length ? liveIncome : (key === CURRENT_MONTH ? numberValue(_state.settings.income) : 0),
     limit: numberValue(_state.settings.monthlyLimit),
     expenses: liveExpenses,
     savings: 0,
@@ -505,6 +531,11 @@ function snapshotFor(key) {
 
 function recentSnapshots() {
   return Array.from({ length: 6 }, (_, index) => snapshotFor(shiftMonth(CURRENT_MONTH, index - 5)));
+}
+
+function currentYearSnapshots() {
+  const [year, currentMonth] = CURRENT_MONTH.split('-').map(Number);
+  return Array.from({ length: currentMonth }, (_, index) => snapshotFor(`${year}-${pad(index + 1)}`));
 }
 
 function totalSavings() {
@@ -637,7 +668,7 @@ function recordDailySnapshot() {
     .filter((item) => item.date)
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(-90);
-  saveState();
+  saveState(false, false);
 }
 
 function recentDailyHistory() {
@@ -939,7 +970,7 @@ function expenseRow(transaction) {
     <span class="savings-expense-mark" style="background:${color}">${icon(incoming ? 'arrowUp' : 'creditCard', 12)}</span>
     <span class="savings-expense-main"><strong>${escapeHtml(transaction.merchant)}</strong><small>${escapeHtml(transaction.category)} · ${escapeHtml(wallet?.name || 'Wallet')}</small></span>
     <strong class="savings-expense-amount${incoming ? ' savings-income-amount' : ''}">${incoming ? '+' : '−'}${money(transaction.amount, 2)}</strong>
-    <button type="button" class="savings-small-button savings-edit-expense" data-savings-action="edit-expense" data-transaction-id="${escapeHtml(transaction.id)}" title="Edit expense">Edit</button>
+    <button type="button" class="savings-small-button savings-edit-expense" data-savings-action="edit-expense" data-transaction-id="${escapeHtml(transaction.id)}" title="Edit ${incoming ? 'income' : 'expense'}">Edit</button>
   </div>`;
 }
 
@@ -1039,8 +1070,9 @@ function renderExpenses() {
     .sort((a, b) => `${b.date}|${b.id}`.localeCompare(`${a.date}|${a.id}`));
   const expenseTotal = transactions.reduce((sum, transaction) => sum + Math.abs(numberValue(transaction.amount)), 0);
   const title = _expenseKind === 'income' ? 'Income' : _expenseKind === 'all' ? 'Activity' : 'Expenses';
+  const addLabel = _expenseKind === 'income' ? 'Add income' : 'Add expense';
   return `<div class="savings-screen savings-expenses-screen">
-    <div class="savings-screen-heading"><h2>Expenses</h2><div class="savings-screen-actions"><button type="button" class="savings-icon-button" data-savings-action="refresh" title="Refresh calculations">${icon('refresh', 15)}</button><button type="button" class="savings-small-button" data-savings-action="choose-document" title="Import statement">${icon('file', 13)} Import</button><button type="button" class="savings-small-button savings-primary-button" data-savings-action="add-expense" title="Add expense">${icon('plus', 13)} Add expense</button></div></div>
+    <div class="savings-screen-heading"><h2>${title}</h2><div class="savings-screen-actions"><button type="button" class="savings-icon-button" data-savings-action="refresh" title="Refresh calculations">${icon('refresh', 15)}</button><button type="button" class="savings-small-button" data-savings-action="choose-document" title="Import statement">${icon('file', 13)} Import</button><button type="button" class="savings-small-button savings-primary-button" data-savings-action="add-expense" title="${addLabel}">${icon('plus', 13)} ${addLabel}</button></div></div>
     <div class="savings-expenses-toolbar">
       <label><span>Wallet</span><select data-savings-expense-wallet>${_state.wallets.map((wallet) => `<option value="${escapeHtml(wallet.id)}" ${wallet.id === walletId ? 'selected' : ''}>${escapeHtml(wallet.name)}</option>`).join('')}<option value="all" ${walletId === 'all' ? 'selected' : ''}>All wallets</option></select></label>
       <label><span>Show</span><select data-savings-expense-kind><option value="expense" ${_expenseKind === 'expense' ? 'selected' : ''}>Expenses</option><option value="income" ${_expenseKind === 'income' ? 'selected' : ''}>Income</option><option value="all" ${_expenseKind === 'all' ? 'selected' : ''}>All activity</option></select></label>
@@ -1063,8 +1095,15 @@ function renderWallets() {
 }
 
 function renderStatistics(metrics) {
-  const snapshots = recentSnapshots();
-  const average = (key) => snapshots.reduce((sum, snapshot) => sum + numberValue(snapshot[key]), 0) / Math.max(1, snapshots.length);
+  const snapshots = currentYearSnapshots();
+  const snapshotsWithData = snapshots.filter((snapshot) => (
+    snapshot.key === CURRENT_MONTH
+    || numberValue(snapshot.income) > 0
+    || numberValue(snapshot.expenses) > 0
+    || numberValue(snapshot.savings) > 0
+  ));
+  const averageSnapshots = snapshotsWithData.length ? snapshotsWithData : snapshots;
+  const average = (key) => averageSnapshots.reduce((sum, snapshot) => sum + numberValue(snapshot[key]), 0) / Math.max(1, averageSnapshots.length);
   const categoryEntries = Object.entries(allCategoryTotals()).sort((a, b) => b[1] - a[1]);
   const categoryMax = Math.max(1, ...categoryEntries.map(([, value]) => value));
   const assets = grossAssets();
@@ -1072,6 +1111,8 @@ function renderStatistics(metrics) {
   const netWorth = assets - liabilities;
   const runway = metrics.snapshot.expenses ? availableBalance() / metrics.snapshot.expenses : 0;
   const allExpenses = categoryEntries.reduce((sum, [, amount]) => sum + amount, 0);
+  const [year, currentMonth] = CURRENT_MONTH.split('-').map(Number);
+  const historyLabel = `${year} · Jan–${MONTH_NAMES[currentMonth - 1]}`;
   return `<div class="savings-screen savings-statistics-screen">
     <div class="savings-screen-heading"><h2>Statistics</h2><div class="savings-screen-actions"><button type="button" class="savings-icon-button" data-savings-action="refresh" title="Refresh calculations">${icon('refresh', 15)}</button><button type="button" class="savings-icon-button" data-savings-action="export-csv" title="Export ledger">${icon('download', 15)}</button></div></div>
     <div class="savings-simple-metrics">
@@ -1080,7 +1121,7 @@ function renderStatistics(metrics) {
       ${simpleMetric('Estimated income', money(estimatedMonthlyIncome()), 'based on previous months')}
       ${simpleMetric('Net worth', money(netWorth))}
     </div>
-    <section class="savings-flat-section"><div class="savings-section-heading"><h3>Monthly history</h3><span>edit or clear a month</span></div><div class="savings-table-scroll"><table class="savings-table savings-monthly-table"><thead><tr><th>Month</th><th>Income</th><th>Expenses</th><th>Savings</th><th>Cash flow</th><th></th></tr></thead><tbody>${snapshots.slice().reverse().map((snapshot) => {
+    <section class="savings-flat-section"><div class="savings-section-heading"><h3>Monthly history</h3><span>${historyLabel} · edit or clear a month</span></div><div class="savings-table-scroll"><table class="savings-table savings-monthly-table"><thead><tr><th>Month</th><th>Income</th><th>Expenses</th><th>Savings</th><th>Cash flow</th><th></th></tr></thead><tbody>${snapshots.slice().reverse().map((snapshot) => {
       const cashflow = snapshot.income - snapshot.expenses - snapshot.savings;
       const status = snapshot.cleared ? 'cleared' : snapshot.key === CURRENT_MONTH ? 'current' : '';
       return `<tr><td><strong>${monthTitle(snapshot.key)}</strong>${status ? `<small>${status}</small>` : ''}</td><td>${money(snapshot.income)}</td><td>${money(snapshot.expenses)}</td><td class="savings-positive">${money(snapshot.savings)}</td><td class="${cashflow >= 0 ? 'savings-positive' : 'savings-negative'}">${money(cashflow)}</td><td><span class="savings-table-actions"><button type="button" class="savings-text-button savings-edit-month" data-savings-action="edit-month" data-month-key="${escapeHtml(snapshot.key)}">Edit</button><button type="button" class="savings-text-button savings-clear-month" data-savings-action="clear-month" data-month-key="${escapeHtml(snapshot.key)}">Clear</button></span></td></tr>`;
@@ -1130,15 +1171,19 @@ function dialogHtml() {
   if (!_dialog) return '';
   if (_dialog.type === 'expense') {
     const transaction = _state.transactions.find((item) => item.id === _dialog.id);
-    const categories = transaction?.direction === 'income'
+    const direction = transaction?.direction || (_expenseKind === 'income' ? 'income' : 'expense');
+    const incoming = direction === 'income';
+    const categories = incoming
       ? ['Income', 'Needs', 'Wants', 'Assets', 'Debt', 'Other']
       : ['Needs', 'Wants', 'Assets', 'Debt', 'Other'];
+    const defaultCategory = incoming ? 'Income' : 'Needs';
     return `<div class="savings-dialog-backdrop" data-savings-action="close-dialog"><form class="savings-dialog" data-savings-form="expense" data-transaction-id="${escapeHtml(transaction?.id || '')}">
-      <div class="savings-dialog-header"><div><span class="savings-eyebrow">LEDGER ENTRY</span><h3>${transaction ? 'Edit expense' : 'Add expense'}</h3></div><button type="button" class="savings-row-action" data-savings-action="close-dialog">${icon('x', 13)}</button></div>
+      <div class="savings-dialog-header"><div><span class="savings-eyebrow">LEDGER ENTRY</span><h3>${transaction ? 'Edit transaction' : `Add ${incoming ? 'income' : 'expense'}`}</h3></div><button type="button" class="savings-row-action" data-savings-action="close-dialog">${icon('x', 13)}</button></div>
       <label>Merchant / description<input name="merchant" required value="${escapeHtml(transaction?.merchant || '')}" placeholder="e.g. Grocery market"></label>
       <div class="savings-form-grid"><label>Amount (PLN)<input name="amount" required inputmode="decimal" value="${transaction ? escapeHtml(transaction.amount) : ''}" placeholder="0.00"></label><label>Date<input name="date" type="date" required value="${escapeHtml(transaction?.date || isoDateForMonth(selectedMonth(), new Date().getDate()))}"></label></div>
-      <div class="savings-form-grid"><label>Category<select name="category">${categories.map((category) => `<option ${category === (transaction?.category || 'Needs') ? 'selected' : ''}>${category}</option>`).join('')}</select></label><label>Wallet<select name="walletId">${_state.wallets.map((wallet) => `<option value="${escapeHtml(wallet.id)}" ${wallet.id === (transaction?.walletId || _state.wallets[0]?.id) ? 'selected' : ''}>${escapeHtml(wallet.name)}</option>`).join('')}</select></label></div>
-      <div class="savings-dialog-actions">${transaction ? `<button type="button" class="savings-small-button savings-danger-button" data-savings-action="delete-expense" data-transaction-id="${escapeHtml(transaction.id)}">Delete</button>` : ''}<button type="button" class="savings-small-button" data-savings-action="close-dialog">Cancel</button><button type="submit" class="savings-small-button savings-primary-button">${icon('check', 13)} ${transaction ? 'Save changes' : 'Save expense'}</button></div>
+      <div class="savings-form-grid"><label>Type<select name="direction" data-savings-transaction-direction><option value="expense" ${!incoming ? 'selected' : ''}>Expense</option><option value="income" ${incoming ? 'selected' : ''}>Income</option></select></label><label>Category<select name="category" data-savings-transaction-category">${categories.map((category) => `<option ${category === (transaction?.category || defaultCategory) ? 'selected' : ''}>${category}</option>`).join('')}</select></label></div>
+      <label>Wallet<select name="walletId">${_state.wallets.map((wallet) => `<option value="${escapeHtml(wallet.id)}" ${wallet.id === (transaction?.walletId || _state.wallets[0]?.id) ? 'selected' : ''}>${escapeHtml(wallet.name)}</option>`).join('')}</select></label>
+      <div class="savings-dialog-actions">${transaction ? `<button type="button" class="savings-small-button savings-danger-button" data-savings-action="delete-expense" data-transaction-id="${escapeHtml(transaction.id)}">Delete</button>` : ''}<button type="button" class="savings-small-button" data-savings-action="close-dialog">Cancel</button><button type="submit" class="savings-small-button savings-primary-button">${icon('check', 13)} ${transaction ? 'Save changes' : `Save ${incoming ? 'income' : 'expense'}`}</button></div>
     </form></div>`;
   }
   if (_dialog.type === 'month') {
@@ -1167,7 +1212,7 @@ function dialogHtml() {
   return `<div class="savings-dialog-backdrop" data-savings-action="close-dialog"><form class="savings-dialog" data-savings-form="settings">
     <div class="savings-dialog-header"><div><span class="savings-eyebrow">SETTINGS</span><h3>Payday</h3></div><button type="button" class="savings-row-action" data-savings-action="close-dialog">${icon('x', 13)}</button></div>
     <p class="savings-dialog-help">Choose the day your salary arrives. The daily limit recalculates automatically; monthly income is estimated in Statistics.</p>
-    <label>Payday date<input name="payday" type="date" required value="${escapeHtml(paydayInputValue())}"></label>
+    <label>Payday day<input name="payday" type="number" min="1" max="31" step="1" inputmode="numeric" required value="${escapeHtml(paydayValue(_state.settings.payday))}"></label>
     <div class="savings-dialog-actions"><button type="button" class="savings-small-button" data-savings-action="close-dialog">Cancel</button><button type="submit" class="savings-small-button savings-primary-button">${icon('check', 13)} Save</button></div>
   </form></div>`;
 }
@@ -1401,7 +1446,7 @@ async function handleClick(event) {
     _state.transactions = _state.transactions.filter((item) => item.id !== transaction.id);
     refreshMonthLedgerTotals([monthKeyForTransaction]);
     saveState();
-    uiModule.showToast('Expense deleted');
+    uiModule.showToast('Transaction deleted');
     render();
   } else if (action === 'clear-import') {
     _import = null;
@@ -1445,6 +1490,27 @@ function handleChange(event) {
     render();
     return;
   }
+  if (target.matches('[data-savings-transaction-direction]')) {
+    const categorySelect = target.form?.querySelector('[data-savings-transaction-category]');
+    if (!categorySelect) return;
+    const incoming = target.value === 'income';
+    const categories = incoming
+      ? ['Income', 'Needs', 'Wants', 'Assets', 'Debt', 'Other']
+      : ['Needs', 'Wants', 'Assets', 'Debt', 'Other'];
+    const previousCategory = categorySelect.value;
+    const nextCategory = categories.includes(previousCategory)
+      && previousCategory !== (incoming ? 'Needs' : 'Income')
+      ? previousCategory
+      : (incoming ? 'Income' : 'Needs');
+    categorySelect.innerHTML = categories.map((category) => `<option${category === nextCategory ? ' selected' : ''}>${category}</option>`).join('');
+    const submitButton = target.form.querySelector('button[type="submit"]');
+    if (submitButton && !target.form.dataset.transactionId) {
+      submitButton.innerHTML = `${icon('check', 13)} Save ${incoming ? 'income' : 'expense'}`;
+    }
+    const heading = target.form.querySelector('.savings-dialog-header h3');
+    if (heading && !target.form.dataset.transactionId) heading.textContent = `Add ${incoming ? 'income' : 'expense'}`;
+    return;
+  }
   if (target.matches('[data-savings-import-selected]')) {
     const row = _import?.rows?.find((item) => item.id === target.dataset.savingsImportSelected);
     if (row) row.selected = target.checked;
@@ -1486,14 +1552,14 @@ function handleSubmit(event) {
     const walletId = String(formData.get('walletId') || _state.wallets[0]?.id || '');
     const existing = _state.transactions.find((item) => item.id === form.dataset.transactionId);
     const oldMonthKey = existing ? String(existing.date || '').slice(0, 7) : '';
-    const direction = existing?.direction === 'income' ? 'income' : 'expense';
+    const direction = formData.get('direction') === 'income' ? 'income' : 'expense';
     const transaction = {
       id: existing?.id || `transaction-${Date.now()}`,
       externalId: existing?.externalId || '',
       date: String(formData.get('date') || isoDateForMonth(selectedMonth(), new Date().getDate())),
       merchant: String(formData.get('merchant') || 'Expense').trim(),
       description: existing?.description || '',
-      operationType: existing?.operationType || 'Manual expense',
+      operationType: existing?.operationType || (direction === 'income' ? 'Manual income' : 'Manual expense'),
       category: String(formData.get('category') || 'Other'),
       categoryConfidence: 1,
       amount,
@@ -1515,12 +1581,12 @@ function handleSubmit(event) {
       const wallet = _state.wallets.find((item) => item.id === walletId);
       if (wallet && affectsWalletBalance(transaction)) wallet.balance += signedTransactionAmount(transaction);
       _state.transactions.push(transaction);
-      adjustMonthlyOverride(String(transaction.date || '').slice(0, 7), 'expensesOverride', amount);
+      adjustMonthlyOverride(String(transaction.date || '').slice(0, 7), direction === 'income' ? 'incomeOverride' : 'expensesOverride', amount);
     }
     refreshMonthLedgerTotals([oldMonthKey, String(transaction.date || '').slice(0, 7)].filter(Boolean));
     saveState();
     _dialog = null;
-    uiModule.showToast(existing ? 'Expense updated' : 'Expense added');
+    uiModule.showToast(existing ? 'Transaction updated' : direction === 'income' ? 'Income added' : 'Expense added');
     render();
   } else if (type === 'wallet') {
     const name = String(formData.get('name') || '').trim();
@@ -1564,10 +1630,9 @@ function handleSubmit(event) {
     uiModule.showToast('Monthly summary updated');
     render();
   } else if (type === 'settings') {
-    const paydayValue = String(formData.get('payday') || '');
-    const paydayMatch = paydayValue.match(/^\d{4}-\d{2}-(\d{2})$/);
-    if (!paydayMatch) return;
-    _state.settings.payday = Math.min(31, Math.max(1, Number(paydayMatch[1])));
+    const enteredPayday = Number(formData.get('payday'));
+    if (!Number.isInteger(enteredPayday) || enteredPayday < 1 || enteredPayday > 31) return;
+    _state.settings.payday = paydayValue(enteredPayday);
     saveState();
     _dialog = null;
     uiModule.showToast('Payday updated');

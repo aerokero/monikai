@@ -17,6 +17,8 @@ services:
     environment:
       MONIKAI_HOST: 0.0.0.0
       MONIKAI_PORT: 8000
+      CUPS_SERVER: "/run/cups/cups.sock"
+      CUPS_PRINTER: "Canon_TS3700"
       WEB_AGENT_HEADLESS: "1"
       SERVER_MIC_WAKE_WORD_REQUIRED: "true"
       SERVER_MIC_WAKE_LISTEN_TIMEOUT_SECONDS: "10"
@@ -61,6 +63,9 @@ services:
     ports:
       - "192.168.1.10:8000:8000"
 
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
     devices:
       - /dev/snd:/dev/snd
 
@@ -69,6 +74,7 @@ services:
 
     volumes:
       - /srv/fast/containers/monikai/data:/app/data
+      - /run/cups/cups.sock:/run/cups/cups.sock
       - /srv/fast/containers/monikai/backend:/app/backend:ro
       - /srv/fast/containers/monikai/static:/app/static:ro
       - /srv/fast/containers/monikai/dist:/app/dist:ro

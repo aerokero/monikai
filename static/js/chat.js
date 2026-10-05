@@ -8,7 +8,7 @@
 import Storage from './storage.js';
 import uiModule from './ui.js';
 import sessionModule from './sessions.js';
-import chatRenderer from './chatRenderer.js?v=20260913approvalcontrol3';
+import chatRenderer from './chatRenderer.js?v=20260924toolaxis1';
 import chatStream from './chatStream.js?v=20260819approvalcontrol1';
 import { addAITTSButton } from './tts-ai.js';
 import markdownModule from './markdown.js';
@@ -36,7 +36,7 @@ import {
 } from './chatModelProvenance.js';
 import { createTerminalStreamError, isRecoverableStreamError } from './chatStreamErrors.js';
 import { loadPanel } from './panels.js';
-import { icon as phosphorIcon } from './iconRegistry.js';
+import { icon as phosphorIcon, getToolPhosphorIcon } from './iconRegistry.js';
 
   const RESEARCH_TIMEOUT_MS = 360000;
   const DEFAULT_TIMEOUT_MS = 120000;
@@ -591,7 +591,7 @@ import { icon as phosphorIcon } from './iconRegistry.js';
       }
       const node = document.createElement('div');
       node.className = 'agent-thread-node running';
-      node.innerHTML = '<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">' + phosphorIcon('pencil', 12) + '</span><span class="agent-thread-tool">Writing</span><span class="agent-thread-wave">▁▂▃</span></div><div class="agent-thread-content"></div>';
+      node.innerHTML = '<div class="agent-thread-header"><span class="agent-thread-icon">' + phosphorIcon('pencil', 14) + '</span><span class="agent-thread-tool">Writing</span><span class="agent-thread-wave">▁▂▃</span><span class="agent-thread-chevron">' + phosphorIcon('caretRight', 12) + '</span></div><div class="agent-thread-content"></div>';
       thread.appendChild(node);
       chatBox.insertBefore(thread, msg);
       msg._docWritingThread = thread;
@@ -2945,6 +2945,18 @@ import { icon as phosphorIcon } from './iconRegistry.js';
                   document.getElementById('chat-history'),
                   json.approval_id || '',
                 );
+                // Update live confirmation node in the thread
+                const approvalNode = document.querySelector('#chat-history .agent-thread-node.approval-event');
+                if (approvalNode) {
+                  const isDeny = json.status === 'denied' || json.decision === 'deny';
+                  approvalNode.classList.toggle('error', isDeny);
+                  approvalNode.classList.toggle('is-approved', !isDeny);
+                  const statusEl = approvalNode.querySelector('.agent-thread-status');
+                  if (statusEl) {
+                    statusEl.textContent = isDeny ? 'rejected' : 'approved';
+                    statusEl.className = 'agent-thread-status ' + (isDeny ? 'rejected' : 'approved');
+                  }
+                }
                 _cancelThinkingTimer();
                 _removeThinkingSpinner();
                 if (spinner && spinner.element) spinner.destroy();
@@ -3578,16 +3590,36 @@ import { icon as phosphorIcon } from './iconRegistry.js';
                 // Find existing thread to append to — check last few children
                 // (agent_step may insert an empty msg-ai between tool rounds)
                 let threadWrap = null;
-                for (let ci = chatBox.children.length - 1; ci >= Math.max(0, chatBox.children.length - 5); ci--) {
+                for (let ci = chatBox.children.length - 1; ci >= Math.max(0, chatBox.children.length - 12); ci--) {
                   const child = chatBox.children[ci];
                   if (child.classList.contains('agent-thread')) {
                     threadWrap = child;
                     break;
                   }
-                  // Skip hidden (empty) bubbles and thinking spinners
-                  if (child.style.display === 'none' || child.classList.contains('agent-thinking-dots')) continue;
-                  // Stop if we hit a visible message bubble (has real content between tools)
-                  if (child.classList.contains('msg')) break;
+                  // Skip hidden (empty) bubbles, thinking spinners, and approval cards
+                  if (child.style.display === 'none'
+                      || child.classList.contains('agent-thinking-dots')
+                      || child.classList.contains('ask-user-card')
+                      || child.classList.contains('tool-approval-card')) {
+                    continue;
+                  }
+                  // If it's a message bubble, check if it actually has visible text content
+                  if (child.classList.contains('msg')) {
+                    const bodyEl = child.querySelector('.body');
+                    const hasRealContent = Boolean(
+                      bodyEl && Array.from(bodyEl.childNodes).some((n) => {
+                        if (n.nodeType === Node.TEXT_NODE && n.textContent.trim()) return true;
+                        if (n.nodeType === Node.ELEMENT_NODE
+                            && !n.classList.contains('thinking-spinner')
+                            && !n.classList.contains('spinner')
+                            && !n.classList.contains('agent-thinking-dots')
+                            && n.textContent.trim()) return true;
+                        return false;
+                      })
+                    );
+                    if (hasRealContent) break;
+                    continue;
+                  }
                 }
                 if (threadWrap) {
                   // Continuing an existing thread — remove has-bottom (agent_step may have set it
@@ -3608,11 +3640,11 @@ import { icon as phosphorIcon } from './iconRegistry.js';
                 threadWrap.classList.add('streaming');
                 lastToolThread = threadWrap;
                 const toolLabel = _toolLabels[json.tool.toLowerCase()] || json.tool;
-                const toolIcon = _toolIcons[json.tool.toLowerCase()] || phosphorIcon('play', 14);
-                const node = document.createElement('div')
+                const toolIcon = phosphorIcon(getToolPhosphorIcon(json.tool), 15);
+                const node = document.createElement('div');
                 node.className = 'agent-thread-node running';
                 const cmdHtml = cmd ? `<pre class="agent-thread-cmd">${esc(cmd)}</pre>` : '';
-                node.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">${toolIcon}</span><span class="agent-thread-tool">${esc(toolLabel)}</span><span class="agent-thread-wave">▁▂▃</span></div><div class="agent-thread-content">${cmdHtml}</div>`;
+                node.innerHTML = `<div class="agent-thread-header"><span class="agent-thread-icon">${toolIcon}</span><span class="agent-thread-tool">${esc(toolLabel)}</span><span class="agent-thread-wave">▁▂▃</span><span class="agent-thread-chevron">${phosphorIcon('caretRight', 12)}</span></div><div class="agent-thread-content">${cmdHtml}</div>`;
                 // Expand/collapse via delegated click handler (init at module bottom).
                 threadWrap.appendChild(node);
                 currentToolBubble = node;
@@ -3753,10 +3785,12 @@ import { icon as phosphorIcon } from './iconRegistry.js';
                       || json.ask_user.action?.operation
                       || 'Review the requested action';
                     currentToolBubble.className = 'agent-thread-node approval-event';
-                    currentToolBubble.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">${phosphorIcon('warning', 13)}</span><span class="agent-thread-tool">Confirmation</span><span class="agent-thread-status">needs approval</span><span class="agent-thread-chevron">${phosphorIcon('play', 10)}</span></div><div class="agent-thread-content"><div class="approval-event-summary">${esc(approvalSummary)}</div></div>`;
+                    currentToolBubble.innerHTML = `<div class="agent-thread-header"><span class="agent-thread-icon">${phosphorIcon('warning', 15)}</span><span class="agent-thread-tool">Confirmation</span><span class="agent-thread-status needs-approval">needs approval</span><span class="agent-thread-chevron">${phosphorIcon('caretRight', 12)}</span></div><div class="agent-thread-content"><div class="approval-event-summary">${esc(approvalSummary)}</div></div>`;
                   } else {
                     currentToolBubble.className = 'agent-thread-node' + (ok ? '' : ' error') + (_wasOpen ? ' open' : '');
-                    currentToolBubble.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">${ok ? phosphorIcon('check', 14) : phosphorIcon('x', 14)}</span><span class="agent-thread-tool">${esc(json.tool)}</span><span class="agent-thread-status">${ok ? 'done' : 'failed'}</span><span class="agent-thread-chevron">${phosphorIcon('play', 10)}</span></div><div class="agent-thread-content">${cmdHtml2}${outHtml}${diffHtml}</div>`;
+                    const toolIcon = phosphorIcon(getToolPhosphorIcon(json.tool), 15);
+                    const statusText = ok ? 'done' : 'failed';
+                    currentToolBubble.innerHTML = `<div class="agent-thread-header"><span class="agent-thread-icon">${toolIcon}</span><span class="agent-thread-tool">${esc(json.tool)}</span><span class="agent-thread-status ${statusText}">${statusText}</span><span class="agent-thread-chevron">${phosphorIcon('caretRight', 12)}</span></div><div class="agent-thread-content">${cmdHtml2}${outHtml}${diffHtml}</div>`;
                   }
                   // Reset so thinking spinner between tools says "Thinking" not the old tool's label
                   _lastToolName = '';

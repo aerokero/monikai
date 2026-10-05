@@ -10368,95 +10368,16 @@ body.fullwidth-chat .chat-history {
 /* ===== AGENT THREAD TIMELINE ===== */
 .agent-thread {
   position: relative;
-  margin: 2px 0 2px 28px;
-  padding: 4px 0 4px 22px;
-  max-width: calc(85% - 20px);
+  margin: 4px 0 6px 12px;
+  padding: 6px 8px;
+  max-width: min(82%, 800px);
   box-sizing: border-box;
 }
-.agent-thread::before {
-  content: '';
-  position: absolute;
-  left: 5px;
-  top: 14px;
-  bottom: 14px;
-  width: 2px;
-  background: color-mix(in srgb, var(--red) 18%, transparent);
-  border-radius: 1px;
-}
-/* Extend line to connect to chat bubble above/below */
-.agent-thread.has-top::before {
-  top: -6.5px;
-}
-.agent-thread.has-bottom::before {
-  bottom: -5px;
-}
-/* Terminating dot at bottom when no bubble below and last node is expanded */
-.agent-thread:not(.has-bottom) .agent-thread-node.open:last-child::after {
-  content: '';
-  position: absolute;
-  /* Centre the 6px dot on the rail: the rail sits at left:5px + 2px wide,
-     so its centre is 6px from the thread's left edge and the dot's left
-     edge belongs at 3px — i.e. 3px - padding-left. Keep this in step with
-     .agent-thread-dot and with the mobile padding override below. */
-  left: -19px;
-  bottom: 5px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--red);
-  box-shadow: 0 0 4px 1px color-mix(in srgb, var(--red) 55%, transparent),
-              0 0 0 3px color-mix(in srgb, var(--red) 18%, transparent);
-}
-
-/* Synapse pulse — a bright dot traveling down the line */
-.agent-thread::after {
-  content: '';
-  position: absolute;
-  left: 4px;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--red);
-  box-shadow: 0 0 3px 1px color-mix(in srgb, var(--red) 50%, transparent);
-  pointer-events: none;
-  top: 0%;
-  opacity: 0;
-}
-.agent-thread.streaming::after {
-  animation: synapse-capped-short 0.8s ease-in-out infinite;
-}
-.agent-thread.streaming.has-top::after {
-  animation: synapse-capped 0.8s ease-in-out infinite;
-}
-.agent-thread.streaming.has-bottom::after {
-  animation: synapse-travel-short 0.8s ease-in-out infinite;
-}
-.agent-thread.streaming.has-top.has-bottom::after {
-  animation: synapse-travel 0.8s ease-in-out infinite;
-}
-@keyframes synapse-travel {
-  0% { top: 0%; opacity: 0; }
-  5% { opacity: 0.5; }
-  85% { opacity: 0.35; }
-  100% { top: 100%; opacity: 0; }
-}
-@keyframes synapse-capped {
-  0% { top: 0%; opacity: 0; }
-  5% { opacity: 0.5; }
-  70% { opacity: 0.35; top: calc(100% - 20px); }
-  100% { opacity: 0; top: calc(100% - 20px); }
-}
-@keyframes synapse-travel-short {
-  0% { top: 14px; opacity: 0; }
-  5% { opacity: 0.5; }
-  85% { opacity: 0.35; }
-  100% { top: 100%; opacity: 0; }
-}
-@keyframes synapse-capped-short {
-  0% { top: 14px; opacity: 0; }
-  5% { opacity: 0.5; }
-  70% { opacity: 0.35; top: calc(100% - 20px); }
-  100% { opacity: 0; top: calc(100% - 20px); }
+.agent-thread::before,
+.agent-thread::after,
+.agent-thread-dot {
+  content: none !important;
+  display: none !important;
 }
 .agent-thread-node {
   position: relative;
@@ -10520,7 +10441,7 @@ body.fullwidth-chat .chat-history {
 }
 .agent-thread-icon {
   font-size: 0.9em;
-  color: var(--red);
+  color: var(--green, #50fa7b);
 }
 .agent-thread-node.error .agent-thread-icon {
   color: var(--color-error);
@@ -10545,7 +10466,7 @@ body.fullwidth-chat .chat-history {
 }
 .agent-thread-tool {
   font-weight: 600;
-  color: var(--red);
+  color: var(--fg);
   text-transform: uppercase;
   letter-spacing: 0.3px;
   font-size: 0.9em;
@@ -43485,6 +43406,28 @@ body.theme-frosted .modal {
   border-color: color-mix(in srgb, var(--red, #e06c75) 48%, var(--border));
   color: color-mix(in srgb, var(--red, #e06c75) 86%, var(--fg));
   background: color-mix(in srgb, var(--red, #e06c75) 9%, transparent);
+}
+.tool-print-preview {
+  margin: 0 0 12px;
+  padding: 9px;
+  border: 1px solid color-mix(in srgb, var(--accent, #e98ab4) 34%, var(--border));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg, var(--panel)) 48%, transparent);
+}
+.tool-print-preview-heading {
+  margin-bottom: 7px;
+  color: var(--fg);
+  font-size: 11px;
+  font-weight: 650;
+}
+.tool-print-preview-text {
+  max-height: 240px;
+  margin: 0;
+  overflow: auto;
+  color: color-mix(in srgb, var(--fg) 88%, transparent);
+  font: 11px/1.5 var(--mono, ui-monospace, monospace);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .tool-approval-facts {
   display: grid;

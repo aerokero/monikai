@@ -70,6 +70,14 @@ def _register(
 
 
 _register(
+    {"get_print_status"},
+    ToolEffect.READ_PRIVATE,
+)
+_register(
+    {"print_text"},
+    ToolEffect.EXTERNAL_SIDE_EFFECT,
+)
+_register(
     {"ask_user", "update_plan"},
     ToolEffect.USER_INTERACTION,
 )

@@ -196,6 +196,32 @@ clear_work_memory_tool = {
     "parameters": {"type": "OBJECT", "properties": {}},
 }
 
+# ---------------------------------------------------------------------------
+# Printing
+# ---------------------------------------------------------------------------
+get_print_status_tool = {
+    "name": "get_print_status",
+    "description": "Checks the configured printer and its CUPS queue without sending a print job.",
+    "parameters": {"type": "OBJECT", "properties": {}},
+}
+
+print_text_tool = {
+    "name": "print_text",
+    "description": (
+        "Prints a plain-text document on the configured printer. Use only when the user explicitly asks to print. "
+        "The user must approve the displayed title and full text in the confirmation dialog before anything is printed. "
+        "Do not use this tool for a draft or just because text was generated."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "title": {"type": "STRING", "description": "Short title shown in the print queue."},
+            "text": {"type": "STRING", "description": "Exact plain text to print."},
+        },
+        "required": ["title", "text"],
+    },
+}
+
 memory_add_entry_tool = {
     "name": "memory_add_entry",
     "description": (
@@ -607,7 +633,7 @@ _RESERVED_TOOL_NAMES = {
     "run_web_agent", "run_openclaw_agent", "manage_agent_job",
     "list_openclaw_skills", "get_openclaw_skill", "refresh_openclaw_skills", "run_openclaw_skill_command",
     "list_skills", "get_skill", "refresh_skills", "run_skill_command",
-    "list_smart_devices", "control_light", "get_print_status",
+    "list_smart_devices", "control_light", "get_print_status", "print_text",
     "get_time_context", "create_event", "list_events", "delete_event",
     "create_reminder", "list_reminders", "cancel_reminder",
     "spotify_get_auth_url", "spotify_get_status", "spotify_get_now_playing",
@@ -645,6 +671,8 @@ tools = [
             run_skill_command_tool,
             list_smart_devices_tool,
             control_light_tool,
+            get_print_status_tool,
+            print_text_tool,
             manage_shopping_list_tool,
             get_time_context_tool,
             create_reminder_tool,

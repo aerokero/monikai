@@ -11,6 +11,7 @@ const PATHS = Object.freeze({
   menu: '<line x1="40" y1="128" x2="216" y2="128" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><line x1="40" y1="64" x2="216" y2="64" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><line x1="40" y1="192" x2="216" y2="192" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>',
   house: '<path d="M32 120 128 40l96 80v88a8 8 0 0 1-8 8H40a8 8 0 0 1-8-8Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><path d="M96 216v-56h64v56" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>',
   caretDown: '<polyline points="208 96 128 176 48 96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>',
+  caretRight: '<polyline points="96 48 176 128 96 208" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>',
   sort: '<polyline points="144 168 184 208 224 168" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><line x1="184" y1="112" x2="184" y2="208" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><line x1="48" y1="128" x2="120" y2="128" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><line x1="48" y1="64" x2="184" y2="64" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><line x1="48" y1="192" x2="104" y2="192" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>',
   checkCircle: '<polyline points="172 104 113.3 160 84 132" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><circle cx="128" cy="128" r="96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>',
   circle: '<circle cx="128" cy="128" r="96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>',
@@ -85,6 +86,21 @@ export function icon(name, size = 14, className = '') {
   return `<svg${cls} xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true" focusable="false" data-icon-profile="phosphor-regular"><rect width="256" height="256" fill="none" stroke="none"></rect>${path}</svg>`;
 }
 
+export function getToolPhosphorIcon(toolName) {
+  const name = String(toolName || '').toLowerCase().trim();
+  if (name.includes('search')) return 'search';
+  if (name.includes('fetch') || name.includes('browse') || name.includes('url') || name.includes('web')) return 'globe';
+  if (name.includes('confirm') || name.includes('approval') || name.includes('ask_user')) return 'warning';
+  if (name.includes('home') || name.includes('light') || name.includes('switch') || name.includes('assistant')) return 'house';
+  if (name.includes('bash') || name.includes('cmd') || name.includes('terminal') || name.includes('shell') || name.includes('exec') || name.includes('python')) return 'terminal';
+  if (name.includes('doc') || name.includes('file') || name.includes('read') || name.includes('write') || name.includes('patch') || name.includes('edit')) return 'file';
+  if (name.includes('image') || name.includes('photo') || name.includes('draw')) return 'image';
+  if (name.includes('db') || name.includes('sql') || name.includes('database')) return 'database';
+  if (name.includes('calendar') || name.includes('schedule') || name.includes('time')) return 'calendar';
+  if (name.includes('mail') || name.includes('email')) return 'mail';
+  return 'gear';
+}
+
 export const ICON_NAMES = Object.freeze(Object.keys(PATHS));
 
-export default { icon, ICON_NAMES };
+export default { icon, getToolPhosphorIcon, ICON_NAMES };

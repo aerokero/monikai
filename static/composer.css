@@ -758,7 +758,28 @@
     min-height: 44px !important;
     height: 44px !important;
   }
-  .composer-chip { min-height: 44px; }
+  .composer-chip { min-height: 36px; }
+  /* style.css hides every `.tool-indicator > span` on mobile (legacy icon-only
+     chips). The composer chips are built from spans, so that left an empty
+     pill. Restore icon + label + close inside the composer. */
+  .composer-pill .composer-chip.tool-indicator > span,
+  .composer-pill .composer-chip.tool-indicator #character-indicator-name {
+    display: inline-flex !important;
+  }
+  .composer-pill .composer-chip.tool-indicator > .composer-chip-label {
+    display: inline-block !important;
+  }
+  .composer-pill .composer-chip .composer-chip-label { max-width: 96px; }
+  .composer-pill .composer-chip .composer-chip-label:empty { display: none !important; }
+  .composer-active-chips {
+    flex-wrap: nowrap;
+    gap: 6px !important;
+    padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .composer-chip { flex: 0 0 auto; }
+  /* Keep the model picker and mic from squeezing the send button. */
+  .composer-pill .composer-actions-right { gap: 2px !important; }
   #overflow-menu.composer-tools-menu .overflow-menu-item { min-height: 44px !important; height: auto !important; }
   .chat-top-bar .chat-meta-overlay { right: 12px !important; }
   .chat-meta-overlay .chat-context-pill { width:44px !important; min-width:44px !important; height:44px !important; min-height:44px !important; }

@@ -17,6 +17,7 @@ RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
+        cups-client \
         ffmpeg \
         libasound2-dev \
         libgl1 \

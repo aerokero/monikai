@@ -963,6 +963,62 @@ async def _execute_tool_block_impl(
         first_line = content.split("\n")[0].strip()[:60]
         desc = f"api_call: {first_line}"
         result = await do_api_call(content)
+    elif tool == "get_print_status":
+        printer = os.environ.get("CUPS_PRINTER", "Canon_TS3700")
+        try:
+            import subprocess
+            status = subprocess.run(
+                ["lpstat", "-p", printer, "-l"], capture_output=True, text=True, timeout=8, check=False
+            )
+            jobs = subprocess.run(
+                ["lpstat", "-o", printer], capture_output=True, text=True, timeout=8, check=False
+            )
+            if status.returncode:
+                result = {"error": (status.stderr or status.stdout).strip() or "Printer status unavailable.", "exit_code": status.returncode}
+            else:
+                result = {
+                    "output": status.stdout.strip() + ("\nPending jobs:\n" + jobs.stdout.strip() if jobs.stdout.strip() else "\nNo pending jobs."),
+                    "exit_code": 0,
+                    "success": True,
+                }
+        except Exception as exc:
+            result = {"error": str(exc), "exit_code": 1}
+        desc = "get_print_status"
+    elif tool == "print_text":
+        desc = "print_text"
+        try:
+            payload = json.loads(content)
+            if not isinstance(payload, dict):
+                raise ValueError("Print request must be a JSON object.")
+            title = str(payload.get("title") or "MonikAI print job").strip()[:120]
+            text = str(payload.get("text") or "")
+            if not text.strip():
+                raise ValueError("The document is empty.")
+            if len(text) > 100_000:
+                raise ValueError("The document exceeds the 100,000 character limit.")
+            import tempfile
+            import subprocess
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".txt") as document:
+                document.write(text)
+                document.flush()
+                result = subprocess.run(
+                    ["lp", "-d", os.environ.get("CUPS_PRINTER", "Canon_TS3700"), "-t", title, document.name],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=False,
+                )
+            output = (result.stdout or result.stderr).strip()
+            if result.returncode:
+                result_obj = {"error": output or "CUPS rejected the print job.", "exit_code": result.returncode}
+                desc = "print_text: FAILED"
+            else:
+                result_obj = {"output": output, "exit_code": 0, "success": True}
+                desc = "print_text: SUBMITTED"
+            result = result_obj
+        except Exception as exc:
+            result = {"error": str(exc), "exit_code": 1}
+            desc = "print_text: FAILED"
     elif tool == "home_assistant_control":
         desc = "home_assistant_control"
         result = await do_home_assistant_control(content, owner=owner)

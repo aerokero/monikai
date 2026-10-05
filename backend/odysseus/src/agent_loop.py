@@ -40,6 +40,7 @@ from src.tool_security import (
 from src.tool_policy import GUIDE_ONLY_DIRECTIVE, WEB_TOOL_NAMES, ToolPolicy
 from src.tool_capabilities import (
     ResultIntegrity,
+    ToolGateDecision,
     ToolRunSecurityContext,
     blocked_tool_result,
     capabilities_for_action,
@@ -465,6 +466,11 @@ When referencing app entities by id, use clickable markdown anchors:
 """
 
 _DOMAIN_RULES = {
+    "printing": """\
+## Printing
+- Use `print_text` only when the user directly asks to print a specific text or document.
+- Include the exact content and a short descriptive title. The user must approve the exact preview card before printing; never claim it printed until the approval is granted and the job is submitted.
+- Use `get_print_status` for printer or queue status questions. It does not submit jobs.""",
     "web": """\
 ## Web rules
 - For web lookup/search/latest/current requests, use `web_search` or `web_fetch`.
@@ -540,6 +546,7 @@ _DOMAIN_RULES = {
 }
 
 _DOMAIN_TOOL_MAP = {
+    "printing": {"print_text", "get_print_status"},
     "web": set(WEB_TOOL_NAMES),
     "documents": {"create_document", "edit_document", "update_document", "suggest_document", "manage_documents"},
     "email": {"list_email_accounts", "list_emails", "read_email", "scan_email_unsubscribes", "unsubscribe_email", "send_email", "reply_to_email", "bulk_email", "archive_email", "delete_email", "mark_email_read", "resolve_contact", "manage_contact"},
@@ -5858,6 +5865,11 @@ async def stream_agent_loop(
                 block.tool_type,
                 block.content,
             )
+            if block.tool_type == "print_text":
+                security_decision = ToolGateDecision(
+                    False,
+                    "Printing requires approval of this exact title and document preview.",
+                )
             _ody_clamped_tool_allowed = (
                 _ody_notes_finetune_mode
                 and block.tool_type in {"manage_notes", "manage_calendar", "manage_tasks"}
