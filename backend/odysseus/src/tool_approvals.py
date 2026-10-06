@@ -105,24 +105,6 @@ _DISPLAY_TOOL_NAMES = {
     "write_file": "file change",
     "edit_file": "file change",
 }
-_DISPLAY_OPERATION_LABELS = {
-    "create": "Create",
-    "add": "Add",
-    "create_event": "Create calendar event",
-    "update": "Update",
-    "update_event": "Update calendar event",
-    "edit": "Edit",
-    "delete": "Delete",
-    "delete_event": "Delete calendar event",
-    "pause": "Pause",
-    "resume": "Resume",
-    "run": "Run",
-    "send": "Send",
-    "reply": "Send reply",
-    "reset": "Reset",
-}
-
-
 def _display_args(content: Any) -> dict[str, Any]:
     if isinstance(content, dict):
         payload = dict(content)
@@ -145,6 +127,20 @@ def _display_value(value: Any, limit: int = 180) -> str:
     return text
 
 
+def _voice_summary_key(tool: str, action: str) -> str:
+    if tool == "print_text":
+        return "print_text"
+    if tool == "manage_tasks" and action in {"create", ""}:
+        return "tasks.create"
+    if tool == "manage_calendar" and action in {"create_event", "create"}:
+        return "calendar.create_event"
+    if tool == "manage_notes" and action in {"add", "create", ""}:
+        return "notes.add"
+    if tool in {"send_email", "reply_to_email", "bulk_email"}:
+        return "email.send"
+    return "generic"
+
+
 def _voice_summary(tool_name: Any, content: Any) -> str:
     """Short spoken description of a pending action, from the message catalog."""
     tool = str(tool_name or "").strip()
@@ -153,18 +149,7 @@ def _voice_summary(tool_name: Any, content: Any) -> str:
     name = _display_value(
         args.get("name") or args.get("title") or args.get("subject"), 80
     )
-    if tool == "print_text":
-        key = "print_text"
-    elif tool == "manage_tasks" and action in {"create", ""}:
-        key = "tasks.create"
-    elif tool == "manage_calendar" and action in {"create_event", "create"}:
-        key = "calendar.create_event"
-    elif tool == "manage_notes" and action in {"add", "create", ""}:
-        key = "notes.add"
-    elif tool in {"send_email", "reply_to_email", "bulk_email"}:
-        key = "email.send"
-    else:
-        key = "generic"
+    key = _voice_summary_key(tool, action)
     text = t(key, tool=_DISPLAY_TOOL_NAMES.get(tool, tool.replace("_", " ")))
     return f"{text} „{name}”" if name else text
 
@@ -180,7 +165,6 @@ def _approval_display(tool_name: Any, content: Any, effects: Any) -> dict[str, s
     tool = str(tool_name or "tool").strip() or "tool"
     args = _display_args(content)
     action = _display_value(args.get("action"), 60).lower()
-    operation = _DISPLAY_OPERATION_LABELS.get(action, action.replace("_", " ").title())
     name = _display_value(
         args.get("name")
         or args.get("title")
@@ -193,45 +177,30 @@ def _approval_display(tool_name: Any, content: Any, effects: Any) -> dict[str, s
 
     preview_text = ""
     preview_title = ""
+    summary = _voice_summary(tool, content)
+    operation = summary.split(" „", 1)[0]
+    details: list[str] = []
     if tool == "print_text":
         preview_text = str(args.get("text") or "")[:100_000]
         preview_title = str(args.get("title") or "MonikAI print job")[:120]
-        summary = f'Print “{preview_title}” on Canon TS3700'
-        operation = "Print text document"
+        if not name:
+            summary += f" „{preview_title}”"
     elif tool == "manage_tasks" and action in {"create", ""}:
-        summary = "Create a scheduled task"
-        if name:
-            summary += f' “{name}”'
         if prompt and prompt.casefold() != name.casefold():
-            summary += f' to “{prompt}”'
-        schedule = _display_value(args.get("schedule"), 40)
-        scheduled_time = _display_value(args.get("scheduled_time") or args.get("time"), 20)
-        if schedule or scheduled_time:
-            summary += " (" + " at ".join(part for part in (schedule, scheduled_time) if part) + ")"
-        operation = "Create scheduled task"
+            details.append(prompt)
+        details += [
+            _display_value(args.get("schedule"), 40),
+            _display_value(args.get("scheduled_time") or args.get("time"), 20),
+        ]
     elif tool == "manage_calendar" and action in {"create_event", "create"}:
-        summary = "Create a calendar event"
-        if name:
-            summary += f' “{name}”'
-        event_time = _display_value(args.get("start") or args.get("start_time") or args.get("date"), 80)
-        if event_time:
-            summary += f" at {event_time}"
-        operation = "Create calendar event"
-    elif tool == "manage_notes" and action in {"add", "create", ""}:
-        summary = "Add a note"
-        if name:
-            summary += f' “{name}”'
-        operation = "Add note"
-    elif tool in {"send_email", "reply_to_email", "bulk_email"}:
-        summary = "Send an email"
-        if name:
-            summary += f' to “{name}”'
-        operation = "Send email"
-    else:
-        subject = _DISPLAY_TOOL_NAMES.get(tool, tool.replace("_", " "))
-        summary = operation + (f" using {subject}" if operation else f"Use {subject}")
-        if name:
-            summary += f' “{name}”'
+        details.append(
+            _display_value(args.get("start") or args.get("start_time") or args.get("date"), 80)
+        )
+    elif _voice_summary_key(tool, action) == "generic" and action:
+        summary += f" ({action.replace('_', ' ')})"
+    details = [d for d in details if d]
+    if details:
+        summary += " (" + ", ".join(details) + ")"
 
     effect_values = {str(effect or "").strip().lower() for effect in (effects or ())}
     if "destructive" in effect_values:
