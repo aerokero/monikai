@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import base64
@@ -18,6 +19,15 @@ from backend.conversation.voice_quality import voice_transcript_is_usable
 
 
 logger = logging.getLogger(__name__)
+
+# Provider hiccups (rate limits on shared free tiers, upstream 5xx) that are
+# worth one more try when nothing has been executed yet.
+_TRANSIENT_UPSTREAM_STATUSES = {429, 502, 503, 504}
+_TRANSIENT_RETRY_DELAYS = (1.5, 3.0)
+
+
+class _TransientUpstreamError(RuntimeError):
+    pass
 
 _VOICE_SILENCE_MARKERS = {
     "[voice_silence]",
@@ -163,6 +173,7 @@ class OdysseusVoiceGateway:
         stream_error: Optional[str] = None
         asked_question: Optional[str] = None
         approval_resolution: Optional[str] = None
+        transient_status: Optional[int] = None
 
         for line in response.text.splitlines():
             if not line.startswith("data: "):
@@ -178,6 +189,8 @@ class OdysseusVoiceGateway:
                 continue
 
             event_type = event.get("type")
+            if event_type is None and event.get("status") in _TRANSIENT_UPSTREAM_STATUSES:
+                transient_status = int(event["status"])
             if event_type == "tool_start":
                 tool = str(event.get("tool") or "").strip()
                 if tool and tool not in tool_names:
@@ -220,6 +233,8 @@ class OdysseusVoiceGateway:
             raise RuntimeError(stream_error)
 
         answer = "".join(answer_parts).strip()
+        if transient_status and not answer and not tool_names:
+            raise _TransientUpstreamError(f"upstream model error {transient_status}")
         if answer.casefold() in _VOICE_SILENCE_MARKERS:
             # The voice prompt gives the text author a closed way to say that
             # an ASR fragment has no recoverable meaning. Never speak the
@@ -319,16 +334,21 @@ class OdysseusVoiceGateway:
             # Use the same form endpoint the browser's Agent mode
             # uses. The non-streaming /api/chat route is deliberately text-only
             # and cannot execute native tools.
-            response = await client.post("/api/chat_stream", data=payload)
-
-        if response.status_code >= 400:
-            try:
-                detail: Any = response.json() if response.content else {}
-            except (TypeError, ValueError, json.JSONDecodeError):
-                detail = response.text[:500]
-            raise RuntimeError(f"Odysseus voice turn failed ({response.status_code}): {detail}")
-        answer = self._stream_result(response)
-        return answer
+            for delay in (*_TRANSIENT_RETRY_DELAYS, None):
+                response = await client.post("/api/chat_stream", data=payload)
+                if response.status_code >= 400:
+                    try:
+                        detail: Any = response.json() if response.content else {}
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        detail = response.text[:500]
+                    raise RuntimeError(f"Odysseus voice turn failed ({response.status_code}): {detail}")
+                try:
+                    return self._stream_result(response)
+                except _TransientUpstreamError as exc:
+                    if delay is None:
+                        raise
+                    logger.warning("[VOICE AGENT] %s; retrying in %.1fs", exc, delay)
+                    await asyncio.sleep(delay)
 
     async def upload_attachments(
         self,

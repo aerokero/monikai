@@ -369,3 +369,22 @@ def test_native_voice_gateway_does_not_speak_tool_result_text():
     )
 
     assert OdysseusVoiceGateway._stream_result(response) == "Dodano wykałaczki."
+
+
+def test_native_voice_gateway_flags_transient_upstream_error_only_without_tools():
+    import pytest
+    from backend.core.odysseus_voice_gateway import _TransientUpstreamError
+
+    def stream(body):
+        return httpx.Response(
+            200,
+            content=body + "data: [DONE]\n\n",
+            request=httpx.Request("POST", "http://odysseus.internal/api/chat_stream"),
+        )
+
+    rate_limited = 'data: {"status": 429, "text": "rate-limited"}\n\n'
+    with pytest.raises(_TransientUpstreamError):
+        OdysseusVoiceGateway._stream_result(stream(rate_limited))
+    # A tool already ran: never retry, surface the normal outcome instead.
+    done = 'data: {"type":"tool_start","tool":"manage_notes"}\n\n' + rate_limited
+    assert OdysseusVoiceGateway._stream_result(stream(done)) == "Done."
