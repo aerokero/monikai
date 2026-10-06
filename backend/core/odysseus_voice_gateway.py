@@ -12,6 +12,7 @@ import secrets
 from typing import Any, Dict, List, Optional
 
 import httpx
+from src.approval_text import t
 
 from backend.conversation.voice_quality import voice_transcript_is_usable
 
@@ -193,8 +194,8 @@ class OdysseusVoiceGateway:
                         or None
                     )
                     notice = str(data.get("notice") or "").strip()
-                    if notice.startswith("I couldn't determine your choice"):
-                        notice = "Nie zrozumiałam. Powiedz tak lub nie."
+                    if data.get("notice_code") == "unclear":
+                        notice = t("unclear")
                     if notice and asked_question and notice not in asked_question:
                         asked_question = f"{notice} {asked_question}"
             elif event_type == "agent_terminal":
@@ -206,12 +207,13 @@ class OdysseusVoiceGateway:
                     stream_error = "Agent run failed"
             elif event_type == "tool_approval_resolved":
                 if str((event.get("decision") or "")).strip().lower() == "deny":
-                    approval_resolution = "Dobrze, nie wykonam tej czynności."
+                    approval_resolution = t("denied")
             elif event_type == "error" or event.get("error"):
                 stream_error = "Agent run failed"
 
-            # Thinking deltas are useful to the web UI but must never be spoken.
-            if "delta" in event and not event.get("thinking"):
+            # Thinking deltas and raw tool-result text ("Note created: ... id")
+            # are for the web UI; only the model's own prose is spoken.
+            if "delta" in event and not event.get("thinking") and not event.get("tool_text"):
                 answer_parts.append(str(event.get("delta") or ""))
 
         if stream_error:

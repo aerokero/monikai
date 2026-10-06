@@ -120,7 +120,7 @@ def _skill_test_messages(md: str, task: str) -> list[dict]:
                 "do not exist, do your best; the problems will be reviewed afterward."
             ),
         },
-        untrusted_context_message("skill under test", md),
+        untrusted_context_message("skill under test", md, arm_tool_gate=True),
         {"role": "user", "content": task},
     ]
 
@@ -1641,6 +1641,7 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
             messages.append(untrusted_context_message(
                 "skill test transcript",
                 "".join(str(item) for item in transcript),
+                arm_tool_gate=True,
             ))
         messages.extend([
             {

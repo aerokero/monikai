@@ -33,7 +33,7 @@ def _background_result_message(rec):
         "Continue the task using this output. Don't repeat work that's already done. "
         "If the task is now complete, give the user the final result."
     )
-    return untrusted_context_message("background job output", inject)
+    return untrusted_context_message("background job output", inject, arm_tool_gate=True)
 
 
 async def _drain_agent(sess, messages):

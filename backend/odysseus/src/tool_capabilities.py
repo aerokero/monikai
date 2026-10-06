@@ -465,6 +465,11 @@ def _action_from_content(tool_name: str, content: Any) -> str | None:
     return _ACTION_ALIASES.get(tool_name, {}).get(normalized, normalized)
 
 
+# The user's own notes, memory and scheduled tasks are first-party data, not an
+# injection channel: reading or writing them must not arm the approval gate.
+_FIRST_PARTY_DATA_TOOLS = frozenset({"manage_notes", "manage_memory", "manage_tasks"})
+
+
 def capabilities_for_action(tool_name: Any, content: Any) -> ToolCapabilities:
     """Classify a sealed multiplexed action; ambiguous actions fail high."""
     base = capabilities_for_tool(tool_name)
@@ -481,25 +486,23 @@ def capabilities_for_action(tool_name: Any, content: Any) -> ToolCapabilities:
             base.result_integrity,
             known=base.known,
         )
+    integrity = (
+        ResultIntegrity.SYSTEM
+        if tool_name in _FIRST_PARTY_DATA_TOOLS
+        else ResultIntegrity.EXTERNAL_UNTRUSTED
+    )
     if action in _PRIVATE_ACTION_READS[tool_name]:
-        return _capabilities(
-            ToolEffect.READ_PRIVATE,
-            result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
-        )
+        return _capabilities(ToolEffect.READ_PRIVATE, result_integrity=integrity)
     if action in _PRIVATE_ACTION_WRITES[tool_name]:
         effects = set(base.effects)
         if destructive:
             effects.add(ToolEffect.DESTRUCTIVE)
-        return ToolCapabilities(
-            frozenset(effects),
-            ResultIntegrity.EXTERNAL_UNTRUSTED,
-            known=base.known,
-        )
+        return ToolCapabilities(frozenset(effects), integrity, known=base.known)
 
     return _capabilities(
         ToolEffect.READ_PRIVATE,
         ToolEffect.WRITE_PRIVATE,
-        result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+        result_integrity=integrity,
     )
 
 

@@ -354,3 +354,18 @@ async def test_server_voice_store_preserves_session_while_approval_pending(tmp_p
 
 
 
+
+
+def test_native_voice_gateway_does_not_speak_tool_result_text():
+    response = httpx.Response(
+        200,
+        content=(
+            'data: {"delta":"\\n\\nNote created: Lista (id: 1)", "tool_text":true}\n\n'
+            'data: {"delta":"Dodano wykałaczki."}\n\n'
+            'data: {"delta":"No notes found.", "tool_text":true}\n\n'
+            "data: [DONE]\n\n"
+        ),
+        request=httpx.Request("POST", "http://odysseus.internal/api/chat_stream"),
+    )
+
+    assert OdysseusVoiceGateway._stream_result(response) == "Dodano wykałaczki."

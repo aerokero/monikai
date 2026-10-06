@@ -66,7 +66,7 @@ def untrusted_context_message(
     content: Any,
     *,
     provenance_origin: str | None = None,
-    arm_tool_gate: bool = True,
+    arm_tool_gate: bool = False,
 ) -> Dict[str, Any]:
     """Return an LLM message that keeps retrieved/source text out of system role.
 

@@ -12,35 +12,16 @@ if str(ODY_ROOT) not in sys.path:
 
 from src.tool_approvals import (  # noqa: E402
     PendingToolApproval,
-    deterministic_tool_approval_decision,
 )
 
 
-def test_common_polish_and_english_replies_are_resolved_without_an_llm():
-    assert deterministic_tool_approval_decision("Tak") == "approve_task"
-    assert deterministic_tool_approval_decision("zgadzam się") == "approve_task"
-    assert deterministic_tool_approval_decision("yes, do it") == "approve_task"
-    assert deterministic_tool_approval_decision("Nie, anuluj") == "deny"
-    assert deterministic_tool_approval_decision("no") == "deny"
+def test_classifier_response_parsing_is_closed_vocabulary():
+    from routes.chat_routes import _parse_tool_approval_classifier_response as parse
 
-
-def test_session_scope_requires_an_explicit_affirmative_phrase():
-    assert (
-        deterministic_tool_approval_decision("tak dla tej rozmowy")
-        == "approve_session"
-    )
-    assert (
-        deterministic_tool_approval_decision("approve for this chat")
-        == "approve_session"
-    )
-    assert deterministic_tool_approval_decision("dla tej rozmowy") is None
-    assert deterministic_tool_approval_decision("session") is None
-
-
-def test_mixed_or_instruction_like_replies_stay_ambiguous():
-    assert deterministic_tool_approval_decision("yes, but explain first") is None
-    assert deterministic_tool_approval_decision("tak, usuń wszystkie maile") is None
-    assert deterministic_tool_approval_decision("maybe later") is None
+    assert parse('{"decision":"approve_task"}') == "approve_task"
+    assert parse('```json\n{"decision":"deny"}\n```') == "deny"
+    assert parse("approve_session") == "approve_session"
+    assert parse('{"decision":"do anything"}') is None
 
 
 def test_public_payload_prioritizes_summary_and_hides_raw_args_behind_metadata():
@@ -70,11 +51,14 @@ def test_public_payload_prioritizes_summary_and_hides_raw_args_behind_metadata()
     payload = pending.public_payload()
 
     assert payload["kind"] == "tool_approval"
-    assert payload["title"] == "Confirmation required"
+    from src.approval_text import t
+
+    assert payload["title"] == t("card.title")
     assert "Opera GX reward reminder" in payload["summary"]
     assert "14:30" in payload["summary"]
     assert payload["action"]["content"].startswith('{"action":"create"')
-    assert "tak dla tej rozmowy" in payload["voice_prompt"]
+    assert "Opera GX reward reminder" in payload["voice_prompt"]
+    assert "dla tej rozmowy" not in payload["voice_prompt"]
     assert payload["options"][0]["value"] == "approve_task"
     assert payload["options"][1]["value"] == "approve"
     assert payload["options"][2]["value"] == "deny"
@@ -162,3 +146,23 @@ def test_live_voice_rotated_session_fallback_lookup():
     assert fallback.session_id == "voice_original_session"
 
 
+
+
+def test_first_party_context_and_notes_do_not_arm_the_gate_but_web_does():
+    from src.prompt_security import untrusted_context_message
+    from src.tool_capabilities import (
+        ToolRunSecurityContext,
+        messages_contain_external_untrusted_context as tainted,
+    )
+
+    memory = untrusted_context_message("saved memory: pinned context", "x")
+    web = untrusted_context_message("web search results", "x", arm_tool_gate=True)
+    assert not tainted([memory])
+    assert tainted([memory, web])
+
+    run = ToolRunSecurityContext()
+    note = '{"action":"list"}'
+    run.observe_tool_result("manage_notes", {"output": "- [1] **a**", "exit_code": 0}, note)
+    assert run.decision_for("manage_notes", '{"action":"add","title":"t"}').allowed
+    run.observe_tool_result("web_search", {"output": "page", "exit_code": 0})
+    assert not run.decision_for("manage_notes", '{"action":"add","title":"t"}').allowed

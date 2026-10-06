@@ -636,7 +636,7 @@ class DeepResearcher:
             response = await self._llm(
                 [
                     {"role": "user", "content": EXTRACTOR_SYSTEM.format(goal=question)},
-                    untrusted_context_message("webpage", content),
+                    untrusted_context_message("webpage", content, arm_tool_gate=True),
                 ],
                 temperature=0.2,
                 max_tokens=2048,

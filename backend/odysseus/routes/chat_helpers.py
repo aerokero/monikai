@@ -938,11 +938,11 @@ async def build_chat_context(
 
     # Inject pre-fetched search context (compare mode)
     if search_context and allow_tool_preprocessing and not casual_low_signal:
-        preface.append(untrusted_context_message("prefetched search context", search_context))
+        preface.append(untrusted_context_message("prefetched search context", search_context, arm_tool_gate=True))
 
     # YouTube transcripts
     for transcript in preprocessed.youtube_transcripts:
-        preface.append(untrusted_context_message("youtube transcript", transcript))
+        preface.append(untrusted_context_message("youtube transcript", transcript, arm_tool_gate=True))
 
     # Normalize model ID. Prefer cached endpoint models so group chat does not
     # re-hit slow local /models endpoints on every participant turn.

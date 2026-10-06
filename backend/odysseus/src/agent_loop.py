@@ -5987,9 +5987,7 @@ async def stream_agent_loop(
                         "output": "Approval required.",
                         "exit_code": None,
                         "approval_required": True,
-                        "ask_user": pending_approval.public_payload(
-                            reason=security_decision.reason,
-                        ),
+                        "ask_user": pending_approval.public_payload(),
                     }
                     logger.info(
                         "Exact approval required before tool start: %s",
@@ -6314,7 +6312,7 @@ async def stream_agent_loop(
                     if _notes_text not in _clean_current:
                         _prefix = "\n\n" if _clean_current else ""
                         full_response = (_clean_current + _prefix + _notes_text).strip()
-                        yield f'data: {json.dumps({"delta": _prefix + _notes_text})}\n\n'
+                        yield f'data: {json.dumps({"delta": _prefix + _notes_text, "tool_text": True})}\n\n'
                     _ody_notes_tool_completed = True
 
             if block.tool_type == "manage_tasks":
@@ -6344,7 +6342,7 @@ async def stream_agent_loop(
                     if _tasks_text not in _clean_current:
                         _prefix = "\n\n" if _clean_current else ""
                         full_response = (_clean_current + _prefix + _tasks_text).strip()
-                        yield f'data: {json.dumps({"delta": _prefix + _tasks_text})}\n\n'
+                        yield f'data: {json.dumps({"delta": _prefix + _tasks_text, "tool_text": True})}\n\n'
                     _ody_notes_tool_completed = True
 
             if _ody_qwen_finetune_model and not result.get("error"):
@@ -6368,7 +6366,7 @@ async def stream_agent_loop(
                     # to render deterministically.
                     full_response = _terminal_summary
                     if _terminal_summary not in _clean_current:
-                        yield f'data: {json.dumps({"delta": _terminal_summary})}\n\n'
+                        yield f'data: {json.dumps({"delta": _terminal_summary, "tool_text": True})}\n\n'
                     _ody_notes_tool_completed = True
 
             # This must be the final UI event for ask_user: the frontend appends

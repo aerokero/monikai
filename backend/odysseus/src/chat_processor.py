@@ -385,6 +385,7 @@ class ChatProcessor:
                         preface.append(untrusted_context_message(
                             "retrieved documents",
                             rag_content,
+                            arm_tool_gate=True,
                         ))
             except Exception as e:
                 logger.warning(f"RAG retrieval failed: {e}")
@@ -447,7 +448,7 @@ class ChatProcessor:
                     web_context, web_sources = comprehensive_web_search(
                         search_query, time_filter=time_filter, return_sources=True
                     )
-                    preface.append(untrusted_context_message("web search results", web_context))
+                    preface.append(untrusted_context_message("web search results", web_context, arm_tool_gate=True))
             except Exception as e:
                 logger.error(f"Web search failed: {e}")
                 preface.append({"role": "system", "content": "Web search encountered an error and could not retrieve results."})
@@ -477,6 +478,7 @@ class ChatProcessor:
                         f"web page: {url}",
                         f"Content from {url}:\n\n{content}",
                         provenance_origin="external",
+                        arm_tool_gate=True,
                     ))
                 else:
                     # A failed automatic URL fetch is context too. Never pass

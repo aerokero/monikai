@@ -70,7 +70,6 @@ from src.tool_policy import (
     web_search_enabled_for_turn,
 )
 from src.tool_approvals import (
-    deterministic_tool_approval_decision,
     tool_approval_store,
 )
 
@@ -174,7 +173,7 @@ async def _tool_approval_clarification_stream(pending: Any) -> AsyncGenerator[st
         + json.dumps(
             {
                 "type": "ask_user",
-                "data": pending.public_payload(notice=clarification),
+                "data": pending.public_payload(notice=clarification, notice_code="unclear"),
             },
             ensure_ascii=False,
         )
@@ -394,16 +393,6 @@ async def _classify_tool_approval_reply(reply: Any, pending: Any, sess: Any) -> 
     if not user_reply:
         return "ambiguous"
 
-    local_decision = deterministic_tool_approval_decision(user_reply)
-    if local_decision:
-        logger.info(
-            "[tool-approval] deterministic decision=%s tool=%s session=%s",
-            local_decision,
-            getattr(pending, "tool_name", "tool"),
-            getattr(pending, "session_id", ""),
-        )
-        return local_decision
-
     endpoint_url = str(getattr(sess, "endpoint_url", "") or "").strip()
     model = str(getattr(sess, "model", "") or "").strip()
     if not endpoint_url or not model:
@@ -433,7 +422,7 @@ async def _classify_tool_approval_reply(reply: Any, pending: Any, sess: Any) -> 
                 {"role": "user", "content": classifier_input},
             ],
             temperature=0,
-            max_tokens=32,
+            max_tokens=256,
             headers=headers,
             timeout=15,
             max_retries=1,
@@ -1068,7 +1057,7 @@ def setup_chat_routes(
                 research_ctx = await research_handler.call_research_service(
                     message, _r_ep, _r_model, llm_headers=_r_headers
                 )
-                research_message = untrusted_context_message("research context", research_ctx)
+                research_message = untrusted_context_message("research context", research_ctx, arm_tool_gate=True)
                 ctx.messages.insert(len(ctx.preface), research_message)
                 if foreground_policy.enabled:
                     getattr(ctx, "route_messages", ctx.messages).insert(
@@ -2985,7 +2974,7 @@ def setup_chat_routes(
         _verify_session_owner(request, session_id)
         try:
             sess = session_manager.get_session(session_id)
-            msg = untrusted_context_message("injected research context", f"Research Context: {context}")
+            msg = untrusted_context_message("injected research context", f"Research Context: {context}", arm_tool_gate=True)
             sess.add_message(ChatMessage(msg["role"], msg["content"], metadata=msg.get("metadata")))
             session_manager.save_sessions()
             return {"status": "context_injected"}
