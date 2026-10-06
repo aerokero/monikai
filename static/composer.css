@@ -518,14 +518,18 @@
 
 @media (max-width: 768px) {
   .chat-container .chat-input-bar.composer-pill {
-    padding: 10px 14px 10px 14px !important;
+    padding: 12px 14px 10px 14px !important;
     border-radius: 28px !important;
-    min-height: 84px !important;
+    min-height: 112px !important;
   }
-  .composer-pill .composer-actions-row { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 4px; }
-  .composer-pill .composer-actions-left { display: contents; }
-  .composer-pill .composer-actions-right { grid-column: 2; grid-row: 1; justify-self: end; }
-  .composer-active-chips { grid-column: 1 / -1; grid-row: 2; max-width: 100%; }
+  /* Chips on their own row above the textarea (Gemini style); + left, mic/send right below. */
+  .chat-container .chat-input-bar.composer-pill { display: grid !important; grid-template-columns: 44px minmax(0, 1fr) auto; align-content: start !important; gap: 10px 4px; }
+  .composer-pill :is(.chat-input-top, .composer-actions-row, .composer-actions-left) { display: contents; }
+  .composer-pill .composer-active-chips { grid-column: 1 / -1; grid-row: 1; max-width: 100%; }
+  .composer-pill .composer-active-chips:not(:has(> .composer-chip:not(.hidden):not([style*="none"]))) { display: none; }
+  .composer-pill .composer-text-row { grid-column: 1 / -1; grid-row: 2; min-height: 52px !important; padding: 4px 6px !important; }
+  .composer-pill .overflow-wrapper { grid-column: 1; grid-row: 3; }
+  .composer-pill .composer-actions-right { grid-column: 3; grid-row: 3; }
   .chat-container .composer-pill textarea#message { max-height: min(150px, 30dvh) !important; }
   .composer-chip {
     height: 32px;
@@ -778,6 +782,12 @@
     -webkit-overflow-scrolling: touch;
   }
   .composer-chip { flex: 0 0 auto; }
+  /* Not enough room beside the + button: collapse chips to icon-only. */
+  .composer-active-chips { container-type: inline-size; }
+  @container (max-width: 230px) {
+    .composer-pill .composer-active-chips .composer-chip.composer-chip .composer-chip-label,
+    .composer-pill .composer-active-chips .composer-chip.composer-chip .composer-chip-close { display: none !important; }
+  }
   /* Keep the model picker and mic from squeezing the send button. */
   .composer-pill .composer-actions-right { gap: 2px !important; }
   #overflow-menu.composer-tools-menu .overflow-menu-item { min-height: 44px !important; height: auto !important; }

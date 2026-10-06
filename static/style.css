@@ -438,11 +438,6 @@ body.bg-pattern-sparkles {
         gap: 12px;
         min-height: 44px;
       }
-      #export-compact-btn {
-        margin: 5px 6px 7px;
-        min-height: 38px;
-        padding: 9px 14px;
-      }
       .export-dropdown-item .dropdown-icon {
         width: 18px; height: 18px; opacity: 0.7;
       }

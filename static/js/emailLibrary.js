@@ -2692,12 +2692,11 @@ export function openEmailLibrary(opts = {}) {
   // expanded inside stays expanded.
   try {
     Modals.register('email-lib-modal', {
+      railBtnId: 'rail-email',
+      sidebarBtnId: 'email-section-title',
       label: 'Email',
       icon: 'M2 4h20v16H2zM22 7l-9.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7',
-      closeFn: () => {
-        const m = document.getElementById('email-lib-modal');
-        if (m) m.classList.add('hidden');
-      },
+      closeFn: closeEmailLibrary, // full teardown (hiding alone left the window visible)
       restoreFn: () => {
         // Reopened last → bring the email windows in front of any open doc.
         document.body.classList.add('email-front');

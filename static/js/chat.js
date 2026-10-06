@@ -152,7 +152,7 @@ import { icon as phosphorIcon, getToolPhosphorIcon } from './iconRegistry.js';
     const label = value.toFixed(value >= 10 ? 0 : 1);
     const idAttr = labelId ? ` id="${labelId}"` : '';
     return `<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-        <circle cx="7" cy="7" r="${r}" fill="none" stroke="var(--border, #333)" stroke-width="${stroke}" opacity="0.3"/>
+        <circle cx="7" cy="7" r="${r}" fill="none" stroke="currentColor" stroke-width="${stroke}" opacity="0.25"/>
         <circle cx="7" cy="7" r="${r}" fill="none" stroke="var(--ctx-stroke)" stroke-width="${stroke}"
           stroke-dasharray="${fill} ${circ - fill}" stroke-dashoffset="${circ * 0.25}"
           stroke-linecap="round" transform="rotate(-90 7 7)"/>
@@ -1967,10 +1967,6 @@ import { icon as phosphorIcon, getToolPhosphorIcon } from './iconRegistry.js';
 	      }
       fd.append('allow_bash', el('bash-toggle').checked ? 'true' : 'false');
       if (workspaceAgentIntent) fd.set('allow_bash', 'true');
-      const ragChk = el('rag-toggle');
-      if (ragChk && !ragChk.checked) {
-        fd.append('use_rag', 'false');
-      }
       if (isIncognito) {
         fd.append('incognito', 'true');
       }

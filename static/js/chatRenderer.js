@@ -3372,7 +3372,7 @@ export function addMessage(role, content, modelName, metadata) {
       numRight.addEventListener('click', (e) => { e.stopPropagation(); switchFn(parseInt(wrap.dataset.variantIndex) + 1); });
       nextBtn.addEventListener('click', (e) => { e.stopPropagation(); switchFn(parseInt(wrap.dataset.variantIndex) + 1); });
 
-      r.appendChild(nav);
+      roleEl.appendChild(nav);
     }
 
     if (role === 'assistant') {
@@ -3386,7 +3386,7 @@ export function addMessage(role, content, modelName, metadata) {
       if (metadata) displayMetrics(wrap, metadata);
     } else {
       // Add timestamp to user header (like AI messages)
-      r.appendChild(roleTimestamp(metadata?.timestamp));
+      roleEl.appendChild(roleTimestamp(metadata?.timestamp));
 
       wrap.appendChild(createUserMsgFooter(wrap));
     }

@@ -37,7 +37,7 @@ import savingsModule from './js/savings.js?v=20260923savings_sync2';
 import adminModule from './js/admin.js?v=20260716openrouter3';
 import settingsModule from './js/settings.js?v=20260815approvalsave1';
 // Eagerly bind unified minimize/restore behavior across all tool modals.
-import './js/modalManager.js?v=20260723compareicon2';
+import './js/modalManager.js?v=20260723mobilewin1';
 // Desktop window tiling — drag a modal near an edge/corner to snap.
 import './js/tileManager.js';
 import themeModule from './js/theme.js';
@@ -3768,6 +3768,14 @@ function initializeEventListeners() {
     });
     textarea.addEventListener('keydown', (e) => {
       const isMobile = _isMobileChatInput();
+
+      // Ctrl/Cmd+Enter = newline (browsers don't insert one in a textarea by default).
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) {
+        e.preventDefault();
+        textarea.setRangeText('\n', textarea.selectionStart, textarea.selectionEnd, 'end');
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        return;
+      }
 
       if (_shouldQueueFromMobileEnter(e, textarea) || (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !isMobile)) {
         // If ghost autocomplete is active, accept the suggestion instead of submitting

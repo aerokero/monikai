@@ -41,6 +41,7 @@ export const UI_VIS_MAP = {
   'overflow-plus-btn':   '.overflow-wrapper',
   'mode-toggle':         '.mode-toggle',
   'preset-mini-btn':     '#overflow-preset-btn',
+  'workspace-btn':       '#overflow-workspace-btn',
   'attach-btn':          '#overflow-attach-btn',
   'research-btn':        '#overflow-research-btn',
   'rail-new-chat':       '#rail-new-session',
@@ -50,7 +51,7 @@ export const UI_VIS_MAP = {
 // Model reasoning is useful as an explicit diagnostic view, but it should not
 // be part of the normal conversation surface.  Keep the existing opt-in
 // toggle; a user can still enable it from Appearance when debugging a model.
-export const UI_VIS_DEFAULT_OFF = new Set(['text-emojis', 'chat-fullwidth', 'show-thinking']);
+export const UI_VIS_DEFAULT_OFF = new Set(['text-emojis', 'chat-fullwidth', 'show-thinking', 'bash-toggle-btn', 'workspace-btn']);
 
 /**
  * Resolve every UI_VIS_MAP selector to visible (true) or hidden (false) for the

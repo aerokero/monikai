@@ -360,7 +360,7 @@ function _buildPanelHTML() {
     <div class="modal-header research-pane-header">
       <h4><span style="position:relative;top:-1px;left:6px;display:inline-flex;vertical-align:middle;">${_searchIcon}</span><span style="margin-left:6px;">Deep Research</span></h4>
       <div class="research-pane-header-actions">
-        <button id="research-panel-minimize" class="modal-minimize-btn" type="button" title="Minimize"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="5" y1="18" x2="19" y2="18"/></svg></button>
+        <button id="research-panel-minimize" class="modal-minimize-btn" data-minimize type="button" title="Minimize"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="5" y1="18" x2="19" y2="18"/></svg></button>
         <button id="research-panel-close" class="close-btn" title="Close">&#x2716;</button>
       </div>
     </div>
@@ -446,12 +446,6 @@ function _resetCategoryToAuto() {
 
 function _wireEvents(pane) {
   pane.querySelector('#research-panel-close').addEventListener('click', closePanel);
-  pane.querySelector('#research-panel-minimize')?.addEventListener('click', () => {
-    const overlay = document.getElementById('research-overlay');
-    if (overlay) overlay.style.display = 'none';
-    const btn = document.getElementById('tool-research-btn');
-    if (btn) btn.classList.add('minimized');
-  });
   pane.querySelector('#research-start-btn').addEventListener('click', _handleStart);
   pane.querySelector('#research-add-btn').addEventListener('click', _handleAdd);
 

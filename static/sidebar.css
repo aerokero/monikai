@@ -602,17 +602,10 @@ html.ody-sidebar-off #sidebar {
   overflow-x: hidden !important;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--fg) 12%, transparent) transparent;
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, rgba(0, 0, 0, .32) 7%, #000 20%, #000 100%);
-  mask-image: linear-gradient(to bottom, transparent 0, rgba(0, 0, 0, .32) 7%, #000 20%, #000 100%);
-}
-
-/* Fill unused vertical space so a short conversation starts above the composer.
-   Once messages exceed the viewport, the spacer collapses to zero and scrolling
-   remains a normal top-to-bottom history. */
-#chat-history::before {
-  content: '';
-  flex: 1 0 0;
-  min-height: 0;
+  /* Messages flow top-down so the scene/Monika at the bottom stays visible;
+     only a thin fade at the top edge for scrolled history. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 100%);
 }
 
 #chat-history::-webkit-scrollbar {
@@ -1086,4 +1079,301 @@ body.hamburger-right.sidebar-collapsed .chat-top-bar .chat-meta-overlay { right:
 #icon-rail svg[data-icon-profile="phosphor-regular"],
 #sidebar #workspace-section #email-section svg[data-icon-profile="phosphor-regular"] {
   stroke: none !important;
+}
+
+/* ==========================================================================
+   Mobile shell (≤768px): Gemini-style header + full-screen menu.
+   Header = [hamburger] [conversation title] [context pill][kebab].
+   The menu (sidebar) always slides in from the left and covers the screen,
+   regardless of the desktop .right-side preference.
+   ========================================================================== */
+@media (max-width: 768px) {
+  :root { --m-header-h: 56px; }
+
+  /* Header row */
+  .chat-container { padding-top: 0 !important; }
+  body .chat-top-bar {
+    margin-top: 0 !important;
+    height: calc(var(--m-header-h) + env(safe-area-inset-top)) !important;
+    min-height: calc(var(--m-header-h) + env(safe-area-inset-top)) !important;
+    padding: env(safe-area-inset-top) 4px 0 52px !important; /* 52px = hamburger slot */
+    display: flex !important;
+    align-items: center !important;
+  }
+  /* Hamburger: left, vertically centred in the header */
+  #hamburger-btn {
+    left: 4px !important;
+    right: auto !important;
+    top: calc((var(--m-header-h) - 44px) / 2 + env(safe-area-inset-top)) !important;
+  }
+  /* Title + actions share one flex row (overlay is no longer floating) */
+  body .chat-top-bar .chat-meta-overlay {
+    position: static !important;
+    display: flex !important;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none !important;
+    width: auto !important;
+    font-size: 1rem !important;
+    transform: none !important;
+  }
+  body .chat-top-bar .chat-meta-overlay #current-meta:not(:has(.session-rename-input)) {
+    display: block !important;
+    order: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0 8px;
+    font-size: 1rem;
+    font-weight: 500;
+    line-height: 44px;
+    text-align: center;
+    color: var(--fg);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 1px 6px color-mix(in srgb, var(--bg) 70%, transparent);
+  }
+  /* Incognito badge sits left of the context pill + kebab */
+  .incognito-indicator { right: 100px !important; top: calc(12px + env(safe-area-inset-top)) !important; }
+
+  /* Full-screen menu */
+  #sidebar,
+  #sidebar.hidden {
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+  #sidebar.hidden,
+  #sidebar.right-side.hidden,
+  html.ody-sidebar-off #sidebar,
+  html.ody-sidebar-off #sidebar.right-side,
+  html.ody-mobile-startup-sidebar-hidden #sidebar,
+  html.ody-mobile-startup-sidebar-hidden #sidebar.right-side {
+    transform: translateX(-100%) !important;
+  }
+  #sidebar .sidebar-header {
+    height: calc(var(--m-header-h) + env(safe-area-inset-top)) !important;
+    min-height: calc(var(--m-header-h) + env(safe-area-inset-top)) !important;
+    padding: env(safe-area-inset-top) 4px 0 4px !important;
+  }
+  /* Full-screen menu needs no dimmed backdrop */
+  #sidebar-backdrop { display: none !important; }
+
+  /* Full-screen tool windows: respect the status-bar inset like the header,
+     and let Settings' tab rail + panels fill the whole sheet height instead
+     of stopping at the desktop min/max-height (left an empty strip below). */
+  body #cookbook-modal .modal-content,
+  body #tasks-modal .modal-content,
+  body #calendar-modal .modal-content,
+  body #memory-modal .memory-modal-content,
+  body #settings-modal .settings-modal-content,
+  body #email-lib-modal .modal-content,
+  body #doclib-modal .doclib-modal-content {
+    padding-top: max(6px, env(safe-area-inset-top)) !important;
+  }
+  #settings-modal .settings-modal-content { display: flex; flex-direction: column; }
+  #settings-modal .settings-layout { flex: 1 1 0; min-height: 0; max-height: none; }
+  #settings-modal .settings-panels,
+  #settings-modal .settings-sidebar { min-height: 0; }
+
+  /* Tool windows are full-screen, not sheets: no grab handle, square corners. */
+  body #cookbook-modal .modal-content,
+  body #tasks-modal .modal-content,
+  body #calendar-modal .modal-content,
+  body #memory-modal .memory-modal-content,
+  body #settings-modal .settings-modal-content,
+  body #email-lib-modal .modal-content,
+  body #doclib-modal .doclib-modal-content,
+  body #gallery-modal .modal-content {
+    border-radius: 0 !important;
+    border-top: 0 !important;
+    width: 100% !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+  }
+  body #cookbook-modal .modal-content::before,
+  body #tasks-modal .modal-content::before,
+  body #calendar-modal .modal-content::before,
+  body #memory-modal .memory-modal-content::before,
+  body #settings-modal .settings-modal-content::before,
+  body #email-lib-modal .modal-content::before,
+  body #doclib-modal .doclib-modal-content::before,
+  body #gallery-modal .modal-content::before { display: none !important; }
+
+  /* Visible close (X) in every modal header — swipe-down alone is not
+     discoverable. Beats the legacy "hide close X on mobile" rules. */
+  body .modal-content .modal-header .close-btn,
+  body .modal-content .modal-header .modal-close,
+  body #theme-popup .modal-header .close-btn {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    margin-left: auto;
+    font-size: 0; /* hide the ✖ text glyph; style.css draws the X via ::before */
+    background: transparent;
+    border-color: transparent;
+    color: var(--fg);
+  }
+  body .modal-content .modal-header .close-btn:focus:not(:focus-visible) { outline: none; } /* no ring after a tap */
+
+  /* Header controls: no filled circles; a soft top scrim keeps the icons
+     readable over the scene background instead. */
+  #hamburger-btn,
+  .chat-meta-overlay .export-dl-btn,
+  .chat-meta-overlay .chat-context-pill {
+    background: transparent !important;
+    color: var(--fg) !important;
+  }
+  body .chat-top-bar::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 -12px 0;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(color-mix(in srgb, var(--bg) 80%, transparent), transparent);
+  }
+}
+
+/* ==========================================================================
+   Mobile tool windows: shared header [☰] [title] [✕] (js/mobileWindows.js).
+   ========================================================================== */
+.mw-menu, .mw-close { display: none; }
+
+@media (max-width: 768px) {
+  /* Menu opens above any tool window (modals sit at z 250–300+). */
+  body #sidebar { z-index: 2000 !important; }
+
+  /* Every decorated window is full-screen: no sheet, no grab handle. */
+  body .mw-win:not(#_):not(#_) {
+    margin: 0 !important;
+    min-height: 0 !important;
+    width: 100% !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    border-radius: 0 !important;
+    border: 0 !important;
+    padding-top: env(safe-area-inset-top) !important;
+  }
+  body .mw-win:not(#_)::before,
+  body .notes-mobile-grabber { display: none !important; }
+  body .mw-header:not(#_) .mw-hide:not(#_):not(#_) { display: none !important; }
+
+  /* Row 1 = ☰ | centered title | ✕ (44+1fr+44 fills the row); any other
+     header actions wrap onto a second row on the right. */
+  body .mw-header:not(#_) {
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0 4px;
+    min-height: 56px;
+    padding: 6px 4px !important;
+    margin: 0 !important;
+    border-bottom: 1px solid var(--border);
+    cursor: default;
+  }
+  body .mw-header:not(#_) > * { order: 3; }
+  body .mw-header > .mw-menu:not(#_),
+  body .mw-header > .mw-close:not(#_) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    border: 0;
+    color: var(--fg);
+    cursor: pointer;
+  }
+  body .mw-header > .mw-menu:not(#_) { order: 0; }
+  body .mw-header > .mw-close:not(#_) { order: 2; }
+  body .mw-header > .mw-title:not(#_) {
+    order: 1;
+    flex: 0 0 calc(100% - 96px); /* + ☰ + ✕ (44px each, 4px gaps) = exactly one row */
+    max-width: calc(100% - 96px);
+    min-width: 0;
+    margin: 0 !important;
+    font-size: 1rem !important;
+    font-weight: 600;
+    text-align: center;
+    justify-content: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  body .mw-header > .mw-title svg:not(#_) { vertical-align: -3px; }
+
+  /* Header grows with its wrapped actions row (wardrobe's Auto switch overflowed). */
+  body .mw-header:not(#_) { height: auto !important; max-height: none !important; flex-shrink: 0; }
+  /* doclib-style windows (email, library, research, gallery): edge-to-edge. */
+  body .mw-win.doclib-modal-content:not(#_):not(#_) { padding-left: 0 !important; padding-right: 0 !important; }
+  /* Programmatic autofocus must not ring the menu button. */
+  body .mw-header > .mw-menu:focus:not(#_),
+  body .mw-header > .mw-close:focus:not(#_) { outline: none; box-shadow: none; }
+  /* Full-screen: drop the inset "card" frame some windows wrap their body in. */
+  body .mw-win > .modal-body:not(#_),
+  body .mw-win > .modal-body > .admin-card:only-child:not(#_) {
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+}
+
+/* ==========================================================================
+   Desktop: minimized windows = a dot on their sidebar/rail button (js/modalManager.js
+   _setBadge). Hover the dot -> it becomes an × that closes the window.
+   ========================================================================== */
+.mm-dot { display: none; }
+@media (hover: hover) and (min-width: 769px) {
+  .rail-minimized > .mm-dot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 50%; right: 8px;
+    width: 18px; height: 18px;
+    margin-top: -9px;
+    border-radius: 50%;
+    cursor: pointer;
+    z-index: 2;
+  }
+  .icon-rail-btn.rail-minimized > .mm-dot { top: 2px; right: 2px; margin-top: 0; width: 14px; height: 14px; }
+  .rail-minimized > .mm-dot::before {
+    content: '';
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent, var(--red));
+    animation: rail-min-pulse 2s ease-in-out infinite;
+    transition: all .12s;
+  }
+  .rail-minimized > .mm-dot:hover { background: var(--accent, var(--red)); }
+  .rail-minimized > .mm-dot:hover::before {
+    content: '×';
+    width: auto; height: auto; border-radius: 0;
+    background: none; animation: none;
+    color: var(--bg); font-size: 14px; font-weight: 700; line-height: 1;
+  }
+  .rail-minimized::after { display: none; } /* replaced by .mm-dot */
+  /* Email row: dot is the last flex item (after "+ new"), so the button shifts left. */
+  .section-header-flex.rail-minimized > .mm-dot {
+    position: static;
+    flex: 0 0 18px;
+    margin: 0 -4px 0 2px; /* centre on x of the other rows' dots */
+  }
+}
+
+/* Rows with a "+ new" button (Library, …): shift it left of the minimized dot. */
+@media (hover: hover) and (min-width: 769px) {
+  .list-item.rail-minimized > .list-item-plus-btn { margin-right: 26px; }
 }

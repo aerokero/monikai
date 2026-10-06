@@ -29,6 +29,7 @@ import { previewZoneAt, clearPreview, snapModalToZone } from './tileManager.js';
 import { suspendDock, resumeDock, clearRightDock, applyEdgeDock } from './modalSnap.js';
 import { dismissOrRemove } from './escMenuStack.js';
 import { nextToolWindowZ } from './toolWindowZOrder.js';
+import { decorateWindow } from './mobileWindows.js';
 
 const _state = new Map(); // id -> { restoreFn, closeFn, railBtnId, isMinimized, restoreMinHeight }
 
@@ -115,13 +116,35 @@ function _applyRestoreHeight(modal, state) {
   if (height) content.style.minHeight = `${height}px`;
 }
 
-function _setBadge(btnIds, on) {
+function _setBadge(btnIds, on, id) {
   if (!btnIds) return;
   const ids = Array.isArray(btnIds) ? btnIds : [btnIds];
-  for (const id of ids) {
-    const btn = document.getElementById(id);
-    if (btn) btn.classList.toggle('rail-minimized', on);
+  for (const bid of ids) {
+    const btn = document.getElementById(bid);
+    if (!btn) continue;
+    btn.classList.toggle('rail-minimized', on);
+    // The Email row is a title span inside a header flex row (with a "+ new"
+    // button): the dot lives in the row so the button shifts left of it.
+    const host = bid === 'email-section-title' ? btn.parentElement : btn;
+    if (host !== btn) host.classList.toggle('rail-minimized', on);
+    // Real element (not ::after) so it can take hover/click: on hover-capable
+    // desktops the dot turns into an × that closes the minimized window.
+    host.querySelector(':scope > .mm-dot')?.remove();
+    if (on && id) {
+      const dot = document.createElement('span');
+      dot.className = 'mm-dot';
+      dot.title = 'Close';
+      dot.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); close(id); });
+      host.appendChild(dot);
+    }
   }
+}
+
+// Desktop: minimized windows that have a sidebar/rail button are shown as a dot
+// on that button instead of a bottom-dock pill.
+const _dotsMq = window.matchMedia('(hover: hover) and (min-width: 769px)');
+function _hasDot(s) {
+  return _dotsMq.matches && (s?.btnIds || []).some((b) => document.getElementById(b)?.getClientRects().length);
 }
 
 // ── Bottom dock — visible chip per minimized modal ──
@@ -313,7 +336,7 @@ function _renderDock() {
   // _dockOrder keeps every alive modal's slot (so order is stable across
   // restore→minimize cycles), but we only render chips for ids currently
   // in allIds (minimized or persistent).
-  const renderIds = _dockOrder.filter(id => allIds.includes(id));
+  const renderIds = _dockOrder.filter(id => allIds.includes(id) && !_hasDot(_state.get(id)));
 
   // If a brand-new chip is joining and the existing chips are already
   // free-positioned at body level (e.g. previously chain-dropped), the
@@ -1204,7 +1227,7 @@ export function register(id, { restoreFn, closeFn, railBtnId, sidebarBtnId, labe
 
 export function unregister(id) {
   const s = _state.get(id);
-  if (s) _setBadge(s.btnIds, false);
+  if (s) _setBadge(s.btnIds, false, id);
   _state.delete(id);
   _chipPositions.delete(id);
   // Drop any per-popup _LABELS entry created at register-time.
@@ -1254,7 +1277,7 @@ export function minimize(id) {
     }
   }
   s.isMinimized = true;
-  _setBadge(s.btnIds, true);
+  _setBadge(s.btnIds, true, id);
   _ensureDock();
   _renderDock();
   return true;
@@ -1278,7 +1301,7 @@ export function restore(id) {
     _emitModalOpened(id, modal);
   }
   s.isMinimized = false;
-  _setBadge(s.btnIds, false);
+  _setBadge(s.btnIds, false, id);
   // Intentionally don't clear _chipPositions here: on mobile a free-
   // positioned chip is meant to act as a persistent toggle that stays
   // visible alongside the open modal, so the user can re-collapse it with
@@ -1308,6 +1331,8 @@ export function toggle(id) {
 export function close(id) {
   const s = _state.get(id);
   if (!s) return;
+  if (s.closing) return; // closeFn may call back into close() (e.g. closeWardrobe)
+  s.closing = true;
   const modalBeforeClose = document.getElementById(id);
   const contentBeforeClose = modalBeforeClose?.querySelector?.('.modal-content');
   const suspendedDockSide = contentBeforeClose?._dockSuspended
@@ -1343,7 +1368,7 @@ export function close(id) {
       content.style.opacity = '';
     }
   }
-  _setBadge(s.btnIds, false);
+  _setBadge(s.btnIds, false, id);
   _state.delete(id);
   _chipPositions.delete(id);
   _saveDockState();
@@ -1413,7 +1438,7 @@ const _AUTO_WIRE = {
   'notes-panel':          { rail: 'rail-notes',     sidebar: 'tool-notes-btn' },
   // Email already has its own #email-unread-dot inline next to the title —
   // don't add a second modalManager badge that lands at the right edge.
-  'email-lib-modal':      { rail: null,             sidebar: null },
+  'email-lib-modal':      { rail: 'rail-email',     sidebar: 'email-section-title' },
   'research-overlay':     { rail: 'rail-research',  sidebar: 'tool-research-btn' },
   'theme-modal':          { rail: null,             sidebar: 'tool-theme-btn' },
   'settings-modal':       { rail: null,             sidebar: 'tool-settings-btn' },
@@ -1459,8 +1484,20 @@ function _scanAndWire() {
     const modal = document.getElementById(id);
     if (!modal) continue;
     injectMinimizeButton(modal, id);
+    decorateWindow(modal, () => close(id));
   }
+  // Windows registered at runtime (wardrobe, savings, …) + the notes pane.
+  for (const id of _state.keys()) {
+    const m = document.getElementById(id);
+    if (m && !_AUTO_WIRE[id]) decorateWindow(m, () => close(id));
+  }
+  // Sidebar ↔ rail ↔ hidden switches change whether a window's dot is visible;
+  // re-render the dock (pills only for windows with no visible dot) on change.
+  const sig = [..._state].filter(([, st]) => st.isMinimized).map(([id, st]) => id + _hasDot(st)).join();
+  if (sig !== _dotSig) { _dotSig = sig; if (sig) { _ensureDock(); _renderDock(); } }
+  decorateWindow(document.getElementById('notes-pane'), () => import('./notes.js').then((n) => n.closePanel()));
 }
+let _dotSig = '';
 const _scanTimer = setInterval(_scanAndWire, 1000);
 // First scan after DOM ready
 if (document.readyState !== 'loading') {
@@ -1522,7 +1559,7 @@ window.addEventListener('modal-dismissed', (e) => {
   const s = _state.get(id);
   if (!s) return;
   s.isMinimized = true;
-  _setBadge(s.btnIds, true);
+  _setBadge(s.btnIds, true, id);
   const modal = document.getElementById(id);
   if (modal) {
     const isEmailModal = id === 'email-lib-modal' || id.startsWith('email-reader-');
@@ -1545,6 +1582,7 @@ window.addEventListener('modal-dismissed', (e) => {
 // before the tool's own toggle handler runs (which would try to re-open or
 // close it).
 document.addEventListener('click', (e) => {
+  if (e.target.closest('.mm-dot')) return; // the dot's own handler closes the window
   const btn = e.target.closest('[id]');
   if (!btn) return;
   const btnId = btn.id;

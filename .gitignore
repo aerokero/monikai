@@ -100,3 +100,6 @@ data/odysseus/tts_cache/
 .DS_Store
 Thumbs.db
 data/savings_ledger.json
+
+# Local agent instructions
+CLAUDE.md

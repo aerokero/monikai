@@ -90,7 +90,8 @@ async function showModelSelector() {
 
     const headerMinBtn = document.createElement('button');
     headerMinBtn.type = 'button';
-    headerMinBtn.className = 'modal-minimize-btn minimize-btn';
+    headerMinBtn.className = 'modal-minimize-btn';
+    headerMinBtn.dataset.minimize = ''; // wired by modalManager (.minimize-btn also draws a 2nd bar)
     headerMinBtn.title = 'Minimize';
     headerMinBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="5" y1="18" x2="19" y2="18"/></svg>';
     headerMinBtn.style.margin = '0';

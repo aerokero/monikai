@@ -945,6 +945,10 @@ if ('ontouchstart' in window) {
     // way without having to hard-code their selector here.
     if (e.target.closest('.cal-splitter, [data-no-swipe-dismiss]')) return;
 
+    // Full-screen modals (every tool window on mobile) have a visible X, so
+    // swipe-to-dismiss would only fight scrolling and leave the sheet half-open.
+    if (content.offsetHeight >= window.innerHeight - 2) return;
+
     // Only allow swipe-dismiss from header or grab handle (top 48px)
     const isHeader = !!e.target.closest('.modal-header');
     const isButton = !!e.target.closest('button, input, select, label');

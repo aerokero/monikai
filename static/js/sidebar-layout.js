@@ -132,6 +132,11 @@ export function initSidebarLayout(Storage, opts) {
   }
   _applyStoredSidebarMode();
   syncRailSide();
+  // Any code path that toggles the sidebar's .hidden (tool close/restore, route
+  // collapse…) must re-sync the hamburger + body classes, or the hamburger stays
+  // display:none until reload.
+  const _sbEl = document.getElementById('sidebar');
+  if (_sbEl) new MutationObserver(() => syncRailSide()).observe(_sbEl, { attributes: true, attributeFilter: ['class'] });
 
   // Header-only new-chat aliases. #sidebar-new-chat-btn is wired in app.js
   // because it needs the full default-model/pending-chat flow; wiring it here
@@ -164,7 +169,7 @@ export function initSidebarLayout(Storage, opts) {
     _userToggledSidebar = true;
     // Optionally place the sidebar on a specific edge (the swipe gesture passes
     // the direction). Persist it + re-anchor the doc panel.
-    if (side === 'left' || side === 'right') {
+    if (window.innerWidth > 768 && (side === 'left' || side === 'right')) {
       const wantRight = side === 'right';
       if (sidebar.classList.contains('right-side') !== wantRight) {
         sidebar.classList.toggle('right-side', wantRight);
@@ -201,12 +206,7 @@ export function initSidebarLayout(Storage, opts) {
         _saveSidebarMode('off');
         if (backdrop) backdrop.classList.remove('visible');
       } else {
-        // Mobile: the hamburger always opens the sidebar from the RIGHT.
-        // (Not persisted — keeps the desktop side preference untouched.)
-        if (!sidebar.classList.contains('right-side')) {
-          sidebar.classList.add('right-side');
-          if (documentModule && documentModule.swapSide) { try { documentModule.swapSide(); } catch (_) {} }
-        }
+        // Mobile: full-screen menu; CSS ignores .right-side, so no side swap.
         // Opening sidebar — blur keyboard first, then open after layout settles
         if (document.activeElement && document.activeElement !== document.body
             && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
@@ -507,7 +507,9 @@ export function initSidebarLayout(Storage, opts) {
       }
       _sidebarWasOpenBeforeTool = false;
       _railWasOpenBeforeTool = false;
-      if (_sidebarWasOpenBeforeTool || _railWasOpenBeforeTool) syncRailSide();
+      // Always re-sync: the hamburger's inline display/body classes can be stale
+      // after a tool closed (the old guard ran after the flags were cleared).
+      syncRailSide();
     };
     const _modalObs = new MutationObserver((muts) => {
       let triggered = false;
