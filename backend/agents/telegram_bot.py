@@ -32,7 +32,6 @@ TELEGRAM_COMMANDS = [
     {"command": "memory", "description": "Pokaż ostatnie wpisy pamięci"},
     {"command": "forget", "description": "Usuń ostatni wpis pamięci"},
     {"command": "profile", "description": "Pokaż profil użytkownika"},
-    {"command": "mood", "description": "Pokaż nastrój Moniki"},
     {"command": "voice", "description": "Odpowiedzi głosowe (/voice on|off|auto)"},
     {"command": "mic", "description": "Mikrofon serwera (/mic on|off|status|wake)"},
     {"command": "status", "description": "Pokaż status sesji"},
@@ -98,7 +97,6 @@ class TelegramChatSession:
         calendar_manager=None,
         reminder_manager=None,
         spotify_manager=None,
-        personality=None,
         kasa_agent=None,
         hue_agent=None,
         home_assistant_agent=None,
@@ -112,7 +110,6 @@ class TelegramChatSession:
         self.calendar_manager = calendar_manager
         self.reminder_manager = reminder_manager
         self.spotify_manager = spotify_manager
-        self.personality = personality
         self.kasa_agent = kasa_agent
         self.hue_agent = hue_agent
         self.home_assistant_agent = home_assistant_agent
@@ -138,7 +135,6 @@ class TelegramChatSession:
             calendar_manager=self.calendar_manager,
             reminder_manager=self.reminder_manager,
             spotify_manager=self.spotify_manager,
-            personality=self.personality,
             enable_audio_io=False,
             auto_allow_tools_without_confirmation=True,
             session_stream_channel="telegram",
@@ -228,20 +224,6 @@ class TelegramChatSession:
             f"• Ostatnia aktywność: {last_age}s temu"
         )
 
-    def get_mood_summary(self) -> str:
-        state = getattr(getattr(self, "personality", None), "state", None)
-        if not state:
-            return "Nie mam teraz aktywnego statusu nastroju."
-        affection = max(0.0, min(100.0, float(getattr(state, "affection", 0.0) or 0.0)))
-        energy = max(0.0, min(1.0, float(getattr(state, "energy", 0.0) or 0.0)))
-        mood = str(getattr(state, "mood", "neutral") or "neutral")
-        return (
-            f"💖 *Stan Moniki:*\n"
-            f"• Nastrój: {mood}\n"
-            f"• Energia: {int(round(energy * 100))}%\n"
-            f"• Bliskość: {affection:.1f}/100"
-        )
-
     def get_today_summary(self) -> str:
         if not self.calendar_manager:
             return "Kalendarz nie jest teraz dostępny."
@@ -261,16 +243,14 @@ class TelegramChatSession:
         return "\n".join(lines)
 
     def get_weather_summary(self) -> str:
-        weather_state = getattr(getattr(self, "personality", None), "state", None)
-        w_val = getattr(weather_state, "weather", None) if weather_state else None
-        if not w_val:
-            try:
-                from backend.core.runtimes.v2_runtime import get_cached_weather
-                cached = asyncio.run(get_cached_weather())
-                if cached:
-                    w_val = cached.get("weather") or cached.get("summary")
-            except Exception:
-                pass
+        w_val = None
+        try:
+            from backend.core.runtimes.v2_runtime import get_cached_weather
+            cached = asyncio.run(get_cached_weather())
+            if cached:
+                w_val = cached.get("weather") or cached.get("summary")
+        except Exception:
+            pass
         if not w_val:
             return "Pogoda nie jest teraz dostępna."
         return f"🌤 *Aktualna pogoda*: {w_val}"
@@ -530,7 +510,6 @@ class TelegramBotService:
         calendar_manager=None,
         reminder_manager=None,
         spotify_manager=None,
-        personality=None,
         server_mic_listener=None,
         kasa_agent=None,
         hue_agent=None,
@@ -547,7 +526,6 @@ class TelegramBotService:
         self.calendar_manager = calendar_manager
         self.reminder_manager = reminder_manager
         self.spotify_manager = spotify_manager
-        self.personality = personality
         self.server_mic_listener = server_mic_listener
         self.kasa_agent = kasa_agent
         self.hue_agent = hue_agent
@@ -578,7 +556,6 @@ class TelegramBotService:
         calendar_manager=None,
         reminder_manager=None,
         spotify_manager=None,
-        personality=None,
         server_mic_listener=None,
         kasa_agent=None,
         hue_agent=None,
@@ -623,7 +600,6 @@ class TelegramBotService:
             calendar_manager=calendar_manager,
             reminder_manager=reminder_manager,
             spotify_manager=spotify_manager,
-            personality=personality,
             server_mic_listener=server_mic_listener,
             kasa_agent=kasa_agent,
             hue_agent=hue_agent,
@@ -975,7 +951,6 @@ class TelegramBotService:
                 calendar_manager=self.calendar_manager,
                 reminder_manager=self.reminder_manager,
                 spotify_manager=self.spotify_manager,
-                personality=self.personality,
                 kasa_agent=self.kasa_agent,
                 hue_agent=self.hue_agent,
                 home_assistant_agent=self.home_assistant_agent,
@@ -1059,12 +1034,7 @@ class TelegramBotService:
                 else:
                     events_txt = "\n*Kalendarz:* brak zaplanowanych wydarzeń na dziś."
 
-            weather_txt = ""
-            weather_state = getattr(getattr(self, "personality", None), "state", None)
-            if weather_state and getattr(weather_state, "weather", None):
-                weather_txt = f"\n*Pogoda:* {weather_state.weather}"
-
-            text = f"☀️ *Dzień dobry! Poranny briefing ({day_str}):*{weather_txt}{events_txt}\n\nMiłego dnia! Jeśli będziesz czegoś potrzebować, jestem tutaj."
+            text = f"☀️ *Dzień dobry! Poranny briefing ({day_str}):*{events_txt}\n\nMiłego dnia! Jeśli będziesz czegoś potrzebować, jestem tutaj."
         else:
             text = f"🌙 *Dobry wieczór! ({day_str})*\nPodsumowanie dnia dobiega końca. Pamiętaj o odpoczynku i spokojnej nocy!"
 
@@ -1261,7 +1231,6 @@ class TelegramBotService:
                     "• `/remind <treść> | <czas>` - ustaw przypomnienie\n"
                     "• `/voice [on|off|auto]` - tryb odpowiedzi głosowych\n"
                     "• `/profile` - profil użytkownika i preferencje\n"
-                    "• `/mood` - nastrój i energia Moniki\n"
                     "• `/memory` - ostatnie wpisy z pamięci\n"
                     "• `/forget` - usuń ostatni wpis z pamięci\n"
                     "• `/status` - status sesji Telegram\n"
@@ -1336,11 +1305,6 @@ class TelegramBotService:
             session = await self._get_session(chat_id, user_label)
             await session.ensure_started()
             await self._send_message(chat_id, session.forget_last_memory())
-            return
-        if command == "mood":
-            session = await self._get_session(chat_id, user_label)
-            await session.ensure_started()
-            await self._send_message(chat_id, session.get_mood_summary())
             return
         if command == "notes":
             session = await self._get_session(chat_id, user_label)

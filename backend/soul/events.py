@@ -8,13 +8,13 @@ Cross-process events (main ↔ background worker) go through the `events`
 table in monika.db — see backend/soul/db.py.
 
 Usage:
-    from backend.soul.events import bus, TurnCompleted
+    from backend.soul.events import bus, ActivityStarted
 
     # subscribe
-    bus.subscribe(TurnCompleted, my_handler)
+    bus.subscribe(ActivityStarted, my_handler)
 
     # emit (from async context)
-    await bus.emit(TurnCompleted(session_id="s1", user_text="hi", monika_text="hey"))
+    await bus.emit(ActivityStarted(kind="chat", context="hi"))
 """
 
 from __future__ import annotations
@@ -46,23 +46,6 @@ class BaseEvent(BaseModel):
 # Event types
 # ---------------------------------------------------------------------------
 
-class TurnCompleted(BaseEvent):
-    session_id: str
-    user_text: str
-    monika_text: str
-
-
-class UserDisclosure(BaseEvent):
-    content: str
-    topic: str
-    emotional_depth: float  # 0.0 … 1.0
-
-
-class MemoryStored(BaseEvent):
-    entry_id: str
-    importance: float
-    type: str
-
 
 class CompactionDone(BaseEvent):
     entries_kept: int
@@ -74,31 +57,9 @@ class DiscoveryMade(BaseEvent):
     title: str
 
 
-class RelationshipDeepened(BaseEvent):
-    milestone_id: str
-
-
-class RitualCompleted(BaseEvent):
-    task_id: str
-
-
 class AnniversaryObserved(BaseEvent):
     label: str
     days_elapsed: int
-
-
-class SceneChanged(BaseEvent):
-    scene_id: str
-    trigger: str
-
-
-class StoryStarted(BaseEvent):
-    story_id: str
-
-
-class StoryEnded(BaseEvent):
-    story_id: str
-    ending_id: str
 
 
 class ActivityStarted(BaseEvent):
@@ -108,11 +69,6 @@ class ActivityStarted(BaseEvent):
 
 class LongGapDetected(BaseEvent):
     hours_since_last: float
-
-
-class SoulStateUpdated(BaseEvent):
-    """Emitted after every SoulState recomputation."""
-    pass
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,9 @@
 import asyncio
 import inspect
 import json
+import os
+import urllib.parse
+import urllib.request
 from typing import Dict, Any
 
 from src.constants import MAX_OUTPUT_CHARS
@@ -169,3 +172,44 @@ class WebFetchTool:
         if len(output) > MAX_OUTPUT_CHARS:
             output = output[:MAX_OUTPUT_CHARS] + "\n\n[...truncated]"
         return {"output": output, "exit_code": 0}
+
+
+class WeatherTool:
+    """Open-Meteo forecast (no API key): geocode the city, then one forecast call."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        raw = content.strip()
+        city = raw
+        if raw.startswith("{"):
+            try:
+                city = str(json.loads(raw).get("city") or "").strip()
+            except (json.JSONDecodeError, AttributeError):
+                city = ""
+        city = city or os.environ.get("WEATHER_LOCATION", "Kraków")
+
+        def _get(url: str, **params) -> dict:
+            with urllib.request.urlopen(f"{url}?{urllib.parse.urlencode(params)}", timeout=10) as r:
+                return json.load(r)
+
+        def _fetch() -> str:
+            geo = _get("https://geocoding-api.open-meteo.com/v1/search", name=city, count=1)
+            place = (geo.get("results") or [None])[0]
+            if not place:
+                raise ValueError(f"unknown place: {city}")
+            f = _get(
+                "https://api.open-meteo.com/v1/forecast",
+                latitude=place["latitude"], longitude=place["longitude"], timezone="auto",
+                current="temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m",
+                hourly="temperature_2m,precipitation_probability,precipitation,weather_code,wind_speed_10m",
+                daily="temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max",
+                forecast_days=2,
+            )
+            f["place"] = f"{place['name']}, {place.get('country', '')}"
+            return json.dumps(f, ensure_ascii=False)
+
+        try:
+            out = await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(None, _fetch), timeout=20)
+        except Exception as e:
+            return {"error": f"get_weather failed: {type(e).__name__}: {e}", "exit_code": 1}
+        # ponytail: raw JSON for the model to read; WMO weather_code legend added when it misreads codes
+        return {"output": "Open-Meteo (WMO weather_code, km/h, °C, mm):\n" + out[:MAX_OUTPUT_CHARS], "exit_code": 0}

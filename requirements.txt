@@ -8,6 +8,10 @@ google-genai
 opencv-python
 pyaudio
 sounddevice
+# Voice barge-in: WebRTC echo cancellation (AEC3) and Silero speech detection
+livekit==1.1.20
+silero-vad==6.2.3
+onnxruntime
 # Local Kokoro-82M TTS (CUDA is used when the container exposes an NVIDIA GPU)
 torch==2.7.1
 kokoro==0.9.4

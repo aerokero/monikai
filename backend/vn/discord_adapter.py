@@ -26,7 +26,6 @@ class DiscordChatSession:
         calendar_manager=None,
         reminder_manager=None,
         spotify_manager=None,
-        personality=None,
         home_assistant_agent=None,
         hue_agent=None,
         channel_profile=None,
@@ -38,7 +37,6 @@ class DiscordChatSession:
         self.calendar_manager = calendar_manager
         self.reminder_manager = reminder_manager
         self.spotify_manager = spotify_manager
-        self.personality = personality
         self.home_assistant_agent = home_assistant_agent
         self.hue_agent = hue_agent
         self.channel_profile = dict(channel_profile or {})
@@ -62,7 +60,6 @@ class DiscordChatSession:
             calendar_manager=self.calendar_manager,
             reminder_manager=self.reminder_manager,
             spotify_manager=self.spotify_manager,
-            personality=self.personality,
             enable_audio_io=False,
             auto_allow_tools_without_confirmation=False,
             conversation_model=self.channel_profile.get("model"),
@@ -116,19 +113,6 @@ class DiscordChatSession:
             f"Sesja Discord: {'aktywna' if active else 'nieaktywna'}\n"
             f"Kanał: {self.channel_id}\n"
             f"Ostatnia aktywność: {last_age}s temu"
-        )
-
-    def get_mood_summary(self) -> str:
-        state = getattr(getattr(self, "personality", None), "state", None)
-        if not state:
-            return "Nie mam teraz aktywnego nastroju."
-        affection = max(0.0, min(100.0, float(getattr(state, "affection", 0.0) or 0.0)))
-        energy = max(0.0, min(1.0, float(getattr(state, "energy", 0.0) or 0.0)))
-        mood = str(getattr(state, "mood", "neutral") or "neutral")
-        return (
-            f"Nastrój: {mood}\n"
-            f"Energia: {int(round(energy * 100))}%\n"
-            f"Bliskość: {affection:.1f}/100"
         )
 
     def get_memory_summary(self, limit: int = 5) -> str:
@@ -322,7 +306,6 @@ class DiscordChannelAdapter(discord.Client):
         calendar_manager=None,
         reminder_manager=None,
         spotify_manager=None,
-        personality=None,
         home_assistant_agent=None,
         hue_agent=None,
         channel_profile=None,
@@ -343,7 +326,6 @@ class DiscordChannelAdapter(discord.Client):
         self.calendar_manager = calendar_manager
         self.reminder_manager = reminder_manager
         self.spotify_manager = spotify_manager
-        self.personality = personality
         self.home_assistant_agent = home_assistant_agent
         self.hue_agent = hue_agent
         self.channel_profile = dict(channel_profile or {})
@@ -411,7 +393,7 @@ class DiscordChannelAdapter(discord.Client):
                     await message.channel.send(
                         "Monika jest gotowa na Discordzie.\n\n"
                         "Komendy:\n"
-                        "!help\n!reset\n!status\n!mood\n!memory\n!forget\n!notes\n!remind"
+                        "!help\n!reset\n!status\n!memory\n!forget\n!notes\n!remind"
                     )
                     return
                 elif command == "help":
@@ -421,7 +403,6 @@ class DiscordChannelAdapter(discord.Client):
                         "!help - lista komend\n"
                         "!reset - reset sesji Discord\n"
                         "!status - status sesji\n"
-                        "!mood - nastrój Moniki\n"
                         "!memory - ostatnie wpisy pamięci\n"
                         "!forget - usuń ostatni wpis pamięci\n"
                         "!notes - lista notatek i stron\n"
@@ -442,11 +423,6 @@ class DiscordChannelAdapter(discord.Client):
                         await message.channel.send(f"Sesja: nieaktywna\nKanał: {chat_id}\nOstatnia aktywność: brak")
                     else:
                         await message.channel.send(session.get_status_summary())
-                    return
-                elif command == "mood":
-                    session = await self._get_session(chat_id, channel_label)
-                    await session.ensure_started()
-                    await message.channel.send(session.get_mood_summary())
                     return
                 elif command == "memory":
                     session = await self._get_session(chat_id, channel_label)
@@ -522,7 +498,6 @@ class DiscordChannelAdapter(discord.Client):
                 calendar_manager=self.calendar_manager,
                 reminder_manager=self.reminder_manager,
                 spotify_manager=self.spotify_manager,
-                personality=self.personality,
                 home_assistant_agent=self.home_assistant_agent,
                 hue_agent=self.hue_agent,
                 channel_profile=self.channel_profile,

@@ -103,29 +103,6 @@ _default_api_version = (
 )
 GEMINI_API_VERSION = os.getenv("GEMINI_API_VERSION", _default_api_version)
 
-# ---------------------------------------------------------------------------
-# Dream / proactivity settings
-# ---------------------------------------------------------------------------
-try:
-    DREAM_SLEEP_GAP_HOURS = float(os.getenv("DREAM_SLEEP_GAP_HOURS", "6"))
-except Exception:
-    DREAM_SLEEP_GAP_HOURS = 6.0
-
-try:
-    DREAM_MORNING_START_HOUR = int(os.getenv("DREAM_MORNING_START_HOUR", "5"))
-except Exception:
-    DREAM_MORNING_START_HOUR = 5
-
-try:
-    DREAM_MORNING_END_HOUR = int(os.getenv("DREAM_MORNING_END_HOUR", "13"))
-except Exception:
-    DREAM_MORNING_END_HOUR = 13
-
-try:
-    DREAM_CONTEXT_HISTORY_LIMIT = int(os.getenv("DREAM_CONTEXT_HISTORY_LIMIT", "20"))
-except Exception:
-    DREAM_CONTEXT_HISTORY_LIMIT = 20
-
 DEFAULT_MODE = "camera"
 
 # ---------------------------------------------------------------------------

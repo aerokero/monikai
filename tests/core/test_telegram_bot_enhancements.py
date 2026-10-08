@@ -73,15 +73,16 @@ def test_telegram_session_today_summary():
     assert "10:00-11:00" in summary
 
 
-def test_telegram_session_weather_and_profile():
-    mock_personality = MagicMock()
-    mock_personality.state.weather = "22°C, słonecznie"
+def test_telegram_session_weather_and_profile(monkeypatch):
+    async def fake_weather():
+        return {"weather": "22°C, słonecznie"}
+
+    monkeypatch.setattr("backend.core.runtimes.v2_runtime.get_cached_weather", fake_weather)
 
     session = TelegramChatSession(
         chat_id=123,
         user_label="test_user",
         settings_getter=lambda: {},
-        personality=mock_personality,
     )
 
     w_summary = session.get_weather_summary()

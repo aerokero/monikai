@@ -122,7 +122,6 @@ async def test_native_plan_creates_reminder_exactly_once():
     loop.permissions = {"create_reminder": False}
     loop.thinker = FakeThinker()
     loop.reminder_manager = SimpleNamespace(create=create)
-    loop.personality = None
     loop._last_tool_trace = {}
 
     outcome = await loop.author_tool_turn(
@@ -161,7 +160,6 @@ async def test_denied_mutating_tool_is_not_executed():
     loop.reminder_manager = SimpleNamespace(
         create=lambda **kwargs: created.append(kwargs)
     )
-    loop.personality = None
     loop._last_tool_trace = {}
 
     def deny(payload):
@@ -208,7 +206,6 @@ async def test_confirmed_mutating_tool_executes_once():
     loop._pending_confirmations = {}
     loop.thinker = FakeThinker()
     loop.reminder_manager = SimpleNamespace(create=create)
-    loop.personality = None
     loop._last_tool_trace = {}
 
     def approve(payload):
@@ -261,7 +258,6 @@ async def test_native_calendar_plan_creates_event_exactly_once():
     loop.reminder_manager = None
     loop.calendar_manager = SimpleNamespace(create_event=create_event)
     loop.on_calendar_update = None
-    loop.personality = None
     loop._last_tool_trace = {}
 
     outcome = await loop.author_tool_turn(
@@ -297,7 +293,6 @@ async def test_native_notes_plan_appends_without_replacing(tmp_path):
     loop.calendar_manager = None
     loop.notes_path = notes_path
     loop.on_calendar_update = None
-    loop.personality = None
     loop._last_tool_trace = {}
 
     outcome = await loop.author_tool_turn("Dopisz do notatek: kup mleko.")
@@ -422,7 +417,6 @@ async def test_memory_page_read_cannot_escape_pages_directory(tmp_path):
         smart_home_executor=None,
         get_memory_db_path=lambda: None,
         get_time_context_fn=lambda: {},
-        get_personality=lambda: None,
     )
 
     result = await executor.execute(
@@ -453,7 +447,6 @@ async def test_memory_page_append_preserves_existing_content(tmp_path):
         smart_home_executor=None,
         get_memory_db_path=lambda: None,
         get_time_context_fn=lambda: {},
-        get_personality=lambda: None,
     )
 
     result = await executor.execute(
@@ -499,7 +492,6 @@ async def test_native_spotify_now_playing_is_grounded_once():
     loop.memory_engine = None
     loop.session_manager = None
     loop.on_calendar_update = None
-    loop.personality = None
     loop._last_tool_trace = {}
 
     outcome = await loop.author_tool_turn("Co teraz leci na Spotify?")
@@ -520,7 +512,6 @@ async def test_spotify_unavailable_returns_error_evidence():
         smart_home_executor=None,
         get_memory_db_path=lambda: None,
         get_time_context_fn=lambda: {},
-        get_personality=lambda: None,
     )
 
     result = await executor.execute(
@@ -545,7 +536,6 @@ async def test_notes_get_returns_file_content(tmp_path):
         smart_home_executor=None,
         get_memory_db_path=lambda: None,
         get_time_context_fn=lambda: {},
-        get_personality=lambda: None,
     )
 
     result = await executor.execute(ConversationToolRequest("notes_get"))
@@ -625,7 +615,6 @@ async def test_memory_search_executor(tmp_path):
         smart_home_executor=None,
         get_memory_db_path=lambda: db_file,
         get_time_context_fn=lambda: {},
-        get_personality=lambda: None,
     )
 
     result = await executor.execute(

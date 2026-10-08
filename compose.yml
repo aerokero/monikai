@@ -16,6 +16,9 @@ services:
 
     environment:
       MONIKAI_HOST: 0.0.0.0
+      # Voice turns carry no browser timezone, so "now" falls back to the
+      # container clock; keep it on the household's zone.
+      TZ: "${TZ:-Europe/Warsaw}"
       MONIKAI_PORT: 8000
       CUPS_SERVER: "/run/cups/cups.sock"
       CUPS_PRINTER: "Canon_TS3700"
@@ -27,7 +30,8 @@ services:
       SERVER_MIC_TTS_PROVIDER: "${SERVER_MIC_TTS_PROVIDER:-xtts}"
       SERVER_MIC_TTS_LANGUAGE: "${SERVER_MIC_TTS_LANGUAGE:-pl}"
       SERVER_MIC_TTS_TIMEOUT_SECONDS: "30"
-      SERVER_MIC_STT_TIMEOUT_SECONDS: "12"
+      # Hedged STT: a second model starts after 2 s; 6 s is the hard cap.
+      SERVER_MIC_STT_TIMEOUT_SECONDS: "6"
       SERVER_MIC_STT_MIN_CONFIDENCE: "${SERVER_MIC_STT_MIN_CONFIDENCE:-0.60}"
       SERVER_MIC_FOLLOWUP_TIMEOUT: "8.0"
       SERVER_MIC_VOSK_MODEL_PATH: "/app/data/vosk-model"
@@ -43,6 +47,10 @@ services:
       SERVER_MIC_MIN_ENERGY_THRESHOLD: "60"
       SERVER_MIC_MIN_SPEECH_DURATION_MS: "150"
       GEMINI_TRANSCRIBE_MODEL: "gemini-3.5-flash-lite"
+      # Voice uses its own fast model, independent of the chat picker.
+      ODYSSEUS_VOICE_MODEL: "${ODYSSEUS_VOICE_MODEL:-anthropic/claude-haiku-5.5}"
+      ODYSSEUS_VOICE_ENDPOINT_ID: "${ODYSSEUS_VOICE_ENDPOINT_ID:-8d2728e4}"
+      ODYSSEUS_VOICE_FALLBACK_MODEL: "${ODYSSEUS_VOICE_FALLBACK_MODEL:-anthropic/claude-haiku-4.5}"
       MONIKAI_CONVERSATION_MODEL: "gemini-3.5-flash-lite"
       MONIKAI_CONVERSATION_FALLBACK_MODEL: "gemini-3.6-flash"
       SESSION_SUMMARY_MODEL: "gemini-3.5-flash-lite"

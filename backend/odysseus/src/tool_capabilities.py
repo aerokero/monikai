@@ -112,6 +112,11 @@ _register(
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
 _register(
+    {"get_weather"},
+    ToolEffect.BROKERED_NETWORK_READ,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
     {"web_fetch"},
     ToolEffect.BROKERED_NETWORK_READ,
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,

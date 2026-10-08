@@ -394,7 +394,7 @@ export function initSidebarLayout(Storage, opts) {
 
   // ── Click outside sidebar / icon rail to close (mobile only) ──
   document.addEventListener('click', (e) => {
-    if (window.innerWidth >= 700) return; // desktop keeps sidebar open
+    if (window.innerWidth > 768) return; // desktop keeps sidebar open
     const sb = document.getElementById('sidebar');
     const rail = document.getElementById('icon-rail');
     // Ignore clicks on elements removed from DOM (e.g. session list re-render during folder toggle)
@@ -427,17 +427,11 @@ export function initSidebarLayout(Storage, opts) {
   });
 
   // ── Mobile: close sidebar/rail when a tool button is tapped ──
-  // The user expects the sidebar to get out of the way the moment a tool
-  // window opens — otherwise the modal lands behind the sidebar on phones.
-  // We remember whether the sidebar was open at the moment the tool was
-  // tapped so we can re-open it when the tool's modal is dismissed; that
-  // way clicking around the app doesn't leave the sidebar permanently
-  // shut.
-  let _sidebarWasOpenBeforeTool = false;
-  let _railWasOpenBeforeTool = false;
+  // Mobile is one view at a time (js/mobileWindows.js): the tool replaces the
+  // current view and the menu gets out of the way; ☰ brings it back.
   document.addEventListener('click', (e) => {
-    if (window.innerWidth >= 700) return;
-    const btn = e.target.closest('[id^="tool-"], [id^="rail-"]');
+    if (window.innerWidth > 768) return;
+    const btn = e.target.closest('[id^="tool-"], [id^="rail-"], [id^="user-bar-"]');
     if (!btn) return;
     setTimeout(() => {
       const sb = document.getElementById('sidebar');
@@ -445,12 +439,10 @@ export function initSidebarLayout(Storage, opts) {
       const backdrop = document.getElementById('sidebar-backdrop');
       let changed = false;
       if (sb && !sb.classList.contains('hidden')) {
-        _sidebarWasOpenBeforeTool = true;
         sb.classList.add('hidden');
         changed = true;
       }
       if (rail && rail.classList.contains('mobile-mini')) {
-        _railWasOpenBeforeTool = true;
         rail.classList.remove('mobile-mini');
         rail.style.cssText = '';
         changed = true;
@@ -461,68 +453,6 @@ export function initSidebarLayout(Storage, opts) {
       }
     }, 0);
   });
-
-  // When a tool is dismissed by swiping it down (ui.js fires `modal-dismissed`),
-  // don't bounce the sidebar back open — the swipe should just dismiss the tool.
-  // Button-close still restores the prior sidebar state (no event fired there).
-  window.addEventListener('modal-dismissed', () => {
-    _sidebarWasOpenBeforeTool = false;
-    _railWasOpenBeforeTool = false;
-  });
-
-  // ── Mobile: when a tool modal closes, restore the sidebar/rail to
-  // whatever state it was in before the tool was opened. ──
-  // We watch every .modal for the .hidden class going on, and if our
-  // remembered "sidebar-was-open" flag is set, undo the auto-close.
-  if (window.innerWidth < 700) {
-    const _restoreSidebar = () => {
-      const sb = document.getElementById('sidebar');
-      const rail = document.getElementById('icon-rail');
-      const backdrop = document.getElementById('sidebar-backdrop');
-      // Skip if any modal is still visible (.modal without .hidden) — we only
-      // restore once the user is back to bare chat. A tool swiped DOWN to a
-      // dock chip is minimized (display:none via .modal-minimized), not closed
-      // — it's still "around", so don't bounce the sidebar open behind it. Only
-      // a full close (no minimized modal, no dock chips) should restore.
-      const anyOpen = [...document.querySelectorAll('.modal')]
-        .some(m => (!m.classList.contains('hidden') && getComputedStyle(m).display !== 'none')
-                   || m.classList.contains('modal-minimized'));
-      const anyDocked = document.querySelectorAll('.minimized-dock-chip').length > 0;
-      if (anyOpen || anyDocked) {
-        // A tool is still minimized/docked. The user has left the "launched
-        // from the sidebar" context — drop the restore intent so that later
-        // FULLY closing the tool (e.g. dragging its chip to the trash) doesn't
-        // bounce the sidebar open. (The modal-dismissed listener that normally
-        // clears these gets blocked by modalManager's stopImmediatePropagation.)
-        _sidebarWasOpenBeforeTool = false;
-        _railWasOpenBeforeTool = false;
-        return;
-      }
-      if (_sidebarWasOpenBeforeTool && sb && sb.classList.contains('hidden')) {
-        sb.classList.remove('hidden');
-        if (backdrop) backdrop.classList.add('visible');
-      }
-      if (_railWasOpenBeforeTool && rail && !rail.classList.contains('mobile-mini')) {
-        rail.classList.add('mobile-mini');
-      }
-      _sidebarWasOpenBeforeTool = false;
-      _railWasOpenBeforeTool = false;
-      // Always re-sync: the hamburger's inline display/body classes can be stale
-      // after a tool closed (the old guard ran after the flags were cleared).
-      syncRailSide();
-    };
-    const _modalObs = new MutationObserver((muts) => {
-      let triggered = false;
-      for (const m of muts) {
-        if (m.type !== 'attributes' || m.attributeName !== 'class') continue;
-        const t = m.target;
-        if (!(t instanceof HTMLElement) || !t.classList) continue;
-        if (t.classList.contains('modal')) { triggered = true; break; }
-      }
-      if (triggered) setTimeout(_restoreSidebar, 50);
-    });
-    _modalObs.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] });
-  }
 
   // (Mobile swipe-to-open-sidebar is wired at MODULE scope — see
   // _initChatSwipeToOpenSidebar() at the bottom of this file — so it attaches

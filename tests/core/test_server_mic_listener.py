@@ -649,6 +649,7 @@ async def test_prompt_echo_suppression_handles_neutral_fillers():
         conversation_handler=mock_handler,
         require_wake_word=True,
     )
+    service._synthesize_and_play = AsyncMock()  # never touch the real speaker
     fake_pcm = _generate_pcm_frame(440.0, 500, amplitude=2000.0)
 
     # Establish an open conversation session within the prompt window
@@ -685,3 +686,240 @@ async def test_voice_light_feedback_controller_brightness_scaling():
 
     await controller.set_state("idle")
 
+
+
+def test_speech_chunker_starts_early_and_keeps_sentences_whole():
+    from backend.conversation.speech_text import SpeechChunker
+
+    chunker = SpeechChunker(max_chars=0)
+    out = []
+    for delta in ["Jutro w Warszawie będzie ", "słonecznie, około dwudziestu", " stopni. Weź np. ", "kurtkę, bo wieje", ". Miłego dnia!"]:
+        out += chunker.feed(delta)
+    out += chunker.flush()
+    # Short sentences stay whole; the abbreviation dot ("np. kurtkę") does
+    # not end a sentence.
+    assert out == [
+        "Jutro w Warszawie będzie słonecznie, około dwudziestu stopni.",
+        "Weź np. kurtkę, bo wieje.",
+        "Miłego dnia!",
+    ]
+
+    # Only a long first sentence is cut at a clause, to start speaking early.
+    chunker = SpeechChunker()
+    long_start = "Według prognozy na jutro w Krakowie będzie pochmurno, "
+    assert chunker.feed(long_start + "z przelotnymi opadami") == [long_start.strip()]
+
+
+def test_speech_chunker_stops_at_spoken_limit():
+    from backend.conversation.speech_text import SpeechChunker
+
+    chunker = SpeechChunker(max_chars=20)
+    out = chunker.feed("Pierwsze zdanie jest tu. Drugie zdanie też. Trzecie. ") + chunker.flush()
+    assert out == ["Pierwsze zdanie jest tu."]
+
+
+@pytest.mark.asyncio
+async def test_streaming_turn_speaks_while_agent_streams():
+    spoken = []
+    first_spoken_before_end = asyncio.Event()
+
+    async def handler(prompt, on_event):
+        on_event({"text": "Już sprawdzam"})
+        on_event({"tool": "home_assistant_control"})
+        on_event({"text": "Światło w kuchni jest włączone. "})
+        await asyncio.sleep(0.05)
+        assert spoken, "speech must start before the turn finishes"
+        first_spoken_before_end.set()
+        # The final answer appends a spoken approval question.
+        return "Już sprawdzamŚwiatło w kuchni jest włączone. Czy mam je wyłączyć?"
+
+    service = ServerMicListenerService(conversation_stream_handler=handler)
+    service._render_speech = AsyncMock(side_effect=lambda text: (text.encode(), 24000))
+    service.play_audio_locally = AsyncMock(side_effect=lambda pcm, **kw: spoken.append(pcm.decode().rstrip("\0")))
+
+    reply = await service._run_streaming_turn("Czy światło w kuchni jest włączone?")
+
+    assert first_spoken_before_end.is_set()
+    assert reply.endswith("Czy mam je wyłączyć?")
+    assert spoken == ["Już sprawdzam.", "Światło w kuchni jest włączone.", "Czy mam je wyłączyć?"]
+
+
+@pytest.mark.asyncio
+async def test_streaming_turn_never_speaks_silence_marker():
+    async def handler(prompt, on_event):
+        on_event({"text": "[VOICE_SILENCE]"})
+        return ""  # the gateway maps the marker to an empty answer
+
+    service = ServerMicListenerService(conversation_stream_handler=handler)
+    service._render_speech = AsyncMock()
+    service.play_audio_locally = AsyncMock()
+
+    assert await service._run_streaming_turn("eee mmm") == ""
+    service._render_speech.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_stt_hedges_to_next_model_when_first_hangs(monkeypatch):
+    monkeypatch.setenv("SERVER_MIC_STT_HEDGE_SECONDS", "0.05")
+    monkeypatch.setenv("GEMINI_TRANSCRIBE_MODEL", "slow-model")
+    service = ServerMicListenerService()
+
+    async def generate_content(model, contents):
+        if model == "slow-model":
+            await asyncio.sleep(30)
+        return MagicMock(text='{"text": "Zapal światło", "intelligible": true, "confidence": 0.95}')
+
+    service._genai_client = MagicMock()
+    service._genai_client.aio.models.generate_content = generate_content
+
+    started = time.perf_counter()
+    assert await service.transcribe_speech(_raw_pcm_to_wav(b"\0\0" * 1600)) == "Zapal światło"
+    assert time.perf_counter() - started < 5.0  # far below the hung model
+
+
+def test_speech_chunker_cuts_long_sentences_at_clauses():
+    from backend.conversation.speech_text import SpeechChunker
+
+    chunker = SpeechChunker(long_piece=60)
+    sentence = (
+        "Fotosynteza to proces, w którym rośliny wykorzystują światło, "
+        "aby z dwutlenku węgla i wody wytworzyć glukozę i tlen."
+    )
+    # The whole sentence (and the next one's start) can arrive in one delta.
+    out = chunker.feed("Jasne. ") + chunker.feed(sentence + " Ko") + chunker.feed("niec.") + chunker.flush()
+    assert out.pop() == "Koniec."
+    assert out[0] == "Jasne."
+    assert all(len(piece) <= 60 for piece in out[1:-1])
+    assert " ".join(out[1:]) == sentence
+
+
+@pytest.mark.asyncio
+async def test_streaming_turn_shows_thinking_during_long_tool_gap():
+    async def handler(prompt, on_event):
+        on_event({"text": "Sprawdzę prognozę."})
+        on_event({"tool": "web_search"})
+        await asyncio.sleep(1.3)  # the tool runs after the spoken preface
+        return "Sprawdzę prognozę. Jutro będzie słonecznie."
+
+    service = ServerMicListenerService(conversation_stream_handler=handler, voice_light_feedback=MagicMock())
+    service._render_speech = AsyncMock(side_effect=lambda text: (text.encode(), 24000))
+    service.play_audio_locally = AsyncMock()
+    states = []
+    service._queue_voice_light_state = lambda state: states.append(state)
+
+    await service._run_streaming_turn("Jaka będzie jutro pogoda?")
+
+    assert states == ["speaking", "thinking", "speaking"]
+
+
+def _duplex_service(handler):
+    from backend.audio.barge_in import AudioOutput, BargeInMonitor
+
+    service = ServerMicListenerService(conversation_stream_handler=handler)
+    service._output = AudioOutput(rate=16000, channels=1)
+    service._barge_monitor = BargeInMonitor()
+    service._speech_detector = MagicMock()
+    service._speech_detector.feed.return_value = 0.9
+    service._render_speech = AsyncMock(side_effect=lambda text: (text.encode(), 24000))
+    return service
+
+
+@pytest.mark.asyncio
+async def test_user_talking_over_reply_cuts_it_and_becomes_the_next_turn():
+    calls = []
+
+    async def handler(prompt, on_event, **kw):
+        calls.append((prompt, kw))
+        on_event({"text": "Jutro będzie słonecznie. "})
+        on_event({"text": "Wiatr będzie słaby, a wieczorem możliwy deszcz. "})
+        return "Jutro będzie słonecznie. Wiatr będzie słaby, a wieczorem możliwy deszcz."
+
+    service = _duplex_service(handler)
+    service.transcribe_speech = AsyncMock(return_value="A w Krakowie?")
+    played = []
+
+    async def play(pcm, sample_rate, capture_safe=False):
+        played.append(pcm.decode().rstrip("\0"))
+        if len(played) == 1:
+            # The user starts talking during the first sentence.
+            service._barge_in_frame(b"\0" * 960)  # monitor already capturing
+            await service._resolve_barge_in(b"\0" * 9600)
+
+    service._play_pcm = play
+    service._barge_monitor.state = "capturing"
+    await service._run_streaming_turn("Jaka będzie pogoda?")
+
+    assert played == ["Jutro będzie słonecznie."]
+    assert service._barge_in_transcript == "A w Krakowie?"
+    assert service._barge_in_segment
+
+    # The next turn tells the model what was actually heard.
+    service._barge_in_segment = None
+    await service._run_streaming_turn("A w Krakowie?")
+    assert calls[1][1] == {"interrupted_reply": "Jutro będzie słonecznie."}
+
+
+@pytest.mark.asyncio
+async def test_own_echo_or_noise_resumes_the_reply():
+    service = _duplex_service(None)
+    service._spoken_pieces = ["Jutro w Warszawie będzie słonecznie."]
+    service._output.paused = True
+    service._output.gain = 0.3
+
+    service.transcribe_speech = AsyncMock(return_value="w Warszawie będzie słonecznie")
+    await service._resolve_barge_in(b"\0" * 9600)
+    assert not service._output.paused and service._output.gain == 1.0
+    assert service._barge_in_segment is None
+
+    service._output.paused = True
+    service.transcribe_speech = AsyncMock(return_value="")
+    await service._resolve_barge_in(b"\0" * 9600)
+    assert not service._output.paused and service._barge_in_segment is None
+
+
+@pytest.mark.asyncio
+async def test_voice_light_keeps_bulb_off_when_a_tool_switched_it_off():
+    from backend.agents.voice_light_feedback import VoiceLightFeedbackController
+
+    state = {"state": "on", "attributes": {"brightness": 200}}
+    ha = AsyncMock()
+    ha.get_entity_raw_state.side_effect = lambda entity: dict(state)
+    controller = VoiceLightFeedbackController(ha_agent=ha)
+
+    await controller.set_state("thinking")
+    await asyncio.sleep(0.05)
+    state["state"] = "off"  # "turn off all lights" ran
+    ha.set_light_state.reset_mock()
+
+    await controller.set_state("speaking")
+    await asyncio.sleep(0.05)
+    ha.set_light_state.assert_not_awaited()
+
+    await controller.set_state("idle")
+    restored = ha.restore_entity_state.await_args.args[1]
+    assert restored["state"] == "off"
+
+
+@pytest.mark.asyncio
+async def test_talking_on_before_monika_speaks_marks_reply_as_unheard():
+    calls = []
+
+    async def handler(prompt, on_event, **kw):
+        calls.append(kw)
+        return ""
+
+    service = _duplex_service(handler)
+    service._interrupted_reply = ""  # interrupted before the first word
+    await service._run_streaming_turn("A na razie nie.")
+    assert calls == [{"interrupted_reply": ""}]
+
+
+def test_stt_prompt_lists_home_device_names():
+    ha = MagicMock()
+    ha.entities = {
+        "light.lampa_varmblixt": {"attributes": {"friendly_name": "Lampa VARMBLIXT"}},
+        "switch.x": {"attributes": {}},
+    }
+    service = ServerMicListenerService(home_assistant_agent=ha)
+    assert "Lampa VARMBLIXT" in service._stt_vocabulary_hint()
+    assert ServerMicListenerService()._stt_vocabulary_hint() == ""

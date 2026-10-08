@@ -2882,6 +2882,22 @@ export function addMessage(role, content, modelName, metadata) {
       let firstMsgAi = null;
       let lastMsgAi = null;
 
+      // Agent turns are rebuilt from round_texts/tool_events, so the saved
+      // reasoning (metadata.thinking, one string for the whole turn) has to be
+      // added here or it vanishes once the live stream is replaced.
+      if (metadata.thinking) {
+        const thinkWrap = document.createElement('div');
+        thinkWrap.className = 'msg msg-ai msg-continuation';
+        const thinkBody = document.createElement('div');
+        thinkBody.className = 'body';
+        thinkBody.innerHTML = markdownModule.processWithThinking(
+          '<think' + (metadata.thinking_time ? ` time="${metadata.thinking_time}"` : '') + '>'
+          + metadata.thinking + '</think>'
+        );
+        thinkWrap.appendChild(thinkBody);
+        box.appendChild(thinkWrap);
+      }
+
       const toolsByRound = {};
       for (const ev of toolEvents) {
         const r = ev.round ?? 1;

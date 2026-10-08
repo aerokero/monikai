@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import asdict
 
 from backend.core.routers.frontend_router import is_active_frontend_sid
 
@@ -10,7 +9,6 @@ def register_system_frontend_handlers(
     sio,
     *,
     get_audio_loop,
-    get_personality_system,
     get_spotify_manager,
     get_settings,
     save_settings,
@@ -27,15 +25,6 @@ def register_system_frontend_handlers(
                 return
         except Exception:
             pass
-
-        if get_personality_system():
-            data = asdict(get_personality_system().state)
-            aff = max(0.0, min(100.0, float(data.get("affection", 0))))
-            score = aff / 10.0
-            full = int(score)
-            hearts = "❤️" * full + "🤍" * (10 - full)
-            data["affection_hearts"] = f"{hearts} ({score:.1f}/10)"
-            await sio.emit("personality_status", data, room=sid)
 
     @sio.event
     async def video_frame(sid, data):

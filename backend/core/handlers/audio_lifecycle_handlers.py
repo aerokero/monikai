@@ -7,7 +7,6 @@ import os
 import re
 from datetime import datetime
 
-from backend.services.personality_notifications import to_frontend_personality_event
 from backend.core.routers.frontend_router import get_active_frontend_sid
 
 
@@ -33,7 +32,6 @@ def register_audio_lifecycle_handlers(
     get_calendar_manager,
     get_reminder_manager,
     get_spotify_manager,
-    get_personality_system,
     get_hue_agent,
     get_home_assistant_agent,
     get_minecraft_bot_manager,
@@ -189,12 +187,6 @@ def register_audio_lifecycle_handlers(
             except Exception as e:
                 print(f"[SERVER] Failed to emit calendar_data: {e}")
 
-        def on_personality_update(data):
-            try:
-                schedule_emit_to_frontend("personality_status", data)
-            except Exception as e:
-                print(f"[SERVER] Failed to emit personality_status: {e}")
-
         def on_internal_thought(thought):
             print(f"[SYSTEM NOTIFICATION] Internal Thought: {thought}")
             schedule_emit_to_frontend("internal_thought", {"thought": thought})
@@ -227,14 +219,6 @@ def register_audio_lifecycle_handlers(
                 schedule_emit_to_frontend("study_page", payload)
             except Exception as e:
                 print(f"[SERVER] Failed to emit study_page: {e}")
-
-        def on_personality_event(payload):
-            try:
-                raw = payload if isinstance(payload, dict) else {"type": "unknown", "raw": payload}
-                event = to_frontend_personality_event(raw)
-                schedule_emit_to_frontend("personality_event", event)
-            except Exception as e:
-                print(f"[SERVER] Failed to emit personality_event: {e}")
 
         try:
             video_mode = "none"
@@ -270,8 +254,6 @@ def register_audio_lifecycle_handlers(
                 on_reminder_fired=on_reminder_fired,
                 on_reminders_updated=on_reminders_updated,
                 on_calendar_update=on_calendar_update,
-                on_personality_update=on_personality_update,
-                on_personality_event=on_personality_event,
                 on_internal_thought=on_internal_thought,
                 on_study_fields=on_study_fields,
                 on_study_notes=on_study_notes,
@@ -282,7 +264,6 @@ def register_audio_lifecycle_handlers(
                 calendar_manager=get_calendar_manager(),
                 reminder_manager=get_reminder_manager(),
                 spotify_manager=get_spotify_manager(),
-                personality=get_personality_system(),
                 audio_source=audio_source,
                 screen_source=screen_source,
                 play_audio_locally=play_audio_locally,

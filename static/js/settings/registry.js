@@ -47,6 +47,7 @@ export const SETTINGS_PANELS = Object.freeze([
   definePanel({
     id: 'services',
     label: 'Add Models',
+    description: 'Local servers and API providers',
     group: 'models',
     controller: 'admin',
     keywords: ['models', 'provider', 'endpoint'],
@@ -54,6 +55,7 @@ export const SETTINGS_PANELS = Object.freeze([
   definePanel({
     id: 'added-models',
     label: 'Added Models',
+    description: 'Manage connected endpoints and models',
     group: 'models',
     controller: 'admin',
     keywords: ['models', 'configured', 'provider', 'endpoint'],
@@ -61,12 +63,14 @@ export const SETTINGS_PANELS = Object.freeze([
   definePanel({
     id: 'ai',
     label: 'AI Defaults',
+    description: 'Chat, utility, vision and voice models',
     group: 'models',
     keywords: ['ai', 'defaults', 'model', 'vision', 'image', 'tts', 'stt'],
   }),
   definePanel({
     id: 'search',
     label: 'Search',
+    description: 'Web search and Deep Research',
     group: 'models',
     keywords: ['search', 'research', 'provider'],
   }),
@@ -74,6 +78,7 @@ export const SETTINGS_PANELS = Object.freeze([
   definePanel({
     id: 'integrations',
     label: 'Integrations',
+    description: 'Connected accounts and services',
     group: 'communications',
     controller: 'admin',
     keywords: ['integrations', 'connections', 'services'],
@@ -81,12 +86,14 @@ export const SETTINGS_PANELS = Object.freeze([
   definePanel({
     id: 'email',
     label: 'Email',
+    description: 'Mail accounts and sending',
     group: 'communications',
     keywords: ['email', 'imap', 'smtp', 'oauth'],
   }),
   definePanel({
     id: 'reminders',
     label: 'Reminders',
+    description: 'Notifications and alerts',
     group: 'communications',
     keywords: ['reminders', 'notifications', 'alerts'],
   }),
@@ -94,12 +101,14 @@ export const SETTINGS_PANELS = Object.freeze([
   definePanel({
     id: 'appearance',
     label: 'Appearance',
+    description: 'Theme, layout and chat bar',
     group: 'experience',
     keywords: ['appearance', 'theme', 'font', 'density', 'peek'],
   }),
   definePanel({
     id: 'shortcuts',
     label: 'Shortcuts',
+    description: 'Keyboard shortcuts',
     group: 'experience',
     keywords: ['shortcuts', 'keyboard', 'hotkeys'],
   }),
@@ -107,6 +116,7 @@ export const SETTINGS_PANELS = Object.freeze([
   definePanel({
     id: 'account',
     label: 'Account',
+    description: 'Profile, password and sign-out',
     group: 'account',
     keywords: ['account', 'password', 'logout'],
   }),
@@ -114,6 +124,7 @@ export const SETTINGS_PANELS = Object.freeze([
   definePanel({
     id: 'tools',
     label: 'Agent Tools',
+    description: 'Tools the agent may use',
     group: 'administration',
     controller: 'admin',
     adminOnly: true,
@@ -122,6 +133,7 @@ export const SETTINGS_PANELS = Object.freeze([
   definePanel({
     id: 'users',
     label: 'Users',
+    description: 'Accounts and permissions',
     group: 'administration',
     controller: 'admin',
     adminOnly: true,
@@ -130,6 +142,7 @@ export const SETTINGS_PANELS = Object.freeze([
   definePanel({
     id: 'system',
     label: 'System',
+    description: 'Logs, backup and maintenance',
     group: 'administration',
     controller: 'admin',
     adminOnly: true,
@@ -168,6 +181,7 @@ export function getSettingsPanelSearchText(panelOrId) {
 
   return [
     panel.label,
+    panel.description || '',
     ...(panel.keywords || []),
   ].join(' ').toLowerCase();
 }

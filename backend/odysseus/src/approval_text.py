@@ -31,6 +31,8 @@ MESSAGES = {
         "opt.session_desc": "Run it and do not ask again at this gate in this chat.",
         "opt.deny": "Reject",
         "opt.deny_desc": "Do not run this action.",
+        "voice.done": "Done.",
+        "voice.error": "Sorry, something went wrong.",
     },
     "pl": {
         "ask": "{summary}? Tak czy nie?",
@@ -56,6 +58,8 @@ MESSAGES = {
         "opt.session_desc": "Wykonaj i nie pytaj ponownie o to w tej rozmowie.",
         "opt.deny": "Odrzuć",
         "opt.deny_desc": "Nie wykonuj tej akcji.",
+        "voice.done": "Gotowe.",
+        "voice.error": "Przepraszam, coś poszło nie tak.",
     },
 }
 

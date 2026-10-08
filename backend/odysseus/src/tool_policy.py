@@ -16,7 +16,7 @@ GUIDE_ONLY_DIRECTIVE = (
     "output they will produce locally."
 )
 
-WEB_TOOL_NAMES = frozenset({"web_search", "web_fetch"})
+WEB_TOOL_NAMES = frozenset({"web_search", "web_fetch", "get_weather"})
 
 
 def tool_toggle_enabled(value: object) -> bool:
@@ -118,6 +118,7 @@ _COMMON_TOOL_NAMES = {
     "vault_unlock",
     "web_fetch",
     "web_search",
+    "get_weather",
     "write_file",
 }
 

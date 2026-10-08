@@ -26,7 +26,6 @@ class CoreConversationToolExecutor:
         smart_home_executor,
         get_memory_db_path: Callable[[], object | None],
         get_time_context_fn: Callable[[], dict],
-        get_personality: Callable[[], object | None],
         on_calendar_update: Callable[[list[dict]], object] | None = None,
     ):
         self._reminders = reminder_manager
@@ -38,7 +37,6 @@ class CoreConversationToolExecutor:
         self._smart_home = smart_home_executor
         self._get_memory_db_path = get_memory_db_path
         self._get_time_context = get_time_context_fn
-        self._get_personality = get_personality
         self._on_calendar_update = on_calendar_update
 
     async def execute(
@@ -90,11 +88,14 @@ class CoreConversationToolExecutor:
                     else "Reminder not found."
                 )
             elif request.name == "get_weather":
-                personality = self._get_personality()
-                if personality is None:
-                    raise RuntimeError("Weather system not active.")
-                await asyncio.to_thread(personality.update_weather, force=True)
-                rendered = f"Current weather: {personality.state.weather}"
+                from src.agent_tools.web_tools import WeatherTool
+
+                weather = await WeatherTool().execute(
+                    json.dumps({"city": request.arguments.get("city") or ""}), {}
+                )
+                if weather.get("error"):
+                    raise RuntimeError(weather["error"])
+                rendered = weather["output"]
             elif request.name == "list_events":
                 if self._calendar is None:
                     raise RuntimeError("Calendar manager not available.")

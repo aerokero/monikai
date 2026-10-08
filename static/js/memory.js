@@ -7,6 +7,7 @@ import spinnerModule from './spinner.js';
 import { makeWindowDraggable } from './windowDrag.js';
 import { snapModalToZone } from './tileManager.js';
 import { topPortalZ } from './toolWindowZOrder.js';
+import { bindMenuDismiss } from './escMenuStack.js';
 
 var escapeHtml = uiModule.esc;
 
@@ -830,17 +831,17 @@ export function renderMemoryList() {
       const pinItem = document.createElement('div');
       pinItem.className = 'dropdown-item-compact';
       pinItem.innerHTML = `<span class="dropdown-icon">${_pinSvg}</span><span>${memory.pinned ? 'Unpin' : 'Pin'}</span>`;
-      pinItem.addEventListener('click', () => { dropdown.style.display = 'none'; togglePin(memory.id, !memory.pinned); });
+      pinItem.addEventListener('click', () => { dropdown.remove(); togglePin(memory.id, !memory.pinned); });
 
       const editItem = document.createElement('div');
       editItem.className = 'dropdown-item-compact';
       editItem.textContent = '✎ Edit';
-      editItem.addEventListener('click', () => { dropdown.style.display = 'none'; startInlineEdit(item, memory); });
+      editItem.addEventListener('click', () => { dropdown.remove(); startInlineEdit(item, memory); });
 
       const deleteItem = document.createElement('div');
       deleteItem.className = 'dropdown-item-compact memory-dropdown-delete';
       deleteItem.textContent = '✕ Delete';
-      deleteItem.addEventListener('click', () => { dropdown.style.display = 'none'; deleteMemory(memory.id); });
+      deleteItem.addEventListener('click', () => { dropdown.remove(); deleteMemory(memory.id); });
 
       // Select — enters bulk-select mode and pre-selects this memory. Same
       // pattern as the email/documents/skills Select item.
@@ -888,6 +889,10 @@ export function renderMemoryList() {
         dropdown.style.zIndex = String(topPortalZ());
         dropdown.style.display = 'block';
         document.body.appendChild(dropdown);
+        // Escape closes this menu first (not the whole Brain window). Every
+        // existing .remove() call routes through the stack-aware close.
+        const _close = bindMenuDismiss(dropdown, () => Element.prototype.remove.call(dropdown), (ev) => !dropdown.contains(ev.target) && ev.target !== menuBtn);
+        dropdown.remove = _close;
         // Keep on-screen (mobile): flip above the button if it overflows the
         // bottom, clamp the left edge, cap height as a last resort.
         const dr = dropdown.getBoundingClientRect();

@@ -535,7 +535,7 @@ function _hwfitShowError(list, host, detail) {
   div.innerHTML =
     `<div style="color:var(--red);font-weight:600;">Couldn't scan ${where}</div>`
     + (detail ? `<div style="opacity:0.6;font-size:11px;max-width:340px;line-height:1.4;">${esc(detail)}</div>` : '')
-    + `<button type="button" class="hwfit-gpu-btn" id="hwfit-retry" style="margin-top:2px;height:26px;">↻ Retry</button>`;
+    + `<button type="button" class="hwfit-gpu-btn" id="hwfit-retry">↻ Retry</button>`;
   list.innerHTML = '';
   list.appendChild(div);
   const rb = div.querySelector('#hwfit-retry');
@@ -1399,7 +1399,7 @@ export function _hwfitRenderList(el, models) {
     const modeLabel = _modeLabel(m);
     const vramLabel = m.required_gb ? m.required_gb.toFixed(1) + 'G' : '?';
     const moeBadge = m.is_moe ? '<span class="hwfit-badge hwfit-moe">MoE</span>' : '';
-    const imgBadge = m.is_image_gen ? '<span class="hwfit-badge" style="background:color-mix(in srgb, var(--red) 20%, transparent);color:var(--red);font-size:8px;padding:1px 4px;border-radius:3px;margin-left:4px;">IMG</span>' : '';
+    const imgBadge = m.is_image_gen ? '<span class="hwfit-badge" style="background:color-mix(in srgb, var(--red) 20%, transparent);color:var(--red)">IMG</span>' : '';
     const dlDot = (_cachedModelIds && (_cachedModelIds.has(m.name) || [..._cachedModelIds].some(id => id === m.name?.split('/').pop()))) ? '<span class="hwfit-dl-dot" title="Downloaded">\u25CF</span>' : '';
     html += `<div class="hwfit-row" data-model="${esc(m.name)}">`;
     html += `<span class="hwfit-col hwfit-fit" style="color:${fitColor}">${esc(fitLabel)}</span>`;

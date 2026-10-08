@@ -14,12 +14,10 @@ class DailyBriefingRuntime:
         settings: dict,
         *,
         get_audio_loop,
-        get_personality_system,
         get_v2_runtime=None,
     ):
         self._settings = settings
         self._get_audio_loop = get_audio_loop
-        self._get_personality_system = get_personality_system
         self._get_v2_runtime = get_v2_runtime or _default_v2_runtime
         self._cache = {"ts": 0.0, "lang": "pl", "payload": None}
 
@@ -73,7 +71,6 @@ class DailyBriefingRuntime:
         weather_details = {}
 
         audio_loop = self._get_audio_loop()
-        personality_system = self._get_personality_system()
 
         if audio_loop and getattr(audio_loop, "memory_engine", None):
             try:
@@ -89,13 +86,6 @@ class DailyBriefingRuntime:
                 topic_hint = audio_loop.proactivity.pick_topic_hint() or ""
             except Exception:
                 topic_hint = ""
-
-        if personality_system:
-            try:
-                personality_system.update_weather(force=False)
-                weather_summary = str(getattr(personality_system.state, "weather", "") or "")
-            except Exception:
-                weather_summary = ""
 
         try:
             weather_details = fetch_weather_details(language=language, days=7)

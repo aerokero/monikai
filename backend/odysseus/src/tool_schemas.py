@@ -35,6 +35,17 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "get_weather",
+            "description": "Current weather plus today/tomorrow hourly and daily forecast (temperature, precipitation, wind) from Open-Meteo. Use for every weather/forecast question; one fast call, no web search needed.",
+            "parameters": {
+                "type": "object",
+                "properties": {"city": {"type": "string", "description": "City name; omit for the user's home city"}}
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_print_status",
             "description": "Read the configured CUPS printer status and pending print jobs without changing anything.",
             "parameters": {"type": "object", "properties": {}}

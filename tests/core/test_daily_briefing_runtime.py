@@ -35,7 +35,6 @@ def _runtime(settings: dict, v2=None) -> DailyBriefingRuntime:
     runtime = DailyBriefingRuntime(
         settings,
         get_audio_loop=lambda: None,
-        get_personality_system=lambda: None,
         get_v2_runtime=lambda: v2,
     )
     runtime._collect_context = lambda language="pl": ([], "", "Clear, 20C", {"summary": "Clear, 20C", "items": []})

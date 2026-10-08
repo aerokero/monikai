@@ -136,23 +136,6 @@ spotify_recently_played_tool = {
 }
 
 # ---------------------------------------------------------------------------
-# Personality
-# ---------------------------------------------------------------------------
-update_personality_tool = {
-    "name": "update_personality",
-    "description": "Updates your internal emotional state and affection level. Use this when the user does something that affects your mood or bond (e.g. compliments, insults, spending time).",
-    "parameters": {
-        "type": "OBJECT",
-        "properties": {
-            "affection_delta": {"type": "NUMBER", "description": "Change in affection (e.g. +0.5, -1.0)."},
-            "mood": {"type": "STRING", "description": "New mood (e.g. 'happy', 'reflective')."},
-            "energy": {"type": "NUMBER", "description": "New energy level (0.0-1.0)."},
-        },
-        "required": [],
-    },
-}
-
-# ---------------------------------------------------------------------------
 # Memory (work + long-term)
 # ---------------------------------------------------------------------------
 get_work_memory_tool = {
@@ -548,7 +531,7 @@ get_random_greeting_tool = {"name": "get_random_greeting", "description": "Gets 
 get_random_farewell_tool = {"name": "get_random_farewell", "description": "Gets a random farewell from Monika's personality database.", "parameters": {"type": "OBJECT", "properties": {}}}
 get_random_topic_tool = {"name": "get_random_topic", "description": "Gets a random conversation topic from Monika's knowledge.", "parameters": {"type": "OBJECT", "properties": {}}}
 
-get_weather_tool = {"name": "get_weather", "description": "Gets the current weather information for the user's location.", "parameters": {"type": "OBJECT", "properties": {}}}
+get_weather_tool = {"name": "get_weather", "description": "Current weather and today/tomorrow forecast (Open-Meteo). Omit city for the home city.", "parameters": {"type": "OBJECT", "properties": {"city": {"type": "STRING"}}}}
 
 set_scene_tool = {
     "name": "set_scene",
@@ -638,7 +621,7 @@ _RESERVED_TOOL_NAMES = {
     "create_reminder", "list_reminders", "cancel_reminder",
     "spotify_get_auth_url", "spotify_get_status", "spotify_get_now_playing",
     "spotify_list_playlists", "spotify_recently_played",
-    "get_work_memory", "update_personality", "update_work_memory",
+    "get_work_memory", "update_work_memory",
     "commit_work_memory", "clear_work_memory",
     "get_weather", "request_program_shutdown",
     "set_monika_appearance",
@@ -684,7 +667,6 @@ tools = [
             spotify_list_playlists_tool,
             spotify_recently_played_tool,
             get_work_memory_tool,
-            update_personality_tool,
             update_work_memory_tool,
             commit_work_memory_tool,
             clear_work_memory_tool,

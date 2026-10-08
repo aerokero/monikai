@@ -131,6 +131,13 @@ def init_and_register_odysseus_backend(app: FastAPI):
         app.state.preset_manager = preset_manager
         app.state.chat_handler = chat_handler
 
+        # The agent's manage_memory tool reads these module globals; without
+        # them every "remember X" fails with "Memory manager not available".
+        from src.ai_interaction import set_memory_manager, set_session_manager
+
+        set_memory_manager(memory_manager, memory_vector)
+        set_session_manager(session_manager)
+
         # 2. Task scheduler, Webhook & MCP Managers
         from src.task_scheduler import TaskScheduler
         from src.event_bus import set_task_scheduler

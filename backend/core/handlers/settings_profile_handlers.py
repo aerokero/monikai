@@ -10,7 +10,6 @@ def register_settings_profile_handlers(
     get_settings_fn,
     save_settings,
     get_audio_loop,
-    get_personality_system,
     get_calendar_manager,
     get_authenticator,
     emit_to_frontend,
@@ -143,37 +142,6 @@ def register_settings_profile_handlers(
         if audio_loop:
             audio_loop.update_permissions(settings["tool_permissions"])
         await emit_to_frontend("tool_permissions", settings["tool_permissions"])
-
-    @sio.event
-    async def report_visual_state(sid, data):
-        personality_system = get_personality_system()
-        audio_loop = get_audio_loop()
-        if personality_system:
-            loc = data.get("location")
-            outfit = data.get("outfit")
-
-            if loc == "outside":
-                outfit = "School Uniform"
-
-            changed = False
-            if loc and loc != personality_system.state.current_location:
-                personality_system.state.current_location = loc
-                changed = True
-            if outfit and outfit != personality_system.state.current_outfit:
-                personality_system.state.current_outfit = outfit
-                changed = True
-
-            if changed and audio_loop and getattr(audio_loop, "session", None):
-                update_msg = (
-                    "System Notification: [Visual State Update] "
-                    f"Monika Location: {personality_system.state.current_location}, "
-                    f"Monika Outfit: {personality_system.state.current_outfit}."
-                )
-                print(f"[SERVER] Sending visual update to model: {update_msg}")
-                if hasattr(audio_loop, "send_system_message"):
-                    await audio_loop.send_system_message(update_msg, end_of_turn=False)
-                else:
-                    await audio_loop.session.send(input=update_msg, end_of_turn=False)
 
     @sio.event
     async def calendar_get_events(sid, data=None):

@@ -163,6 +163,43 @@ def _to_utc_naive(dt):
     return datetime(dt.year, dt.month, dt.day), True
 
 
+def _vevent_fields(comp) -> dict | None:
+    """Local event fields for one VEVENT (shared by CalDAV and ICS feeds)."""
+    from routes.calendar_routes import _ensure_positive_duration
+
+    dtstart_p = comp.get("dtstart")
+    if not dtstart_p:
+        return None
+    start_dt, all_day = _to_utc_naive(dtstart_p.dt)
+    dtend_p = comp.get("dtend")
+    if dtend_p:
+        end_dt, _ = _to_utc_naive(dtend_p.dt)
+    elif all_day:
+        end_dt = start_dt + timedelta(days=1)
+    else:
+        end_dt = start_dt + timedelta(hours=1)
+    # A DTEND <= DTSTART (e.g. a single-day all-day event whose source wrote
+    # DTEND equal to DTSTART) would be stored zero-duration and silently
+    # dropped by the list_events overlap filter. Clamp to a positive span.
+    end_dt = _ensure_positive_duration(start_dt, end_dt, all_day)
+    return {
+        "dtstart": start_dt,
+        "dtend": end_dt,
+        "all_day": all_day,
+        # is_utc reflects whether the source carried a TZ we converted from.
+        # All-day = no TZ semantics.
+        "is_utc": (
+            not all_day
+            and isinstance(dtstart_p.dt, datetime)
+            and dtstart_p.dt.tzinfo is not None
+        ),
+        "summary": str(comp.get("summary", "")),
+        "description": str(comp.get("description", "")),
+        "location": str(comp.get("location", "")),
+        "rrule": comp.get("rrule").to_ical().decode() if comp.get("rrule") else "",
+    }
+
+
 def _find_existing_event(db, pending, uid_val, calendar_id):
     """Find the event to update for THIS calendar.
 
@@ -275,7 +312,6 @@ def _sync_blocking(owner: str, url: str, username: str, password: str, account_i
     # the integrations form still works, sync just no-ops with an error.
     from caldav.lib.error import AuthorizationError, NotFoundError
     from core.database import CalendarCal, CalendarEvent, SessionLocal
-    from routes.calendar_routes import _ensure_positive_duration
 
     result = {"calendars": 0, "events": 0, "deleted": 0, "errors": []}
 
@@ -380,40 +416,13 @@ def _sync_blocking(owner: str, url: str, username: str, password: str, account_i
                             uid_val = str(comp.get("uid", "")) or str(uuid.uuid4())
                             seen_uids.add(uid_val)
 
-                            dtstart_p = comp.get("dtstart")
-                            if not dtstart_p:
+                            fields = _vevent_fields(comp)
+                            if not fields:
                                 continue
-                            start_dt, all_day = _to_utc_naive(dtstart_p.dt)
-
-                            dtend_p = comp.get("dtend")
-                            if dtend_p:
-                                end_dt, _ = _to_utc_naive(dtend_p.dt)
-                            elif all_day:
-                                end_dt = start_dt + timedelta(days=1)
-                            else:
-                                end_dt = start_dt + timedelta(hours=1)
-                            # A synced event with DTEND <= DTSTART (e.g. a single-day
-                            # all-day event whose source wrote DTEND equal to DTSTART)
-                            # would be stored zero-duration and silently dropped by the
-                            # list_events overlap filter. Clamp to a positive span.
-                            end_dt = _ensure_positive_duration(start_dt, end_dt, all_day)
-
-                            # is_utc reflects whether the source carried a TZ
-                            # we converted from. All-day = no TZ semantics.
-                            row_is_utc = (
-                                not all_day
-                                and isinstance(dtstart_p.dt, datetime)
-                                and dtstart_p.dt.tzinfo is not None
-                            )
-
-                            summary = str(comp.get("summary", ""))
-                            description = str(comp.get("description", ""))
-                            location = str(comp.get("location", ""))
-                            rrule = (
-                                comp.get("rrule").to_ical().decode()
-                                if comp.get("rrule")
-                                else ""
-                            )
+                            start_dt, end_dt = fields["dtstart"], fields["dtend"]
+                            all_day, row_is_utc = fields["all_day"], fields["is_utc"]
+                            summary, description = fields["summary"], fields["description"]
+                            location, rrule = fields["location"], fields["rrule"]
 
                             existing = _find_existing_event(db, pending, uid_val, local_cal.id)
                             if existing:
@@ -720,3 +729,121 @@ async def sync_caldav_direction(owner: str, direction: str = "pull") -> dict:
         "deleted": 0,
         "errors": [f"Unsupported CalDAV sync direction: {direction}"],
     }
+
+
+# ── ICS subscriptions (read-only feeds: Google "secret address in iCal
+# format", Outlook/iCloud published calendars, holiday feeds) ──
+# A subscription is a CalendarCal row with source="ics" whose feed URL lives
+# in caldav_base_url. Each sync re-reads the whole feed, so the calendar
+# mirrors it exactly: missing UIDs are pruned. Events are read-only locally.
+
+_ICS_MAX_REDIRECTS = 3
+
+
+def normalize_ics_url(raw_url: str) -> str:
+    url = (raw_url if isinstance(raw_url, str) else "").strip()
+    if url.lower().startswith("webcal://"):
+        url = "https://" + url[len("webcal://"):]
+    return validate_caldav_url(url)
+
+
+def _fetch_ics(url: str) -> bytes:
+    """GET a feed, re-validating every redirect hop against the SSRF rules."""
+    import httpx
+    from src.upload_limits import ICS_MAX_BYTES
+
+    with httpx.Client(follow_redirects=False, timeout=20) as client:
+        for _ in range(_ICS_MAX_REDIRECTS + 1):
+            resp = client.get(url, headers={"Accept": "text/calendar, */*"})
+            if resp.is_redirect:
+                url = normalize_ics_url(str(resp.next_request.url))
+                continue
+            resp.raise_for_status()
+            if len(resp.content) > ICS_MAX_BYTES:
+                raise ValueError("Calendar feed is too large")
+            return resp.content
+    raise ValueError("Too many redirects")
+
+
+def parse_ics_feed(data: bytes) -> tuple[str, dict]:
+    """(calendar name, {uid: event fields}) for a whole ICS feed."""
+    from icalendar import Calendar as iCal
+
+    ical = iCal.from_ical(data)
+    name = str(ical.get("x-wr-calname", "") or "").strip()
+    events = {}
+    for comp in ical.walk("VEVENT"):
+        # ponytail: modified single occurrences (RECURRENCE-ID) are skipped and
+        # the series renders from its RRULE; store them as overrides if needed.
+        if comp.get("recurrence-id") is not None:
+            continue
+        uid = str(comp.get("uid", "") or "").strip()
+        fields = _vevent_fields(comp)
+        if uid and fields:
+            events[uid] = fields
+    return name, events
+
+
+def _sync_ics_blocking(cal_id: str, url: str) -> dict:
+    from core.database import CalendarCal, CalendarEvent, SessionLocal
+
+    _, events = parse_ics_feed(_fetch_ics(url))
+    # UIDs are a global primary key; namespace them per subscription so the
+    # same event subscribed twice (or also synced via CalDAV) cannot collide.
+    prefix = f"ics:{cal_id}:"
+    result = {"calendars": 1, "events": 0, "deleted": 0, "errors": []}
+    db = SessionLocal()
+    try:
+        cal = db.query(CalendarCal).filter(CalendarCal.id == cal_id).first()
+        if not cal:
+            return result
+        existing = {
+            ev.uid: ev for ev in db.query(CalendarEvent).filter(CalendarEvent.calendar_id == cal_id)
+        }
+        for uid, fields in events.items():
+            key = prefix + uid
+            row = existing.pop(key, None)
+            if row is None:
+                row = CalendarEvent(uid=key, calendar_id=cal_id, origin="ics")
+                db.add(row)
+            for field, value in fields.items():
+                setattr(row, field, value)
+            result["events"] += 1
+        for stale in existing.values():
+            db.delete(stale)
+            result["deleted"] += 1
+        db.commit()
+        return result
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+async def sync_ics_subscription(cal_id: str, url: str) -> dict:
+    return await asyncio.to_thread(_sync_ics_blocking, cal_id, normalize_ics_url(url))
+
+
+async def sync_ics_subscriptions(owner: str) -> dict:
+    from core.database import CalendarCal, SessionLocal
+
+    db = SessionLocal()
+    try:
+        subs = [
+            (c.id, c.name, c.caldav_base_url or "")
+            for c in db.query(CalendarCal).filter(CalendarCal.owner == owner, CalendarCal.source == "ics")
+        ]
+    finally:
+        db.close()
+    totals = {"calendars": 0, "events": 0, "deleted": 0, "errors": []}
+    for cal_id, name, url in subs:
+        try:
+            out = await sync_ics_subscription(cal_id, url)
+        except Exception as e:
+            logger.warning("ICS subscription %s failed: %s", cal_id, e)
+            totals["errors"].append(f"{name}: {str(e)[:200]}")
+            continue
+        for k in ("calendars", "events", "deleted"):
+            totals[k] += out[k]
+    return totals

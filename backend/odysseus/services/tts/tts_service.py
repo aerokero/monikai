@@ -516,6 +516,14 @@ XTTS_DEFAULT_LANGUAGE_ENV = "XTTS_DEFAULT_LANGUAGE"
 DEFAULT_XTTS_URL = "http://192.168.1.10:8020"
 DEFAULT_XTTS_SPEAKER = "monika"
 DEFAULT_XTTS_LANGUAGE = "pl"
+XTTS_MAX_CHUNK_CHARS = 200
+XTTS_GAP_SENTENCE_SEC = 0.35
+XTTS_GAP_CLAUSE_SEC = 0.15
+# speed stays the server-side 1.1 the user tuned; the rest is stability.
+XTTS_SETTINGS = {
+    "temperature": 0.5, "speed": 1.1, "length_penalty": 1.0,
+    "repetition_penalty": 5.0, "top_p": 0.8, "top_k": 30, "enable_text_splitting": False,
+}
 
 
 def _xtts_server_url() -> str:
@@ -537,6 +545,7 @@ class _XTTSClient:
         self.base_url = (base_url or _xtts_server_url()).rstrip("/")
         self._last_health_check = 0.0
         self._is_available = False
+        self._tuned = False
 
     @property
     def available(self) -> bool:
@@ -552,6 +561,17 @@ class _XTTSClient:
             self._is_available = False
         return self._is_available
 
+    def _tune_once(self) -> None:
+        # Server defaults (temp 0.75, rep. penalty 5) drift into babble; the
+        # setting lives in server memory, so re-apply after each restart.
+        if self._tuned:
+            return
+        try:
+            httpx.post(f"{self.base_url}/set_tts_settings", json=XTTS_SETTINGS, timeout=5.0).raise_for_status()
+            self._tuned = True
+        except Exception as exc:
+            logger.warning("XTTS tuning failed: %s", exc)
+
     def synthesize(
         self,
         text: str,
@@ -564,29 +584,35 @@ class _XTTSClient:
         if lang == "auto":
             lang = _xtts_default_language()
 
-        payload = {
-            "text": str(text)[:5000],
-            "speaker_wav": speaker_name,
-            "language": lang,
-        }
-
+        # XTTS garbles/hallucinates past ~250 chars (Polish) and joins its own
+        # internal sentences with no pause.  Render sentence-sized pieces and
+        # put explicit silence between them.
+        self._tune_once()
         try:
             url = f"{self.base_url}/tts_to_audio/"
-            r = httpx.post(url, json=payload, timeout=60.0)
-            if r.status_code == 200 and r.content and r.content[:4] == b"RIFF":
-                logger.info(
-                    "XTTS-v2 synthesis succeeded: %d bytes (speaker=%s, lang=%s)",
-                    len(r.content),
-                    speaker_name,
-                    lang,
+            frames, params = [], None
+            for piece, ends_sentence in _split_for_pocket(str(text)[:5000], XTTS_MAX_CHUNK_CHARS):
+                r = httpx.post(
+                    url,
+                    json={"text": piece, "speaker_wav": speaker_name, "language": lang},
+                    timeout=60.0,
                 )
-                return r.content
-            logger.warning(
-                "XTTS synthesis returned status=%d (content length=%d)",
-                r.status_code,
-                len(r.content),
-            )
-            return None
+                if r.status_code != 200 or r.content[:4] != b"RIFF":
+                    logger.warning("XTTS synthesis returned status=%d (content length=%d)", r.status_code, len(r.content))
+                    return None
+                with wave.open(io.BytesIO(r.content), "rb") as w:
+                    params = params or w.getparams()
+                    frames.append(w.readframes(w.getnframes()))
+                gap = XTTS_GAP_SENTENCE_SEC if ends_sentence else XTTS_GAP_CLAUSE_SEC
+                frames.append(b"\0" * 2 * int(params.framerate * gap) * params.nchannels)
+            if not params:
+                return None
+            buf = io.BytesIO()
+            with wave.open(buf, "wb") as out:
+                out.setparams(params)
+                out.writeframes(b"".join(frames[:-1]))
+            logger.info("XTTS-v2 synthesis succeeded: %d bytes (speaker=%s, lang=%s)", buf.tell(), speaker_name, lang)
+            return buf.getvalue()
         except Exception as exc:
             logger.warning("XTTS synthesis request failed: %s", exc)
             return None

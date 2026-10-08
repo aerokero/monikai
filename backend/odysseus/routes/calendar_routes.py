@@ -94,6 +94,13 @@ def _get_or_404_calendar(db, cal_id: str, owner: str) -> CalendarCal:
     return cal
 
 
+def _reject_read_only(cal) -> None:
+    """Subscribed (ICS) calendars mirror a remote feed; local edits would be
+    overwritten by the next sync, so refuse them."""
+    if cal is not None and cal.source == "ics":
+        raise HTTPException(409, "Subscribed calendars are read-only — edit the event at its source")
+
+
 def _get_or_404_event(db, uid: str, owner: str) -> CalendarEvent:
     ev = db.query(CalendarEvent).join(CalendarCal).filter(CalendarEvent.uid == uid).first()
     if not ev:
@@ -197,6 +204,12 @@ def _record_caldav_delete_tombstone(db, ev: CalendarEvent, owner: str) -> None:
 
 # ── Pydantic models ──
 
+class SubscriptionCreate(BaseModel):
+    url: str
+    name: str = ""
+    color: str = ""
+
+
 class EventCreate(BaseModel):
     summary: str
     dtstart: str  # ISO 8601
@@ -275,7 +288,8 @@ def _ensure_default_calendar(db, owner: str = None) -> CalendarCal:
     remains usable and atomic.
     """
     owner = owner or FALLBACK_OWNER
-    cal = db.query(CalendarCal).filter(CalendarCal.owner == owner).first()
+    writable = or_(CalendarCal.source.is_(None), CalendarCal.source != "ics")
+    cal = db.query(CalendarCal).filter(CalendarCal.owner == owner, writable).first()
     if cal:
         return cal
 
@@ -283,7 +297,7 @@ def _ensure_default_calendar(db, owner: str = None) -> CalendarCal:
     if dialect == "sqlite":
         _begin_sqlite_default_write(db)
         # Another worker may have committed while BEGIN IMMEDIATE waited.
-        cal = db.query(CalendarCal).filter(CalendarCal.owner == owner).first()
+        cal = db.query(CalendarCal).filter(CalendarCal.owner == owner, writable).first()
         if cal:
             return cal
 
@@ -1089,8 +1103,44 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
         Returns counts + any per-calendar errors. Called by the frontend
         on calendar open and by the periodic scheduler loop."""
         owner = _require_user(request)
-        from src.caldav_sync import sync_caldav_direction
-        return await sync_caldav_direction(owner, direction)
+        from src.caldav_sync import sync_caldav_direction, sync_ics_subscriptions
+        result = await sync_caldav_direction(owner, direction)
+        if direction in ("pull", "both"):
+            ics = await sync_ics_subscriptions(owner)
+            pull = result.get("pull", result)
+            if ics["calendars"] and "CalDAV is not configured" in pull.get("errors", []):
+                pull["errors"].remove("CalDAV is not configured")
+            for key in ("calendars", "events", "deleted"):
+                pull[key] = pull.get(key, 0) + ics[key]
+            pull["errors"] = pull.get("errors", []) + ics["errors"]
+        return result
+
+    @router.post("/subscriptions")
+    async def add_subscription(request: Request, data: SubscriptionCreate):
+        """Subscribe to a read-only ICS feed (e.g. Google Calendar's secret
+        iCal address). The first sync runs inline so a bad URL fails here."""
+        owner = _require_user(request)
+        from src.caldav_sync import normalize_ics_url, parse_ics_feed, _fetch_ics, sync_ics_subscription
+        import asyncio
+        try:
+            url = normalize_ics_url(data.url)
+            name, _ = parse_ics_feed(await asyncio.to_thread(_fetch_ics, url))
+        except Exception as e:
+            raise HTTPException(400, f"Could not read calendar feed: {str(e)[:200]}")
+        db = SessionLocal()
+        try:
+            cal = CalendarCal(
+                id=str(uuid.uuid4()), owner=owner,
+                name=(data.name or "").strip() or name or "Subscribed calendar",
+                color=data.color or "#5b8abf", source="ics", caldav_base_url=url,
+            )
+            db.add(cal)
+            db.commit()
+            cal_id, cal_name = cal.id, cal.name
+        finally:
+            db.close()
+        result = await sync_ics_subscription(cal_id, url)
+        return {"ok": True, "id": cal_id, "name": cal_name, "events": result["events"]}
 
 
     @router.delete("/calendars/{cal_id}")
@@ -1218,6 +1268,7 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
                 # `_get_or_404_calendar`.
                 if cal and (cal.owner is None or cal.owner != owner):
                     raise HTTPException(404, "Calendar not found")
+                _reject_read_only(cal)
             if not cal:
                 cal = _ensure_default_calendar(db, owner)
 
@@ -1275,6 +1326,7 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
         db = SessionLocal()
         try:
             ev = _get_or_404_event(db, base_uid, owner)
+            _reject_read_only(ev.calendar)
             if data.summary is not None:
                 ev.summary = data.summary
             if data.description is not None:
@@ -1326,6 +1378,7 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
         db = SessionLocal()
         try:
             ev = _get_or_404_event(db, base_uid, owner)
+            _reject_read_only(ev.calendar)
             is_occurrence_delete = scope in {"occurrence", "instance"} and "::" in uid and bool(ev.rrule)
             is_caldav = ev.calendar and ev.calendar.source == "caldav"
             if is_occurrence_delete:

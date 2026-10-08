@@ -632,7 +632,8 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
           const rect = menuBtn.getBoundingClientRect();
           document.body.appendChild(dropdown);
           dropdown.dataset.owner = doc.id;
-          dropdown.style.cssText = `position:fixed;z-index:${topPortalZ()};min-width:0;width:max-content;padding:4px;background:var(--panel);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.3);backdrop-filter:blur(12px);font-size:12px;display:block;`;
+          dropdown.style.cssText = `position:fixed;z-index:${topPortalZ()};min-width:0;width:max-content;backdrop-filter:blur(12px);display:block;`;
+          dropdown.classList.add('ui-menu');
           dropdown.style.top = (rect.bottom + 4) + 'px';
           dropdown.style.left = 'auto';
           dropdown.style.right = (window.innerWidth - rect.right) + 'px';
@@ -656,8 +657,8 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
     // Dropdown menu
     const dropdown = document.createElement('div');
     dropdown.className = 'doclib-card-dropdown';
-    dropdown.style.cssText = 'display:none;position:absolute;top:100%;right:0;z-index:1000;min-width:0;width:max-content;padding:4px;background:var(--panel);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.3);backdrop-filter:blur(12px);font-size:12px;';
-
+    dropdown.style.cssText = 'display:none;position:absolute;top:100%;right:0;z-index:1000;min-width:0;width:max-content;backdrop-filter:blur(12px);';
+    dropdown.classList.add('ui-menu');
     // Single close path for the card action dropdown, shared by the toggle
     // button, the outside-click listener, every menu item, and the Escape
     // arbiter (via registerMenuDismiss). Hides the menu, returns it to its
@@ -1607,14 +1608,14 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
           <h4 id="doclib-header-title"><span id="doclib-header-icon" style="vertical-align:-2px;margin-right:4px;display:inline-flex;"></span><span id="doclib-header-text">Library</span></h4>
           <button class="close-btn" id="doclib-close">\u2716</button>
         </div>
-        <div class="lib-tabs" id="doclib-lib-tabs" style="padding:0 10px;">
+        <div class="lib-tabs" id="doclib-lib-tabs" >
           <button class="lib-tab" data-doclib-tab="chats"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Chats</button>
           <button class="lib-tab active" data-doclib-tab="documents"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>Documents</button>
           <button class="lib-tab" data-doclib-tab="research"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px;margin-right:3px;"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>Research</button>
           <button class="lib-tab" data-doclib-tab="archive"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>Archive</button>
         </div>
         <div class="modal-body" style="display:flex;flex-direction:column;gap:10px;overflow:hidden;">
-          <div id="doclib-panel-chats" data-doclib-panel="chats" class="admin-card" style="display:none;flex:1;flex-direction:column;overflow:hidden;">
+          <div id="doclib-panel-chats" data-doclib-panel="chats" class="admin-card ui-panel" style="display:none;flex:1;flex-direction:column;overflow:hidden">
             <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px;">
               <h2 style="margin:0;padding:0;line-height:1;">Chats <span id="doclib-chats-stats" class="memory-count" style="font-size:0.6em;opacity:0.6;font-weight:normal"></span></h2>
             </div>
@@ -1633,20 +1634,20 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
               <input type="text" id="doclib-chats-search" placeholder="Search chats\u2026" class="memory-search-input" />
               <div id="doclib-chats-chips" class="doclib-lang-chips"></div>
             </div>
-            <div id="doclib-chats-bulk" class="memory-bulk-bar hidden" style="margin-bottom:5px;">
-              <label class="memory-bulk-check-all" style="position:relative;top:0px;left:-1px;"><input type="checkbox" id="doclib-chats-select-all" style="position:relative;top:0px;"> All</label>
+            <div id="doclib-chats-bulk" class="memory-bulk-bar hidden">
+              <label class="memory-bulk-check-all" style="position:relative"><input type="checkbox" id="doclib-chats-select-all" style="position:relative;top:0px;"> All</label>
               <span id="doclib-chats-selected-count">0 Selected</span>
-              <button class="memory-toolbar-btn" id="doclib-chats-bulk-archive" style="position:relative;top:-3px;left:2px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>Archive</button>
-              <button class="memory-toolbar-btn danger" id="doclib-chats-bulk-delete" style="position:relative;left:2px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>Delete</button>
-              <button class="memory-toolbar-btn" id="doclib-chats-bulk-cancel" title="Cancel (Esc)" style="margin-left:4px;padding:3px 6px;position:relative;left:2px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+              <button class="memory-toolbar-btn" id="doclib-chats-bulk-archive"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>Archive</button>
+              <button class="memory-toolbar-btn danger" id="doclib-chats-bulk-delete"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>Delete</button>
+              <button class="memory-toolbar-btn" id="doclib-chats-bulk-cancel" title="Cancel (Esc)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
             </div>
             <div id="doclib-chats-grid" class="doclib-grid"></div>
           </div>
-          <div id="doclib-panel-archive" data-doclib-panel="archive" class="admin-card" style="display:none;flex:1;flex-direction:column;overflow:hidden;">
+          <div id="doclib-panel-archive" data-doclib-panel="archive" class="admin-card ui-panel" style="display:none;flex:1;flex-direction:column;overflow:hidden">
             <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px;">
               <h2 style="margin:0;padding:0;line-height:1;position:relative;top:2px;">Archive <span id="doclib-arc-stats" class="memory-count" style="font-size:0.6em;opacity:0.6;font-weight:normal"></span></h2>
             </div>
-            <p class="memory-desc doclib-desc" style="position:relative;top:0.5px;">Archived sessions. Restore to make active again.</p>
+            <p class="memory-desc doclib-desc">Archived sessions. Restore to make active again.</p>
             <div class="memory-toolbar">
               <div class="memory-category-filters">
                 <select class="memory-sort-select" id="doclib-arc-sort">
@@ -1660,20 +1661,20 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
               <input type="text" id="doclib-arc-search" placeholder="Search archive\u2026" class="memory-search-input" />
               <div id="doclib-arc-chips" class="doclib-lang-chips"></div>
             </div>
-            <div id="doclib-arc-bulk" class="memory-bulk-bar hidden" style="margin-bottom:5px;">
-              <label class="memory-bulk-check-all" style="position:relative;top:0px;left:1px;"><input type="checkbox" id="doclib-arc-select-all"> All</label>
+            <div id="doclib-arc-bulk" class="memory-bulk-bar hidden">
+              <label class="memory-bulk-check-all" style="position:relative"><input type="checkbox" id="doclib-arc-select-all"> All</label>
               <span id="doclib-arc-selected-count">0 Selected</span>
-              <button class="memory-toolbar-btn" id="doclib-arc-bulk-restore" style="position:relative;top:-3px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>Restore</button>
+              <button class="memory-toolbar-btn" id="doclib-arc-bulk-restore"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>Restore</button>
               <button class="memory-toolbar-btn danger" id="doclib-arc-bulk-delete"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>Delete</button>
-              <button class="memory-toolbar-btn" id="doclib-arc-bulk-cancel" title="Cancel (Esc)" style="margin-left:4px;padding:3px 6px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+              <button class="memory-toolbar-btn" id="doclib-arc-bulk-cancel" title="Cancel (Esc)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
             </div>
             <div id="doclib-arc-grid" class="doclib-grid"></div>
           </div>
-          <div id="doclib-panel-research" data-doclib-panel="research" class="admin-card" style="display:none;flex:1;flex-direction:column;overflow:hidden;">
+          <div id="doclib-panel-research" data-doclib-panel="research" class="admin-card ui-panel" style="display:none;flex:1;flex-direction:column;overflow:hidden">
             <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px;margin-top:10px;">
               <h2 style="margin:0;padding:0;line-height:1;">Research <span id="doclib-research-stats" class="memory-count" style="font-size:0.6em;opacity:0.6;font-weight:normal"></span></h2>
             </div>
-            <p class="memory-desc doclib-desc" style="position:relative;top:-1px;">Completed deep research reports. Click to view.</p>
+            <p class="memory-desc doclib-desc">Completed deep research reports. Click to view.</p>
             <div class="memory-toolbar">
               <div class="memory-category-filters">
                 <select class="memory-sort-select" id="doclib-research-sort">
@@ -1687,19 +1688,19 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
               </div>
               <input type="text" id="doclib-research-search" placeholder="Search research\u2026" class="memory-search-input" />
             </div>
-            <div id="doclib-research-bulk" class="memory-bulk-bar hidden" style="margin-bottom:5px;">
-              <label class="memory-bulk-check-all" style="position:relative;top:0px;left:1px;"><input type="checkbox" id="doclib-research-select-all"> All</label>
+            <div id="doclib-research-bulk" class="memory-bulk-bar hidden">
+              <label class="memory-bulk-check-all" style="position:relative"><input type="checkbox" id="doclib-research-select-all"> All</label>
               <span id="doclib-research-selected-count">0 Selected</span>
-              <button class="memory-toolbar-btn" id="doclib-research-bulk-archive" style="position:relative;top:-2px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>Archive</button>
-              <button class="memory-toolbar-btn danger" id="doclib-research-bulk-delete" style="position:relative;top:-2px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>Delete</button>
-              <button class="memory-toolbar-btn" id="doclib-research-bulk-cancel" title="Cancel (Esc)" style="margin-left:4px;padding:3px 6px;position:relative;top:-2px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+              <button class="memory-toolbar-btn" id="doclib-research-bulk-archive"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>Archive</button>
+              <button class="memory-toolbar-btn danger" id="doclib-research-bulk-delete"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>Delete</button>
+              <button class="memory-toolbar-btn" id="doclib-research-bulk-cancel" title="Cancel (Esc)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
             </div>
             <div id="doclib-research-grid" class="doclib-grid"></div>
           </div>
-          <div data-doclib-panel="documents" class="admin-card" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+          <div data-doclib-panel="documents" class="admin-card ui-panel" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
             <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px;">
               <h2 style="margin:0;padding:0;line-height:1;">Documents <span id="doclib-stats" class="memory-count" style="font-size:0.6em;opacity:0.6;font-weight:normal"></span></h2>
-              <button class="memory-toolbar-btn" id="doclib-import-file-btn" title="Import files from disk" style="margin-left:auto;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:2px;"><polyline points="7 10 12 5 17 10"/><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="21" x2="19" y2="21"/></svg> Import</button>
+              <button class="memory-toolbar-btn" id="doclib-import-file-btn" title="Import files from disk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:2px;"><polyline points="7 10 12 5 17 10"/><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="21" x2="19" y2="21"/></svg> Import</button>
               <button class="memory-toolbar-btn" id="doclib-create-btn" title="Create new blank document"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg> Create</button>
             </div>
             <p class="memory-desc doclib-desc">Open documents in a session, clone to a new or import new files.</p>
@@ -1718,11 +1719,11 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
               <div id="doclib-chips" class="doclib-lang-chips"></div>
             </div>
             <input type="file" id="doclib-file-input" multiple style="display:none" />
-            <div id="doclib-bulk-bar" class="memory-bulk-bar hidden" style="margin-bottom:5px;">
-              <label class="memory-bulk-check-all" style="position:relative;top:0px;left:1px;"><input type="checkbox" id="doclib-select-all" /> All</label>
+            <div id="doclib-bulk-bar" class="memory-bulk-bar hidden">
+              <label class="memory-bulk-check-all" style="position:relative"><input type="checkbox" id="doclib-select-all" /> All</label>
               <span id="doclib-selected-count">0 Selected</span>
-              <button id="doclib-bulk-actions" class="memory-toolbar-btn" style="position:relative;top:-2px;margin-left:auto;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>Actions <span style="opacity:0.55;font-size:9px;">&#9660;</span></button>
-              <button id="doclib-bulk-cancel" class="memory-toolbar-btn" title="Cancel (Esc)" style="margin-left:4px;margin-right:4px;padding:3px 6px;position:relative;top:-2px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+              <button id="doclib-bulk-actions" class="memory-toolbar-btn"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>Actions <span style="opacity:0.55;font-size:9px;">&#9660;</span></button>
+              <button id="doclib-bulk-cancel" class="memory-toolbar-btn" title="Cancel (Esc)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
             </div>
             <div class="doclib-grid" id="doclib-grid"></div>
             <button class="doclib-load-more" id="doclib-load-more" style="display:none">Load more</button>
@@ -2108,7 +2109,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
             cbHtml +
             '<div style="flex:1;min-width:0;">' +
               '<div class="memory-item-title">' + chatIconSvg + _esc(s.name || 'Untitled') + msgCountHtml + '</div>' +
-              '<div class="memory-item-meta" style="font-size:10px;opacity:0.4;margin-top:2px;">' + [model, _relTime(s.updated_at)].filter(Boolean).join(' \u00b7 ') + '</div>' +
+              '<div class="memory-item-meta">' + [model, _relTime(s.updated_at)].filter(Boolean).join(' \u00b7 ') + '</div>' +
             '</div>' +
             chevronSvg +
             '<div class="memory-item-actions"><button class="memory-item-btn _chat-menu" title="Actions"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg></button></div>' +
@@ -2464,7 +2465,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
             cbHtml +
             '<div style="flex:1;min-width:0;">' +
               '<div class="memory-item-title">' + arcIconSvg + _esc(s.name || 'Untitled') + '</div>' +
-              '<div class="memory-item-meta" style="font-size:10px;opacity:0.4;margin-top:2px;">' + [model, _relTime(s.updated_at)].filter(Boolean).join(' \u00b7 ') + '</div>' +
+              '<div class="memory-item-meta">' + [model, _relTime(s.updated_at)].filter(Boolean).join(' \u00b7 ') + '</div>' +
             '</div>' +
             '<div class="memory-item-actions"><button class="memory-item-btn _arc-menu" title="Actions"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg></button></div>' +
           '</div>' +
@@ -2508,7 +2509,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
             _dcb +
             '<div style="flex:1;min-width:0;">' +
               '<div class="memory-item-title">' + _arcDocIco + _esc(d.title || 'Untitled') + '</div>' +
-              '<div class="memory-item-meta" style="font-size:10px;opacity:0.4;margin-top:2px;">' + ['Document', (d.language || 'text'), _relTime(d.updated_at)].filter(Boolean).join(' · ') + '</div>' +
+              '<div class="memory-item-meta">' + ['Document', (d.language || 'text'), _relTime(d.updated_at)].filter(Boolean).join(' · ') + '</div>' +
             '</div>' +
             '<div class="memory-item-actions"><button class="memory-item-btn _arc-doc-menu" title="Actions"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg></button></div>' +
           '</div>' +
@@ -2545,7 +2546,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
             _rcb +
             '<div style="flex:1;min-width:0;">' +
               '<div class="memory-item-title">' + _arcResIco + _esc(r.query || 'Research') + '</div>' +
-              '<div class="memory-item-meta" style="font-size:10px;opacity:0.4;margin-top:2px;">' + ['Research', (r.source_count ? r.source_count + ' sources' : ''), _relTime(r.completed_at ? new Date(r.completed_at * 1000).toISOString() : '')].filter(Boolean).join(' · ') + '</div>' +
+              '<div class="memory-item-meta">' + ['Research', (r.source_count ? r.source_count + ' sources' : ''), _relTime(r.completed_at ? new Date(r.completed_at * 1000).toISOString() : '')].filter(Boolean).join(' · ') + '</div>' +
             '</div>' +
             '<div class="memory-item-actions"><button class="memory-item-btn _arc-res-menu" title="Actions"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg></button></div>' +
           '</div>' +
@@ -2897,12 +2898,12 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
         if (rounds) metaBits.push(`${rounds} rounds`);
         if (duration) metaBits.push(`${duration}`);
         const metaText = metaBits.join(' \u00B7 ');
-        html += `<div class="memory-item doclib-chat-row doclib-research-card" data-research-id="${r.id}" style="cursor:pointer;">`;
+        html += `<div class="memory-item doclib-chat-row doclib-research-card" data-research-id="${r.id}">`;
         html += `<div class="doclib-chat-header" style="display:flex;align-items:center;width:100%;gap:6px;">`;
         if (_researchSelectMode) html += `<input type="checkbox" class="memory-select-cb _res-cb" data-rid="${r.id}"${selected ? ' checked' : ''}>`;
         html += `<div style="flex:1;min-width:0;">`;
         html += `<div class="memory-item-title"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;opacity:0.4;flex-shrink:0;"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>${_esc(r.query || 'Untitled Research')}</div>`;
-        html += `<div class="memory-item-meta" style="font-size:10px;opacity:0.4;margin-top:2px;">${metaText}</div>`;
+        html += `<div class="memory-item-meta">${metaText}</div>`;
         html += `</div>`;
         if (!_researchSelectMode) html += `<div class="memory-item-actions"><button class="memory-item-btn doclib-research-delete" data-rid="${r.id}" title="Delete"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg></button></div>`;
         html += `</div>`;

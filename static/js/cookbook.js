@@ -1174,8 +1174,8 @@ async function _fetchDependencies() {
       const isLocal = pkg.target === 'local';
       const isSystemDep = pkg.kind === 'system';
       const winBlocked = !isLocal && _isWindows() && _winUnsupported.has(pkg.name);
-      const note = pkg.status_note ? `<div class="memory-item-meta" style="font-size:10px;opacity:0.65;margin-top:3px;">${esc(pkg.status_note)}</div>` : '';
-      const updateNote = pkg.installed && pkg.pip_update_available === false && pkg.update_note ? `<div class="memory-item-meta" style="font-size:10px;opacity:0.55;margin-top:3px;">${esc(pkg.update_note)}</div>` : '';
+      const note = pkg.status_note ? `<div class="memory-item-meta">${esc(pkg.status_note)}</div>` : '';
+      const updateNote = pkg.installed && pkg.pip_update_available === false && pkg.update_note ? `<div class="memory-item-meta">${esc(pkg.update_note)}</div>` : '';
       // Inline rebuild/reinstall tag. Styled as a .cookbook-dep-tag so it
       // matches the LLM category tag's pill look, and lives to the LEFT of the
       // category tag. llama_cpp uses the /api/cookbook/rebuild-engine flow
@@ -1215,14 +1215,14 @@ async function _fetchDependencies() {
       const _gpuUpgradeBox = (pkg.partial && pkg.partial_action === 'reinstall_llama_cpp_cuda')
         ? `<div class="cookbook-dep-gpu-upgrade" style="margin-top:6px;font-size:11px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:color-mix(in srgb, var(--yellow, #f1fa8c) 14%, transparent);border:1px solid color-mix(in srgb, var(--yellow, #f1fa8c) 40%, var(--border));padding:6px 8px;border-radius:6px;">`
           + `<span style="flex:1;min-width:160px;">Installed CPU-only — GPU detected on this target. Upgrade for ~10× faster inference.</span>`
-          + `<button type="button" class="cookbook-dep-tag cookbook-dep-install cookbook-dep-install-gpu-wheel" data-dep-target="${isLocal ? 'local' : 'remote'}" data-dep-gpu-cmd="${esc(_gpuWheelCmd)}" style="font-weight:600;">Install GPU wheel</button>`
+          + `<button type="button" class="cookbook-dep-tag cookbook-dep-install cookbook-dep-install-gpu-wheel" data-dep-target="${isLocal ? 'local' : 'remote'}" data-dep-gpu-cmd="${esc(_gpuWheelCmd)}">Install GPU wheel</button>`
           + `<button type="button" class="cookbook-dep-tag cookbook-dep-cmd-copy" data-dep-cmd-copy="${esc(_gpuWheelCmd)}" title="Copy command to clipboard">Copy command</button>`
           + `</div>`
         : '';
       return `<div class="cookbook-dep-row${winBlocked ? ' cookbook-dep-blocked' : ''}" data-pkg-name="${esc(pkg.name)}" data-dep-pip="${esc(pkg.pip || '')}" data-dep-target="${isLocal ? 'local' : 'remote'}" data-dep-kind="${esc(pkg.kind || 'python')}">`
         + `<div class="cookbook-dep-info">`
         + `<div class="memory-item-title">${_depGlyphHtml(pkg.name)}${esc(pkg.name)}</div>`
-        + `<div class="memory-item-meta" style="font-size:10px;opacity:0.5;margin-top:2px;">${esc(pkg.desc)}</div>`
+        + `<div class="memory-item-meta">${esc(pkg.desc)}</div>`
         + note
         + updateNote
         + `</div>`
@@ -1282,7 +1282,7 @@ async function _fetchDependencies() {
       return `<div class="cookbook-dep-recipe-panel" data-dep-recipe-panel="${esc(backend)}" data-dep-recipe-active-variant="${esc(initialVariant)}" style="display:none;margin:-4px 0 8px;padding:8px 12px 10px;background:rgba(0,0,0,0.04);border:1px solid var(--border);border-top:none;border-radius:0 0 6px 6px;">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
             <span style="font-size:11px;opacity:0.75;flex-shrink:0;">Serving which model?</span>
-            <select class="settings-select cookbook-dep-recipe-pick" data-dep-recipe-pick="${esc(backend)}" style="flex:1;font-size:11px;padding:3px 6px;">${opts}</select>
+            <select class="settings-select cookbook-dep-recipe-pick" data-dep-recipe-pick="${esc(backend)}" style="flex:1">${opts}</select>
             <div class="mode-toggle${rightActive}" data-dep-recipe-variants="${esc(backend)}" style="flex-shrink:0;">
               <button type="button" class="mode-toggle-btn${initialVariant === 'pip' ? ' active' : ''}" data-dep-recipe-variant="${esc(backend)}" data-variant="pip" aria-pressed="${initialVariant === 'pip'}">Pip</button>
               <button type="button" class="mode-toggle-btn${initialVariant === 'docker' ? ' active' : ''}" data-dep-recipe-variant="${esc(backend)}" data-variant="docker" aria-pressed="${initialVariant === 'docker'}">Docker</button>
@@ -1293,7 +1293,7 @@ async function _fetchDependencies() {
             <button type="button" id="recipe-copy-${esc(backend)}" class="cookbook-dep-recipe-copy" data-dep-recipe-copy="${esc(backend)}" title="Copy" aria-label="Copy" style="position:absolute;top:6px;right:6px;padding:3px 5px;background:none;border:none;color:inherit;opacity:0.7;cursor:pointer;display:inline-flex;align-items:center;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
           </div>
           <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:6px;">
-            <button type="button" class="cookbook-dep-tag cookbook-dep-install cookbook-dep-recipe-run" data-dep-recipe-run="${esc(backend)}" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>Run</button>
+            <button type="button" class="cookbook-dep-tag cookbook-dep-install cookbook-dep-recipe-run" data-dep-recipe-run="${esc(backend)}" style="display:inline-flex;align-items:center"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>Run</button>
           </div>
         </div>`;
     }
@@ -1838,7 +1838,8 @@ async function _fetchDependencies() {
       const minW = 150;
       let left = Math.min(rect.right - minW, window.innerWidth - minW - 8);
       left = Math.max(8, left);
-      dropdown.style.cssText = `position:fixed;display:block;z-index:${topPortalZ()};top:${rect.bottom + 6}px;left:${left}px;right:auto;min-width:${minW}px;max-width:calc(100vw - 16px);background:var(--panel,var(--bg));border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.3);padding:6px;font-size:11px;`;
+      dropdown.style.cssText = `position:fixed;display:block;z-index:${topPortalZ()};top:${rect.bottom + 6}px;left:${left}px;right:auto;min-width:${minW}px;max-width:calc(100vw - 16px);`;
+      dropdown.classList.add('ui-menu');
       const upIco = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>';
       const it = document.createElement('div');
       it.className = 'dropdown-item-compact';
@@ -2716,10 +2717,10 @@ function _wireTabEvents(body) {
           if (m.downloads) meta.push(`${m.downloads.toLocaleString()} downloads`);
           const date = m.createdAt ? new Date(m.createdAt).toISOString().slice(0, 10) : '';
           if (date) meta.push(date);
-          html += `<div class="doclib-card memory-item cookbook-hf-latest-card" data-repo="${esc(m.repo_id)}" style="cursor:pointer;">`;
+          html += `<div class="doclib-card memory-item cookbook-hf-latest-card" data-repo="${esc(m.repo_id)}">`;
           html += `<div style="flex:1;min-width:0;">`;
           html += `<div class="memory-item-title">${esc(shortName)} <a href="https://huggingface.co/${esc(m.repo_id)}" target="_blank" rel="noopener" class="cookbook-hf-link">HF \u2197</a></div>`;
-          html += `<div class="memory-item-meta" style="font-size:10px;opacity:0.5;margin-top:2px;">${meta.join(' \u00b7 ')}</div>`;
+          html += `<div class="memory-item-meta">${meta.join(' \u00b7 ')}</div>`;
           html += `</div>`;
           html += `</div>`;
         }
@@ -2791,11 +2792,11 @@ function _wireTabEvents(body) {
         let html = '';
         for (const m of models) {
           const sizes = Array.isArray(m.sizes) && m.sizes.length ? m.sizes : ['latest'];
-          const sizeChips = sizes.map(s => `<button type="button" class="memory-toolbar-btn cookbook-ol-size" data-name="${esc(m.name)}" data-size="${esc(s)}" style="height:20px;padding:0 6px;font-size:10px;border-radius:3px;">${esc(s)}</button>`).join('');
+          const sizeChips = sizes.map(s => `<button type="button" class="memory-toolbar-btn cookbook-ol-size" data-name="${esc(m.name)}" data-size="${esc(s)}">${esc(s)}</button>`).join('');
           html += `<div class="doclib-card memory-item cookbook-ollama-card" data-name="${esc(m.name)}">`;
           html += `<div style="flex:1;min-width:0;">`;
           html += `<div class="memory-item-title">${esc(m.name)} <a href="https://ollama.com/library/${esc(m.name)}" target="_blank" rel="noopener" class="cookbook-hf-link">ollama ↗</a></div>`;
-          if (m.description) html += `<div class="memory-item-meta" style="font-size:10px;opacity:0.55;margin-top:2px;">${esc(m.description)}</div>`;
+          if (m.description) html += `<div class="memory-item-meta">${esc(m.description)}</div>`;
           html += `<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px;">${sizeChips}</div>`;
           html += `</div></div>`;
         }
@@ -2936,13 +2937,13 @@ export function _serverEntryHtml(s, i, defaultServer, forceRemote, isNew) {
   }
   html += `</span>`;
   html += `<div class="cookbook-server-row">`;
-  html += `<input type="text" class="hwfit-sf cookbook-srv-name" value="${esc(s.name || (isLocal ? 'Local' : ''))}" placeholder="Name (optional)" style="width:92px;flex-shrink:0;" />`;
+  html += `<input type="text" class="hwfit-sf cookbook-srv-name" value="${esc(s.name || (isLocal ? 'Local' : ''))}" placeholder="Name (optional)" style="width:92px;flex-shrink:0" />`;
   html += `<span class="cookbook-srv-color-wrap has-color" title="Server color"><select class="hwfit-sf cookbook-srv-color" aria-hidden="true" tabindex="-1">${colorOpts}</select><button type="button" class="hwfit-sf cookbook-srv-color-btn" aria-haspopup="listbox" aria-expanded="false"><span class="cookbook-srv-color-dot" aria-hidden="true"></span><span class="cookbook-srv-color-label">${esc(selectedColorLabel)}</span><svg class="cookbook-srv-color-caret" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button><div class="cookbook-srv-color-menu hidden" role="listbox">${colorMenu}</div></span>`;
-  html += `<input type="text" class="hwfit-sf cookbook-srv-host" value="${isLocal ? '' : esc(s.host || '')}" placeholder="e.g. user@ip" style="width:184px;flex-shrink:0;box-sizing:border-box;" ${isLocal ? 'readonly' : ''} />`;
-  html += `<input type="text" class="hwfit-sf cookbook-srv-port" value="${esc(s.port || '')}" placeholder="Port" title="SSH port (default 22)" style="width:48px;flex-shrink:0;" ${isLocal ? 'readonly' : ''} />`;
+  html += `<input type="text" class="hwfit-sf cookbook-srv-host" value="${isLocal ? '' : esc(s.host || '')}" placeholder="e.g. user@ip" style="width:184px;flex-shrink:0;box-sizing:border-box" ${isLocal ? 'readonly' : ''} />`;
+  html += `<input type="text" class="hwfit-sf cookbook-srv-port" value="${esc(s.port || '')}" placeholder="Port" title="SSH port (default 22)" style="width:48px;flex-shrink:0" ${isLocal ? 'readonly' : ''} />`;
   html += `<select class="hwfit-sf cookbook-srv-env">${envOpts}</select>`;
   html += `<input type="text" class="hwfit-sf cookbook-srv-path" value="${esc(s.envPath || '')}" placeholder="${s.platform === 'windows' ? 'venv/conda env' : '~/venv or conda-env'}" />`;
-  html += `<span class="cookbook-dep-tag cookbook-dep-target" style="font-size:8px;flex-shrink:0;min-width:46px;text-align:center;visibility:hidden;">placeholder</span>`;
+  html += `<span class="cookbook-dep-tag cookbook-dep-target" style="flex-shrink:0;min-width:46px;text-align:center;visibility:hidden">placeholder</span>`;
   html += `<span class="cookbook-srv-actions" style="display:inline-flex;gap:4px;align-items:center;width:78px;flex-shrink:0;justify-content:flex-end;"></span>`;
   html += `</div>`;
   const modelDirs = Array.isArray(s.modelDirs) && s.modelDirs.length ? s.modelDirs : ['~/.cache/huggingface/hub'];
@@ -2972,11 +2973,11 @@ export function _serverEntryHtml(s, i, defaultServer, forceRemote, isNew) {
   if (!isLocal) {
     html += `<div class="cookbook-server-key-panel hidden" style="margin-top:6px;flex-direction:column;gap:5px;">`;
     html += `<div style="display:flex;gap:4px;align-items:center;">`;
-    html += `<button type="button" class="memory-toolbar-btn cookbook-server-key-gen" style="height:23px;">Generate key</button>`;
-    html += `<button type="button" class="memory-toolbar-btn cookbook-server-key-copy" style="height:23px;" disabled>Copy command</button>`;
+    html += `<button type="button" class="memory-toolbar-btn cookbook-server-key-gen">Generate key</button>`;
+    html += `<button type="button" class="memory-toolbar-btn cookbook-server-key-copy" disabled>Copy command</button>`;
     html += `<span style="font-size:10px;opacity:0.55;line-height:1.25;">Docker: run this command in your terminal once.</span>`;
     html += `</div>`;
-    html += `<textarea class="memory-search-input cookbook-server-key-command" readonly rows="3" style="min-height:58px;resize:vertical;font-family:var(--mono,monospace);font-size:10px;line-height:1.35;">Enter user@host, then generate the key.</textarea>`;
+    html += `<textarea class="memory-search-input cookbook-server-key-command" readonly rows="3" style="resize:vertical">Enter user@host, then generate the key.</textarea>`;
     html += `</div>`;
   }
   html += `</div>`;
@@ -3002,7 +3003,7 @@ function _renderRecipes() {
 
   // Search group
   html += '<div class="cookbook-group" data-backend-group="Search" style="flex:0 0 auto;">';
-  html += '<div class="admin-card" style="display:flex;flex-direction:column;overflow:hidden;">';
+  html += '<div class="admin-card" style="display:flex;flex-direction:column;overflow:hidden">';
   // Foldable Download admin-card: clicking the h2 header collapses the
   // entire card body (description + download input + HF latest section).
   // State persisted to localStorage so the fold survives reloads.
@@ -3011,7 +3012,7 @@ function _renderRecipes() {
   html += `<h2 id="cookbook-dl-tab-fold" class="${_dlTabFolded ? 'is-folded' : ''}" style="margin:0;padding:0;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none;flex:1;">Direct Download<span id="cookbook-dl-tab-chevron" style="display:inline-block;transition:transform 0.15s;font-size:1.1em;margin-left:8px;opacity:0.85;">${_dlTabFolded ? '▸' : '▾'}</span></h2>`;
   html += '</div>';
   html += `<div id="cookbook-dl-tab-fold-body" class="${_dlTabFolded ? 'is-folded' : ''}">`;
-  html += '<p class="memory-desc doclib-desc" style="margin-top:6px;">Download from <a href="https://huggingface.co/models" target="_blank" rel="noopener" style="color:var(--accent,var(--red));text-decoration:none;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:1px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>HuggingFace</a> by pasting model link, or download directly in the Scan section below.</p>';
+  html += '<p class="memory-desc doclib-desc">Download from <a href="https://huggingface.co/models" target="_blank" rel="noopener" style="color:var(--accent,var(--red));text-decoration:none;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:1px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>HuggingFace</a> by pasting model link, or download directly in the Scan section below.</p>';
   html += '<div class="hwfit-container" id="hwfit-container">';
 
   // Section 1: Settings
@@ -3045,13 +3046,13 @@ function _renderRecipes() {
   // on the left. The standalone "add server" button is gone (use Settings).
   html += `<div class="cookbook-dl-input" style="margin-top:7px;display:flex;gap:4px;align-items:center;">`;
   if (_es.servers.length > 1) {
-    html += `<select class="cookbook-field-input hwfit-dl-server" id="hwfit-dl-server" style="height:28px;flex-shrink:0;">`;
+    html += `<select class="cookbook-field-input hwfit-dl-server" id="hwfit-dl-server" style="flex-shrink:0">`;
     html += _buildServerOpts(true);
     html += `</select>`;
   } else {
     html += `<input type="hidden" id="hwfit-dl-server" value="local" />`;
   }
-  html += `<input type="text" class="cookbook-dl-repo" id="cookbook-dl-repo" placeholder="org/model-name, qwen2.5:14b, or HF URL" style="flex:1;min-width:0;" />`;
+  html += `<input type="text" class="cookbook-dl-repo" id="cookbook-dl-repo" placeholder="org/model-name, qwen2.5:14b, or HF URL" style="flex:1;min-width:0" />`;
   html += `<button class="cookbook-btn cookbook-dl-btn" id="cookbook-dl-btn">Download</button>`;
   html += `</div>`;
   html += `<div id="cookbook-dl-gguf-row" class="cookbook-dl-gguf-row" style="display:none;">`;
@@ -3066,7 +3067,7 @@ function _renderRecipes() {
   // Latest HF models that fit — collapsible card list
   html += `<div style="margin-top:5px;position:relative;top:-11px;">`;
   html += `<div style="display:flex;gap:4px;align-items:center;">`;
-  html += `<button type="button" class="memory-toolbar-btn" id="cookbook-hf-latest-toggle" style="flex:1;text-align:left;height:28px;font-size:11px;display:flex;align-items:center;gap:6px;border-radius:5px;">`;
+  html += `<button type="button" class="memory-toolbar-btn" id="cookbook-hf-latest-toggle" style="flex:1;text-align:left;display:flex;align-items:center">`;
   // Trending-up icon (accent) so the section reads as "what's hot".
   html += `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent, var(--red))" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;pointer-events:none;"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>`;
   html += `<span style="pointer-events:none;flex:1;">Trending models that fit your hardware</span>`;
@@ -3082,22 +3083,22 @@ function _renderRecipes() {
   // Search section
   html += '</div></div></div></div>';
   html += '<div class="cookbook-group" data-backend-group="Search">';
-  html += '<div class="admin-card" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">';
+  html += '<div class="admin-card ui-panel" style="flex:1;display:flex;flex-direction:column;overflow:hidden">';
   html += '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px;">';
   html += '<h2 style="margin:0;padding:0;line-height:1;">Scan / Download</h2>';
   html += '</div>';
-  html += '<p class="memory-desc doclib-desc" style="margin-top:6px;">Scans your hardware for what models you can run. Hardware is cached; hit the scan button to re-probe after changing GPUs.</p>';
+  html += '<p class="memory-desc doclib-desc">Scans your hardware for what models you can run. Hardware is cached; hit the scan button to re-probe after changing GPUs.</p>';
   html += '<div class="hwfit-toolbar" style="margin-top:9px;">';
-  html += '<select class="cookbook-field-input hwfit-server-select" id="hwfit-server-select" style="height:28px;min-width:88px;position:relative;top:0px;">';
+  html += '<select class="cookbook-field-input hwfit-server-select" id="hwfit-server-select" style="min-width:88px">';
   html += _buildServerOpts(false);
   html += '</select>';
   // Keep the main scan toolbar light: server + free-text search. Advanced
   // levers (Engine / Quant / Context) live behind the cog beside Refresh.
-  html += '<input type="text" class="cookbook-field-input hwfit-search" id="hwfit-search" placeholder="Search models..." style="flex:1;" />';
+  html += '<input type="text" class="cookbook-field-input hwfit-search" id="hwfit-search" placeholder="Search models..." style="flex:1" />';
   html += '</div>';
   html += '<div class="hwfit-toolbar" style="margin-top:7px;">';
   html += '<span class="hwfit-usecase-wrap">';
-  html += '<select class="cookbook-field-input hwfit-usecase" id="hwfit-usecase" style="display:none;height:28px;">';
+  html += '<select class="cookbook-field-input hwfit-usecase" id="hwfit-usecase" style="display:none">';
   html += '<option value="general" selected>Standard</option>';
   html += '<option value="multimodal">Vision</option>';
   html += '<option value="image_gen">Image</option></select>';
@@ -3109,9 +3110,9 @@ function _renderRecipes() {
   html += '<div class="hwfit-usecase-menu" data-hwfit-usecase-menu role="listbox" hidden></div>';
   html += '</span>';
   html += '<div class="hwfit-gpu-toggles" id="hwfit-gpu-toggles"></div>';
-  html += '<button type="button" class="hwfit-gpu-btn hwfit-hw-manual-btn" id="hwfit-hw-manual-btn" title="Set hardware manually" style="flex-shrink:0;position:relative;top:-3px;left:-1px;display:inline-flex;align-items:center;gap:3px;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>EDIT</button>';
-  html += '<button type="button" class="hwfit-gpu-btn hwfit-advanced-btn" id="hwfit-advanced-btn" title="Scan settings" aria-label="Scan settings" aria-expanded="false" style="flex-shrink:0;position:relative;top:-3px;left:-3px;width:26px;height:26px;padding:0;display:inline-flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06A2 2 0 1 1 7.04 4.3l.06.06A1.65 1.65 0 0 0 8.92 4a1.65 1.65 0 0 0 1-1.51V2a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg></button>';
-  html += '<button type="button" class="hwfit-gpu-btn hwfit-hw-refresh-btn" id="hwfit-hw-refresh-btn" title="Refresh selected server hardware and cached models" aria-label="Refresh selected server hardware and cached models" style="flex-shrink:0;position:relative;top:-3px;left:-5px;width:26px;height:26px;padding:0;display:inline-flex;align-items:center;justify-content:center;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10"/><path d="M3.51 15a9 9 0 0 0 14.85 3.36L23 14"/></svg></button>';
+  html += '<button type="button" class="hwfit-gpu-btn hwfit-hw-manual-btn" id="hwfit-hw-manual-btn" title="Set hardware manually" style="flex-shrink:0;display:inline-flex;align-items:center"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>EDIT</button>';
+  html += '<button type="button" class="hwfit-gpu-btn hwfit-advanced-btn" id="hwfit-advanced-btn" title="Scan settings" aria-label="Scan settings" aria-expanded="false" style="flex-shrink:0;width:26px;display:inline-flex;align-items:center;justify-content:center"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06A2 2 0 1 1 7.04 4.3l.06.06A1.65 1.65 0 0 0 8.92 4a1.65 1.65 0 0 0 1-1.51V2a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg></button>';
+  html += '<button type="button" class="hwfit-gpu-btn hwfit-hw-refresh-btn" id="hwfit-hw-refresh-btn" title="Refresh selected server hardware and cached models" aria-label="Refresh selected server hardware and cached models" style="flex-shrink:0;width:26px;display:inline-flex;align-items:center;justify-content:center"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10"/><path d="M3.51 15a9 9 0 0 0 14.85 3.36L23 14"/></svg></button>';
   // Sort state — the clickable column headers read/write this (pewds' original
   // sort paradigm). Newest is reachable by clicking the Model column header.
   html += '<select class="cookbook-field-input hwfit-sort" id="hwfit-sort" style="display:none">';
@@ -3122,7 +3123,7 @@ function _renderRecipes() {
   html += '</div>';
   html += '<div class="hwfit-advanced-panel hidden" id="hwfit-advanced-panel" aria-label="Scan settings">';
   html += '<span class="hwfit-engine-wrap">';
-  html += '<select class="cookbook-field-input hwfit-engine" id="hwfit-engine" style="display:none;" title="Filter by serving engine">';
+  html += '<select class="cookbook-field-input hwfit-engine" id="hwfit-engine" style="display:none" title="Filter by serving engine">';
   html += '<option value="">Engine</option>';
   html += '<option value="llamacpp">llama.cpp</option>';
   html += '<option value="ollama">Ollama</option>';
@@ -3142,7 +3143,7 @@ function _renderRecipes() {
   // Quant (Q4/Q8/…). Default is "All" so the list shows the best-scoring
   // quant for every model instead of silently filtering to Q4.
   html += '<span class="hwfit-quant-wrap">';
-  html += '<select class="cookbook-field-input hwfit-quant" id="hwfit-quant" style="height:28px;">';
+  html += '<select class="cookbook-field-input hwfit-quant" id="hwfit-quant">';
   html += '<option value="" selected>Quant</option>';
   html += '<option value="Q4_K_M">Q4 / AWQ</option><option value="Q8_0">Q8</option>';
   html += '<option value="Q6_K">Q6</option><option value="Q5_K_M">Q5</option>';
@@ -3184,7 +3185,7 @@ function _renderRecipes() {
 
   // Serve group
   html += '<div class="cookbook-group hidden" data-backend-group="Serve">';
-  html += '<div class="admin-card" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">';
+  html += '<div class="admin-card ui-panel" style="flex:1;display:flex;flex-direction:column;overflow:hidden">';
   html += '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px;">';
   html += '<h2 style="margin:0;padding:0;line-height:1;">Serve <span id="serve-stats" class="memory-count" style="font-size:0.6em;opacity:0.6;font-weight:normal"></span></h2>';
   html += '</div>';
@@ -3195,15 +3196,15 @@ function _renderRecipes() {
   html += '<span class="cookbook-serve-dir-edit" title="Edit in Settings">edit</span>';
   html += '</div>';
   html += '<div style="display:flex;gap:4px;align-items:center;margin-top:4px;">';
-  html += '<select class="memory-sort-select" id="hwfit-cache-server" style="height:24px;">' + _buildServerOpts(true) + '</select>';
-  html += '<select class="memory-sort-select" id="serve-sort" style="height:24px;">';
+  html += '<select class="memory-sort-select" id="hwfit-cache-server">' + _buildServerOpts(true) + '</select>';
+  html += '<select class="memory-sort-select" id="serve-sort">';
   html += '<option value="name">Name</option><option value="size-desc">Size \u2193</option><option value="size-asc">Size \u2191</option><option value="recent">Recent</option>';
   html += '</select>';
   html += '<button type="button" class="hwfit-gpu-btn" id="hwfit-cache-scan" title="Refresh cached models on selected server" aria-label="Refresh cached models on selected server"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10"/><path d="M3.51 15a9 9 0 0 0 14.85 3.36L23 14"/></svg></button>';
   html += '</div>';
-  html += '<div class="memory-toolbar" style="margin-top:8px;">';
+  html += '<div class="memory-toolbar">';
   html += '<div class="memory-category-filters">';
-  html += '<input type="text" class="memory-search-input" id="serve-search" placeholder="Search cached models\u2026" style="flex:1;min-width:120px;" />';
+  html += '<input type="text" class="memory-search-input" id="serve-search" placeholder="Search cached models\u2026" style="flex:1;min-width:120px" />';
   html += '<button class="memory-toolbar-btn" id="hwfit-cache-select">Select</button>';
   html += '</div>';
   html += '<div class="doclib-lang-chips" id="serve-tags"></div>';
@@ -3212,8 +3213,8 @@ function _renderRecipes() {
   html += '<div class="memory-bulk-bar hidden" id="serve-bulk-bar">';
   html += '<label class="memory-bulk-check-all"><input type="checkbox" id="serve-select-all"> All</label>';
   html += '<span id="serve-bulk-count" style="font-size:10px;opacity:0.5;">0 selected</span>';
-  html += '<button class="memory-toolbar-btn danger" id="serve-bulk-delete" style="position:relative;top:-3px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>Delete</button>';
-  html += '<button class="memory-toolbar-btn" id="serve-bulk-cancel" title="Cancel (Esc)" style="margin-left:4px;padding:3px 6px;position:relative;top:-7px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>';
+  html += '<button class="memory-toolbar-btn danger" id="serve-bulk-delete"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>Delete</button>';
+  html += '<button class="memory-toolbar-btn" id="serve-bulk-cancel" title="Cancel (Esc)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>';
   html += '</div>';
 
   html += '<div class="doclib-grid hwfit-cached-list" id="hwfit-cached-list"></div>';
@@ -3221,13 +3222,13 @@ function _renderRecipes() {
 
   // Dependencies tab
   html += '<div class="cookbook-group hidden" data-backend-group="Dependencies">';
-  html += '<div class="admin-card" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">';
+  html += '<div class="admin-card ui-panel" style="flex:1;display:flex;flex-direction:column;overflow:hidden">';
   html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">';
   html += '<h2 style="margin:0;padding:0;line-height:1;">Dependencies</h2>';
   // Rebuild llama.cpp button moved into the llama_cpp dep row (see _depRow);
   // having it in the title polluted the section header.
   html += '<span style="font-size:10px;opacity:0.5;margin-left:auto;">Server</span>';
-  html += '<select class="cookbook-field-input" id="hwfit-deps-server" style="height:28px;min-width:70px;">';
+  html += '<select class="cookbook-field-input" id="hwfit-deps-server" style="min-width:70px">';
   html += _buildServerOpts(false);
   html += '</select>';
   html += '</div>';
@@ -3242,7 +3243,7 @@ function _renderRecipes() {
   html += '<div class="cookbook-group hidden cookbook-settings-stack" data-backend-group="Settings">';
 
   // ── HuggingFace Token block ─────────────────────────────────────────
-  html += '<div class="admin-card" style="flex:0 0 auto;display:flex;flex-direction:column;">';
+  html += '<div class="admin-card" style="flex:0 0 auto;display:flex;flex-direction:column">';
   html += '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px;">';
   html += '<h2 style="margin:0;padding:0;line-height:1;">HuggingFace Token</h2>';
   html += '</div>';
@@ -3257,13 +3258,13 @@ function _renderRecipes() {
   const hfPlaceholder = _es.hfTokenConfigured
     ? `Stored (${esc(_es.hfTokenMasked || 'configured')}) - enter a new token to replace`
     : 'hf_...';
-  html += `<input type="password" class="memory-search-input" id="hwfit-hftoken" value="${esc(_es.hfToken || '')}" placeholder="${hfPlaceholder}" style="flex:1;" />`;
+  html += `<input type="password" class="cookbook-field-input" id="hwfit-hftoken" value="${esc(_es.hfToken || '')}" placeholder="${hfPlaceholder}" style="flex:1" />`;
   html += `</div>`;
   html += '</div>';
   html += '</div>';
 
   // ── Servers block ───────────────────────────────────────────────────
-  html += '<div class="admin-card" style="flex:0 0 auto;display:flex;flex-direction:column;">';
+  html += '<div class="admin-card" style="flex:0 0 auto;display:flex;flex-direction:column">';
   html += '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px;margin-top:-4px;">';
   html += '<h2 style="margin:0;padding:0;line-height:1;">Servers</h2>';
   // Reuse the calendar +New pill: spinning plus, label fades in idea uses
@@ -3271,7 +3272,7 @@ function _renderRecipes() {
   html += '<button class="cal-add-btn cal-add-btn-text" id="cookbook-server-add" title="Add server" style="margin-left:auto;"><span class="cal-add-plus">+</span><span class="cal-add-label">Add</span></button>';
   html += '</div>';
   html += '<p class="memory-desc doclib-desc">Configure SSH servers, install Odysseus keys, choose model directories, and set the default server. Local is this machine.</p>';
-  html += '<div class="memory-toolbar cookbook-servers-toolbar" style="margin-top:4px;">';
+  html += '<div class="memory-toolbar cookbook-servers-toolbar">';
   html += `<div id="cookbook-servers-list">`;
   for (let i = 0; i < _es.servers.length; i++) {
     html += _serverEntryHtml(_es.servers[i], i, _es.defaultServer || '', false);

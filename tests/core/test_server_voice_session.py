@@ -387,4 +387,86 @@ def test_native_voice_gateway_flags_transient_upstream_error_only_without_tools(
         OdysseusVoiceGateway._stream_result(stream(rate_limited))
     # A tool already ran: never retry, surface the normal outcome instead.
     done = 'data: {"type":"tool_start","tool":"manage_notes"}\n\n' + rate_limited
-    assert OdysseusVoiceGateway._stream_result(stream(done)) == "Done."
+    from src.approval_text import t
+
+    assert OdysseusVoiceGateway._stream_result(stream(done)) == t("voice.done")
+
+
+def test_native_voice_gateway_emits_only_speakable_live_events():
+    events = []
+    for line in [
+        b'data: {"delta":"hmm","thinking":true}',
+        b'data: {"type":"tool_start","tool":"home_assistant_control"}',
+        b'data: {"delta":"Note created: 123","tool_text":true}',
+        b'data: {"delta":"Gotowe."}',
+        b"data: [DONE]",
+    ]:
+        OdysseusVoiceGateway._emit_live_event(line, events.append)
+    assert events == [{"tool": "home_assistant_control"}, {"text": "Gotowe."}]
+
+
+def test_server_voice_route_prefers_dedicated_voice_model(tmp_path, monkeypatch):
+    monkeypatch.setenv("ODYSSEUS_VOICE_MODEL", "anthropic/claude-haiku-5.5")
+    monkeypatch.setenv("ODYSSEUS_VOICE_ENDPOINT_ID", "openrouter")
+    chat = ServerVoiceChatSession(
+        session_store=ServerVoiceSessionStore(tmp_path),
+        settings_getter=lambda: {"text_model": "gemini-2.5-flash", "text_endpoint_id": "gemini-text"},
+    )
+    assert chat._conversation_route()[:2] == ("anthropic/claude-haiku-5.5", "openrouter")
+
+
+def _assist(response_type, speech, success=(), failed=(), code=None):
+    data = {"success": list(success), "failed": list(failed)}
+    if code:
+        data["code"] = code
+    return {"response": {"response_type": response_type, "data": data, "speech": {"plain": {"speech": speech}}}}
+
+
+@pytest.mark.asyncio
+async def test_home_assistant_assist_answers_device_commands_without_the_agent(tmp_path):
+    ha = AsyncMock()
+    ha.process_conversation.return_value = _assist(
+        "action_done", "Wyłączono światła", success=[{"type": "entity", "id": "light.wszystkie_swiatla"}]
+    )
+    gateway = AsyncMock()
+    gateway.append_turn = lambda *args: appended.append(args)
+    gateway.configure = lambda **kw: None
+    appended, events = [], []
+    chat = ServerVoiceChatSession(
+        session_store=ServerVoiceSessionStore(tmp_path),
+        settings_getter=lambda: {"text_model": "m", "text_endpoint_id": "e"},
+        home_assistant_agent=ha,
+        conversation_gateway=gateway,
+    )
+
+    reply = await chat.ask("Wyłącz wszystkie światła", on_event=events.append)
+
+    assert reply == "Wyłączono światła"
+    assert events == [{"text": "Wyłączono światła"}]
+    gateway.generate.assert_not_awaited()
+    assert appended[0][1:] == ("Wyłącz wszystkie światła", "Wyłączono światła", "home_assistant_assist")
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        None,  # HA unreachable
+        _assist("error", "Wybacz, nie rozumiem", code="no_intent_match"),
+        _assist("action_done", "Jest godzina dwudziesta"),  # no entity touched: the clock
+        _assist("action_done", "Część się nie udała", success=[{"id": "a"}], failed=[{"id": "b"}]),
+    ],
+)
+@pytest.mark.asyncio
+async def test_home_assistant_assist_defers_to_agent_unless_it_fully_acted(tmp_path, result):
+    ha = AsyncMock()
+    ha.process_conversation.return_value = result
+    gateway = AsyncMock()
+    gateway.generate.return_value = "Odpowiedź agenta."
+    chat = ServerVoiceChatSession(
+        session_store=ServerVoiceSessionStore(tmp_path),
+        settings_getter=lambda: {"text_model": "m", "text_endpoint_id": "e"},
+        home_assistant_agent=ha,
+        conversation_gateway=gateway,
+    )
+    assert await chat.ask("Coś tam") == "Odpowiedź agenta."
+    gateway.generate.assert_awaited_once()

@@ -392,7 +392,7 @@ export function capture(opts = {}) {
             <input id="sig-smoothness" class="sig-smoothness" type="range" min="0" max="10" step="1" value="${initialSmooth}" style="flex:1;">
             <span class="sig-smoothness-val" style="width:18px;text-align:right;font-variant-numeric:tabular-nums;opacity:0.7;">${initialSmooth}</span>
           </div>
-          <input class="sig-name" type="text" placeholder="Name (optional, e.g. 'Full' or 'Initials')" style="margin-top:10px;">
+          <input class="sig-name" type="text" placeholder="Name (optional, e.g. 'Full' or 'Initials')">
         </div>
         <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;padding-top:8px;border-top:1px solid var(--border);margin-top:6px;">
           <button class="sig-clear confirm-btn confirm-btn-secondary">Clear</button>
@@ -479,7 +479,7 @@ export function pick(opts = {}) {
           <button class="sig-close modal-close" title="Close">×</button>
         </div>
         <div class="modal-body">
-          <button class="sig-new-tile confirm-btn confirm-btn-primary" style="width:100%;margin-bottom:12px;padding:8px;">+ Draw new signature</button>
+          <button class="sig-new-tile confirm-btn confirm-btn-primary" style="width:100%">+ Draw new signature</button>
           ${tiles ? `<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:10px;">${tiles}</div>` : '<div style="opacity:0.6;font-size:0.8rem;text-align:center;padding:8px 0;">No saved signatures yet — draw one above.</div>'}
         </div>
       </div>

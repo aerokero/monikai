@@ -246,17 +246,6 @@ async def test_command_reset(adapter):
     assert "Zresetowałam" in channel.sent_messages[-1]
 
 
-async def test_command_mood(adapter):
-    channel = StubChannel(123)
-    user = StubUser(1, "Alice")
-    msg = StubMessage(content="!mood", author=user, channel=channel)
-
-    await adapter.on_message(msg)
-    assert channel.sent_messages
-    # Our stub personality is None, so it should report no active mood
-    assert "Nie mam teraz" in channel.sent_messages[0]
-
-
 async def test_command_memory(adapter):
     channel = StubChannel(123)
     user = StubUser(1, "Alice")

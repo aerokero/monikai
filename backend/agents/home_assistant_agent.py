@@ -630,6 +630,25 @@ class HomeAssistantAgent(BaseSmartHomeAgent):
         s = 0 if max_c == 0 else (dc / max_c) * 100
         v = max_c * 100
         
+    async def process_conversation(self, text: str, timeout: float = 3.0) -> Optional[Dict[str, Any]]:
+        """Run text through HA's built-in Assist intents (local, any HA language)."""
+        if not self.ha_url or not self.ha_token:
+            return None
+        try:
+            session = await self._ensure_session()
+            async with session.post(
+                f"{self.ha_url}/api/conversation/process",
+                # The built-in agent only matches exact intents; never a
+                # configured LLM agent, which would be slow and second-guess us.
+                json={"text": text, "agent_id": "conversation.home_assistant"},
+                headers={"Authorization": f"Bearer {self.ha_token}"},
+                timeout=aiohttp.ClientTimeout(total=timeout),
+            ) as resp:
+                return await resp.json() if resp.status == 200 else None
+        except Exception as e:
+            print(f"[HA Agent] Assist: {e}")
+            return None
+
     async def get_shopping_list(self) -> List[str]:
         """Get active items from Home Assistant shopping list (todo.shopping_list)."""
         try:

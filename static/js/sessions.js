@@ -3,7 +3,7 @@
 
 import Storage from './storage.js';
 import uiModule, { autoResize, styledPrompt } from './ui.js';
-import chatRenderer from './chatRenderer.js?v=20260924toolaxis1';
+import chatRenderer from './chatRenderer.js?v=20261007think1';
 import { providerLogo } from './providers.js';
 import { initModelPicker, updateModelPicker } from './modelPicker.js?v=20260722ctxheader1';
 import themeModule from './theme.js';
@@ -567,10 +567,8 @@ function createSessionItem(s) {
   let chatTitle = s.name || '';
   if (_isFork) chatTitle = chatTitle.replace(/^Fork:\s*/, '').replace(/^\u2ADD\s*/, '');
   if (_isGroup) chatTitle = chatTitle.replace(/^\[GRP\]\s*/, '');
-  let label = chatTitle;
-  if (s.model) label += ' · ' + s.model.split('/').pop();
-  if (s.archived) label += ' [archived]';
-  span.textContent = label;
+  // Model stays in the tooltip; the provider logo already marks it.
+  span.textContent = chatTitle + (s.archived ? ' [archived]' : '');
   span.title = (s.model ? s.model.split('/').pop() + ' · ' : '') + chatTitle;
   span.classList.add('text-ellipsis');
 
@@ -3111,7 +3109,7 @@ function _arcRenderCard(s) {
     ${checkboxHtml}
     <div style="flex:1;min-width:0;">
       <div class="memory-item-title">${uiModule.esc(s.name || 'Untitled')}</div>
-      <div class="memory-item-meta" style="font-size:10px;opacity:0.4;margin-top:2px;">
+      <div class="memory-item-meta">
         <span>${modelShort || 'no model'}</span>
         <span>\u00b7</span>
         <span>${msgCount} msg${msgCount !== 1 ? 's' : ''}</span>
@@ -3211,7 +3209,7 @@ export function openLibrary(defaultTab) {
             <option value="most-messages">Most messages</option>
             <option value="alpha">A\u2013Z</option>
           </select>
-          <input type="text" class="memory-search-input" id="lib-search" placeholder="Filter\u2026" style="flex:1;" />
+          <input type="text" class="memory-search-input" id="lib-search" placeholder="Filter\u2026" style="flex:1" />
           <button class="memory-toolbar-btn" id="lib-select-btn" title="Select">Select</button>
         </div>
         <div class="memory-bulk-bar hidden" id="lib-bulk-bar">
@@ -3520,8 +3518,8 @@ function _buildLibCard(id, title, count, meta, time, isActive, isDoc) {
   card.innerHTML = `
     ${cbHtml}
     <div style="flex:1;min-width:0;">
-      <div class="memory-item-title"${isActive ? ' style="color:var(--accent);"' : ''}>${uiModule.esc(title)}</div>
-      <div class="memory-item-meta" style="font-size:10px;opacity:0.4;margin-top:2px;">${metaParts.join(' \u00b7 ')}</div>
+      <div class="memory-item-title"${isActive ? '' : ''}>${uiModule.esc(title)}</div>
+      <div class="memory-item-meta">${metaParts.join(' \u00b7 ')}</div>
     </div>
     <div class="memory-item-actions">
       <button class="memory-item-btn archive-menu-btn" title="Actions"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg></button>
@@ -3576,7 +3574,7 @@ export function openArchive() {
             <option value="most-messages">Most messages</option>
             <option value="alpha">A\u2013Z</option>
           </select>
-          <input type="text" class="memory-search-input" id="archive-search" placeholder="Filter\u2026" style="flex:1;" />
+          <input type="text" class="memory-search-input" id="archive-search" placeholder="Filter\u2026" style="flex:1" />
           <button class="memory-toolbar-btn" id="archive-select-btn" title="Select sessions">Select</button>
         </div>
         <div class="memory-bulk-bar hidden" id="archive-bulk-bar">

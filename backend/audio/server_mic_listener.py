@@ -24,6 +24,13 @@ from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
 
 import numpy as np
 
+from backend.audio.barge_in import (
+    AudioOutput,
+    BargeInMonitor,
+    EchoCanceller,
+    SpeechDetector,
+    looks_like_echo,
+)
 from backend.conversation.voice_quality import (
     DEFAULT_MIN_VOICE_CONFIDENCE,
     assess_voice_transcript,
@@ -61,6 +68,16 @@ _WAKE_CANDIDATE_RE = re.compile(
 )
 
 _WAKE_ACKNOWLEDGEMENT = "Hm?"
+
+
+def _turn_error_reply() -> str:
+    try:
+        from src.approval_text import t
+
+        return t("voice.error")
+    except Exception:
+        return "Sorry, something went wrong."
+_WAKE_CHIME_TO_VOICE_GAP_SEC = 0.45
 _LIVE_WAKE_CHIME_GAIN = 1.5
 
 
@@ -474,6 +491,7 @@ class ServerMicListenerService:
         self,
         *,
         conversation_handler: Optional[Callable[[str], Any]] = None,
+        conversation_stream_handler: Optional[Callable[[str, Callable[[Dict[str, Any]], None]], Any]] = None,
         input_device_index: Optional[int] = None,
         input_device_name: Optional[str] = None,
         output_device_index: Optional[int] = None,
@@ -491,6 +509,25 @@ class ServerMicListenerService:
         voice_light_feedback=None,
     ):
         self.conversation_handler = conversation_handler
+        # Preferred: called as (prompt, on_event) and speaks while streaming.
+        self.conversation_stream_handler = conversation_stream_handler
+        # 0 = speak the whole reply; brevity is the prompt's job, cutting
+        # Monika off mid-thought is worse than a long answer.
+        self.tts_max_chars = int(os.getenv("SERVER_MIC_TTS_MAX_CHARS", "0"))
+        self._first_audio_at: Optional[float] = None
+        # Full duplex (see barge_in.py): opened by the listen loop.
+        self.barge_in_enabled = str(os.getenv("SERVER_MIC_BARGE_IN", "true")).lower() in {"1", "true", "yes"}
+        self._duck_gain = float(os.getenv("SERVER_MIC_BARGE_IN_DUCK_GAIN", "0.3"))
+        self._output: Optional[AudioOutput] = None
+        self._echo: Optional[EchoCanceller] = None
+        self._speech_detector: Optional[SpeechDetector] = None
+        self._barge_monitor: Optional[BargeInMonitor] = None
+        self._reply_playing = False
+        self._spoken_pieces: List[str] = []
+        self._barge_task: Optional[asyncio.Task] = None
+        self._barge_in_segment: Optional[bytes] = None
+        self._barge_in_transcript: Optional[str] = None
+        self._interrupted_reply: Optional[str] = None
         self.input_device_index = input_device_index
         self.input_device_name = input_device_name
         self.output_device_index = output_device_index
@@ -593,6 +630,7 @@ class ServerMicListenerService:
         )
         self.denoiser = AudioDenoiseProcessor(sample_rate=self.sample_rate)
         self._last_transcribe_time = 0.0
+        self._genai_client = None
         self._last_stt_confidence: Optional[float] = None
         self._last_stt_intelligible: Optional[bool] = None
         self._last_stt_rejection_reason = ""
@@ -621,6 +659,7 @@ class ServerMicListenerService:
         self._continuous_wake_recognizer = None
         self._continuous_wake_audio: Deque[bytes] = collections.deque(maxlen=84)
         self._last_wake_voice_time = 0.0
+        self._last_wake_candidate_time = 0.0
         self._partial_wake_text = ""
         self._partial_wake_hits = 0
         self._last_partial_wake_time = 0.0
@@ -1091,6 +1130,8 @@ class ServerMicListenerService:
             completed = recognizer.AcceptWaveform(frame_data)
             if not completed:
                 payload = json.loads(recognizer.PartialResult() or "{}")
+                if "moni" in str(payload.get("partial") or ""):
+                    self._last_wake_candidate_time = time.monotonic()
                 candidate = self._validate_partial_wake_result(payload)
                 now = time.monotonic()
                 recent_voice = (now - self._last_wake_voice_time) <= 1.0
@@ -1204,18 +1245,18 @@ class ServerMicListenerService:
 
         preferred = os.getenv("GEMINI_TRANSCRIBE_MODEL", "gemini-2.5-flash")
         candidates = [preferred, "gemini-2.5-flash", "gemini-3.5-flash-lite", "gemini-3.6-flash"]
-        models_to_try = []
-        for m in candidates:
-            if m not in models_to_try:
-                models_to_try.append(m)
+        models_to_try = list(dict.fromkeys(candidates))
 
         try:
             from google import genai
             from google.genai import types
 
-            client = genai.Client(api_key=self.gemini_api_key)
+            if self._genai_client is None:
+                self._genai_client = genai.Client(api_key=self.gemini_api_key)
+            client = self._genai_client
             prompt = (
-                "Transcribe this voice audio accurately in Polish. Return exactly "
+                "Transcribe this voice audio accurately in the language that is "
+                "actually spoken (never translate). Return exactly "
                 "one JSON object with keys text, intelligible, and confidence. "
                 "text must contain only the words that are actually audible; "
                 "intelligible must be a boolean; confidence must be a number "
@@ -1228,52 +1269,95 @@ class ServerMicListenerService:
                 "If the audio is silent or completely unintelligible, use "
                 "text='' and intelligible=false with confidence <= 0.35. "
                 "A short but clearly spoken word or phrase is valid."
-            )
+            ) + self._stt_vocabulary_hint()
 
+            def request(model_name: str) -> asyncio.Task:
+                return asyncio.ensure_future(
+                    client.aio.models.generate_content(
+                        model=model_name,
+                        contents=[
+                            prompt,
+                            types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav"),
+                        ],
+                    )
+                )
+
+            # Hedged requests: STT normally answers in ~1.5 s, but a busy
+            # model can hang or 503.  Instead of waiting out one model before
+            # trying the next, start the next one alongside after a short
+            # delay (or at once on an error) and take the first answer.
+            hedge_delay = float(os.getenv("SERVER_MIC_STT_HEDGE_SECONDS", "2.0"))
+            deadline = time.monotonic() + self.stt_timeout
+            queue = iter(models_to_try)
+            pending: Dict[asyncio.Task, str] = {}
+            response = None
             last_exc = None
-            for model_name in models_to_try:
-                try:
-                    response = await asyncio.wait_for(
-                        client.aio.models.generate_content(
-                            model=model_name,
-                            contents=[
-                                prompt,
-                                types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav"),
-                            ],
-                        ),
-                        timeout=self.stt_timeout,
+            hedge_at = 0.0
+            try:
+                while response is None and time.monotonic() < deadline:
+                    if time.monotonic() >= hedge_at:
+                        model_name = next(queue, None)
+                        if model_name:
+                            pending[request(model_name)] = model_name
+                        hedge_at = time.monotonic() + hedge_delay
+                    if not pending:
+                        break
+                    done, _ = await asyncio.wait(
+                        pending,
+                        timeout=max(0.0, min(hedge_at, deadline) - time.monotonic()),
+                        return_when=asyncio.FIRST_COMPLETED,
                     )
-                    raw_text = getattr(response, "text", "") or ""
-                    text, confidence, intelligible = _parse_transcription_response(raw_text)
-                    self._last_stt_confidence = confidence
-                    self._last_stt_intelligible = intelligible
-                    assessment = assess_voice_transcript(
-                        text,
-                        confidence=confidence,
-                        intelligible=intelligible,
-                        min_confidence=self.stt_min_confidence,
-                    )
-                    if not assessment.accepted:
-                        self._last_stt_rejection_reason = assessment.reason
-                        print(
-                            "[SERVER MIC] [STT] Ignoring transcript: "
-                            f"reason={assessment.reason} confidence="
-                            f"{confidence if confidence is not None else 'unknown'}"
-                        )
-                        return ""
-                    return assessment.text
-                except Exception as exc:
-                    last_exc = exc
-                    if "429" in str(exc) or "RESOURCE_EXHAUSTED" in str(exc):
-                        continue
-                    break
+                    for task in done:
+                        model_name = pending.pop(task)
+                        if task.exception() is not None:
+                            last_exc = task.exception() or f"error ({model_name})"
+                            hedge_at = 0.0  # failed: hand over to the next model now
+                        elif response is None:
+                            response = task.result()
+            finally:
+                for task in pending:
+                    task.cancel()
 
-            if last_exc:
-                print(f"[SERVER MIC] Transcription notice: {last_exc}")
-            return ""
+            if response is None:
+                print(f"[SERVER MIC] Transcription notice: {last_exc or 'timeout'}")
+                return ""
+            raw_text = getattr(response, "text", "") or ""
+            text, confidence, intelligible = _parse_transcription_response(raw_text)
+            self._last_stt_confidence = confidence
+            self._last_stt_intelligible = intelligible
+            assessment = assess_voice_transcript(
+                text,
+                confidence=confidence,
+                intelligible=intelligible,
+                min_confidence=self.stt_min_confidence,
+            )
+            if not assessment.accepted:
+                self._last_stt_rejection_reason = assessment.reason
+                print(
+                    "[SERVER MIC] [STT] Ignoring transcript: "
+                    f"reason={assessment.reason} confidence="
+                    f"{confidence if confidence is not None else 'unknown'}"
+                )
+                return ""
+            return assessment.text
         except Exception as exc:
             print(f"[SERVER MIC] Transcription failed: {exc}")
             return ""
+
+    def _stt_vocabulary_hint(self) -> str:
+        """Smart-home device names, so "VARMBLIXT" is not heard as "warm blix"."""
+        entities = getattr(self.home_assistant_agent, "entities", None) or {}
+        names = sorted({
+            str((state.get("attributes") or {}).get("friendly_name") or "").strip()
+            for state in entities.values()
+            if isinstance(state, dict)
+        } - {""})
+        if not names:
+            return ""
+        return (
+            " Device names in this home (spell them exactly like this when "
+            "they are spoken; never insert them otherwise): " + ", ".join(names[:60]) + "."
+        )
 
     async def play_audio_locally(
         self,
@@ -1284,6 +1368,17 @@ class ServerMicListenerService:
     ):
         """Play synthesized audio out of server speakers/headphones with automatic resampling and stereo expansion."""
         if not pcm_bytes:
+            return
+
+        if self._output is not None:
+            if suppress_capture:
+                self._is_speaking = True
+            try:
+                await self._output.play(pcm_bytes, sample_rate)
+            finally:
+                if suppress_capture:
+                    self._is_speaking = False
+                    self.vad.reset_segment()
             return
 
         if suppress_capture:
@@ -1336,7 +1431,16 @@ class ServerMicListenerService:
                         "dtype": "int16",
                         "device": out_idx,
                     }
-                    stream = await asyncio.to_thread(sd.RawOutputStream, **kwargs)
+                    # A just-cancelled thinking pulse may still hold the device
+                    # for a moment; retry instead of dropping the reply.
+                    for attempt in range(5):
+                        try:
+                            stream = await asyncio.to_thread(sd.RawOutputStream, **kwargs)
+                            break
+                        except sd.PortAudioError:
+                            if attempt == 4:
+                                raise
+                            await asyncio.sleep(0.25)
                     stream.start()
                     await asyncio.to_thread(stream.write, playback_bytes)
                     # RawOutputStream.write is blocking: waiting for the full
@@ -1501,6 +1605,83 @@ class ServerMicListenerService:
         except Exception as exc:
             print(f"[SERVER MIC] [TTS] Warm-up skipped: {exc}")
 
+    async def _render_speech(self, text: str) -> Tuple[bytes, int]:
+        """Synthesize text to (pcm16 mono, sample_rate): local renderer, then Gemini, then Flite."""
+        if self.tts_provider in {"local", "kokoro", "xtts", "pocket", "auto"}:
+            try:
+                from backend.conversation.voice_output import (
+                    get_voice_output_service,
+                    speech_to_live_pcm,
+                )
+
+                service = get_voice_output_service()
+                status = service.get_status()
+                configured = status.get("provider") or "xtts"
+                if self.tts_provider in {"xtts", "pocket"} or (self.tts_provider in {"local", "auto", "kokoro"} and configured in {"xtts", "local", "pocket"}):
+                    provider_to_use = configured
+                elif self.tts_provider != "kokoro":
+                    provider_to_use = self.tts_provider
+                else:
+                    provider_to_use = "local"
+
+                started = time.perf_counter()
+                rendered = await asyncio.wait_for(
+                    service.synthesize(
+                        text,
+                        provider=provider_to_use,
+                        voice=status.get("voice"),
+                        **(
+                            {"language": self.tts_language}
+                            if self.tts_language and self.tts_language != "auto"
+                            else {}
+                        ),
+                    ),
+                    timeout=self.tts_timeout,
+                )
+                pcm_audio = speech_to_live_pcm(rendered)
+                print(
+                    f"[SERVER MIC] [TTS] {provider_to_use} rendered {len(text)} chars "
+                    f"in {(time.perf_counter() - started) * 1000.0:.0f}ms."
+                )
+                return pcm_audio, 24000
+            except Exception as exc:
+                print(
+                    f"[SERVER MIC] [TTS] {self.tts_provider} renderer unavailable ({exc}); "
+                    "falling back to Gemini."
+                )
+
+        try:
+            from backend.conversation.speech import GeminiSpeechSynthesizer, SpeechSynthesisRequest
+
+            started = time.perf_counter()
+            result = await GeminiSpeechSynthesizer(api_key=self.gemini_api_key).synthesize(
+                SpeechSynthesisRequest(
+                    text=text,
+                    voice=self.gemini_voice,
+                    language=self.tts_language or "auto",
+                )
+            )
+            if result and result.audio:
+                print(
+                    f"[SERVER MIC] [TTS] gemini rendered {len(text)} chars "
+                    f"in {(time.perf_counter() - started) * 1000.0:.0f}ms."
+                )
+                return result.audio, result.sample_rate
+        except Exception as exc:
+            print(f"[SERVER MIC] [TTS] Gemini unavailable ({exc}); using local fallback.")
+
+        local_audio = await self._synthesize_with_flite(text)
+        if local_audio:
+            print("[SERVER MIC] [TTS] Using local fallback voice.")
+            return local_audio, 24000
+        raise RuntimeError("No working speech synthesizer is available")
+
+    async def _play_pcm(self, pcm: bytes, sample_rate: int, *, capture_safe: bool = False) -> None:
+        if capture_safe:
+            await self.play_audio_locally(pcm, sample_rate=sample_rate, suppress_capture=False)
+        else:
+            await self.play_audio_locally(pcm, sample_rate=sample_rate)
+
     async def _synthesize_and_play(
         self,
         text: str,
@@ -1519,129 +1700,153 @@ class ServerMicListenerService:
                 truncate_for_speech,
             )
 
-            max_chars = int(os.getenv("SERVER_MIC_TTS_MAX_CHARS", "600"))
-            text = truncate_for_speech(prepare_for_speech(text), max_chars) or text
+            text = truncate_for_speech(prepare_for_speech(text), self.tts_max_chars) or text
 
-        total_started = time.perf_counter()
+        started = time.perf_counter()
+        pcm, sample_rate = await self._render_speech(text)
+        if announce_speaking and self.voice_light_feedback:
+            self._queue_voice_light_state("speaking")
+        await self._play_pcm(pcm, sample_rate, capture_safe=capture_safe)
+        print(f"[SERVER MIC] [TTS TIMING] total={(time.perf_counter() - started) * 1000.0:.0f}ms")
 
-        if self.tts_provider in {"local", "kokoro", "xtts", "pocket", "auto"}:
+    async def _speak_stream(self, pieces: asyncio.Queue) -> None:
+        """Speak text pieces as they arrive; the next renders while one plays."""
+        from backend.conversation.speech_text import prepare_for_speech
+
+        rendered: asyncio.Queue = asyncio.Queue(maxsize=2)
+
+        async def render() -> None:
             try:
-                from backend.conversation.voice_output import (
-                    get_voice_output_service,
-                    speech_to_live_pcm,
-                )
+                while (piece := await pieces.get()) is not None:
+                    text = prepare_for_speech(piece)
+                    if not text:
+                        continue
+                    try:
+                        pcm, sample_rate = await self._render_speech(text)
+                        # Pieces play back to back; give each the pause a
+                        # reader would make after it.
+                        pause = 0.3 if text.rstrip()[-1:] in ".!?…" else 0.12
+                        pcm += b"\0\0" * int(sample_rate * pause)
+                        await rendered.put((text, pcm, sample_rate))
+                    except Exception as exc:
+                        print(f"[SERVER MIC] [TTS] Skipping unrenderable piece: {exc}")
+            finally:
+                await rendered.put(None)
 
-                service = get_voice_output_service()
-                status = service.get_status()
-                configured = status.get("provider") or "xtts"
-                if self.tts_provider in {"xtts", "pocket"} or (self.tts_provider in {"local", "auto", "kokoro"} and configured in {"xtts", "local", "pocket"}):
-                    provider_to_use = configured
-                elif self.tts_provider != "kokoro":
-                    provider_to_use = self.tts_provider
-                else:
-                    provider_to_use = "local"
-
-                print(f"[SERVER MIC] [TTS] Synthesizing with {provider_to_use} renderer (voice={status.get('voice', 'default')})...")
-                synthesis_started = time.perf_counter()
-                rendered = await asyncio.wait_for(
-                    service.synthesize(
-                        text,
-                        provider=provider_to_use,
-                        voice=status.get("voice"),
-                        **(
-                            {"language": self.tts_language}
-                            if self.tts_language and self.tts_language != "auto"
-                            else {}
-                        ),
-                    ),
-                    timeout=self.tts_timeout,
-                )
-                synthesis_ms = (time.perf_counter() - synthesis_started) * 1000.0
-                pcm_audio = speech_to_live_pcm(rendered)
-                print(
-                    f"[SERVER MIC] [TTS] {provider_to_use} audio ready ({len(pcm_audio)} bytes, "
-                    f"24000Hz, synth={synthesis_ms:.0f}ms). Starting playback..."
-                )
-                playback_started = time.perf_counter()
-                if announce_speaking and self.voice_light_feedback:
-                    self._queue_voice_light_state("speaking")
-                if capture_safe:
-                    await self.play_audio_locally(
-                        pcm_audio,
-                        sample_rate=24000,
-                        suppress_capture=False,
-                    )
-                else:
-                    await self.play_audio_locally(pcm_audio, sample_rate=24000)
-                print(
-                    f"[SERVER MIC] [TTS TIMING] provider={provider_to_use} "
-                    f"synthesis={synthesis_ms:.0f}ms "
-                    f"playback={(time.perf_counter() - playback_started) * 1000.0:.0f}ms "
-                    f"total={(time.perf_counter() - total_started) * 1000.0:.0f}ms"
-                )
-                return
-            except Exception as exc:
-                print(
-                    f"[SERVER MIC] [TTS] {self.tts_provider} renderer unavailable ({exc}); "
-                    "falling back to Gemini."
-                )
-
+        renderer = asyncio.create_task(render(), name="server-mic-tts-render")
+        self._arm_barge_in()
         try:
-            print(f"[SERVER MIC] [TTS] Synthesizing speech with voice '{self.gemini_voice}'...")
-            from backend.conversation.speech import GeminiSpeechSynthesizer, SpeechSynthesisRequest
+            while not self._barge_in_segment:
+                try:
+                    item = await asyncio.wait_for(
+                        rendered.get(),
+                        timeout=1.0 if self._first_audio_at and self.voice_light_feedback else None,
+                    )
+                except asyncio.TimeoutError:
+                    # Nothing to say for a while (a tool is running after
+                    # "Już sprawdzam…"): show thinking again, not dead air.
+                    self._queue_voice_light_state("thinking")
+                    item = await rendered.get()
+                    if item is not None:
+                        self._queue_voice_light_state("speaking")
+                if item is None or self._barge_in_segment:
+                    break
+                if self._first_audio_at is None:
+                    self._first_audio_at = time.perf_counter()
+                    if self.voice_light_feedback:
+                        self._queue_voice_light_state("speaking")
+                text, pcm, sample_rate = item
+                self._spoken_pieces.append(text)
+                await self._play_pcm(pcm, sample_rate)
+        finally:
+            self._reply_playing = False
+            renderer.cancel()
 
-            synthesizer = GeminiSpeechSynthesizer(api_key=self.gemini_api_key)
-            synthesis_started = time.perf_counter()
-            result = await synthesizer.synthesize(
-                SpeechSynthesisRequest(
-                    text=text,
-                    voice=self.gemini_voice,
-                    language=self.tts_language or "auto",
-                )
+    async def _run_streaming_turn(self, prompt: str) -> str:
+        """Ask the agent and speak its answer sentence by sentence while it streams."""
+        from backend.conversation.speech_text import SpeechChunker
+
+        chunker = SpeechChunker(max_chars=self.tts_max_chars)
+        pieces: asyncio.Queue = asyncio.Queue()
+
+        def on_event(event: Dict[str, Any]) -> None:
+            # A tool call ends the current agent round: speak what was said
+            # before it now ("Już sprawdzam…") instead of gluing it to the
+            # next round's text.
+            ready = chunker.flush() if "tool" in event else chunker.feed(event.get("text") or "")
+            for piece in ready:
+                pieces.put_nowait(piece)
+
+        # "" is meaningful: interrupted before a single word was spoken.
+        note, self._interrupted_reply = self._interrupted_reply, None
+        extra = {"interrupted_reply": note} if note is not None else {}
+        speaker = asyncio.create_task(self._speak_stream(pieces), name="server-mic-speaker")
+        try:
+            try:
+                reply = str(await self.conversation_stream_handler(prompt, on_event, **extra) or "")
+            except Exception as exc:
+                print(f"[SERVER MIC] Error processing reply: {exc}")
+                reply = "" if chunker.text.strip() else _turn_error_reply()
+            streamed = chunker.text.strip()
+            # The final answer can extend what streamed (a spoken approval
+            # question, the "Done." fallback) or replace an unspoken marker.
+            if reply and reply.startswith(streamed):
+                for piece in chunker.feed(reply[len(streamed):]) + chunker.flush():
+                    pieces.put_nowait(piece)
+            elif reply and not streamed:
+                pieces.put_nowait(reply)
+            pieces.put_nowait(None)
+            await speaker
+            # The user may still be talking over the end of the reply.
+            while self._barge_monitor is not None and self._barge_monitor.state == "capturing":
+                await asyncio.sleep(0.05)
+            if self._barge_task is not None:
+                await self._barge_task
+        finally:
+            speaker.cancel()
+        return reply
+
+    def _arm_barge_in(self) -> None:
+        self._spoken_pieces = []
+        self._barge_task = None
+        self._barge_in_segment = None
+        if self._barge_monitor is not None and self._output is not None:
+            self._barge_monitor.reset()
+            self._speech_detector.reset()
+            self._output.gain, self._output.paused = 1.0, False
+            self._reply_playing = True
+
+    def _barge_in_frame(self, frame: bytes) -> None:
+        """Watch echo-cancelled mic audio while Monika speaks."""
+        probability = self._speech_detector.feed(frame)
+        event = self._barge_monitor.push(frame, probability)
+        if event == "duck":
+            self._output.gain = self._duck_gain
+        elif event == "unduck":
+            self._output.gain = 1.0
+        elif event == "interrupt":
+            self._output.paused = True
+        elif event == "segment":
+            self._barge_task = asyncio.create_task(
+                self._resolve_barge_in(self._barge_monitor.segment), name="server-mic-barge-in"
             )
-            synthesis_ms = (time.perf_counter() - synthesis_started) * 1000.0
-            if result and result.audio:
-                print(
-                    f"[SERVER MIC] [TTS] Audio ready ({len(result.audio)} bytes, "
-                    f"{result.sample_rate}Hz, synth={synthesis_ms:.0f}ms). Starting playback..."
-                )
-                playback_started = time.perf_counter()
-                if announce_speaking and self.voice_light_feedback:
-                    self._queue_voice_light_state("speaking")
-                if capture_safe:
-                    await self.play_audio_locally(
-                        result.audio,
-                        sample_rate=result.sample_rate,
-                        suppress_capture=False,
-                    )
-                else:
-                    await self.play_audio_locally(
-                        result.audio,
-                        sample_rate=result.sample_rate,
-                    )
-                print(
-                    "[SERVER MIC] [TTS TIMING] provider=gemini "
-                    f"synthesis={synthesis_ms:.0f}ms "
-                    f"playback={(time.perf_counter() - playback_started) * 1000.0:.0f}ms "
-                    f"total={(time.perf_counter() - total_started) * 1000.0:.0f}ms"
-                )
-                return
-        except Exception as exc:
-            print(f"[SERVER MIC] [TTS] Gemini unavailable ({exc}); using local fallback.")
+        if event:
+            print(f"[SERVER MIC] [BARGE-IN] {event} (speech p={probability:.2f}).")
 
-        local_audio = await self._synthesize_with_flite(text)
-        if local_audio:
-            print("[SERVER MIC] [TTS] Playing local fallback voice.")
-            if capture_safe:
-                await self.play_audio_locally(
-                    local_audio,
-                    sample_rate=24000,
-                    suppress_capture=False,
-                )
-            else:
-                await self.play_audio_locally(local_audio, sample_rate=24000)
+    async def _resolve_barge_in(self, pcm: bytes) -> None:
+        """Paused for the user: drop the rest of the reply, or carry on if it was nothing."""
+        transcript = await self.transcribe_speech(_raw_pcm_to_wav(pcm, sample_rate=self.sample_rate))
+        spoken = " ".join(self._spoken_pieces)
+        if transcript and not looks_like_echo(transcript, spoken):
+            print(f"[SERVER MIC] [BARGE-IN] Interrupted by \"{transcript}\".")
+            self._barge_in_segment, self._barge_in_transcript = pcm, transcript
+            self._interrupted_reply = spoken
+            self._output.stop()
             return
-        raise RuntimeError("No working speech synthesizer is available")
+        print(f"[SERVER MIC] [BARGE-IN] Resuming; heard {'own echo' if transcript else 'no words'}.")
+        self._barge_monitor.reset()
+        self._speech_detector.reset()
+        self._output.gain, self._output.paused = 1.0, False
 
     async def _synthesize_with_flite(self, text: str) -> bytes:
         """Return local PCM speech using FFmpeg's bundled Flite engine."""
@@ -1759,6 +1964,14 @@ class ServerMicListenerService:
 
         # 2. Voice prompt
         if mode in {"both", "voice_only"}:
+            if mode == "both":
+                await asyncio.sleep(_WAKE_CHIME_TO_VOICE_GAP_SEC)
+                if self.vad.is_speech_active:
+                    # "Hej Monika, zapal światło" in one breath: the command
+                    # is already coming, so a spoken "Hm?" would only land
+                    # inside its recording.  The chime is enough.
+                    print("[SERVER MIC] [WAKE] Command already spoken; skipping voice prompt.")
+                    return
             try:
                 from unittest.mock import AsyncMock, MagicMock
                 is_mocked = isinstance(getattr(self, "_synthesize_and_play", None), (AsyncMock, MagicMock))
@@ -2280,7 +2493,8 @@ class ServerMicListenerService:
         else:
             wav_bytes = _raw_pcm_to_wav(raw_pcm, sample_rate=self.sample_rate)
             stt_started = time.perf_counter()
-            transcript = await self.transcribe_speech(wav_bytes)
+            transcript, self._barge_in_transcript = self._barge_in_transcript, None
+            transcript = transcript or await self.transcribe_speech(wav_bytes)
             stt_ms = (time.perf_counter() - stt_started) * 1000.0
         if not transcript:
             # Do not fall back to the local wake result after the cloud STT has
@@ -2413,29 +2627,34 @@ class ServerMicListenerService:
 
                 reply_text = ""
                 model_started = time.perf_counter()
-                if self.conversation_handler:
-                    try:
-                        res = self.conversation_handler(prompt)
-                        if asyncio.iscoroutine(res):
-                            reply_text = await res
-                        else:
-                            reply_text = str(res or "")
-                    except Exception as exc:
-                        print(f"[SERVER MIC] Error processing reply: {exc}")
-                        reply_text = "Przepraszam, coś poszło nie tak przy przetwarzaniu."
-                model_ms = (time.perf_counter() - model_started) * 1000.0
+                self._first_audio_at = None
+                if self.conversation_stream_handler:
+                    reply_text = await self._run_streaming_turn(prompt)
+                    model_ms = (time.perf_counter() - model_started) * 1000.0
+                    print(f"[SERVER MIC] [REPLY] \"{reply_text}\"")
+                else:
+                    if self.conversation_handler:
+                        try:
+                            res = self.conversation_handler(prompt)
+                            if asyncio.iscoroutine(res):
+                                reply_text = await res
+                            else:
+                                reply_text = str(res or "")
+                        except Exception as exc:
+                            print(f"[SERVER MIC] Error processing reply: {exc}")
+                            reply_text = _turn_error_reply()
+                    model_ms = (time.perf_counter() - model_started) * 1000.0
 
-                print(f"[SERVER MIC] [REPLY] \"{reply_text}\"")
+                    print(f"[SERVER MIC] [REPLY] \"{reply_text}\"")
 
-                # Synthesize and play response
-                if reply_text and not reply_text.startswith("("):
-                    tts_started = time.perf_counter()
-                    try:
-                        await self._synthesize_and_play(reply_text, announce_speaking=True)
-                    except Exception as exc:
-                        print(f"[SERVER MIC] Błąd syntezy mowy: {exc}")
-                    finally:
-                        tts_ms = (time.perf_counter() - tts_started) * 1000.0
+                    if reply_text and not reply_text.startswith("("):
+                        tts_started = time.perf_counter()
+                        try:
+                            await self._synthesize_and_play(reply_text, announce_speaking=True)
+                        except Exception as exc:
+                            print(f"[SERVER MIC] Błąd syntezy mowy: {exc}")
+                        finally:
+                            tts_ms = (time.perf_counter() - tts_started) * 1000.0
 
                 if self.on_turn_finished:
                     try:
@@ -2445,8 +2664,8 @@ class ServerMicListenerService:
                     except Exception:
                         pass
             finally:
-                # Generous echo dissipation delay after full response and playback
-                await asyncio.sleep(0.6)
+                # Let the room echo of the last word die out before listening.
+                await asyncio.sleep(0.3)
                 self.vad.reset_segment()
                 followup_sec = float(os.getenv("SERVER_MIC_FOLLOWUP_TIMEOUT", "8.0"))
                 if followup_sec > 0:
@@ -2460,9 +2679,49 @@ class ServerMicListenerService:
                     "[SERVER MIC] [TIMING] "
                     f"segment={segment_duration:.2f}s local_wake={local_wake_ms:.0f}ms "
                     f"stt={stt_ms:.0f}ms model={model_ms:.0f}ms tts={tts_ms:.0f}ms "
+                    f"first_audio={((self._first_audio_at or timing_started) - timing_started) * 1000.0:.0f}ms "
                     f"total={(time.perf_counter() - timing_started) * 1000.0:.0f}ms"
                 )
                 self._is_busy = False
+        if self._barge_in_segment:
+            # The user talked over the reply: their words are the next turn.
+            segment, self._barge_in_segment = self._barge_in_segment, None
+            await self._handle_speech_segment(segment)
+
+    def _open_duplex(self, input_latency_s: float) -> None:
+        """Open the persistent speaker stream and, if possible, echo cancellation + barge-in."""
+        out_idx = find_best_output_device(self.output_device_index)
+        if out_idx is None:
+            return
+        try:
+            self._output = AudioOutput.open(sd, out_idx)
+        except Exception as exc:
+            print(f"[SERVER MIC] [DUPLEX] Persistent output unavailable ({exc}); using per-clip playback.")
+            return
+        print(
+            f"[SERVER MIC] [DUPLEX] Output stream open (device={out_idx}, {self._output.rate}Hz, "
+            f"ch={self._output.channels}, latency={self._output.latency_ms:.0f}ms)."
+        )
+        if not self.barge_in_enabled or self.sample_rate != 16000:
+            return
+        try:
+            # Speaker-to-mic delay hint; AEC3 refines it, the offset is the
+            # room calibration knob.
+            delay_ms = (
+                self._output.latency_ms
+                + input_latency_s * 1000.0
+                + float(os.getenv("SERVER_MIC_AEC_DELAY_OFFSET_MS", "0"))
+            )
+            self._speech_detector = SpeechDetector()
+            self._echo = EchoCanceller(delay_ms)
+            self._barge_monitor = BargeInMonitor(
+                threshold=float(os.getenv("SERVER_MIC_BARGE_IN_THRESHOLD", "0.6")),
+                interrupt_ms=int(os.getenv("SERVER_MIC_BARGE_IN_MS", "500")),
+            )
+            print(f"[SERVER MIC] [DUPLEX] Echo cancellation + barge-in on (delay hint {delay_ms:.0f}ms).")
+        except Exception as exc:
+            self._echo = self._speech_detector = self._barge_monitor = None
+            print(f"[SERVER MIC] [DUPLEX] Barge-in unavailable: {exc}")
 
     async def _listen_loop(self):
         """Main listening loop capturing chunks from the microphone."""
@@ -2501,6 +2760,7 @@ class ServerMicListenerService:
                 stream.start()
 
                 print(f"[SERVER MIC] [OK] Listening stream started on '{dev_name}' (device={dev_idx}, rate={dev_sr}Hz, wake_word={self.require_wake_word}, denoise=True).")
+                await asyncio.to_thread(self._open_duplex, float(getattr(stream, "latency", 0.0) or 0.0))
                 self._warmup_task = asyncio.create_task(
                     self._warm_up_tts(), name="server-mic-tts-warmup"
                 )
@@ -2510,19 +2770,6 @@ class ServerMicListenerService:
                         f"(model={self.live_model})."
                     )
                 while self._is_running:
-                    if (
-                        self._is_muted
-                        or self._is_speaking
-                        or self._is_busy
-                        or self._speech_segment_in_flight()
-                    ):
-                        # Keep draining the capture stream while output is
-                        # playing. Otherwise ALSA delivers stale speaker echo
-                        # and misses the beginning of the user's next turn.
-                        await self._read_sounddevice_frame(stream, chunk_size)
-                        self.vad.reset_segment()
-                        continue
-
                     # PortAudio waits synchronously for a complete frame. Keep
                     # that wait outside FastAPI's event loop so HTTP and
                     # Socket.IO remain responsive while local wake detection
@@ -2533,6 +2780,26 @@ class ServerMicListenerService:
                     frame_data = bytes(data)
                     if dev_sr != self.sample_rate:
                         frame_data = resample_pcm16(frame_data, dev_sr, self.sample_rate)
+                    if self._echo is not None:
+                        # Remove Monika's own voice (and chimes) from the mic.
+                        frame_data = self._echo.process(frame_data, self._output.reference)
+
+                    if (
+                        self._is_muted
+                        or self._is_speaking
+                        or self._is_busy
+                        or self._speech_segment_in_flight()
+                    ):
+                        # Keep draining the capture stream while output is
+                        # playing. Otherwise ALSA delivers stale speaker echo
+                        # and misses the beginning of the user's next turn.
+                        # Barge-in still watches the cleaned signal.
+                        if self._barge_monitor is not None and (
+                            self._reply_playing or self._barge_monitor.state == "capturing"
+                        ):
+                            self._barge_in_frame(frame_data)
+                        self.vad.reset_segment()
+                        continue
 
                     segment = self.vad.process_frame(frame_data)
                     now = time.monotonic()
@@ -2672,6 +2939,9 @@ class ServerMicListenerService:
             await self._close_conversation_session()
             self._awaiting_command_until = 0.0
             await self._set_voice_light_state("idle", wait=True)
+            if self._output is not None:
+                self._output.close()
+                self._output = self._echo = self._barge_monitor = None
             if stream:
                 try:
                     stream.stop()

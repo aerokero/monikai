@@ -412,33 +412,12 @@
   display: none !important;
 }
 
-.composer-tools-menu .overflow-menu-item {
-  min-height: 40px !important;
-  height: 40px !important;
-  padding: 0 14px !important;
-  gap: 12px !important;
-  border: 0 !important;
-  border-radius: 12px !important;
-  background: transparent !important;
-  color: var(--fg) !important;
-  font: inherit !important;
-  font-size: 0.875rem !important;
-  font-weight: 400 !important;
-  display: flex;
-  align-items: center !important;
-  cursor: pointer !important;
-  width: 100% !important;
-  box-sizing: border-box !important;
-  text-align: left !important;
-  transition: background-color 0.15s ease !important;
-}
+.composer-tools-menu .overflow-menu-item { display: flex; align-items: center !important; cursor: pointer !important; width: 100% !important; box-sizing: border-box !important; text-align: left !important; transition: background-color 0.15s ease !important; }
 
 /* Explicit visibility states win over component layout. */
 .composer-tools-menu > [hidden],
 .composer-tools-menu > .hidden,
 .composer-tools-menu > *:empty:not(.composer-menu-divider),
-.composer-tools-menu .overflow-menu-item.hidden,
-.composer-tools-menu .overflow-menu-item:empty,
 .composer-tools-menu #mode-chat-btn,
 .composer-tools-menu #overflow-tts-btn[hidden],
 .composer-tools-menu #overflow-tts-btn:empty {
@@ -449,15 +428,11 @@
   margin: 0 !important;
   border: 0 !important;
 }
+.composer-tools-menu .overflow-menu-item.hidden, .composer-tools-menu .overflow-menu-item:empty { display: none !important; margin: 0 !important; }
 
-.composer-tools-menu .overflow-menu-item:hover {
-  background: color-mix(in srgb, var(--fg) 8%, transparent) !important;
-}
 
-.composer-tools-menu .overflow-menu-item.active,
-.composer-tools-menu .overflow-menu-item[aria-pressed="true"] {
-  background: color-mix(in srgb, var(--fg) 6%, transparent) !important;
-}
+
+
 
 .composer-tools-menu .overflow-menu-item svg:first-child {
   color: var(--ui-text-secondary) !important;
@@ -497,10 +472,7 @@
   height: 1px;
 }
 
-.composer-tools-menu .overflow-menu-item.agent-disabled {
-  opacity: 0.4 !important;
-  pointer-events: none !important;
-}
+.composer-tools-menu .overflow-menu-item.agent-disabled { pointer-events: none !important; }
 
 .composer-pill #model-picker-menu {
   position: absolute !important;
@@ -644,31 +616,13 @@
   backdrop-filter: blur(12px) !important;
 }
 
-.export-dropdown-item {
-  padding: 8px 12px !important;
-  font-size: 0.8125rem !important;
-  font-family: inherit !important;
-  font-weight: 400 !important;
-  border-radius: 8px !important;
-  color: var(--fg) !important;
-  gap: 10px !important;
-  display: flex;
-  align-items: center !important;
-  cursor: pointer !important;
-  transition: background-color 0.12s ease !important;
-}
+.export-dropdown-item { display: flex; align-items: center !important; cursor: pointer !important; transition: background-color 0.12s ease !important; }
 
-.export-dropdown-item:hover {
-  background: color-mix(in srgb, var(--fg) 8%, transparent) !important;
-}
 
-.export-dropdown-item.dropdown-item-danger {
-  color: var(--color-error) !important;
-}
 
-.export-dropdown-item.dropdown-item-danger:hover {
-  background: rgba(242, 139, 130, 0.12) !important;
-}
+
+
+
 
 /* Context control sits immediately to the left of the 3-dots menu. */
 .chat-top-bar .chat-meta-overlay {
@@ -790,7 +744,45 @@
   }
   /* Keep the model picker and mic from squeezing the send button. */
   .composer-pill .composer-actions-right { gap: 2px !important; }
-  #overflow-menu.composer-tools-menu .overflow-menu-item { min-height: 44px !important; height: auto !important; }
+  
   .chat-top-bar .chat-meta-overlay { right: 12px !important; }
   .chat-meta-overlay .chat-context-pill { width:44px !important; min-width:44px !important; height:44px !important; min-height:44px !important; }
+}
+
+/* ==========================================================================
+   Mobile polish (≤768px): picker anchored to the composer, tighter composer,
+   wider bubbles.
+   ========================================================================== */
+@media (max-width: 768px) {
+  /* Model menu spans the composer instead of hanging off the model button
+     (it was anchored at the button's right edge and ran off-screen left). */
+  .composer-pill #model-picker-wrap { position: static !important; }
+  .composer-pill #model-picker-menu {
+    left: 0 !important;
+    right: 0 !important;
+    bottom: calc(100% + 8px) !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    transform-origin: bottom center;
+  }
+  .composer-pill #model-picker-menu .model-switch-item { min-height: 44px; }
+
+  /* Tighter composer: ~20px less chrome, more room for the conversation. */
+  .chat-container .chat-input-bar.composer-pill {
+    gap: 6px 4px !important;
+    padding: 10px 12px 8px !important;
+    min-height: 0 !important;
+  }
+  .composer-pill .composer-text-row { min-height: 44px !important; }
+  .composer-pill #model-picker-label { max-width: min(120px, 28vw) !important; }
+
+  /* Bubbles: assistant uses the full width, user stays compact. */
+  #chat-history .msg.msg-ai { max-width: 100% !important; }
+  #chat-history .agent-thread { max-width: calc(100% - 24px) !important; min-width: 0 !important; }
+  #chat-history .msg.msg-user { max-width: 85% !important; }
+  #chat-history .msg.msg-ai .body,
+  #chat-history .msg.msg-user .body {
+    padding: 12px 16px !important;
+    border-radius: 22px !important;
+  }
 }

@@ -10,7 +10,7 @@ import { makeWindowDraggable } from './windowDrag.js';
 import { attachColorPicker } from './colorPicker.js';
 import { bindMenuDismiss } from './escMenuStack.js';
 import {
-  WEEKDAYS, WEEKDAYS_SUN, MONTHS, MON_SHORT,
+  WEEKDAYS, WEEKDAYS_SUN, WEEKDAYS_NARROW, MONTHS,
   CAL_PALETTE, CAL_COLORS, _CAL_CUSTOM_GRADIENT, _TYPE_PALETTE,
   _trashIcon, _moreIcon, _bellIcon,
   _isCalBgImage, _calBgImageUrl, _calBgCss, _cssUrlEscape,
@@ -64,7 +64,7 @@ let _hiddenTypes = new Set();   // event_type values to hide
 // chip; orthogonal to _hiddenTypes (which deals with event_type categories).
 let _onlyImportant = false;
 
-let _filtersCollapsed = localStorage.getItem('cal-filters-collapsed') === '1';
+let _filtersCollapsed = localStorage.getItem('cal-filters-collapsed') !== '0';  // filters are secondary: start collapsed
 // Week-start preference: 'mon' (default, Mon=first col) or 'sun' (Sun=first col).
 let _weekStartSun = localStorage.getItem('cal-week-start') === 'sun';
 let _selectedDay = null;
@@ -146,7 +146,7 @@ async function _fetchEvents(start, end, force) {
 // Prefetch surrounding months in background — fire-and-forget, no blocking
 function _prefetchAdjacent() {
   const ranges = [];
-  if (_view === 'month' || _view === 'week') {
+  if (_view === 'month' || _isTimeGrid()) {
     // Prefetch ±2 months around current
     for (let offset = -2; offset <= 2; offset++) {
       if (offset === 0) continue;
@@ -373,6 +373,9 @@ function _monthRange(d) {
   return [_ds(gs), _ds(ge)];
 }
 
+// Day and week share the hour-grid renderer and the week's fetch range.
+function _isTimeGrid() { return _view === 'week' || _view === 'day'; }
+
 function _weekRange(d) {
   const dow = _weekStartSun ? d.getDay() : (d.getDay() + 6) % 7;
   const s = new Date(d); s.setDate(d.getDate() - dow);
@@ -394,6 +397,11 @@ function _eventsForDay(dateStr) {
     if (startDate !== endDate) return startDate <= dateStr && endDate >= dateStr;
     return startDate === dateStr;
   });
+}
+
+// Events from subscribed (ICS) calendars mirror a remote feed: no local edits.
+function _isReadOnly(ev) {
+  return !!ev && _calendars.find(c => c.href === ev.calendar_href)?.source === 'ics';
 }
 
 function _calColor(ev) {
@@ -538,8 +546,8 @@ function _showEventMoreMenu(ev, anchor) {
   dropdown.className = 'cal-event-dropdown';
   let closeMenu = () => dropdown.remove();
   const rect = anchor.getBoundingClientRect();
-  dropdown.style.cssText = `position:fixed;z-index:${topPortalZ()};min-width:180px;background:var(--panel,var(--bg));border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.3);padding:4px;font-size:12px;top:${rect.bottom + 4}px;left:0px;visibility:hidden;`;
-
+  dropdown.style.cssText = `position:fixed;z-index:${topPortalZ()};min-width:180px;top:${rect.bottom + 4}px;left:0px;visibility:hidden;`;
+  dropdown.classList.add('ui-menu');
   const _item = (icon, label, onClick, danger) => {
     const it = document.createElement('div');
     it.className = 'dropdown-item-compact' + (danger ? ' dropdown-item-danger' : '');
@@ -621,7 +629,7 @@ function _collapseSidebar() {
     // Only remember the prior state on desktop. On mobile the sidebar is an
     // overlay that the user intentionally swipes/taps away when the tool
     // opens — popping it back on close is unwanted.
-    if (window.innerWidth >= 700) _sidebarWasOpen = true;
+    if (window.innerWidth > 768) _sidebarWasOpen = true;
     sb.classList.add('hidden');
     if (window.syncRailSide) window.syncRailSide();
   }
@@ -784,7 +792,7 @@ function _updateDaySearchResults() {
 // Step between calendar views by "zoom level" — pinch IN goes year→month→week,
 // pinch OUT goes the other way. Agenda is its own thing so it's excluded.
 function _zoomView(direction) {
-  const chain = ['year', 'month', 'week'];
+  const chain = ['year', 'month', 'week', 'day'];
   const idx = chain.indexOf(_view);
   if (idx < 0) return;
   const next = idx + direction;
@@ -813,12 +821,14 @@ function _render() {
   // so we don't replace the whole calendar body when a query is active.
   // Force a selected day in month/week so the panel (and its search box)
   // is always available.
-  if (_searchQuery && (_view === 'month' || _view === 'week') && !_selectedDay) {
-    _selectedDay = _today();
+  // Month/week/day always show the day panel (events + search) beside the
+  // grid, so keep a day selected — the layout never jumps between views.
+  if ((_view === 'month' || _isTimeGrid()) && !_selectedDay) {
+    _selectedDay = _ds(_currentDate);
   }
   if (_view === 'agenda') _renderAgenda();
   else if (_view === 'year') _renderYear();
-  else if (_view === 'week') _renderWeek();
+  else if (_isTimeGrid()) _renderWeek();
   else _renderMonth();
   // Prefetch adjacent in background after a short delay
   setTimeout(() => _prefetchAdjacent(), 200);
@@ -902,27 +912,46 @@ function _isoWeekNumber(d) {
   return Math.ceil(((tgt - yearStart) / 86400000 + 1) / 7);
 }
 
+const _ICON = {
+  prev: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>',
+  next: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>',
+  gear: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.68 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  sync: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>',
+  done: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>',
+  plus: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+};
+
+function _titleText() {
+  const d = _currentDate;
+  if (_view === 'agenda') return 'Upcoming';
+  if (_view === 'year') return String(d.getFullYear());
+  if (_view === 'day') {
+    const narrow = window.innerWidth <= 768;
+    return d.toLocaleDateString(undefined, { weekday: narrow ? 'short' : 'long', day: 'numeric', month: narrow ? 'short' : 'long' });
+  }
+  const month = `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  return _view === 'week' ? `${month} <span class="cal-week-no">W${_isoWeekNumber(d)}</span>` : month;
+}
+
 function _headerHTML() {
-  const weekSuffix = _view === 'week'
-    ? ` <span class="cal-week-no">W${_isoWeekNumber(_currentDate)}</span>`
-    : '';
+  const syncCls = (window._calSyncing ? ' cal-syncing' : '') + (window._calSyncDone ? ' cal-sync-done' : '');
   return `<div class="cal-toolbar">
     <div class="cal-toolbar-nav">
-      <button class="cal-nav" id="cal-prev">&larr;</button>
-      <button class="cal-nav cal-today-btn" id="cal-today">Today</button>
-      <span class="cal-title">${_view === 'agenda' ? 'Upcoming' : MONTHS[_currentDate.getMonth()] + ' ' + _currentDate.getFullYear()}${weekSuffix}</span>
-      <button class="cal-nav" id="cal-next">&rarr;</button>
+      <button class="cal-nav cal-today-btn" id="cal-today" title="Today (T)">Today</button>
+      <button class="cal-nav cal-icon-btn" id="cal-prev" title="Previous (←)" aria-label="Previous">${_ICON.prev}</button>
+      <button class="cal-nav cal-icon-btn" id="cal-next" title="Next (→)" aria-label="Next">${_ICON.next}</button>
+      <h3 class="cal-title">${_titleText()}</h3>
     </div>
     <div class="cal-toolbar-right">
-      <div class="cal-view-toggle">
-        ${['week', 'month', 'year', 'agenda'].map(v =>
-          `<button class="cal-view-btn${_view === v ? ' active' : ''}" data-view="${v}">${v[0].toUpperCase() + v.slice(1)}</button>`
+      <div class="cal-view-toggle" role="tablist">
+        ${['day', 'week', 'month', 'year', 'agenda'].map(v =>
+          `<button class="cal-view-btn${_view === v ? ' active' : ''}" data-view="${v}" role="tab" aria-selected="${_view === v}">${v[0].toUpperCase() + v.slice(1)}</button>`
         ).join('')}
       </div>
-      <button class="cal-nav" id="cal-settings" title="Calendar settings" style="position:relative;top:-3px;"><svg width="13" height="13" style="position:relative;top:2px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.68 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
-      <button class="cal-nav${window._calSyncing ? ' cal-syncing' : ''}${window._calSyncDone ? ' cal-sync-done' : ''}" id="cal-sync" title="Refresh from database" style="position:relative;top:-3px;">${window._calSyncDone ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>'}</button>
       ${_filtersToggleHTML()}
-      <button class="cal-add-btn cal-add-btn-text" id="cal-add" title="New event"><span class="cal-add-plus">+</span><span class="cal-add-label">New</span></button>
+      <button class="cal-nav cal-icon-btn${syncCls}" id="cal-sync" title="Refresh" aria-label="Refresh">${window._calSyncDone ? _ICON.done : _ICON.sync}</button>
+      <button class="cal-nav cal-icon-btn" id="cal-settings" title="Calendars & sync" aria-label="Calendar settings">${_ICON.gear}</button>
+      <button class="cal-new-btn" id="cal-add" title="New event" aria-label="New event">${_ICON.plus}<span>New</span></button>
     </div>
   </div>
   <div class="cal-quickadd-row" id="cal-quickadd-row">
@@ -962,7 +991,7 @@ function _filtersData() {
     typeFilters += `<label class="cal-filter-item${off ? ' cal-filter-off' : ''}${active ? ' cal-filter-active' : ''}${t === '!' ? ' cal-filter-important' : ''}" data-type="${t}">
       <span class="cal-filter-dot" style="background:${_TYPE_PALETTE[t]}"></span>${label}</label>`;
   }
-  if (hasUntagged) {
+  if (hasUntagged && typeFilters) {
     const off = _hiddenTypes.has('__untagged__');
     typeFilters += `<label class="cal-filter-item${off ? ' cal-filter-off' : ''}" data-type="__untagged__">
       <span class="cal-filter-dot" style="background:${_TYPE_PALETTE.untagged}"></span>untagged</label>`;
@@ -974,7 +1003,8 @@ function _filtersToggleHTML() {
   // Inline toolbar button only. The chip row renders separately below.
   const { calFilters, typeFilters } = _filtersData();
   if (!calFilters && !typeFilters) return '';
-  return `<button class="cal-filter-toggle" id="cal-filter-toggle" title="${_filtersCollapsed ? 'Show filters' : 'Hide filters'}">${_filtersCollapsed ? '+ tags' : '− tags'}</button>`;
+  const active = !_filtersCollapsed || _hiddenCals.size || _hiddenTypes.size || _onlyImportant;
+  return `<button class="cal-nav cal-icon-btn cal-filter-btn${active ? ' is-active' : ''}" id="cal-filter-toggle" title="${_filtersCollapsed ? 'Show filters' : 'Hide filters'}" aria-pressed="${!_filtersCollapsed}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></button>`;
 }
 
 function _filtersRowHTML() {
@@ -982,7 +1012,7 @@ function _filtersRowHTML() {
   if (_filtersCollapsed) return '';
   const { calFilters, typeFilters } = _filtersData();
   if (!calFilters && !typeFilters) return '';
-  const sep = (calFilters && typeFilters) ? '<span style="opacity:0.3;margin:0 4px">·</span>' : '';
+  const sep = (calFilters && typeFilters) ? '<span class="cal-filter-sep"></span>' : '';
   return `<div class="cal-filters">${calFilters}${sep}${typeFilters}</div>`;
 }
 
@@ -1030,6 +1060,8 @@ async function _renderMonth() {
     return Math.round((endD - startD) / 86400000) > 1 || (!e.all_day && _localDateOf(e.dtstart) !== _localDateOf(e.dtend));
   });
   const multiUids = new Set(multiDay.map(e => e.uid));
+  // All-day DTEND is exclusive, so the bar's last day is the day before it.
+  const _mdLastDay = (md) => md.all_day ? _addDays(_localDateOf(md.dtend), -1) : _localDateOf(md.dtend);
 
   // Render 6 week rows. Each row is a positioned container that holds
   // 7 day cells AND any multi-day bars that span the row, drawn as an
@@ -1048,7 +1080,7 @@ async function _renderMonth() {
     const rowEnd0 = _ds(rowEndCd0);
     const barsInRow = multiDay.filter(md => {
       const mdStart = _localDateOf(md.dtstart);
-      const mdEnd = _localDateOf(md.dtend);
+      const mdEnd = _mdLastDay(md);
       return !(mdEnd < rowStart0 || mdStart > rowEnd0);
     }).length;
     h += `<div class="cal-week-row" style="--bars:${barsInRow}">`;
@@ -1071,7 +1103,7 @@ async function _renderMonth() {
           const _impMark = ev.importance === 'critical' ? '<span style="color:var(--red);margin-right:2px" title="critical">!!</span>'
                          : ev.importance === 'high' ? '<span style="color:var(--orange,#e5a33a);margin-right:2px" title="high">!</span>' : '';
           const _typeBadge = ev.event_type ? `<span class="cal-event-type-badge" data-type="${_e(ev.event_type)}" title="${_e(ev.event_type)}"></span>` : '';
-          h += `<div class="cal-event-row" draggable="true" data-uid="${_e(ev.uid)}" title="${_e(ev.summary)}${ev.event_type ? ' · ' + ev.event_type : ''}${ev.importance && ev.importance !== 'normal' ? ' · ' + ev.importance : ''}">
+          h += `<div class="cal-event-row" draggable="${!_isReadOnly(ev)}" data-uid="${_e(ev.uid)}" style="--ev:${_calColor(ev)}" title="${_e(ev.summary)}${ev.event_type ? ' · ' + ev.event_type : ''}${ev.importance && ev.importance !== 'normal' ? ' · ' + ev.importance : ''}">
             <span class="cal-event-row-dot" style="background:${_calColor(ev)}"></span>
             ${_typeBadge}
             ${t ? `<span class="cal-event-row-time">${t}</span>` : ''}
@@ -1087,7 +1119,7 @@ async function _renderMonth() {
     let barSlot = 0;
     for (const md of multiDay) {
       const mdStart = _localDateOf(md.dtstart);
-      const mdEnd = _localDateOf(md.dtend);
+      const mdEnd = _mdLastDay(md);
       // Compute the row's date range
       const rowStartCd = new Date(gs); rowStartCd.setDate(gs.getDate() + row * 7);
       const rowEndCd = new Date(gs); rowEndCd.setDate(gs.getDate() + row * 7 + 6);
@@ -1132,7 +1164,7 @@ async function _renderMonth() {
           }
         } catch (_) { startFrac = 0; endFrac = 1; }
       }
-      h += `<div class="cal-multiday" style="--col:${startColInt};--span:${span};--slot:${barSlot};--start-frac:${startFrac.toFixed(4)};--end-frac:${endFrac.toFixed(4)};background:${_calColor(md)};--cal-event-fg:${_calEventFg(md)}" draggable="true" data-uid="${_e(md.uid)}" title="${_e(md.summary)}">${_e(md.summary)}</div>`;
+      h += `<div class="cal-multiday" style="--col:${startColInt};--span:${span};--slot:${barSlot};--start-frac:${startFrac.toFixed(4)};--end-frac:${endFrac.toFixed(4)};background:${_calColor(md)};--cal-event-fg:${_calEventFg(md)}" draggable="${!_isReadOnly(md)}" data-uid="${_e(md.uid)}" title="${_e(md.summary)}">${_e(md.summary)}</div>`;
       barSlot++;
     }
     h += '</div>';
@@ -1199,7 +1231,7 @@ function _wkSetZoom(px) {
   WEEK_HOUR_PX = Math.max(WK_PX_MIN, Math.min(WK_PX_MAX, Math.round(px)));
   try { localStorage.setItem('cal-wk-hour-px', String(WEEK_HOUR_PX)); } catch {}
   if (_hourAtTop != null) _wkScrollY = Math.round(_hourAtTop * WEEK_HOUR_PX);
-  if (_view === 'week') _render();
+  if (_isTimeGrid()) _render();
 }
 function _wkZoomBy(delta) { _wkSetZoom(WEEK_HOUR_PX + delta); }
 function _wkHours() { return WEEK_HOUR_END - WEEK_HOUR_START; }
@@ -1268,8 +1300,10 @@ async function _renderWeek() {
 
   // Build day list once (used for both all-day strip and grid).
   const days = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(ws); d.setDate(ws.getDate() + i);
+  const dayCount = _view === 'day' ? 1 : 7;
+  for (let i = 0; i < dayCount; i++) {
+    const d = dayCount === 1 ? new Date(_currentDate) : new Date(ws);
+    if (dayCount > 1) d.setDate(ws.getDate() + i);
     days.push({ d, ds: _ds(d), idx: i });
   }
 
@@ -1286,7 +1320,7 @@ async function _renderWeek() {
   railHtml += '</div>';
 
   // Day columns
-  let colsHtml = '<div class="cal-wk-cols">';
+  let colsHtml = `<div class="cal-wk-cols" style="grid-template-columns:repeat(${dayCount}, minmax(0, 1fr));">`;
   for (const { d, ds, idx } of days) {
     const isToday = ds === today;
     const allDayEvents = _eventsForDay(ds).filter(e => _eventVisible(e) && e.all_day);
@@ -1294,7 +1328,7 @@ async function _renderWeek() {
 
     const isSun = d.getDay() === 0;
     colsHtml += `<div class="cal-wk-col${isToday ? ' cal-wk-today' : ''}${isSun && !_weekStartSun ? ' cal-wk-sun' : ''}" data-date="${ds}">`;
-    colsHtml += `<div class="cal-wk-col-head"><span class="cal-wk-dn">${(_weekStartSun ? WEEKDAYS_SUN : WEEKDAYS)[idx]}</span><span class="cal-wk-dt">${d.getDate()}</span></div>`;
+    colsHtml += `<div class="cal-wk-col-head"><span class="cal-wk-dn">${WEEKDAYS[(d.getDay() + 6) % 7]}</span><span class="cal-wk-dt">${d.getDate()}</span></div>`;
     // All-day strip
     colsHtml += `<div class="cal-wk-allday">`;
     for (const ev of allDayEvents) {
@@ -1372,7 +1406,7 @@ async function _renderWeek() {
       e.preventDefault();
       const uid = block.dataset.uid;
       const ev = _events.find(x => x.uid === uid);
-      if (!ev) return;
+      if (!ev || _isReadOnly(ev)) return;
       const cols = Array.from(body.querySelectorAll('.cal-wk-grid'));
       if (!cols.length) return;
       // Local/display timing
@@ -1502,7 +1536,7 @@ async function _renderWeek() {
       const ds = grid.dataset.date;
       const uid = block.dataset.uid;
       const ev = _events.find(x => x.uid === uid);
-      if (!ev || !grid || !ds) return;
+      if (!ev || !grid || !ds || _isReadOnly(ev)) return;
       const startMin = _timeToMin(ev.dtstart) ?? 0;
       const initialTop = parseFloat(block.style.top || '0');
       const gridRect = grid.getBoundingClientRect();
@@ -1597,7 +1631,8 @@ async function _renderWeek() {
     if (_wkScrollY != null) {
       _wrap.scrollTop = _wkScrollY;
     } else if (!_wkScrolledOnce) {
-      _wrap.scrollTop = WK_DEFAULT_SCROLL_HOUR * WEEK_HOUR_PX;
+      // A little above the hour so its label isn't tucked under the sticky header.
+      _wrap.scrollTop = WK_DEFAULT_SCROLL_HOUR * WEEK_HOUR_PX - 12;
       _wkScrolledOnce = true;
     }
   }
@@ -1611,7 +1646,7 @@ async function _renderWeek() {
   if (!body._wkZoomKeysWired) {
     body._wkZoomKeysWired = true;
     document.addEventListener('keydown', (e) => {
-      if (_view !== 'week') return;
+      if (!_isTimeGrid()) return;
       const tag = (document.activeElement?.tagName || '').toLowerCase();
       if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
       if (e.key === '+' || e.key === '=' ) { e.preventDefault(); _wkZoomBy(+12); }
@@ -1702,7 +1737,7 @@ async function _renderAgenda() {
           : '';
         const _impMark = ev.importance === 'critical' ? '<span style="color:var(--red);margin-right:4px" title="critical">!!</span>'
                        : ev.importance === 'high' ? '<span style="color:var(--orange,#e5a33a);margin-right:4px" title="high">!</span>' : '';
-        h += `<div class="cal-agenda-event" data-uid="${_e(ev.uid)}">
+        h += `<div class="cal-agenda-event" data-uid="${_e(ev.uid)}" style="--ev:${_calColor(ev)}">
           <div class="cal-event-dot" style="background:${_calColor(ev)}"></div>
           <div class="cal-event-info">
             <div class="cal-event-name">${_impMark}${_e(ev.summary)} ${_typeTag}</div>
@@ -1768,7 +1803,7 @@ async function _renderSearch() {
     for (const ev of results) {
       const evDate = _localDateOf(ev.dtstart);
       const t = ev.all_day ? 'All day' : _fmtTime(ev.dtstart) + ' – ' + _fmtTime(ev.dtend);
-      h += `<div class="cal-agenda-event" data-uid="${_e(ev.uid)}">
+      h += `<div class="cal-agenda-event" data-uid="${_e(ev.uid)}" style="--ev:${_calColor(ev)}">
         <div class="cal-event-dot" style="background:${_calColor(ev)}"></div>
         <div class="cal-event-info">
           <div class="cal-event-name">${_e(ev.summary)}</div>
@@ -1811,9 +1846,9 @@ async function _renderYear() {
 
   let h = _headerHTML() + _filtersRowHTML() + '<div class="cal-year">';
   for (let m = 0; m < 12; m++) {
-    h += `<div class="cal-year-month" data-month="${m}"><div class="cal-year-month-title">${MON_SHORT[m]}</div>`;
+    h += `<div class="cal-year-month" data-month="${m}"><div class="cal-year-month-title">${MONTHS[m]}</div>`;
     h += '<div class="cal-year-grid">';
-    for (const wd of (_weekStartSun ? ['S','M','T','W','T','F','S'] : ['M','T','W','T','F','S','S'])) h += `<div class="cal-year-wd">${wd}</div>`;
+    for (const wd of (_weekStartSun ? [WEEKDAYS_NARROW[6], ...WEEKDAYS_NARROW.slice(0, 6)] : WEEKDAYS_NARROW)) h += `<div class="cal-year-wd">${wd}</div>`;
     const first = new Date(y, m, 1);
     const dow = _weekStartSun ? first.getDay() : (first.getDay() + 6) % 7;
     const daysInMonth = new Date(y, m + 1, 0).getDate();
@@ -1869,11 +1904,10 @@ function _dayDetailHTML(dateStr) {
     <svg class="cal-search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
     <input type="search" class="cal-search-input cal-day-search" id="cal-search" placeholder="Search all events…" value="${_e(_searchQuery)}" />
   </div>`;
-  let h = `<div class="cal-splitter" role="separator" aria-orientation="horizontal" tabindex="0" title="Drag to resize"><div class="cal-splitter-grip"></div></div>
-    <div class="cal-day-detail">
+  let h = `<div class="cal-day-detail">
     ${searchInput}
     <div class="cal-detail-header">
-      <span>${_fmtDate(dateStr)}${isToday ? ' <span style="color:var(--accent, var(--red));font-weight:600;">(Today)</span>' : ''}</span>
+      <span>${_fmtDate(dateStr)}${isToday ? ' <span class="cal-agenda-today-badge">Today</span>' : ''}</span>
       <button class="cal-add-btn cal-add-btn-text cal-add-btn-sm" id="cal-add-day" title="New event"><span class="cal-add-plus">+</span><span class="cal-add-label">New</span></button>
     </div>`;
   if (_searchQuery) {
@@ -1894,7 +1928,7 @@ function _dayDetailHTML(dateStr) {
         const date = ev.all_day ? ev.dtstart : _localDateOf(ev.dtstart);
         const t = ev.all_day ? 'All day' : _fmtTime(ev.dtstart) + ' – ' + _fmtTime(ev.dtend);
         const bgStyle = _calItemBgStyle(ev);
-        h += `<div class="cal-event-item${bgStyle ? ' cal-event-item-bg' : ''}" data-uid="${_e(ev.uid)}"${bgStyle ? ` style="${bgStyle}"` : ''}>
+        h += `<div class="cal-event-item${bgStyle ? ' cal-event-item-bg' : ''}" data-uid="${_e(ev.uid)}" style="--ev:${_calColor(ev)};${bgStyle}">
           <div class="cal-event-dot" style="background:${_calColor(ev)}"></div>
           <div class="cal-event-info">
             <div class="cal-event-name">${_e(ev.summary)}</div>
@@ -1912,7 +1946,7 @@ function _dayDetailHTML(dateStr) {
   else evs.forEach(ev => {
     const t = ev.all_day ? 'All day' : _fmtTime(ev.dtstart) + ' – ' + _fmtTime(ev.dtend);
     const _bgStyle = _calItemBgStyle(ev);
-    h += `<div class="cal-event-item${_bgStyle ? ' cal-event-item-bg' : ''}" data-uid="${_e(ev.uid)}"${_bgStyle ? ` style="${_bgStyle}"` : ''}><div class="cal-event-dot" style="background:${_calColor(ev)}"></div><div class="cal-event-info"><div class="cal-event-name">${_e(ev.summary)}</div><div class="cal-event-time">${t}</div>${ev.location ? `<div class="cal-event-loc">${_locHTML(ev.location)}</div>` : ''}</div><button class="cal-event-more" data-uid="${_e(ev.uid)}" title="More">${_moreIcon}</button></div>`;
+    h += `<div class="cal-event-item${_bgStyle ? ' cal-event-item-bg' : ''}" data-uid="${_e(ev.uid)}" style="--ev:${_calColor(ev)};${_bgStyle}"><div class="cal-event-dot" style="background:${_calColor(ev)}"></div><div class="cal-event-info"><div class="cal-event-name">${_e(ev.summary)}</div><div class="cal-event-time">${t}</div>${ev.location ? `<div class="cal-event-loc">${_locHTML(ev.location)}</div>` : ''}</div><button class="cal-event-more" data-uid="${_e(ev.uid)}" title="More">${_moreIcon}</button></div>`;
   });
   return h + '</div>';
 }
@@ -1920,83 +1954,6 @@ function _dayDetailHTML(dateStr) {
 // ── Wire all common listeners ──
 
 function _wireAll(body) {
-  // ── Day-detail splitter (drag to resize) ────────────────────────
-  // Restores the saved height each render so the user's choice survives
-  // navigation between months/weeks. Drag adjusts a single CSS variable
-  // on #cal-body — the grid clamps its height and the day-detail expands
-  // / contracts accordingly via CSS rules.
-  try {
-    const calBody = document.getElementById('cal-body');
-    const splitter = body.querySelector('.cal-splitter');
-    if (calBody && splitter) {
-      // Only seed from localStorage on the first wire-up. Subsequent
-      // renders (every keystroke when the user is typing in search)
-      // would otherwise clobber an in-progress focus-expand and bounce
-      // the day-detail pane up and down on every character.
-      const alreadySet = calBody.style.getPropertyValue('--cal-detail-h');
-      if (!alreadySet) {
-        const saved = parseInt(localStorage.getItem('odysseus.cal.detailH') || '0', 10);
-        if (saved && saved > 80) calBody.style.setProperty('--cal-detail-h', saved + 'px');
-      }
-      let startY = 0, startH = 240, dragging = false;
-      const onMove = (ev) => {
-        if (!dragging) return;
-        const y = ev.touches ? ev.touches[0].clientY : ev.clientY;
-        // Drag UP (smaller y) → bigger day-detail. Allow the pane to grow
-        // all the way to the top of the visible viewport so the user can
-        // hide the calendar entirely. We leave ~24px headroom so the
-        // splitter handle itself stays grabbable to drag back down.
-        const vh = (window.visualViewport?.height) || window.innerHeight;
-        const newH = Math.max(40, Math.min(vh - 24, startH + (startY - y)));
-        calBody.style.setProperty('--cal-detail-h', newH + 'px');
-      };
-      const onUp = () => {
-        if (!dragging) return;
-        dragging = false;
-        splitter.classList.remove('cal-splitter-dragging');
-        document.removeEventListener('pointermove', onMove);
-        document.removeEventListener('pointerup', onUp);
-        document.removeEventListener('touchmove', onMove);
-        document.removeEventListener('touchend', onUp);
-        const cur = calBody.style.getPropertyValue('--cal-detail-h');
-        const px = parseInt(cur, 10);
-        if (px) { try { localStorage.setItem('odysseus.cal.detailH', String(px)); } catch {} }
-      };
-      const onDown = (ev) => {
-        ev.preventDefault();
-        dragging = true;
-        splitter.classList.add('cal-splitter-dragging');
-        startY = ev.touches ? ev.touches[0].clientY : ev.clientY;
-        const detail = body.querySelector('.cal-day-detail');
-        startH = detail ? detail.getBoundingClientRect().height : 240;
-        document.addEventListener('pointermove', onMove);
-        document.addEventListener('pointerup', onUp, { once: false });
-        document.addEventListener('touchmove', onMove, { passive: false });
-        document.addEventListener('touchend', onUp);
-      };
-      splitter.addEventListener('pointerdown', onDown);
-      splitter.addEventListener('touchstart', onDown, { passive: false });
-
-      // Double-tap (or double-click) the splitter to reset the day-detail
-      // pane to its CSS default height.
-      let _lastTap = 0;
-      const resetSplit = () => {
-        calBody.style.removeProperty('--cal-detail-h');
-        try { localStorage.removeItem('odysseus.cal.detailH'); } catch {}
-      };
-      splitter.addEventListener('dblclick', resetSplit);
-      splitter.addEventListener('touchend', () => {
-        const now = Date.now();
-        if (now - _lastTap < 320) {
-          resetSplit();
-          _lastTap = 0;
-        } else {
-          _lastTap = now;
-        }
-      });
-    }
-  } catch {}
-
   // ── Quick-add input ─────────────────────────────────────────────
   const _qaInput = document.getElementById('cal-quickadd');
   const _qaStatus = document.getElementById('cal-quickadd-status');
@@ -2175,20 +2132,22 @@ function _wireAll(body) {
     _slideDir = -1;
     if (_view === 'year') _currentDate = new Date(_currentDate.getFullYear() - 1, 0, 1);
     else if (_view === 'week') _currentDate.setDate(_currentDate.getDate() - 7);
+    else if (_view === 'day') _currentDate.setDate(_currentDate.getDate() - 1);
     else if (_view === 'agenda') _currentDate.setDate(_currentDate.getDate() - 30);
     else _currentDate = new Date(_currentDate.getFullYear(), _currentDate.getMonth() - 1, 1);
     // Keep a day selected in month/week so the day-detail panel — which hosts
     // the search box — stays available (otherwise browsing hides search).
-    _selectedDay = (_view === 'month' || _view === 'week') ? _ds(_currentDate) : null;
+    _selectedDay = (_view === 'month' || _isTimeGrid()) ? _ds(_currentDate) : null;
     _render();
   });
   document.getElementById('cal-next')?.addEventListener('click', () => {
     _slideDir = 1;
     if (_view === 'year') _currentDate = new Date(_currentDate.getFullYear() + 1, 0, 1);
     else if (_view === 'week') _currentDate.setDate(_currentDate.getDate() + 7);
+    else if (_view === 'day') _currentDate.setDate(_currentDate.getDate() + 1);
     else if (_view === 'agenda') _currentDate.setDate(_currentDate.getDate() + 30);
     else _currentDate = new Date(_currentDate.getFullYear(), _currentDate.getMonth() + 1, 1);
-    _selectedDay = (_view === 'month' || _view === 'week') ? _ds(_currentDate) : null;
+    _selectedDay = (_view === 'month' || _isTimeGrid()) ? _ds(_currentDate) : null;
     _render();
   });
   document.getElementById('cal-today')?.addEventListener('click', () => { _currentDate = new Date(); _selectedDay = _today(); _render(); });
@@ -2212,7 +2171,7 @@ function _wireAll(body) {
     // own one to actually serialize on the network.
     const _range = (_view === 'year')
       ? [`${_currentDate.getFullYear()}-01-01`, `${_currentDate.getFullYear() + 1}-01-01`]
-      : (_view === 'week') ? _weekRange(_currentDate) : _monthRange(_currentDate);
+      : _isTimeGrid() ? _weekRange(_currentDate) : _monthRange(_currentDate);
     const minSpin = new Promise(r => setTimeout(r, 700));
     try {
       await Promise.all([
@@ -2234,21 +2193,6 @@ function _wireAll(body) {
       if (uiModule?.showToast) uiModule.showToast('Calendar refreshed');
     }
   });
-  // Brief spin on the "+" glyph before the new-event form opens. The
-  // glyph already rotates on hover (desktop). On mobile there's no
-  // hover, so play the rotation on tap as a quick affordance.
-  const _addClick = (e, openFn) => {
-    if (window.innerWidth <= 768) {
-      const plus = e.currentTarget.querySelector('.cal-add-plus');
-      if (plus) {
-        plus.classList.add('cal-add-spinning');
-        setTimeout(() => plus.classList.remove('cal-add-spinning'), 360);
-      }
-      setTimeout(openFn, 220);
-    } else {
-      openFn();
-    }
-  };
   // If the user typed in quick-add but pressed "+ New" instead of Enter, treat
   // it as a quick-add (parse the text) rather than opening a blank event — a
   // common mix-up since the two controls sit side by side.
@@ -2260,29 +2204,10 @@ function _wireAll(body) {
     }
     return false;
   };
-  document.getElementById('cal-add')?.addEventListener('click', (e) => _addClick(e, () => { if (!_tryQuickAddFromButton()) _showEventForm(null, _selectedDay || _today()); }));
+  document.getElementById('cal-add')?.addEventListener('click', () => { if (!_tryQuickAddFromButton()) _showEventForm(null, _selectedDay || _today()); });
   // Solo "+" on the day-detail header: no spin (the small round button
   // doesn't look good rotating in place — open the form immediately).
   document.getElementById('cal-add-day')?.addEventListener('click', () => { if (!_tryQuickAddFromButton()) _showEventForm(null, _selectedDay); });
-
-  // Mobile: relocate the toolbar's +New pill so it sits NEXT TO the
-  // quick-add row (not inside it — the row has its own border/background
-  // that makes embedded buttons look like part of the input field).
-  // Wrap the row and button in a flex container so they share one line.
-  if (window.innerWidth <= 768) {
-    const addBtn = document.getElementById('cal-add');
-    const qaRow = document.getElementById('cal-quickadd-row');
-    if (addBtn && qaRow) {
-      let wrap = qaRow.parentElement;
-      if (!wrap?.classList.contains('cal-quickadd-wrap')) {
-        wrap = document.createElement('div');
-        wrap.className = 'cal-quickadd-wrap';
-        qaRow.parentElement?.insertBefore(wrap, qaRow);
-        wrap.appendChild(qaRow);
-      }
-      if (addBtn.parentElement !== wrap) wrap.appendChild(addBtn);
-    }
-  }
 
   // Search input — re-render rebuilds the day-detail DOM on each keystroke,
   // so refocus and restore caret position to keep typing smooth.
@@ -2304,29 +2229,12 @@ function _wireAll(body) {
       // keystrokes is the only way to keep the keyboard up.
       _updateDaySearchResults();
     });
-    // Mobile: when the search input gains focus the on-screen keyboard
-    // pops up. Expand the day-detail pane to (near) the visible viewport
-    // height so the search bar sits at the top of the screen, well above
-    // the keyboard, instead of staying squashed behind it.
-    searchInput.addEventListener('focus', () => {
-      if (window.innerWidth > 768) return;
-      const calBody = document.getElementById('cal-body');
-      if (!calBody) return;
-      const vh = (window.visualViewport?.height) || window.innerHeight;
-      const target = vh - 24;
-      // Skip if already expanded — every keystroke triggers a re-render
-      // which re-focuses the input. Re-running this on each keystroke
-      // would shove the layout around as the user types.
-      const cur = parseInt(calBody.style.getPropertyValue('--cal-detail-h'), 10) || 0;
-      if (cur >= target - 24) return;
-      calBody.style.setProperty('--cal-detail-h', target + 'px');
-    });
   }
 
   body.querySelectorAll('.cal-view-btn').forEach(b => b.addEventListener('click', () => {
     _view = b.dataset.view;
     _searchQuery = '';
-    _selectedDay = null;
+    _selectedDay = null;  // _render() reselects the current date
     // Switching to Agenda always lands on today so you see "what's coming
     // up" rather than wherever you happened to be browsing.
     if (_view === 'agenda') _currentDate = new Date();
@@ -2518,70 +2426,81 @@ async function _showCalSettings() {
   overlay.style.display = 'flex';
   overlay.style.zIndex = '999';
   overlay.innerHTML = `
-    <div class="modal-content" style="width:420px;max-width:92vw;">
+    <div class="modal-content cal-settings">
       <div class="modal-header">
-        <h4>Calendar Settings</h4>
-        <button class="close-btn" id="cal-settings-close">\u2716</button>
+        <h4>Calendar settings</h4>
+        <button class="close-btn" id="cal-settings-close" aria-label="Close">\u2716</button>
       </div>
-      <div class="modal-body" style="padding:16px;display:flex;flex-direction:column;gap:16px;">
-        <div>
-          <div style="font-size:11px;opacity:0.5;margin-bottom:6px;">Your calendars</div>
-          <div id="cal-settings-list" style="display:flex;flex-direction:column;gap:4px;">
+      <div class="modal-body cal-settings-body">
+        <section class="cal-s-section">
+          <h5>Calendars</h5>
+          <div id="cal-settings-list" class="cal-s-list">
             ${cals.map(c => `
-              <div class="cal-settings-row" data-id="${_e(c.href)}" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:color-mix(in srgb, var(--fg) 4%, transparent);">
-                <input type="color" value="${c.color || '#5b8abf'}" class="cal-s-color" style="width:24px;height:24px;border:none;background:none;cursor:pointer;padding:0;border-radius:50%;overflow:hidden;" />
-                <input type="text" value="${_e(c.name)}" class="cal-s-name" style="flex:1;background:none;border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--fg);font-size:12px;" />
-                <button class="cal-s-del" title="Delete calendar" style="background:none;border:none;color:var(--accent, var(--red));opacity:0.75;cursor:pointer;padding:2px;display:flex;position:relative;top:4px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
+              <div class="cal-settings-row" data-id="${_e(c.href)}">
+                <input type="color" value="${c.color || '#5b8abf'}" class="cal-s-color" title="Colour" aria-label="Calendar colour" />
+                <input type="text" value="${_e(c.name)}" class="cal-s-name" aria-label="Calendar name" />
+                ${c.source === 'ics' ? '<span class="cal-s-badge" title="Read-only subscription, refreshed on sync">Subscribed</span>' : ''}
+                <button class="cal-s-del" title="Delete calendar" aria-label="Delete calendar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
               </div>
             `).join('')}
           </div>
-          <button class="memory-toolbar-btn" id="cal-settings-add" style="margin-top:8px;">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--accent, var(--red))" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            New calendar
-          </button>
-        </div>
-        <div style="border-top:1px solid var(--border);padding-top:12px;">
-          <div style="font-size:11px;opacity:0.5;margin-bottom:6px;">Import calendar</div>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <label class="memory-toolbar-btn" style="cursor:pointer;">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="position:relative;top:5px;margin-right:3px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              <span style="position:relative;top:4px;">Import .ics</span>
-              <input type="file" accept=".ics,.ical" id="cal-import-file" style="display:none;" />
+          <button class="cal-s-btn cal-s-btn-ghost" id="cal-settings-add"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>New calendar</button>
+        </section>
+
+        <section class="cal-s-section">
+          <h5>Subscribe</h5>
+          <p class="cal-s-hint">Show a Google, Outlook or iCloud calendar here. Read-only, refreshed on every sync.</p>
+          <form id="cal-sub-form" class="cal-s-inline">
+            <input type="url" id="cal-sub-url" class="cal-s-input" required placeholder="Paste an iCal / webcal link" />
+            <button type="submit" class="cal-s-btn cal-s-btn-primary" id="cal-sub-add">Subscribe</button>
+          </form>
+          <div id="cal-sub-status" class="cal-s-status"></div>
+          <details class="cal-s-howto">
+            <summary>Where do I find the Google link?</summary>
+            <ol>
+              <li>Open Google Calendar on the web → <b>Settings</b>.</li>
+              <li>Pick the calendar under <b>Settings for my calendars</b>.</li>
+              <li>In <b>Integrate calendar</b>, copy <b>Secret address in iCal format</b>.</li>
+            </ol>
+          </details>
+        </section>
+
+        <section class="cal-s-section">
+          <h5>Import &amp; export</h5>
+          <div class="cal-s-inline cal-s-wrap">
+            <label class="cal-s-btn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Import .ics
+              <input type="file" accept=".ics,.ical" id="cal-import-file" hidden />
             </label>
-            <span id="cal-import-status" style="font-size:11px;opacity:0.6;"></span>
-          </div>
-          <div style="font-size:10px;opacity:0.4;margin-top:4px;">Upload a .ics file to import events. Google Calendar, Apple Calendar, and Outlook all export .ics files.</div>
-        </div>
-        <div style="border-top:1px solid var(--border);padding-top:12px;">
-          <div style="font-size:11px;opacity:0.5;margin-bottom:6px;">Export calendar</div>
-          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
             ${cals.map(c => `
-              <button class="memory-toolbar-btn cal-s-export-chip" data-id="${_e(c.href)}" title="Download ${_e(c.name)}.ics" style="cursor:pointer;">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="position:relative;top:2px;margin-right:3px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                <span style="position:relative;top:1px;">${_e(c.name)}</span>
+              <button class="cal-s-btn cal-s-export-chip" data-id="${_e(c.href)}" title="Download ${_e(c.name)}.ics">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>${_e(c.name)}
               </button>
             `).join('')}
           </div>
-          <div style="font-size:10px;opacity:0.4;margin-top:4px;">Download a calendar as .ics for backup or to import into another app.</div>
-        </div>
-        <div style="border-top:1px solid var(--border);padding-top:12px;">
-          <div style="font-size:11px;opacity:0.5;margin-bottom:6px;">Week starts on</div>
-          <div style="display:flex;gap:6px;">
-            <button id="cal-wstart-mon" type="button" style="font-size:12px;padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:${!_weekStartSun ? 'color-mix(in srgb, var(--accent,var(--red)) 18%, var(--panel))' : 'var(--panel)'};color:var(--fg);cursor:pointer;transition:background 0.1s,border-color 0.1s;outline:none;">Monday</button>
-            <button id="cal-wstart-sun" type="button" style="font-size:12px;padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:${_weekStartSun ? 'color-mix(in srgb, var(--accent,var(--red)) 18%, var(--panel))' : 'var(--panel)'};color:var(--fg);cursor:pointer;transition:background 0.1s,border-color 0.1s;outline:none;">Sunday</button>
+          <div id="cal-import-status" class="cal-s-status"></div>
+          <p class="cal-s-hint">Import adds a one-time copy of an .ics file; export downloads a calendar for backup.</p>
+        </section>
+
+        <section class="cal-s-section">
+          <h5>Preferences</h5>
+          <div class="cal-s-pref">
+            <span>Week starts on</span>
+            <div class="cal-s-seg" role="group" aria-label="Week starts on">
+              <button id="cal-wstart-mon" type="button" class="${!_weekStartSun ? 'is-active' : ''}">Monday</button>
+              <button id="cal-wstart-sun" type="button" class="${_weekStartSun ? 'is-active' : ''}">Sunday</button>
+            </div>
           </div>
-        </div>
-        <div style="border-top:1px solid var(--border);padding-top:12px;">
-          <div style="font-size:11px;opacity:0.5;margin-bottom:6px;">Sync</div>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <button class="memory-toolbar-btn" id="cal-settings-sync-now" style="cursor:pointer;">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="position:relative;top:2px;margin-right:3px;"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-              <span style="position:relative;top:1px;">Sync now</span>
-            </button>
-            <span id="cal-settings-sync-status" style="font-size:11px;opacity:0.6;"></span>
+        </section>
+
+        <section class="cal-s-section">
+          <h5>Sync</h5>
+          <div class="cal-s-inline">
+            <button class="cal-s-btn" id="cal-settings-sync-now"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Sync now</button>
+            <span id="cal-settings-sync-status" class="cal-s-status"></span>
           </div>
-          <div style="font-size:10px;opacity:0.4;margin-top:4px;">Pulls events from your CalDAV server. To connect or change CalDAV credentials, open <a href="#" id="cal-settings-open-caldav" style="color:var(--accent, var(--red));text-decoration:none;font-weight:600;">Settings → Integrations</a>.</div>
-        </div>
+          <p class="cal-s-hint">Refreshes subscriptions and two-way CalDAV accounts. Manage CalDAV in <a href="#" id="cal-settings-open-caldav">Settings → Integrations</a>.</p>
+        </section>
       </div>
     </div>
   `;
@@ -2591,14 +2510,41 @@ async function _showCalSettings() {
   overlay.querySelector('#cal-settings-close').addEventListener('click', cleanup);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(); });
 
+  overlay.querySelector('#cal-sub-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = overlay.querySelector('#cal-sub-add');
+    const status = overlay.querySelector('#cal-sub-status');
+    const url = overlay.querySelector('#cal-sub-url').value.trim();
+    btn.disabled = true;
+    status.style.color = '';
+    status.textContent = 'Reading calendar…';
+    try {
+      const r = await fetch(`${API_BASE}/api/calendar/subscriptions`, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, color: COLORS[_calendars.length % COLORS.length] }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+      _allEvents = {}; _fetchedRanges = []; localStorage.removeItem(LS_KEY);
+      await _fetchCalendars();
+      _render();
+      cleanup();
+      _showCalSettings();
+      uiModule.showToast?.(`Subscribed to “${d.name}” — ${d.events} events`);
+    } catch (err) {
+      btn.disabled = false;
+      status.style.color = 'var(--accent, var(--red))';
+      status.textContent = err.message || 'Subscription failed';
+    }
+  });
+
   // Week-start toggle: save to localStorage, update module state, re-render.
   const _monBtn = overlay.querySelector('#cal-wstart-mon');
   const _sunBtn = overlay.querySelector('#cal-wstart-sun');
-  const _activeStyle  = 'color-mix(in srgb, var(--accent,var(--red)) 18%, var(--panel))';
-  const _inactiveStyle = 'var(--panel)';
   const _applyWeekStartActive = () => {
-    if (_monBtn) _monBtn.style.background = _weekStartSun ? _inactiveStyle : _activeStyle;
-    if (_sunBtn) _sunBtn.style.background = _weekStartSun ? _activeStyle : _inactiveStyle;
+    _monBtn?.classList.toggle('is-active', !_weekStartSun);
+    _sunBtn?.classList.toggle('is-active', _weekStartSun);
   };
   _monBtn?.addEventListener('click', () => {
     _weekStartSun = false;
@@ -2734,7 +2680,9 @@ async function _showCalSettings() {
     btn.disabled = true;
     status.textContent = 'Syncing…';
     const data = await _syncCaldav(true) || {};
-    if (data.errors && data.errors.length) {
+    if (!data.calendars && (data.errors || []).includes('CalDAV is not configured')) {
+      status.textContent = 'Nothing to sync yet — add a subscription or a CalDAV account.';
+    } else if (data.errors && data.errors.length) {
       status.textContent = `Sync failed: ${data.errors[0]}`;
     } else {
       const parts = [];
@@ -2806,7 +2754,8 @@ function _showEventForm(existing, defaultDate, defaultEndDate) {
   // Default to all-day when dragging across multiple days
   const ad = existing ? existing.all_day : (defaultEndDate && defaultEndDate !== defaultDate);
 
-  let calOpts = _calendars.filter(c => !_hiddenCals.has(c.href)).map(c =>
+  const readOnly = isEdit && _calendars.find(c => c.href === existing.calendar_href)?.source === 'ics';
+  let calOpts = _calendars.filter(c => !_hiddenCals.has(c.href) && (c.source !== 'ics' || c.href === existing?.calendar_href)).map(c =>
     `<option value="${_e(c.href)}" ${existing && existing.calendar_href === c.href ? 'selected' : ''}>${_e(c.name)}</option>`
   ).join('');
 
@@ -2894,7 +2843,7 @@ function _showEventForm(existing, defaultDate, defaultEndDate) {
       })()}
       <div class="cal-form-row" style="align-items:center;gap:8px;">
         <label style="font-size:11px;display:flex;align-items:center;gap:4px;"><svg class="cal-remind-bell" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--accent, var(--red))" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span style="opacity:0.5;">Reminder</span></label>
-        <select id="cal-f-remind" class="cal-input" style="flex:1;">
+        <select id="cal-f-remind" class="cal-input" style="flex:1">
           <option value="" ${isEdit ? 'selected' : ''}>No reminder</option>
           <option value="0">At event time</option>
           <option value="5">5 minutes before</option>
@@ -2906,7 +2855,7 @@ function _showEventForm(existing, defaultDate, defaultEndDate) {
           <option value="1440">1 day before</option>
           <option value="custom">Exact time...</option>
         </select>
-        <input type="datetime-local" id="cal-f-remind-custom" class="cal-input" style="flex:1;display:none;" />
+        <input type="datetime-local" id="cal-f-remind-custom" class="cal-input" style="flex:1;display:none" />
       </div>
       <div class="cal-form-row" style="align-items:center;gap:8px;">
         <label style="font-size:11px;opacity:0.5;">Color</label>
@@ -2922,7 +2871,7 @@ function _showEventForm(existing, defaultDate, defaultEndDate) {
             } else {
               bg = c.hex || 'var(--border)';
             }
-            return `<span class="note-color-dot${isActive ? ' active' : ''}" data-color="${c.hex}" style="background:${bg}" title="${c.name}"></span>`;
+            return `<span class="note-color-dot${isActive ? ' active' : ''}" data-color="${c.hex}" title="${c.name}"></span>`;
           }).join('')}
         </div>
       </div>
@@ -2930,9 +2879,9 @@ function _showEventForm(existing, defaultDate, defaultEndDate) {
     </div>
 
     <div class="cal-form-actions">
-      ${isEdit ? `<button id="cal-f-del" class="cal-btn cal-btn-danger" style="display:inline-flex;align-items:center;gap:5px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>Delete</button>` : ''}
-      <button id="cal-f-cancel" class="cal-btn" style="display:inline-flex;align-items:center;gap:5px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Cancel</button>
-      <button id="cal-f-save" class="cal-btn cal-btn-primary" style="display:inline-flex;align-items:center;gap:5px;">${isEdit
+      ${isEdit ? `<button id="cal-f-del" class="cal-btn cal-btn-danger" style="display:inline-flex;align-items:center"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>Delete</button>` : ''}
+      <button id="cal-f-cancel" class="cal-btn" style="display:inline-flex;align-items:center"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Cancel</button>
+      <button id="cal-f-save" class="cal-btn cal-btn-primary" style="display:inline-flex;align-items:center">${isEdit
         ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>Save'
         : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Create'}</button>
     </div>
@@ -3208,6 +3157,13 @@ function _showEventForm(existing, defaultDate, defaultEndDate) {
   document.getElementById('cal-f-del')?.addEventListener('click', async () => {
     await _confirmAndDeleteEvent(existing);
   });
+  if (readOnly) {
+    body.querySelectorAll('.cal-form input, .cal-form select, .cal-form textarea').forEach(el => { el.disabled = true; });
+    document.getElementById('cal-f-save')?.remove();
+    document.getElementById('cal-f-del')?.remove();
+    body.querySelector('.cal-form-actions')?.insertAdjacentHTML('afterbegin',
+      '<span class="cal-readonly-note">Subscribed calendar — edit this event at its source.</span>');
+  }
   // ── Bespoke-form behavior ──────────────────────────────────────────
   const formEl = body.querySelector('.cal-form');
   const detailsEl = document.getElementById('cal-form-details');
@@ -3466,11 +3422,13 @@ function _wheelNav(e) {
     _slideDir = 1;
     if (_view === 'year') _currentDate = new Date(_currentDate.getFullYear() + 1, 0, 1);
     else if (_view === 'week') _currentDate.setDate(_currentDate.getDate() + 7);
+    else if (_view === 'day') _currentDate.setDate(_currentDate.getDate() + 1);
     else _currentDate = new Date(_currentDate.getFullYear(), _currentDate.getMonth() + 1, 1);
   } else {
     _slideDir = -1;
     if (_view === 'year') _currentDate = new Date(_currentDate.getFullYear() - 1, 0, 1);
     else if (_view === 'week') _currentDate.setDate(_currentDate.getDate() - 7);
+    else if (_view === 'day') _currentDate.setDate(_currentDate.getDate() - 1);
     else _currentDate = new Date(_currentDate.getFullYear(), _currentDate.getMonth() - 1, 1);
   }
   _selectedDay = null;
@@ -3513,29 +3471,34 @@ function openCalendar() {
   _escHandler = (e) => {
     if (e.key === 'Escape') {
       // Layer Esc: close the topmost calendar surface first, only fall through
-      // to closing the whole calendar when nothing else is on top.
+      // to closing the whole calendar when nothing else is on top. Runs in the
+      // capture phase — ui.js's global Esc (bubble) would otherwise close the
+      // whole window before the form/settings layer got a chance.
       const settings = document.getElementById('cal-settings-panel');
       if (settings) {
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
         settings.remove();
         return;
       }
-      if (document.querySelector('.cal-form')) {
+      if (document.querySelector('#calendar-modal .cal-form')) {
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
         _render();
         return;
       }
+      if (e.eventPhase === Event.CAPTURING_PHASE) return;  // plain close: bubble chain
       closeCalendar();
     }
-    else if (e.key === 'ArrowLeft') document.getElementById('cal-prev')?.click();
+    if (e.eventPhase === Event.CAPTURING_PHASE) return;
+    if (e.key === 'ArrowLeft') document.getElementById('cal-prev')?.click();
     else if (e.key === 'ArrowRight') document.getElementById('cal-next')?.click();
     else if (e.key === 't' || e.key === 'T') document.getElementById('cal-today')?.click();
     // Cmd/Ctrl+Z is handled by the module-level `_calUndoBound` listener,
     // which consumes the shared `_calUndoStack`. Don't duplicate here.
   };
   document.addEventListener('keydown', _escHandler);
+  window.addEventListener('keydown', _escHandler, true);  // before ui.js's document-capture Esc
   const body = document.getElementById('cal-body');
   if (body) {
     body.innerHTML = '<div class="cal-loading"></div>';
@@ -3595,7 +3558,11 @@ function _doCloseCalendar() {
     _modal.style.display = 'none';
     _modal.classList.add('hidden');
   }
-  if (_escHandler) { document.removeEventListener('keydown', _escHandler); _escHandler = null; }
+  if (_escHandler) {
+    document.removeEventListener('keydown', _escHandler);
+    window.removeEventListener('keydown', _escHandler, true);
+    _escHandler = null;
+  }
   // Drop any pending undo — closures captured event uids/state that may
   // no longer be valid by the time the user reopens. A reopened calendar
   // starts with a clean slate.
@@ -3670,7 +3637,7 @@ window.addEventListener('calendar-refresh', () => {
   _fetchedRanges = [];
   const range = (_view === 'year')
     ? [`${_currentDate.getFullYear()}-01-01`, `${_currentDate.getFullYear() + 1}-01-01`]
-    : (_view === 'week') ? _weekRange(_currentDate) : _monthRange(_currentDate);
+    : _isTimeGrid() ? _weekRange(_currentDate) : _monthRange(_currentDate);
   _fetchEvents(range[0], range[1], /*force*/ true)
     .then(() => { if (_open) _render(); _updateBadge(); })
     .catch(() => {});
@@ -3693,7 +3660,7 @@ document.addEventListener('visibilitychange', () => {
   _fetchedRanges = [];
   const range = (_view === 'year')
     ? [`${_currentDate.getFullYear()}-01-01`, `${_currentDate.getFullYear() + 1}-01-01`]
-    : (_view === 'week') ? _weekRange(_currentDate) : _monthRange(_currentDate);
+    : _isTimeGrid() ? _weekRange(_currentDate) : _monthRange(_currentDate);
   _fetchEvents(range[0], range[1], /*force*/ true)
     .then(() => { if (_open) _render(); _updateBadge(); })
     .catch(() => {});
@@ -3708,7 +3675,7 @@ window.addEventListener('focus', () => {
   _fetchedRanges = [];
   const range = (_view === 'year')
     ? [`${_currentDate.getFullYear()}-01-01`, `${_currentDate.getFullYear() + 1}-01-01`]
-    : (_view === 'week') ? _weekRange(_currentDate) : _monthRange(_currentDate);
+    : _isTimeGrid() ? _weekRange(_currentDate) : _monthRange(_currentDate);
   _fetchEvents(range[0], range[1], /*force*/ true)
     .then(() => { if (_open) _render(); _updateBadge(); })
     .catch(() => {});

@@ -800,7 +800,7 @@ function _cachedAdapterSelectHtml(kind, currentRepo = '') {
     ? 'hwfit-backend-mlx_image'
     : '';
   if (!adapters.length) {
-    return `<label class="hwfit-cached-adapter-label ${cls}" style="grid-column:1 / -1;">Cached adapter <select class="hwfit-cached-adapter-select" data-adapter-kind="${esc(kind)}" disabled style="height:30px;width:100%;background:var(--bg);color:var(--fg-muted);border:1px solid var(--border);border-radius:4px;font:inherit;font-size:11px;opacity:0.75;"><option value="">No cached adapters found</option></select></label>`;
+    return `<label class="hwfit-cached-adapter-label ${cls}" style="grid-column:1 / -1;">Cached adapter <select class="hwfit-cached-adapter-select" data-adapter-kind="${esc(kind)}" disabled style="width:100%;font:inherit"><option value="">No cached adapters found</option></select></label>`;
   }
   const opts = adapters.map(m => {
     const repo = String(m.repo_id || '');
@@ -810,7 +810,7 @@ function _cachedAdapterSelectHtml(kind, currentRepo = '') {
     const short = repo.split('/').pop() || repo;
     return `<option value="${esc(value)}">${esc(short)}</option>`;
   }).join('');
-  return `<label class="hwfit-cached-adapter-label ${cls}" style="grid-column:1 / -1;">Cached adapter <select class="hwfit-cached-adapter-select" data-adapter-kind="${esc(kind)}" style="height:30px;width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;font:inherit;font-size:11px;"><option value="">Choose cached adapter…</option>${opts}</select></label>`;
+  return `<label class="hwfit-cached-adapter-label ${cls}" style="grid-column:1 / -1;">Cached adapter <select class="hwfit-cached-adapter-select" data-adapter-kind="${esc(kind)}" style="width:100%;font:inherit"><option value="">Choose cached adapter…</option>${opts}</select></label>`;
 }
 
 async function _fetchServeRuntimePackage(panel, backend) {
@@ -1145,7 +1145,7 @@ function _rerenderCachedModels() {
     const _isDlActive = _isDownloading ? _isActivelyDownloading(m.repo_id) : false;
     const _isFavorite = favorites.has(String(m.repo_id || ''));
     const isSelectMode = document.getElementById('hwfit-cache-select')?.classList.contains('active');
-    html += `<div class="doclib-card memory-item${_isFavorite ? ' memory-pinned cookbook-serve-favorite-model' : ''}" data-repo="${esc(m.repo_id)}" data-tag="${m._tag || ''}" data-family="${m._family || ''}" style="cursor:pointer;">`;
+    html += `<div class="doclib-card memory-item${_isFavorite ? ' memory-pinned cookbook-serve-favorite-model' : ''}" data-repo="${esc(m.repo_id)}" data-tag="${m._tag || ''}" data-family="${m._family || ''}">`;
     html += `<span class="serve-select-cb memory-select-dot" style="display:${isSelectMode ? 'inline-block' : 'none'};cursor:pointer;"></span>`;
     html += `<div style="flex:1;min-width:0;">`;
     const _mc = modelColor(m.repo_id) || '';
@@ -1156,8 +1156,8 @@ function _rerenderCachedModels() {
       ? ` <span class="cookbook-serve-downloading-pill${_isDlActive ? '' : ' is-stalled'}" title="${_isDlActive ? 'Download in progress' : 'Download stalled — retry to resume'}">${_isDlActive ? 'downloading' : 'stalled'}</span>`
       : '';
     const _favoritePill = _isFavorite ? ' <span class="memory-cat-badge memory-cat-pinned cookbook-serve-fav-badge">pinned</span>' : '';
-    html += `<div class="memory-item-title cookbook-serve-title"${_mc ? ` style="color:${_mc}"` : ''}><span class="cookbook-serve-title-name">${modelLogo(m.repo_id)}${esc(shortName)}</span>${_favoritePill}${hfLink ? ` <a href="${esc(hfLink)}" target="_blank" rel="noopener" class="cookbook-hf-link">HF ↗</a>` : ''}${_runningPill}${_downloadingPill}</div>`;
-    html += `<div class="memory-item-meta" style="font-size:10px;opacity:0.4;margin-top:2px;">${metaParts.join(' \u00b7 ')}</div>`;
+    html += `<div class="memory-item-title cookbook-serve-title"${_mc ? `` : ''}><span class="cookbook-serve-title-name">${modelLogo(m.repo_id)}${esc(shortName)}</span>${_favoritePill}${hfLink ? ` <a href="${esc(hfLink)}" target="_blank" rel="noopener" class="cookbook-hf-link">HF ↗</a>` : ''}${_runningPill}${_downloadingPill}</div>`;
+    html += `<div class="memory-item-meta">${metaParts.join(' \u00b7 ')}</div>`;
     html += `</div>`;
     const _bk = _detectBackend(m).backend;
     const _bkIco = _bk === 'llamacpp' ? '<svg viewBox="0 0 24 24" width="18" height="18"><path d="M7 3C5.5 5 5 8 5 11v7c0 1.5 1 3 3 3h1v-4h6v4h1c2 0 3-1.5 3-3v-7c0-3-.5-6-2-8l-1 3c-.5-2-1.5-4-3-5-.5 2-1 3-1.5 3S11 3.5 10.5 2L7 3z" fill="currentColor"/><circle cx="9" cy="11" r="1.5" fill="var(--bg,#1a1a2e)"/><circle cx="15" cy="11" r="1.5" fill="var(--bg,#1a1a2e)"/></svg>'
@@ -1308,7 +1308,8 @@ function _rerenderCachedModels() {
       cancelDiv.addEventListener('click', () => { closeDropdown(); });
       dropdown.appendChild(cancelDiv);
       const rect = btn.getBoundingClientRect();
-      dropdown.style.cssText = `position:fixed;z-index:${topPortalZ()};visibility:hidden;top:0;right:${window.innerWidth-rect.right}px;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:4px;box-shadow:0 8px 24px rgba(0,0,0,0.3);font-size:12px;`;
+      dropdown.style.cssText = `position:fixed;z-index:${topPortalZ()};visibility:hidden;top:0;right:${window.innerWidth-rect.right}px;`;
+      dropdown.classList.add('ui-menu');
       document.body.appendChild(dropdown);
       // Clamp into the VISIBLE area (visualViewport, not innerHeight — they differ
       // on mobile under the dynamic toolbar). Flip above the button if there's no
@@ -1511,7 +1512,7 @@ function _rerenderCachedModels() {
       // stays as the source-of-truth so every existing change handler
       // (updateBackendVisibility, runtime readiness, command builder)
       // still fires via dispatchEvent('change') on selection.
-      panelHtml += `<label>${_l('Engine','Inference engine: MLX, vLLM, SGLang, llama.cpp, Ollama, or Diffusers')}<div class="hwfit-backend-picker" data-backend-picker style="position:relative;width:100%;"><select class="hwfit-sf hwfit-backend-source" data-field="backend" style="display:none;">${backendOpts}</select><button type="button" class="hwfit-backend-btn" data-backend-btn aria-haspopup="listbox" aria-expanded="false" style="display:flex;align-items:center;gap:6px;width:100%;height:32px;padding:0 8px;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;font:inherit;font-size:11px;cursor:pointer;text-align:left;position:relative;top:-4px;"><span class="hwfit-backend-btn-icon" data-backend-icon-slot aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;color:var(--accent, var(--red));flex-shrink:0;"></span><span class="hwfit-backend-btn-label" data-backend-label style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="opacity:0.6;flex-shrink:0;"><polyline points="6 9 12 15 18 9"/></svg></button><div class="hwfit-backend-menu" data-backend-menu role="listbox" hidden style="position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:100;background:var(--panel, var(--bg));border:1px solid var(--border);border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,0.22);padding:4px;"></div></div></label>`;
+      panelHtml += `<label>${_l('Engine','Inference engine: MLX, vLLM, SGLang, llama.cpp, Ollama, or Diffusers')}<div class="hwfit-backend-picker" data-backend-picker style="position:relative;width:100%;"><select class="hwfit-sf hwfit-backend-source" data-field="backend" style="display:none">${backendOpts}</select><button type="button" class="hwfit-backend-btn" data-backend-btn aria-haspopup="listbox" aria-expanded="false" style="display:flex;align-items:center;gap:6px;width:100%;height:32px;padding:0 8px;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;font:inherit;font-size:11px;cursor:pointer;text-align:left;position:relative;top:-4px;"><span class="hwfit-backend-btn-icon" data-backend-icon-slot aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;color:var(--accent, var(--red));flex-shrink:0;"></span><span class="hwfit-backend-btn-label" data-backend-label style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="opacity:0.6;flex-shrink:0;"><polyline points="6 9 12 15 18 9"/></svg></button><div class="hwfit-backend-menu" data-backend-menu role="listbox" hidden style="position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:100;background:var(--panel, var(--bg));border:1px solid var(--border);border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,0.22);padding:4px;"></div></div></label>`;
       panelHtml += `<input type="hidden" class="hwfit-sf" data-field="host" value="${esc(_es.remoteHost || '')}" />`;
       // Inference mode pill (llama.cpp only) — lives directly to the
       // RIGHT of Backend in Row 1 so the engine and the GPU/CPU choice
@@ -1605,9 +1606,9 @@ function _rerenderCachedModels() {
       panelHtml += `<summary class="hwfit-serve-advanced-summary">Advanced</summary>`;
       // Advanced vLLM/SGLang row (KV Cache, Attention, Swap, Env)
       panelHtml += `<div class="hwfit-serve-row hwfit-backend-vllm hwfit-backend-sglang">`;
-      panelHtml += `<label class="hwfit-backend-vllm" style="grid-column:1 / -1;">${_l('Served Name','vLLM --served-model-name. Keeps the OpenAI model id stable when serving from a local snapshot path.')}<input type="text" class="hwfit-sf" data-field="served_model_name" value="${esc(svm('served_model_name', _defaultServedModelName))}" placeholder="${esc(repo)}" style="width:100%;" /></label>`;
-      panelHtml += `<label class="hwfit-backend-vllm" style="grid-column:1 / -1;">${_l('Model Path','Argument passed after `vllm serve`. MiniMax M3 auto-fills the cached snapshot path because the nightly runtime needs the local repo files.')}<input type="text" class="hwfit-sf" data-field="model_path" value="${esc(_modelPathValue)}" placeholder="${esc(repo)}" style="width:100%;" /></label>`;
-      panelHtml += `<label class="hwfit-backend-vllm">${_l('KV Cache','vLLM --kv-cache-dtype. auto uses the model/runtime default; fp8 reduces KV memory for long context.')}<select class="hwfit-sf" data-field="vllm_kv_cache_dtype" style="height:32px;">${vllmKvCacheOpts}</select></label>`;
+      panelHtml += `<label class="hwfit-backend-vllm" style="grid-column:1 / -1;">${_l('Served Name','vLLM --served-model-name. Keeps the OpenAI model id stable when serving from a local snapshot path.')}<input type="text" class="hwfit-sf" data-field="served_model_name" value="${esc(svm('served_model_name', _defaultServedModelName))}" placeholder="${esc(repo)}" style="width:100%" /></label>`;
+      panelHtml += `<label class="hwfit-backend-vllm" style="grid-column:1 / -1;">${_l('Model Path','Argument passed after `vllm serve`. MiniMax M3 auto-fills the cached snapshot path because the nightly runtime needs the local repo files.')}<input type="text" class="hwfit-sf" data-field="model_path" value="${esc(_modelPathValue)}" placeholder="${esc(repo)}" style="width:100%" /></label>`;
+      panelHtml += `<label class="hwfit-backend-vllm">${_l('KV Cache','vLLM --kv-cache-dtype. auto uses the model/runtime default; fp8 reduces KV memory for long context.')}<select class="hwfit-sf" data-field="vllm_kv_cache_dtype">${vllmKvCacheOpts}</select></label>`;
       // Attention backend selector — pin the kernel impl. Default `auto` lets
       // vLLM pick FlashInfer (which JITs on first use and breaks on older
       // system nvcc) → FlashAttention → xformers. Forcing FLASH_ATTN skips
@@ -1619,11 +1620,11 @@ function _rerenderCachedModels() {
         : svm('vllm_attn_backend', _attnDefault);
       const vllmAttnBackendOpts = ['auto', 'TRITON_ATTN', 'FLASH_ATTN', 'XFORMERS', 'FLASHINFER', 'TORCH_SDPA']
         .map(b => `<option value="${b === 'auto' ? '' : b}"${(_attnSelected === (b === 'auto' ? '' : b)) ? ' selected' : ''}>${b}</option>`).join('');
-      panelHtml += `<label class="hwfit-backend-vllm">${_l('Attention','vLLM VLLM_ATTENTION_BACKEND. auto = vLLM picks (often FLASHINFER, which JITs and can fail on old nvcc). FLASH_ATTN skips the JIT entirely.')}<select class="hwfit-sf" data-field="vllm_attn_backend" style="height:32px;">${vllmAttnBackendOpts}</select></label>`;
+      panelHtml += `<label class="hwfit-backend-vllm">${_l('Attention','vLLM VLLM_ATTENTION_BACKEND. auto = vLLM picks (often FLASHINFER, which JITs and can fail on old nvcc). FLASH_ATTN skips the JIT entirely.')}<select class="hwfit-sf" data-field="vllm_attn_backend">${vllmAttnBackendOpts}</select></label>`;
       panelHtml += `<label class="hwfit-backend-vllm">${_l('Block Size','vLLM --block-size. Controls KV-cache block granularity. Leave blank for runtime default; some sparse-attention or custom runtimes need a specific value.')}<input type="text" class="hwfit-sf" data-field="vllm_block_size" value="${esc(svm('vllm_block_size', _isMiniMaxM3 ? '128' : ''))}" placeholder="auto" /></label>`;
       panelHtml += `<label class="hwfit-backend-vllm">${_l('Swap','vLLM CPU swap space in GB. Blank/off omits the flag; enter a positive number only for older vLLM runtimes that support --swap-space.')}<input type="text" class="hwfit-sf" data-field="swap" value="${esc(sv('swap', ''))}" placeholder="off" /></label>`;
       panelHtml += _cachedAdapterSelectHtml('vllm_lora_modules', repo);
-      panelHtml += `<label class="hwfit-backend-vllm" style="grid-column:1 / -1;">${_l('LoRA Modules','vLLM LoRA modules, one per line or comma-separated, using name=path. Adds --enable-lora --lora-modules.')}<input type="text" class="hwfit-sf" data-field="vllm_lora_modules" value="${esc(sv('vllm_lora_modules', ''))}" placeholder="style=/path/to/lora or style=org/repo" style="width:100%;" /></label>`;
+      panelHtml += `<label class="hwfit-backend-vllm" style="grid-column:1 / -1;">${_l('LoRA Modules','vLLM LoRA modules, one per line or comma-separated, using name=path. Adds --enable-lora --lora-modules.')}<input type="text" class="hwfit-sf" data-field="vllm_lora_modules" value="${esc(sv('vllm_lora_modules', ''))}" placeholder="style=/path/to/lora or style=org/repo" style="width:100%" /></label>`;
       {
         const _envPresetDefault = _isMiniMaxM3 ? 'minimax_m3_cuda' : '';
         const _envPresetVal = svm('vllm_env_preset', _envPresetDefault);
@@ -1631,7 +1632,7 @@ function _rerenderCachedModels() {
           ['', 'None'],
           ['minimax_m3_cuda', 'CUDA native sampler'],
         ].map(([v, label]) => `<option value="${v}"${_envPresetVal === v ? ' selected' : ''}>${label}</option>`).join('');
-        panelHtml += `<label class="hwfit-backend-vllm" style="grid-column:1 / 2;">${_l('Env Preset','Adds known-good environment variables without typing them. CUDA native sampler adds VLLM_TARGET_DEVICE=cuda and disables FlashInfer sampler JIT; useful when system nvcc cannot compile the sampler for the GPU architecture.')}<select class="hwfit-sf" data-field="vllm_env_preset" style="height:32px;width:122px;">${_envPresetOpts}</select></label>`;
+        panelHtml += `<label class="hwfit-backend-vllm" style="grid-column:1 / 2;">${_l('Env Preset','Adds known-good environment variables without typing them. CUDA native sampler adds VLLM_TARGET_DEVICE=cuda and disables FlashInfer sampler JIT; useful when system nvcc cannot compile the sampler for the GPU architecture.')}<select class="hwfit-sf" data-field="vllm_env_preset" style="width:122px">${_envPresetOpts}</select></label>`;
       }
       // Free-text env-vars field. Anything pasted here is prepended to the
       // launch command verbatim. Use for CUDACXX, PATH overrides, NCCL_*
@@ -1640,7 +1641,7 @@ function _rerenderCachedModels() {
       // already exported so they expand correctly here.
       // CSS places this beside vLLM's Env Preset, but lets it span the full
       // row for SGLang where that preset field is hidden.
-      panelHtml += `<label class="hwfit-backend-vllm hwfit-backend-sglang hwfit-extra-env-label">${_l('Env','Extra KEY=VALUE env-var pairs prepended to the launch (space-separated). The Env Preset above covers the usual MiniMax M3 values; use this for additional overrides.')}<input type="text" class="hwfit-sf" data-field="extra_env" value="${esc(svm('extra_env', sv('extra_env','')))}" placeholder="NCCL_P2P_DISABLE=1" style="width:100%;" /></label>`;
+      panelHtml += `<label class="hwfit-backend-vllm hwfit-backend-sglang hwfit-extra-env-label">${_l('Env','Extra KEY=VALUE env-var pairs prepended to the launch (space-separated). The Env Preset above covers the usual MiniMax M3 values; use this for additional overrides.')}<input type="text" class="hwfit-sf" data-field="extra_env" value="${esc(svm('extra_env', sv('extra_env','')))}" placeholder="NCCL_P2P_DISABLE=1" style="width:100%" /></label>`;
       panelHtml += `</div>`;
       // Row 2b: Diffusers settings
       const diffDefaultNegative = 'low quality, blurry, out of focus, deformed, distorted, disfigured, unfinished, smudged, watermark, artifacts';
@@ -1656,8 +1657,8 @@ function _rerenderCachedModels() {
       panelHtml += `</div>`;
       panelHtml += `<div class="hwfit-serve-row hwfit-backend-diffusers hwfit-backend-mlx_image hwfit-diff-adapters-row">`;
       panelHtml += _cachedAdapterSelectHtml('diff_lora', repo);
-	      panelHtml += `<label class="hwfit-backend-diffusers" style="grid-column:1 / -1;">Negative${_h('Default negative prompt. Adds --negative-prompt for pipelines that support it. Edit or clear this per model.')} <input type="text" class="hwfit-sf" data-field="diff_negative_prompt" value="${esc(sv('diff_negative_prompt', diffDefaultNegative))}" placeholder="${esc(diffDefaultNegative)}" style="width:100%;" /></label>`;
-	      panelHtml += `<label class="hwfit-backend-diffusers" style="grid-column:1 / -1;">LoRA${_h('Diffusers LoRA file/path(s), comma or newline separated. Adds --lora.')} <input type="text" class="hwfit-sf" data-field="diff_lora" value="${esc(sv('diff_lora', ''))}" placeholder="/path/adapter.safetensors or org/repo" style="width:100%;" /></label>`;
+	      panelHtml += `<label class="hwfit-backend-diffusers" style="grid-column:1 / -1;">Negative${_h('Default negative prompt. Adds --negative-prompt for pipelines that support it. Edit or clear this per model.')} <input type="text" class="hwfit-sf" data-field="diff_negative_prompt" value="${esc(sv('diff_negative_prompt', diffDefaultNegative))}" placeholder="${esc(diffDefaultNegative)}" style="width:100%" /></label>`;
+	      panelHtml += `<label class="hwfit-backend-diffusers" style="grid-column:1 / -1;">LoRA${_h('Diffusers LoRA file/path(s), comma or newline separated. Adds --lora.')} <input type="text" class="hwfit-sf" data-field="diff_lora" value="${esc(sv('diff_lora', ''))}" placeholder="/path/adapter.safetensors or org/repo" style="width:100%" /></label>`;
 	      panelHtml += `<label class="hwfit-backend-diffusers">Scale${_h('Diffusers LoRA scale. Adds --lora-scale.')} <input type="text" class="hwfit-sf" data-field="diff_lora_scale" value="${esc(sv('diff_lora_scale', ''))}" placeholder="1.0" /></label>`;
 		      {
 		        const _mlxBase = sv('mlx_base_model', '');
@@ -1670,8 +1671,8 @@ function _rerenderCachedModels() {
         panelHtml += `<label class="hwfit-backend-mlx_image">Style${_h('mflux built-in LoRA style. Adds --lora-style.')} <select class="hwfit-sf" data-field="mlx_lora_style">${_styleOpts}</select></label>`;
       }
       panelHtml += _cachedAdapterSelectHtml('mlx_lora_paths', repo);
-      panelHtml += `<label class="hwfit-backend-mlx_image" style="grid-column:1 / -1;">LoRA Paths${_h('mflux LoRA paths/repos, comma or newline separated. Adds --lora-paths.')} <input type="text" class="hwfit-sf" data-field="mlx_lora_paths" value="${esc(sv('mlx_lora_paths', ''))}" placeholder="org/lora or repo:file.safetensors" style="width:100%;" /></label>`;
-      panelHtml += `<label class="hwfit-backend-mlx_image" style="grid-column:1 / -1;">LoRA Scales${_h('mflux LoRA scales matching paths. Space/comma/newline separated. Adds --lora-scales.')} <input type="text" class="hwfit-sf" data-field="mlx_lora_scales" value="${esc(sv('mlx_lora_scales', ''))}" placeholder="0.8, 1.0" style="width:100%;" /></label>`;
+      panelHtml += `<label class="hwfit-backend-mlx_image" style="grid-column:1 / -1;">LoRA Paths${_h('mflux LoRA paths/repos, comma or newline separated. Adds --lora-paths.')} <input type="text" class="hwfit-sf" data-field="mlx_lora_paths" value="${esc(sv('mlx_lora_paths', ''))}" placeholder="org/lora or repo:file.safetensors" style="width:100%" /></label>`;
+      panelHtml += `<label class="hwfit-backend-mlx_image" style="grid-column:1 / -1;">LoRA Scales${_h('mflux LoRA scales matching paths. Space/comma/newline separated. Adds --lora-scales.')} <input type="text" class="hwfit-sf" data-field="mlx_lora_scales" value="${esc(sv('mlx_lora_scales', ''))}" placeholder="0.8, 1.0" style="width:100%" /></label>`;
       panelHtml += `</div>`;
       // Row 3: Advanced toggles for vLLM/SGLang. Several concepts overlap,
       // but the actual flags differ; keep labels backend-neutral where a
@@ -1701,7 +1702,7 @@ function _rerenderCachedModels() {
       // three are vLLM-only — class-gated so they hide on SGLang. Always
       // render so the user can flip them on for any MoE model.
       panelHtml += `<label class="hwfit-sf-cb hwfit-backend-vllm hwfit-backend-sglang"><input type="checkbox" class="hwfit-sf" data-field="expert_parallel"${sv('expert_parallel',_expertParallelDefault)?' checked':''} /> Expert Parallel${_h('SGLang/vLLM MoE: shard expert layers across GPUs. Useful for DeepSeek/MiniMax/Qwen MoE; avoid on dense models.')}</label>`;
-      panelHtml += `<label class="hwfit-sf-cb hwfit-backend-sglang">Decode Graph${_h('SGLang only: tune decode CUDA graph capture. Smaller batch can fix DeepSeek-V4 graph-capture errors; disabled is safest but slower.')} <select class="hwfit-sf" data-field="sglang_decode_graph" style="height:24px;max-width:92px;"><option value=""${sv('sglang_decode_graph','') === '' ? ' selected' : ''}>auto</option><option value="bs16"${sv('sglang_decode_graph','') === 'bs16' ? ' selected' : ''}>bs 16</option><option value="disabled"${sv('sglang_decode_graph','') === 'disabled' ? ' selected' : ''}>off</option></select></label>`;
+      panelHtml += `<label class="hwfit-sf-cb hwfit-backend-sglang">Decode Graph${_h('SGLang only: tune decode CUDA graph capture. Smaller batch can fix DeepSeek-V4 graph-capture errors; disabled is safest but slower.')} <select class="hwfit-sf" data-field="sglang_decode_graph" style="max-width:92px"><option value=""${sv('sglang_decode_graph','') === '' ? ' selected' : ''}>auto</option><option value="bs16"${sv('sglang_decode_graph','') === 'bs16' ? ' selected' : ''}>bs 16</option><option value="disabled"${sv('sglang_decode_graph','') === 'disabled' ? ' selected' : ''}>off</option></select></label>`;
       panelHtml += `<label class="hwfit-sf-cb hwfit-backend-vllm"><input type="checkbox" class="hwfit-sf" data-field="language_model_only"${sv('language_model_only',_isMiniMaxM3)?' checked':''} /> Language Model Only${_h('vLLM --language-model-only. Needed by MiniMax M3 text serving when the repo also contains VL components.')}</label>`;
       panelHtml += `<label class="hwfit-sf-cb hwfit-backend-vllm"><input type="checkbox" class="hwfit-sf" data-field="disable_custom_all_reduce"${sv('disable_custom_all_reduce',_isMiniMaxM3)?' checked':''} /> Disable Custom All Reduce${_h('vLLM --disable-custom-all-reduce. Useful for some 8-GPU/nightly configurations.')}</label>`;
       {
@@ -1712,7 +1713,7 @@ function _rerenderCachedModels() {
         if (!_specMethods.includes(_specMethod)) _specMethods.unshift(_specMethod);
         const _specOpts = _specMethods.map(m =>
           `<option value="${m}"${m === _specMethod ? ' selected' : ''}>${m}</option>`).join('');
-        panelHtml += `<label class="hwfit-sf-cb hwfit-backend-vllm hwfit-spec-group"><input type="checkbox" class="hwfit-sf" data-field="speculative" /> Speculative <select class="hwfit-sf hwfit-spec-method" data-field="spec_method" title="vLLM --speculative-config method">${_specOpts}</select><input type="number" class="hwfit-sf hwfit-spec-tokens hwfit-spec-tokens-bare" data-field="spec_tokens" value="${esc(_specTokens)}" min="1" max="10" title="num_speculative_tokens" style="width:44px;" /><span class="hwfit-help-chip hwfit-help-chip-inline" title="MTP / speculative decoding is supported on a few model families only — turn it on when the model card explicitly recommends it. On supported models it can boost inference throughput up to ~3×; on unsupported models it will either be ignored or fail to launch." style="margin-left:6px;">?</span></label>`;
+        panelHtml += `<label class="hwfit-sf-cb hwfit-backend-vllm hwfit-spec-group"><input type="checkbox" class="hwfit-sf" data-field="speculative" /> Speculative <select class="hwfit-sf hwfit-spec-method" data-field="spec_method" title="vLLM --speculative-config method">${_specOpts}</select><input type="number" class="hwfit-sf hwfit-spec-tokens hwfit-spec-tokens-bare" data-field="spec_tokens" value="${esc(_specTokens)}" min="1" max="10" title="num_speculative_tokens" style="width:44px" /><span class="hwfit-help-chip hwfit-help-chip-inline" title="MTP / speculative decoding is supported on a few model families only — turn it on when the model card explicitly recommends it. On supported models it can boost inference throughput up to ~3×; on unsupported models it will either be ignored or fail to launch.">?</span></label>`;
       }
       // Always-render MoE Env Vars — the env vars dict is empty for
       // most dense models (toggle is a no-op then), but for MoE families
@@ -1779,7 +1780,7 @@ function _rerenderCachedModels() {
       panelHtml += `<label class="hwfit-sf-cb"><input type="checkbox" class="hwfit-sf" data-field="diff_attention_slicing"${sv('diff_attention_slicing',false)?' checked':''} /> Attention Slicing${_h('Slice attention computation to reduce peak VRAM. Slower')}</label>`;
       panelHtml += `<label class="hwfit-sf-cb"><input type="checkbox" class="hwfit-sf" data-field="diff_vae_slicing"${sv('diff_vae_slicing',false)?' checked':''} /> VAE Slicing${_h('Process VAE in slices. Reduces VRAM for high-res images')}</label>`;
       panelHtml += `</div><div class="hwfit-serve-row hwfit-backend-diffusers hwfit-backend-mlx_image hwfit-diff-harmonize-row">`;
-      panelHtml += `<label>Harmonize GPU${_h('Separate GPU for img2img/harmonize. Leave empty to use same GPU')}<input type="text" class="hwfit-sf" data-field="diff_harmonize_gpu" value="${esc(sv('diff_harmonize_gpu', ''))}" placeholder="auto" style="width:50px;" /></label>`;
+      panelHtml += `<label>Harmonize GPU${_h('Separate GPU for img2img/harmonize. Leave empty to use same GPU')}<input type="text" class="hwfit-sf" data-field="diff_harmonize_gpu" value="${esc(sv('diff_harmonize_gpu', ''))}" placeholder="auto" style="width:50px" /></label>`;
       panelHtml += `</div>`;
       // Model-specific optimizations. The checks row always renders for the
       // vLLM backend so the Speculative (MTP) control is ALWAYS reachable —
@@ -1809,8 +1810,8 @@ function _rerenderCachedModels() {
       // Copy moved inside the command textarea (top-right). Spacer then
       // pushes Clear Server + Launch to the right.
       panelHtml += `<span class="hwfit-serve-actions-spacer"></span>`;
-      panelHtml += `<button class="cookbook-btn cookbook-gpu-clear" style="display:none;" title="Clear server GPU memory by stopping processes that hold VRAM (SIGTERM first)">Clear Server</button>`;
-      panelHtml += `<button class="cookbook-btn cookbook-gpu-probe" style="display:none;" title="Probe GPU memory and running GPU processes">Probe GPUs</button>`;
+      panelHtml += `<button class="cookbook-btn cookbook-gpu-clear" style="display:none" title="Clear server GPU memory by stopping processes that hold VRAM (SIGTERM first)">Clear Server</button>`;
+      panelHtml += `<button class="cookbook-btn cookbook-gpu-probe" style="display:none" title="Probe GPU memory and running GPU processes">Probe GPUs</button>`;
       // Launch + a small ^ that opens an inline schedule form. The form
       // creates a ScheduledTask (action=cookbook_serve), so the schedule
       // ends up in the existing Tasks UI for edit/delete/pause.
@@ -2525,8 +2526,8 @@ function _rerenderCachedModels() {
         // Cap width/height to the viewport and start hidden — we clamp the final
         // position after mount (below) using the menu's real measured size, so it
         // can't run off-screen on a narrow mobile viewport.
-        dropdown.style.cssText = `position:fixed;display:block;visibility:hidden;z-index:${topPortalZ()};top:0;left:0;right:auto;min-width:${minW}px;max-width:calc(100vw - 16px);max-height:calc(100vh - 24px);overflow-y:auto;box-sizing:border-box;background:var(--panel,var(--bg));border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.3);padding:6px;font-size:11px;`;
-
+        dropdown.style.cssText = `position:fixed;display:block;visibility:hidden;z-index:${topPortalZ()};top:0;left:0;right:auto;min-width:${minW}px;max-width:calc(100vw - 16px);max-height:calc(100vh - 24px);overflow-y:auto;box-sizing:border-box;`;
+        dropdown.classList.add('ui-menu');
         if (!modelSlots.length) {
           const empty = document.createElement('div');
           empty.style.cssText = 'padding:6px 8px;opacity:0.5;position:relative;top:1px;';
@@ -3495,13 +3496,13 @@ function _rerenderCachedModels() {
                 ov.style.cssText = 'display:flex;align-items:center;justify-content:center;z-index:10050;position:fixed;inset:0;background:rgba(0,0,0,0.4);';
                 const _btnRow = [];
                 if (_recCtx > 1024 && _recCtx < _ctx) {
-                  _btnRow.push(`<button data-vram-action="reduce" class="confirm-btn confirm-btn-primary" style="width:100%;">Reduce ctx to ${_recCtx.toLocaleString()}</button>`);
+                  _btnRow.push(`<button data-vram-action="reduce" class="confirm-btn confirm-btn-primary" style="width:100%">Reduce ctx to ${_recCtx.toLocaleString()}</button>`);
                 }
                 if (_canAddGpu) {
-                  _btnRow.push(`<button data-vram-action="add_gpus" class="confirm-btn confirm-btn-primary" style="width:100%;">Add GPU${_addGpus.length > 1 ? 's' : ''} ${_addGpus.join(', ')}</button>`);
+                  _btnRow.push(`<button data-vram-action="add_gpus" class="confirm-btn confirm-btn-primary" style="width:100%">Add GPU${_addGpus.length > 1 ? 's' : ''} ${_addGpus.join(', ')}</button>`);
                 }
-                _btnRow.push(`<button data-vram-action="allow_cpu" class="confirm-btn confirm-btn-secondary" style="width:100%;">Allow CPU overflow (slow)</button>`);
-                _btnRow.push(`<button data-vram-action="cancel" class="confirm-btn confirm-btn-secondary" style="width:100%;">Cancel</button>`);
+                _btnRow.push(`<button data-vram-action="allow_cpu" class="confirm-btn confirm-btn-secondary" style="width:100%">Allow CPU overflow (slow)</button>`);
+                _btnRow.push(`<button data-vram-action="cancel" class="confirm-btn confirm-btn-secondary" style="width:100%">Cancel</button>`);
                 ov.innerHTML = '<div class="modal-content" style="max-width:480px;">'
                   + '<div class="modal-header"><h4>Will not fit on selected GPU' + (_selIdx.length > 1 ? 's' : '') + '</h4></div>'
                   + '<div class="modal-body" style="font-size:12px;line-height:1.5;">'
@@ -4043,7 +4044,7 @@ function _renderCachedModelsData(list, data, host) {
     if (!host) {
       list.innerHTML = '<div class="hwfit-loading" style="flex-direction:column;gap:6px;text-align:center;"><div>No cached models found</div><div style="font-size:11px;opacity:0.55;max-width:420px;line-height:1.4;">Docker Local uses Odysseus’s cache in <code>data/huggingface</code>. Download a model here, or copy an existing host HuggingFace cache into that folder once.</div></div>';
     } else {
-      list.innerHTML = '<div class="hwfit-loading" style="flex-direction:column;gap:8px;text-align:center;"><div>No cached models found</div><div style="font-size:11px;opacity:0.55;max-width:420px;line-height:1.4;">No complete model folders were found on this server.</div><button type="button" class="hwfit-gpu-btn serve-empty-scan-btn" style="height:26px;padding:3px 10px;">Refresh</button></div>';
+      list.innerHTML = '<div class="hwfit-loading" style="flex-direction:column;gap:8px;text-align:center;"><div>No cached models found</div><div style="font-size:11px;opacity:0.55;max-width:420px;line-height:1.4;">No complete model folders were found on this server.</div><button type="button" class="hwfit-gpu-btn serve-empty-scan-btn">Refresh</button></div>';
       list.querySelector('.serve-empty-scan-btn')?.addEventListener('click', () => {
         _fetchCachedModels(true);
       });
@@ -4219,7 +4220,7 @@ export async function _fetchCachedModels(fresh = false, opts = {}) {
     _renderCachedModelsData(list, data, host);
   } catch (e) {
     _dlWp.destroy();
-    list.innerHTML = `<div class="hwfit-loading" style="flex-direction:column;gap:8px;text-align:center;"><div style="color:var(--red);font-weight:600;">Cached model scan failed</div><div style="font-size:11px;opacity:0.65;max-width:420px;line-height:1.4;">${esc(e.message)}</div><button type="button" class="hwfit-gpu-btn serve-empty-scan-btn" style="height:26px;padding:3px 10px;">Retry</button></div>`;
+    list.innerHTML = `<div class="hwfit-loading" style="flex-direction:column;gap:8px;text-align:center;"><div style="color:var(--red);font-weight:600;">Cached model scan failed</div><div style="font-size:11px;opacity:0.65;max-width:420px;line-height:1.4;">${esc(e.message)}</div><button type="button" class="hwfit-gpu-btn serve-empty-scan-btn">Retry</button></div>`;
     list.querySelector('.serve-empty-scan-btn')?.addEventListener('click', () => {
       _fetchCachedModels(true);
     });

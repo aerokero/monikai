@@ -3,14 +3,17 @@
 // Pure constants + zero-state helpers for the calendar UI.
 // No DOM, no fetch, no global mutable state — safe to import anywhere.
 
-export const WEEKDAYS     = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-export const WEEKDAYS_SUN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+// Day/month names follow the browser locale, matching the toLocaleDateString()
+// dates used elsewhere in the calendar (2024-01-01 is a Monday).
+const _cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+const _name = (date, opts) => _cap(date.toLocaleDateString(undefined, opts).replace(/\.$/, ''));
+const _weekdays = (style) => Array.from({ length: 7 }, (_, i) => _name(new Date(2024, 0, 1 + i), { weekday: style }));
+const _months = (style) => Array.from({ length: 12 }, (_, m) => _name(new Date(2024, m, 1), { month: style }));
 
-
-export const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'];
-
-export const MON_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+export const WEEKDAYS        = _weekdays('short');   // Monday first
+export const WEEKDAYS_SUN    = [WEEKDAYS[6], ...WEEKDAYS.slice(0, 6)];
+export const WEEKDAYS_NARROW = _weekdays('narrow');
+export const MONTHS    = _months('long');
 
 export const CAL_PALETTE = [
   'var(--accent)', '#5b8abf', '#bf6b5b', '#5bbf7a', '#bf9a5b',

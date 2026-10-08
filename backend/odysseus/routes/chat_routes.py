@@ -1652,6 +1652,12 @@ def setup_chat_routes(
             allow_tool_preprocessing=allow_tool_preprocessing,
             defer_context_shaping=foreground_policy.enabled,
             voice_mode=voice_mode,
+            # Only the in-process voice gateway may add this system note.
+            voice_interrupted_reply=(
+                str(form_data.get("voice_interrupted_reply") or "")
+                if trusted_live_voice and form_data.get("voice_interrupted") == "true"
+                else None
+            ),
             continuation_context_message=(
                 pending_tool_approval.continuation_query
                 if exact_tool_approval
@@ -2620,6 +2626,11 @@ def setup_chat_routes(
                             _forced_tools |= set(_BROWSER_MCP_TOOLS)
                     elif _explicit_browser_intent:
                         _forced_tools = set(_BROWSER_MCP_TOOLS)
+                    if trusted_live_voice:
+                        # A home voice assistant must always be able to act on
+                        # the house; keyword tool selection misses most
+                        # phrasings ("zapnij lampę …") in any language.
+                        _forced_tools = (_forced_tools or set()) | {"home_assistant_control"}
 
                     async for chunk in stream_agent_loop(
                         sess.endpoint_url,

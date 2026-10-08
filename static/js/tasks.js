@@ -359,7 +359,7 @@ function _renderHomeAssistantActionOptions(action, existing, extra) {
       <label class="task-form-label">Color <span style="opacity:0.5;font-weight:normal;font-size:10px;">(optional)</span></label>
       <input type="text" id="task-form-ha-color" class="task-form-input" value="${_escHtml(color)}" placeholder="e.g. warm, blue, daylight" maxlength="40" />
     </div>
-    <div class="memory-desc" style="font-size:11px;margin-top:5px;">The task can address only one entity discovered by the Home Assistant filters in Settings. Arbitrary service calls and “all lights” shortcuts are not available.</div>
+    <div class="memory-desc">The task can address only one entity discovered by the Home Assistant filters in Settings. Arbitrary service calls and “all lights” shortcuts are not available.</div>
   `;
 
   const sync = () => {
@@ -899,9 +899,9 @@ function _renderList() {
     const titleRow = document.createElement('div');
     titleRow.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;';
     const statusBadge = task.status === 'paused'
-      ? `<button type="button" class="task-status-badge task-state-badge task-paused-badge" data-task-status-action="resume" title="Paused - click to resume" style="position:relative;top:4px;"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg><span class="task-state-label">paused</span></button>`
+      ? `<button type="button" class="task-status-badge task-state-badge task-paused-badge" data-task-status-action="resume" title="Paused - click to resume"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg><span class="task-state-label">paused</span></button>`
       : task.status === 'active'
-        ? `<button type="button" class="task-status-badge task-state-badge task-active-badge" data-task-status-action="pause" title="Active - click to pause" style="position:relative;top:4px;"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="7 4 19 12 7 20 7 4"/></svg><span class="task-state-label">active</span></button>`
+        ? `<button type="button" class="task-status-badge task-state-badge task-active-badge" data-task-status-action="pause" title="Active - click to pause"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="7 4 19 12 7 20 7 4"/></svg><span class="task-state-label">active</span></button>`
         : '';
     const builtinBadge = task.is_builtin
       ? `<span class="task-builtin-badge${task.is_modified ? ' modified' : ''}" title="${task.is_modified ? 'Built-in task — edited from its default' : 'Built-in task'}">built-in${task.is_modified ? ' · edited' : ''}</span>`
@@ -1202,22 +1202,22 @@ function _showPresetPicker() {
   const body = modal.querySelector('.modal-body');
   if (!body) return;
 
-  let html = '<div class="admin-card" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">';
+  let html = '<div class="admin-card ui-panel" style="flex:1;display:flex;flex-direction:column;overflow:hidden">';
   html += '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px;"><h2 style="margin:0;padding:0;line-height:1;">Add Task</h2></div>';
-  html += '<p class="memory-desc" style="position:relative;top:4px;">Describe a task for the AI to draft, or pick a type below to set one up manually.</p>';
+  html += '<p class="memory-desc">Describe a task for the AI to draft, or pick a type below to set one up manually.</p>';
   // flex-wrap + min-width:0 on the input lets the row collapse cleanly
   // on narrow modal widths instead of pushing the AI button past the
   // right edge. margin-left:-4px nudges the compose row 4px into the
   // description bar above so the input lines up with it visually.
   html += '<div class="task-ai-compose" style="display:flex;gap:6px;margin:6px 0 10px -4px;flex-wrap:wrap;align-items:center;">'
-    + '<input type="text" id="task-ai-input" class="memory-search-input" style="flex:1 1 220px;min-width:0;" placeholder="Describe a task — e.g. &quot;every weekday 7am summarize my unread email&quot;" />'
-    + '<button class="memory-toolbar-btn active" id="task-ai-btn" title="Draft a task with AI" style="white-space:nowrap;height:28px;flex:0 0 auto;"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px;margin-right:3px;"><path d="M12 0L14.59 8.41L23 12L14.59 15.59L12 24L9.41 15.59L1 12L9.41 8.41Z"/></svg>Draft with AI</button>'
+    + '<input type="text" id="task-ai-input" class="memory-search-input" style="flex:1 1 220px;min-width:0" placeholder="Describe a task — e.g. &quot;every weekday 7am summarize my unread email&quot;" />'
+    + '<button class="memory-toolbar-btn active" id="task-ai-btn" title="Draft a task with AI" style="white-space:nowrap;flex:0 0 auto"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px;margin-right:3px;"><path d="M12 0L14.59 8.41L23 12L14.59 15.59L12 24L9.41 15.59L1 12L9.41 8.41Z"/></svg>Draft with AI</button>'
     + '</div>';
-  html += '<div class="memory-list" style="max-height:none;flex:1;gap:0px;margin-top:2px;padding-right:8px;">';
+  html += '<div class="memory-list" style="max-height:none;flex:1;margin-top:2px">';
   _TASK_PRESETS.forEach((p, i) => {
-    html += `<button class="memory-item task-card" data-idx="${i}" style="cursor:pointer;text-align:left;width:100%;font-family:inherit;">
+    html += `<button class="memory-item task-card" data-idx="${i}" style="text-align:left;width:100%">
       <div style="flex:1;min-width:0;">
-        <div style="display:flex;align-items:center;gap:6px;">${_presetIcon(p)}<span class="memory-item-title" style="flex:1;position:relative;top:0px;">${p.label}</span></div>
+        <div style="display:flex;align-items:center;gap:6px;">${_presetIcon(p)}<span class="memory-item-title" style="flex:1">${p.label}</span></div>
         <div style="font-size:10px;opacity:0.4;margin-top:-1px;position:relative;top:3px;">${p.desc}</div>
       </div>
     </button>`;
@@ -1255,7 +1255,7 @@ function _showForm(existing, initTaskType, initTriggerType) {
   const curTriggerType = existing?.trigger_type || initTriggerType || 'schedule';
 
   body.innerHTML = `
-    <div class="admin-card" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+    <div class="admin-card ui-panel" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
       <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px;">
         <h2 style="margin:0;padding:0;line-height:1;">${existing?.id ? 'Edit Task' : 'New Task'}</h2>
       </div>
@@ -1266,18 +1266,18 @@ function _showForm(existing, initTaskType, initTriggerType) {
 
       <label class="task-form-label">Type</label>
       <div class="task-form-toggle" id="task-form-type-toggle">
-        <button class="task-toggle-btn ${curTaskType === 'llm' ? 'active' : ''}" data-val="llm" style="position:relative;top:-4px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>Prompt</button>
-        <button class="task-toggle-btn ${curTaskType === 'research' ? 'active' : ''}" data-val="research" style="position:relative;top:-4px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Research</button>
-        <button class="task-toggle-btn ${curTaskType === 'action' ? 'active' : ''}" data-val="action" style="position:relative;top:-4px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Action</button>
+        <button class="task-toggle-btn ${curTaskType === 'llm' ? 'active' : ''}" data-val="llm"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>Prompt</button>
+        <button class="task-toggle-btn ${curTaskType === 'research' ? 'active' : ''}" data-val="research"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Research</button>
+        <button class="task-toggle-btn ${curTaskType === 'action' ? 'active' : ''}" data-val="action"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Action</button>
       </div>
 
       <div id="task-form-type-opts"></div>
 
       <label class="task-form-label">Trigger</label>
       <div class="task-form-toggle" id="task-form-trigger-toggle">
-        <button class="task-toggle-btn ${curTriggerType === 'schedule' ? 'active' : ''}" data-val="schedule" style="position:relative;top:-4px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Schedule</button>
-        <button class="task-toggle-btn ${curTriggerType === 'event' ? 'active' : ''}" data-val="event" style="position:relative;top:-4px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>Event</button>
-        <button class="task-toggle-btn ${curTriggerType === 'webhook' ? 'active' : ''}" data-val="webhook" style="position:relative;top:-4px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>Webhook</button>
+        <button class="task-toggle-btn ${curTriggerType === 'schedule' ? 'active' : ''}" data-val="schedule"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Schedule</button>
+        <button class="task-toggle-btn ${curTriggerType === 'event' ? 'active' : ''}" data-val="event"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>Event</button>
+        <button class="task-toggle-btn ${curTriggerType === 'webhook' ? 'active' : ''}" data-val="webhook"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>Webhook</button>
       </div>
 
       <div id="task-form-trigger-opts"></div>
@@ -1369,7 +1369,7 @@ function _showForm(existing, initTaskType, initTriggerType) {
           extra.insertAdjacentHTML('beforeend', `
             <label class="task-form-label">Email triage rules</label>
             <textarea id="task-form-urgent-email-prompt" class="task-form-input task-form-textarea" rows="4" placeholder="What should count as urgent? e.g. deadlines, blockers, people waiting outside."></textarea>
-            <div class="memory-desc" style="font-size:11px;margin-top:4px;">Pause/resume and schedule are controlled by this task. It tags work, personal, urgent, action-needed, finance, legal, travel, newsletter, marketing, spam, and related mail categories. Urgent/reply-soon emails use your reminder settings.</div>
+            <div class="memory-desc">Pause/resume and schedule are controlled by this task. It tags work, personal, urgent, action-needed, finance, legal, travel, newsletter, marketing, spam, and related mail categories. Urgent/reply-soon emails use your reminder settings.</div>
           `);
           const settings = await _fetchUrgentEmailSettings();
           const promptEl = document.getElementById('task-form-urgent-email-prompt');
@@ -1536,7 +1536,7 @@ function _showForm(existing, initTaskType, initTriggerType) {
         triggerOpts.innerHTML = `
           <label class="task-form-label">Webhook URL</label>
           <div style="display:flex;gap:4px;align-items:center;">
-            <input type="text" class="task-form-input" value="${url}" readonly style="flex:1;font-size:11px;opacity:0.8;" id="task-form-webhook-url" />
+            <input type="text" class="task-form-input" value="${url}" readonly style="flex:1" id="task-form-webhook-url" />
             <button class="task-btn" id="task-form-webhook-copy" style="white-space:nowrap;">Copy</button>
           </div>
           <div style="font-size:10px;opacity:0.4;margin-top:4px;">POST this URL from any external service to trigger the task. No auth needed.</div>
@@ -1585,15 +1585,15 @@ function _showForm(existing, initTaskType, initTriggerType) {
     extra.innerHTML = `
       <div class="task-form-output-email" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:6px;">
         <label>
-          <span class="task-form-label" style="margin-top:0;">From</span>
+          <span class="task-form-label">From</span>
           <select id="task-form-output-email-account" class="task-form-input">${options}</select>
         </label>
         <label>
-          <span class="task-form-label" style="margin-top:0;">To</span>
+          <span class="task-form-label">To</span>
           <input id="task-form-output-email-to" class="task-form-input" type="email" value="${_escHtml(parsed.to)}" placeholder="Me / selected account" />
         </label>
       </div>
-      <div class="memory-desc" style="font-size:10px;margin-top:3px;">Leave To blank to send to the selected account’s own address.</div>
+      <div class="memory-desc">Leave To blank to send to the selected account’s own address.</div>
     `;
   };
 
@@ -2136,10 +2136,10 @@ async function _renderCompletedView() {
   const body = modal?.querySelector('.modal-body');
   if (!body) return;
   body.innerHTML = `
-    <div class="admin-card tasks-activity-card tasks-completed-card" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0;">
+    <div class="admin-card tasks-activity-card tasks-completed-card" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
       <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px;">
         <h2 style="margin:0;padding:0;line-height:1;">Completed</h2>
-        <button class="memory-toolbar-btn" id="tasks-completed-refresh" title="Refresh" style="margin-left:auto;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg></button>
+        <button class="memory-toolbar-btn" id="tasks-completed-refresh" title="Refresh"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg></button>
       </div>
       <p class="memory-desc">Completed assistant/research outputs you can open in chat.</p>
       <div id="tasks-completed-list" class="memory-list tasks-activity-list tasks-completed-list" style="flex:1;overflow:auto;font-size:13px;min-height:0;"></div>
@@ -2164,7 +2164,7 @@ async function _renderCompletedView() {
     list.innerHTML = finished.map(_renderCompletedPreviewEntry).join('');
     if (_completedHasMore) {
       list.insertAdjacentHTML('beforeend', `
-        <button type="button" class="memory-toolbar-btn tasks-activity-load-more" id="tasks-completed-load-more" style="width:100%;justify-content:center;margin-top:6px;">
+        <button type="button" class="memory-toolbar-btn tasks-activity-load-more" id="tasks-completed-load-more" style="width:100%;justify-content:center">
           Load more
         </button>
       `);
@@ -2186,14 +2186,14 @@ async function _renderActivityView() {
   const body = modal?.querySelector('.modal-body');
   if (!body) return;
   body.innerHTML = `
-    <div class="admin-card tasks-activity-card" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0;">
+    <div class="admin-card tasks-activity-card" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
       <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px;">
         <h2 style="margin:0;padding:0;line-height:1;">Activity</h2>
-        <button class="memory-toolbar-btn" id="tasks-activity-refresh" title="Refresh" style="margin-left:auto;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg></button>
+        <button class="memory-toolbar-btn" id="tasks-activity-refresh" title="Refresh"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg></button>
       </div>
       <p class="memory-desc">Recent task runs across all scheduled tasks.</p>
       <div style="display:flex;align-items:center;gap:6px;margin:6px 0 8px;">
-        <input type="text" id="tasks-activity-search" placeholder="Filter activity…" class="memory-search-input" style="flex:1;" />
+        <input type="text" id="tasks-activity-search" placeholder="Filter activity…" class="memory-search-input" style="flex:1" />
       </div>
       <div class="tasks-activity-filters" id="tasks-activity-chips" style="display:flex;gap:5px;margin-bottom:8px;flex-wrap:wrap;"></div>
       <div id="tasks-activity-list" class="memory-list tasks-activity-list" style="flex:1;overflow:auto;font-size:13px;min-height:0;"></div>
@@ -2241,7 +2241,7 @@ async function _renderActivityView() {
     list.innerHTML = _stackActivityEntries(filtered).map(_renderActivityEntry).join('');
     if (_activityHasMore && !q) {
       list.insertAdjacentHTML('beforeend', `
-        <button type="button" class="memory-toolbar-btn tasks-activity-load-more" id="tasks-activity-load-more" style="width:100%;justify-content:center;margin-top:6px;">
+        <button type="button" class="memory-toolbar-btn tasks-activity-load-more" id="tasks-activity-load-more" style="width:100%;justify-content:center">
           Load more
         </button>
       `);
@@ -2965,28 +2965,28 @@ function _renderMainView() {
   if (!body) return;
 
   body.innerHTML = `
-    <div class="admin-card" style="flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative;top:-2px;">
+    <div class="admin-card ui-panel" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
       <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px;">
         <h2 style="margin:0;padding:0;line-height:1;position:relative;top:-4px;">Ongoing Tasks <span id="tasks-head-count" class="memory-count" style="font-size:0.6em;opacity:0.6;font-weight:normal"></span></h2>
-        <button class="memory-toolbar-btn" id="tasks-pause-all-btn" title="Pause all active tasks" style="margin-left:auto;">Pause all</button>
+        <button class="memory-toolbar-btn" id="tasks-pause-all-btn" title="Pause all active tasks">Pause all</button>
       </div>
-      <p class="memory-desc" style="position:relative;top:-4px;">Scheduled prompts and actions that run automatically. Results appear in a dedicated session.</p>
+      <p class="memory-desc">Scheduled prompts and actions that run automatically. Results appear in a dedicated session.</p>
       <div class="memory-toolbar">
-        <div class="memory-category-filters" style="display:flex;align-items:center;gap:6px;">
-          <select class="memory-sort-select" id="tasks-sort" aria-label="Sort tasks" title="Sort tasks" style="position:relative;top:-4px;width:86px;font-size:11px;height:24px;">
+        <div class="memory-category-filters" style="display:flex;align-items:center">
+          <select class="memory-sort-select" id="tasks-sort" aria-label="Sort tasks" title="Sort tasks" style="width:86px">
             <option value="recent">Recent</option>
             <option value="name">A–Z</option>
             <option value="status">Status</option>
           </select>
-          <button class="memory-toolbar-btn" id="tasks-select-btn" title="Select tasks" style="position:relative;top:-7px;">Select</button>
+          <button class="memory-toolbar-btn" id="tasks-select-btn" title="Select tasks">Select</button>
         </div>
-        <input type="text" id="tasks-search" placeholder="Search tasks…" class="memory-search-input" value="${_esc(_taskSearch)}" style="position:relative;top:-4px;" />
+        <input type="text" id="tasks-search" placeholder="Search tasks…" class="memory-search-input" value="${_esc(_taskSearch)}" />
       </div>
-      <div id="tasks-bulk-bar" class="memory-bulk-bar${_taskSelectMode ? '' : ' hidden'}" style="position:relative;top:-4px;">
-        <label class="memory-bulk-check-all" style="position:relative;top:0px;"><input type="checkbox" id="tasks-select-all" /> All</label>
+      <div id="tasks-bulk-bar" class="memory-bulk-bar${_taskSelectMode ? '' : ' hidden'}" style="position:relative">
+        <label class="memory-bulk-check-all" style="position:relative"><input type="checkbox" id="tasks-select-all" /> All</label>
         <span id="tasks-selected-count">0 Selected</span>
-        <button id="tasks-bulk-delete" class="memory-toolbar-btn danger" style="position:relative;top:-2px;" disabled><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>Delete</button>
-        <button id="tasks-bulk-cancel" class="memory-toolbar-btn" title="Cancel (Esc)" style="margin-left:4px;padding:3px 6px;position:relative;top:-2px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        <button id="tasks-bulk-delete" class="memory-toolbar-btn danger" disabled><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>Delete</button>
+        <button id="tasks-bulk-cancel" class="memory-toolbar-btn" title="Cancel (Esc)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
       <div id="tasks-filter-chips" class="tasks-activity-filters" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px;position:relative;top:-4px;"></div>
       <div id="tasks-list" class="memory-list" style="flex:1;gap:4px;position:relative;top:-4px;"></div>

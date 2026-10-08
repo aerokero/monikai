@@ -64,8 +64,7 @@ from .model_config import (
     GEMINI_EMIT_NATIVE_THOUGHT_EVENTS,
     GEMINI_CONTEXT_WINDOW_COMPRESSION, GEMINI_SESSION_RESUMPTION,
     GEMINI_VAD_PREFIX_PADDING_MS, GEMINI_VAD_SILENCE_DURATION_MS,
-    DREAM_SLEEP_GAP_HOURS, DREAM_MORNING_START_HOUR, DREAM_MORNING_END_HOUR,
-    DREAM_CONTEXT_HISTORY_LIMIT, DEFAULT_MODE,
+    DEFAULT_MODE,
     BASE_CONTEXT_WINDOW_COMPRESSION, BASE_REALTIME_INPUT_CONFIG,
     MAX_INTERNAL_THOUGHT_CHARS, _sanitize_internal_thought, client,
 )
@@ -100,7 +99,6 @@ from backend.services.memory_adapter import MemoryEngine
 from .session_manager import SessionManager
 from .therapy_persona import build_therapy_system_instruction, build_opening_trigger
 from .config import BASE_DIR, DATA_DIR, SETTINGS_PATH
-from backend.services.personality_notifications import build_relationship_notification_lines
 from ..tools.openclaw_skills import OpenClawSkillManager
 from ..integrations.games.minecraft_agent import MinecraftBotManager
 
@@ -471,8 +469,6 @@ class AudioLoop:
         on_error=None,
         on_reminder_fired=None,
         on_calendar_update=None, # For local calendar
-        on_personality_update=None,
-        on_personality_event=None,
         on_internal_thought=None,
         input_device_index=None,
         input_device_name=None,
@@ -483,7 +479,6 @@ class AudioLoop:
         calendar_manager=None,
         reminder_manager=None,
         spotify_manager=None,
-        personality=None,
         on_study_fields=None,
         on_study_notes=None,
         on_study_page=None,
@@ -518,8 +513,6 @@ class AudioLoop:
         self.on_error = on_error
         self.on_memory_event = on_memory_event
         self.on_calendar_update = on_calendar_update
-        self.on_personality_update = on_personality_update
-        self.on_personality_event = on_personality_event
         self.on_internal_thought = on_internal_thought
         self.on_reminder_fired = on_reminder_fired
         self.on_study_fields = on_study_fields
@@ -557,8 +550,6 @@ class AudioLoop:
         self._emitted_thoughts_count = 0
         self._emitted_native_thought_keys = set()
         self._is_new_turn = True
-        self._weekly_recap_inflight = False
-        self._dream_seed_inflight = False
         self._ai_turn_open = False
         self._fallback_web_agent_triggered_for_turn = False  # Prevent duplicate fallback web_agent calls
         self._pending_system_messages = deque(maxlen=8)
@@ -692,7 +683,6 @@ class AudioLoop:
                 "spotify_recently_played": False,
                 # Memory tools (auto-allow)
                 "get_work_memory": False,
-                "update_personality": False,
                 "update_work_memory": False,
                 "commit_work_memory": False,
                 # Clearing memory should require explicit user intent
@@ -890,9 +880,6 @@ class AudioLoop:
             except Exception as e:
                 print(f"[AI DEBUG] [CALENDAR] Failed to load birthday from profile: {e}")
 
-        # Initialize PersonalitySystem (Disabled in V2)
-        self.personality = None
-
         # Capture settings (screen/camera vision)
         self._video_queue_max = 6  # legacy: kept for compatibility
         self._camera_backend_id = None
@@ -953,13 +940,6 @@ class AudioLoop:
                         continue
                     future.set_result(text)
                     break
-
-            # Update personality/gamification from complete turns
-            if getattr(self, "personality", None):
-                try:
-                    self.personality.observe_message(sender, text)
-                except Exception:
-                    pass
 
             # Memory capture (global memory + journal)
             if getattr(self, "memory_engine", None):
@@ -1030,87 +1010,6 @@ class AudioLoop:
                 await self.session.send(input=msg, end_of_turn=end_of_turn)
             except Exception:
                 pass
-
-    def _get_last_user_message_timestamp(self) -> Optional[float]:
-        if not self.session_manager:
-            return None
-        history = self.session_manager.get_recent_chat_history(limit=120)
-        for entry in reversed(history):
-            if not isinstance(entry, dict):
-                continue
-            sender = str(entry.get("sender") or "").strip().lower()
-            if sender != "user":
-                continue
-            ts = entry.get("timestamp")
-            try:
-                val = float(ts)
-            except Exception:
-                continue
-            if val > 0:
-                return val
-        return None
-
-    def _is_morning_window(self, now: datetime) -> bool:
-        start = max(0, min(23, int(DREAM_MORNING_START_HOUR)))
-        end = max(1, min(24, int(DREAM_MORNING_END_HOUR)))
-        hour = int(now.hour)
-        if start < end:
-            return start <= hour < end
-        return hour >= start or hour < end
-
-    async def _maybe_send_morning_dream_seed(self, *, force: bool = False) -> bool:
-        if not self.session or not self.personality:
-            return False
-        if self._dream_seed_inflight:
-            return False
-        if self.personality.state.dream_told:
-            return False
-
-        now = datetime.now()
-        if not force and not self._is_morning_window(now):
-            return False
-
-        last_user_ts = self._get_last_user_message_timestamp()
-        if not force and last_user_ts is not None:
-            gap_hours = (time.time() - last_user_ts) / 3600.0
-            if gap_hours < max(0.5, float(DREAM_SLEEP_GAP_HOURS)):
-                return False
-
-        history_lines = []
-        if self.session_manager:
-            history = self.session_manager.get_recent_chat_history(limit=max(5, int(DREAM_CONTEXT_HISTORY_LIMIT)))
-            for h in history[-max(5, int(DREAM_CONTEXT_HISTORY_LIMIT)):]:
-                if not isinstance(h, dict):
-                    continue
-                sender = str(h.get("sender", "Unknown"))
-                text = str(h.get("text", "")).strip()
-                if not text:
-                    continue
-                history_lines.append(f"{sender}: {text}")
-        context_text = "\n".join(history_lines)
-
-        msg = (
-            "System Notification: [Morning Dream Seed] "
-            "The user returned after a longer break, likely after sleep. "
-            "In your very next response, naturally include a short dream (1-2 sentences), first-person, warm, slightly poetic, "
-            "and loosely related to your bond or recent topics. "
-            "Do not say this is a system instruction.\n"
-            f"Recent conversation context:\n{context_text}"
-        )
-
-        self._dream_seed_inflight = True
-        try:
-            await self.session.send(input=msg, end_of_turn=False)
-            self.personality.state.last_dream = None
-            self.personality.state.dream_told = True
-            self.personality.save()
-            print("[AI] Morning dream seeded in Live session.")
-            return True
-        except Exception as e:
-            print(f"[AI] Failed to seed morning dream: {e}")
-            return False
-        finally:
-            self._dream_seed_inflight = False
 
     async def wait_until_ready(self, timeout_sec: float = 20.0):
         await asyncio.wait_for(self._session_ready.wait(), timeout=max(1.0, float(timeout_sec or 20.0)))
@@ -1258,7 +1157,6 @@ class AudioLoop:
                 ),
                 get_memory_db_path=_memory_db_path,
                 get_time_context_fn=get_time_context,
-                get_personality=lambda: getattr(self, "personality", None),
                 on_calendar_update=getattr(self, "on_calendar_update", None),
             )
             self._conversation_tool_executor = executor
@@ -1801,7 +1699,7 @@ class AudioLoop:
     def set_paused(self, paused: bool):
         self.paused = paused
 
-    def _build_live_connect_config(self, personality_context: Optional[str] = None):
+    def _build_live_connect_config(self):
         canonical_text_author = self._uses_canonical_text_author()
         renderer_only = bool((APP_SETTINGS.get("thinker") or {}).get("enabled", False)) or canonical_text_author
         self._manual_voice_turn_control = renderer_only
@@ -2191,92 +2089,6 @@ class AudioLoop:
                 continue
 
 
-    async def generate_daily_dream(self):
-        """Seeds a morning dream directly inside the active Live session."""
-        if not self.session:
-            return
-        print("[AI] Seeding daily dream in Live session...")
-        await self._maybe_send_morning_dream_seed(force=True)
-
-    async def generate_weekly_recap(self):
-        """Generates a weekly recap + microgoals and stores them in the journal."""
-        if not self.session_manager or not self.personality:
-            return
-        if self._weekly_recap_inflight:
-            return
-        if not self.personality.state.weekly_recap_pending:
-            return
-
-        self._weekly_recap_inflight = True
-        try:
-            history = self.session_manager.get_recent_chat_history(limit=220)
-            cutoff = time.time() - 7 * 86400
-            lines = []
-            for h in history:
-                try:
-                    ts = float(h.get("timestamp", 0))
-                except Exception:
-                    ts = 0
-                if ts and ts < cutoff:
-                    continue
-                sender = h.get("sender", "Unknown")
-                text = h.get("text", "")
-                if text:
-                    lines.append(f"{sender}: {text}")
-            context_text = "\n".join(lines)[-4000:]
-
-            prompt = (
-                "Wygeneruj tygodniowe podsumowanie relacji Moniki i użytkownika na podstawie historii rozmów. "
-                "Zwróć JSON z polami: recap (2-4 zdania), microgoals (lista 1-2 krótkich celów), "
-                "journal_prompt (1 pytanie do dziennika refleksji). "
-                "Język: polski. Bez markdown.\n\n"
-                f"Historia rozmów (ostatnie 7 dni):\n{context_text}"
-            )
-
-            response = await client.aio.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=prompt
-            )
-            text = (response.text or "").strip()
-
-            recap = ""
-            microgoals = []
-            journal_prompt = ""
-
-            try:
-                start = text.find("{")
-                end = text.rfind("}")
-                payload = json.loads(text[start:end + 1]) if start != -1 and end != -1 else {}
-                recap = str(payload.get("recap") or "").strip()
-                microgoals = payload.get("microgoals") or []
-                journal_prompt = str(payload.get("journal_prompt") or "").strip()
-            except Exception:
-                recap = text[:400]
-
-            if not recap:
-                recap = "To był spokojny tydzień z kilkoma dobrymi momentami. Czuję, że jesteśmy coraz bliżej."
-
-            self.personality.apply_weekly_recap(recap, microgoals, journal_prompt)
-
-            if self.session:
-                goals_text = ""
-                if microgoals:
-                    goals_text = " Mikrocele na ten tydzień: " + "; ".join([g.strip() for g in microgoals[:2] if g])
-                prompt_text = ""
-                if journal_prompt:
-                    prompt_text = f" Pytanie do dziennika: {journal_prompt}"
-                msg = (
-                    "System Notification: [Weekly Recap] "
-                    f"{recap}{goals_text}{prompt_text} "
-                    "Podziel się tym z użytkownikiem krótko i ciepło."
-                )
-                await self.send_system_message(msg, end_of_turn=True)
-
-        except Exception as e:
-            print(f"[AI] Failed to generate weekly recap: {e}")
-        finally:
-            self._weekly_recap_inflight = False
-
     async def reasoning_loop(self):
         while not self.stop_event.is_set():
             await asyncio.sleep(1.0)
@@ -2284,52 +2096,6 @@ class AudioLoop:
             # In focused Minecraft mode, skip global relationship/proactivity loops.
             if self.minecraft_game_mode:
                 continue
-
-            if self.personality:
-                # This will check if it's after 6am and reset energy once per day.
-                if self.personality.daily_energy_reset():
-                    # Check for birthday on new day
-                    if self.memory_engine:
-                        bd = self.memory_engine.get_birthday()
-                        if bd:
-                            now = datetime.now()
-                            if now.month == bd[0] and now.day == bd[1]:
-                                # Trigger a birthday greeting
-                                asyncio.create_task(self.send_system_message(
-                                    "System Notification: [Date Event] It is the user's birthday today! Wish them a happy birthday now.",
-                                    end_of_turn=True
-                                ))
-
-                # Handle personality notifications (quests, unlocks, weekly recap)
-                try:
-                    notifications = self.personality.pop_notifications() if self.session else []
-                except Exception:
-                    notifications = []
-
-                if notifications:
-                    if self.on_personality_event:
-                        for n in notifications:
-                            try:
-                                maybe_coro = self.on_personality_event(n)
-                                if asyncio.iscoroutine(maybe_coro):
-                                    await maybe_coro
-                            except Exception as e:
-                                print(f"[AI] Failed to forward personality event: {e}")
-
-                    note_lines, weekly_recap_due = build_relationship_notification_lines(notifications)
-                    if weekly_recap_due:
-                        asyncio.create_task(self.generate_weekly_recap())
-
-                    if note_lines and self.session:
-                        msg = (
-                            "System Notification: [Relacja] "
-                            + " ".join(note_lines)
-                            + " Wspomnij o tym krótko i naturalnie."
-                        )
-                        try:
-                            await self.send_system_message(msg, end_of_turn=True)
-                        except Exception:
-                            pass
 
             result = await self.proactivity.run_reasoning_check()
             if result and self.session and not self._ai_turn_open:
@@ -2365,12 +2131,6 @@ class AudioLoop:
                 except Exception:
                     if not self._uses_canonical_text_author():
                         self._suppress_spoken_output = False
-
-    async def weather_loop(self):
-        while not self.stop_event.is_set():
-            if self.personality:
-                await asyncio.to_thread(self.personality.update_weather)
-            await asyncio.sleep(1800)
 
     async def send_frame(self, frame_data):
         if self.video_mode != "camera":
@@ -3591,7 +3351,6 @@ class AudioLoop:
                                 "spotify_list_playlists",
                                 "spotify_recently_played",
                                 "get_time_context",
-                                "update_personality",
                                 "run_web_agent",
                                 "run_openclaw_agent",
                                 "manage_agent_job",
@@ -4101,16 +3860,6 @@ class AudioLoop:
                                     if getattr(self, "memory_engine", None):
                                         md = self.memory_engine.render_memory_brief()
                                     function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": md}))
-
-                                elif fc.name == "update_personality":
-                                    aff_delta = fc.args.get("affection_delta")
-                                    mood = fc.args.get("mood")
-                                    energy = fc.args.get("energy")
-                                    result_str = "Personality system not active."
-                                    if getattr(self, "personality", None):
-                                        new_state = self.personality.update(affection_delta=aff_delta, mood=mood, energy=energy)
-                                        result_str = f"State updated. Affection: {new_state.affection:.1f}, Mood: {new_state.mood}"
-                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
 
                                 elif fc.name == "update_work_memory":
                                     set_obj = fc.args.get("set") or {}
@@ -5133,8 +4882,7 @@ class AudioLoop:
                     raise RuntimeError("MonikAI v2 runtime is not active")
                 await _v2.refresh_prompt()
 
-                pers_ctx = None
-                current_config = self._build_live_connect_config(personality_context=pers_ctx)
+                current_config = self._build_live_connect_config()
 
                 async with (
                     _mc.client.aio.live.connect(model=_mc.MODEL, config=current_config) as session,
@@ -5164,7 +4912,6 @@ class AudioLoop:
                         tg.create_task(self.play_audio())
                     elif self.enable_audio_io:
                         tg.create_task(self.forward_audio())
-                    tg.create_task(self.weather_loop())
 
                     if not is_reconnect:
                         ctx = get_time_context()
@@ -5208,15 +4955,6 @@ class AudioLoop:
                                 end_of_turn=False,
                             )
                         
-                        # Check for pending dream (if app started in the morning but dream was generated earlier/persisted)
-                        if self.personality and self.personality.state.last_dream and not self.personality.state.dream_told:
-                            now = datetime.now()
-                            if 6 <= now.hour < 12:
-                                msg = f"System Notification: [Morning Routine] You have a memory of a dream from last night: '{self.personality.state.last_dream}'. Since it is morning, tell the user about it."
-                                await self.session.send(input=msg, end_of_turn=True)
-                                self.personality.state.dream_told = True
-                                self.personality.save()
-
                         if start_message:
                             print(f"[AI DEBUG] [INFO] Sending start message: {start_message}")
                             await self.session.send(input=start_message, end_of_turn=True)

@@ -14,6 +14,7 @@ import {
   activateSettingsPanel,
   getActiveSettingsTab,
   bindSettingsNavigation,
+  showSettingsHome,
 } from './settings/navigation.js';
 import {
   bindSettingsDrag,
@@ -771,6 +772,7 @@ async function initTtsSettings() {
   var voiceSelect = el('set-ttsVoiceSelect');
   var voiceInput = el('set-ttsVoiceInput');
   var modelRow = el('set-ttsModelRow');
+  var voiceRow = el('set-ttsVoiceRow');
   var speedRange = el('set-ttsSpeedRange');
   var speedValue = el('set-ttsSpeedValue');
   var speedSelect = el('set-ttsSpeedSelect');
@@ -2372,7 +2374,7 @@ function initAccount() {
             <input id="tfa-disable-pw" type="password" placeholder="Enter password to disable" autocomplete="current-password" style="padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--fg);font-family:inherit;font-size:12px;width:100%;box-sizing:border-box;margin-bottom:6px;">
             <div class="settings-row" style="justify-content:flex-end;">
               <span id="tfa-msg" style="font-size:11px;margin-right:auto;"></span>
-              <button class="admin-btn-add" id="tfa-disable-btn" style="opacity:0.7;">Disable 2FA</button>
+              <button class="admin-btn-add" id="tfa-disable-btn">Disable 2FA</button>
             </div>`;
           el('tfa-disable-btn').addEventListener('click', async () => {
             const pw = el('tfa-disable-pw').value;
@@ -2415,7 +2417,7 @@ function initAccount() {
                 <input id="tfa-verify-code" type="text" placeholder="Enter 6-digit code to verify" autocomplete="one-time-code" inputmode="numeric" maxlength="8" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--fg);font-family:inherit;font-size:13px;box-sizing:border-box;text-align:center;letter-spacing:3px;margin-bottom:6px;">
                 <div class="settings-row" style="justify-content:flex-end;">
                   <span id="tfa-msg" style="font-size:11px;margin-right:auto;"></span>
-                  <button class="admin-btn-add" id="tfa-cancel-btn" style="opacity:0.5;">Cancel</button>
+                  <button class="admin-btn-add" id="tfa-cancel-btn">Cancel</button>
                   <button class="admin-btn-add" id="tfa-verify-btn">Verify & Enable</button>
                 </div>`;
               el('tfa-verify-code').focus();
@@ -3062,9 +3064,9 @@ async function initEmailAccountsSettings() {
         <div style="font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px">${esc(a.name)} ${badge}</div>
         <div style="font-size:11px;opacity:0.6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.imap_user || a.from_address || '')} — ${esc(imap)}</div>
       </div>
-      ${a.is_default ? '' : `<button class="admin-btn-sm email-acc-default-btn" style="font-size:10px">Make Default</button>`}
-      <button class="admin-btn-sm email-acc-edit-btn" style="font-size:10px">Edit</button>
-      <button class="admin-btn-sm email-acc-del-btn" style="font-size:10px;opacity:0.6">Delete</button>
+      ${a.is_default ? '' : `<button class="admin-btn-sm email-acc-default-btn">Make Default</button>`}
+      <button class="admin-btn-sm email-acc-edit-btn">Edit</button>
+      <button class="admin-btn-sm email-acc-del-btn">Delete</button>
     </div>`;
   }
 
@@ -3135,7 +3137,7 @@ async function initEmailAccountsSettings() {
         <div id="eaf-oauth-section" style="display:none;margin:8px 0;padding:10px;border:1px solid var(--border);border-radius:6px;background:color-mix(in srgb,var(--accent,#50fa7b) 6%,transparent)">
           <div style="font-size:11px;font-weight:600;margin-bottom:6px">Google OAuth2 — required for Workspace / .edu accounts</div>
           <div id="eaf-oauth-status" style="font-size:11px;opacity:0.7;margin-bottom:6px">${a.oauth_provider === 'google' ? '✓ Connected via Google OAuth' : 'Not connected — click below to authorize'}</div>
-          <button type="button" id="eaf-oauth-btn" class="admin-btn-add" style="font-size:11px">${a.oauth_provider === 'google' ? 'Reconnect with Google' : 'Connect with Google'}</button>
+          <button type="button" id="eaf-oauth-btn" class="admin-btn-add">${a.oauth_provider === 'google' ? 'Reconnect with Google' : 'Connect with Google'}</button>
         </div>
         <div style="font-size:11px;font-weight:600;opacity:0.6;margin:6px 0 2px">IMAP (Receiving)</div>
         <div class="settings-row"><label class="settings-label">Host${_hint('Your IMAP server, e.g. imap.gmail.com, imap.migadu.com, a LAN host, or a Tailscale IP for Dovecot.')}</label><input id="eaf-imap-host" class="settings-input" value="${esc(a.imap_host || '')}"></div>
@@ -3151,12 +3153,12 @@ async function initEmailAccountsSettings() {
         <div class="settings-row eaf-smtp-creds"><label class="settings-label">Username${_hint('Usually the same as your IMAP username (your email address).')}</label><input id="eaf-smtp-user" class="settings-input" value="${esc(a.smtp_user || '')}"></div>
         <div class="settings-row eaf-smtp-creds"><label class="settings-label">Password${_hint('Your SMTP password — often the same as your IMAP password. Outlook / Office 365 generally requires OAuth and will not work with a normal password here.')}</label><input id="eaf-smtp-pass" class="settings-input" type="password" placeholder="${isEdit && a.has_smtp_password ? '(unchanged)' : ''}"></div>
         <div class="settings-row" style="margin-top:10px;align-items:center;">
-          <button class="admin-btn-add" id="eaf-save" style="background:var(--red);border-color:var(--red);color:#fff;display:inline-flex;align-items:center;gap:5px;font-weight:600;">
+          <button class="admin-btn-add" id="eaf-save" style="border-color:var(--red);display:inline-flex;align-items:center">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
             ${isEdit ? 'Save' : 'Create'}
           </button>
           <span id="eaf-msg" style="font-size:11px;flex:1;margin-left:8px;"></span>
-          <button class="admin-btn-add" id="eaf-cancel" style="opacity:0.7;display:inline-flex;align-items:center;gap:5px;position:relative;top:1px;margin-left:auto;">
+          <button class="admin-btn-add" id="eaf-cancel" style="display:inline-flex;align-items:center">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             Cancel
           </button>
@@ -3568,14 +3570,14 @@ async function initIntegrations() {
         return;
       }
       listEl.innerHTML = items.map(i => `
-        <div class="admin-card" style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+        <div class="admin-card" style="display:flex;align-items:center">
           <div style="flex:1;min-width:0;">
             <div style="font-size:13px;font-weight:600;">${_esc(i.name || i.id)}</div>
             <div style="font-size:11px;opacity:0.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_esc(i.base_url || '')}</div>
           </div>
           <div style="display:flex;gap:4px;flex-shrink:0;">
-            <button class="admin-btn-sm intg-edit-btn" data-id="${i.id}" style="font-size:11px;">Edit</button>
-            <button class="admin-btn-sm intg-del-btn" data-id="${i.id}" style="font-size:11px;opacity:0.6;">Del</button>
+            <button class="admin-btn-sm intg-edit-btn" data-id="${i.id}">Edit</button>
+            <button class="admin-btn-sm intg-del-btn" data-id="${i.id}">Del</button>
           </div>
         </div>
       `).join('');
@@ -3730,7 +3732,7 @@ function _channelProfileMarkup(profileId, profile, presets) {
   };
   return `
     <div class="channel-config-profile" data-profile-id="${_channelEsc(profileId)}">
-      <div class="admin-toggle-sub" style="margin:8px 0 5px;">Persona and channel prompt</div>
+      <div class="admin-toggle-sub">Persona and channel prompt</div>
       <div class="settings-row">
         <label class="settings-label" for="channel-${_channelEsc(profileId)}-preset">Persona</label>
         <select id="channel-${_channelEsc(profileId)}-preset" class="settings-select" data-profile-field="preset_id">
@@ -3741,7 +3743,7 @@ function _channelProfileMarkup(profileId, profile, presets) {
         <label class="settings-label" for="channel-${_channelEsc(profileId)}-overlay">Prompt overlay</label>
         <textarea id="channel-${_channelEsc(profileId)}-overlay" class="settings-select channel-config-textarea" rows="3" data-profile-field="prompt_overlay" placeholder="Optional instructions specific to this channel…">${_channelEsc(profile.prompt_overlay || '')}</textarea>
       </div>
-      <div class="admin-toggle-sub" style="margin:8px 0 5px;">Smart-home tool access for this channel</div>
+      <div class="admin-toggle-sub">Smart-home tool access for this channel</div>
       <div class="channel-config-checks">
         ${Object.entries(scopeLabels).map(([scope, label]) => `
           <label><input type="checkbox" data-profile-scope="${scope}"${_channelChecked(scopes.has(scope))}> <span>${label}</span></label>
@@ -3835,7 +3837,7 @@ function _channelCardMarkup(integrationId, integration, profile, presets) {
         ${connection}
         ${integrationId !== 'home_assistant' ? _channelProfileMarkup(integrationId, profile || {}, presets) : ''}
         <div class="channel-config-actions" style="display:flex;justify-content:flex-end;gap:5px;margin-top:10px;">
-          <span class="admin-toggle-sub channel-config-card-msg" style="flex:1;align-self:center;min-height:15px;"></span>
+          <span class="admin-toggle-sub channel-config-card-msg" style="flex:1;align-self:center"></span>
           <button type="button" class="admin-btn-sm channel-config-test">Test</button>
           <button type="button" class="admin-btn-add channel-config-save">Save</button>
         </div>
@@ -4165,7 +4167,7 @@ async function initUnifiedIntegrations() {
         <div style="font-size:11px;opacity:0.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.detail || ''}</div>
       </div>
       ${statusDot}
-      <button class="admin-btn-sm intg-del-btn" data-intg-id="${item.id}" data-intg-type="${item.type}" data-intg-name="${(item.name || '').replace(/"/g, '&quot;')}" title="Remove" style="background:none;border:none;padding:4px;cursor:pointer;color:var(--red);opacity:0.55;display:inline-flex;align-items:center;justify-content:center;">
+      <button class="admin-btn-sm intg-del-btn" data-intg-id="${item.id}" data-intg-type="${item.type}" data-intg-name="${(item.name || '').replace(/"/g, '&quot;')}" title="Remove" style="display:inline-flex;align-items:center;justify-content:center">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
       </button>
     </div>`;
@@ -4176,7 +4178,7 @@ async function initUnifiedIntegrations() {
     const noticeHtml = integrationNotice ? `
       <div class="intg-followup-note" style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:8px;border:1px solid color-mix(in srgb, var(--accent, var(--red)) 35%, transparent);border-left:3px solid var(--accent, var(--red));border-radius:5px;background:color-mix(in srgb, var(--accent, var(--red)) 8%, transparent);font-size:11px;">
         <span style="flex:1;line-height:1.35">${integrationNotice}</span>
-        <button type="button" class="admin-btn-sm intg-open-email-settings" style="white-space:nowrap;">Email settings</button>
+        <button type="button" class="admin-btn-sm intg-open-email-settings" style="white-space:nowrap">Email settings</button>
       </div>` : '';
     if (items.length === 0) {
       listEl.innerHTML = noticeHtml + '<div style="padding:12px;opacity:0.5;font-size:12px;text-align:center">No integrations configured</div>';
@@ -4289,13 +4291,13 @@ async function initUnifiedIntegrations() {
     const _apiRows = [['', 'Custom (no preset)'], ...sortedPresets.map(([k, p]) => [k, p.name || k])]
       .map(([k, label]) => `<button type="button" class="ufapi-option" data-value="${esc(k)}" style="display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;background:transparent;border:0;color:var(--fg);font:inherit;cursor:pointer;text-align:left;">${_apiIconFor(k)}<span>${esc(label)}</span></button>`).join('');
     formEl.innerHTML = `
-      <div class="admin-card" style="margin-top:8px">
+      <div class="admin-card">
         <h2 style="font-size:13px;display:flex;align-items:center;gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent, var(--red));flex-shrink:0;"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>API Integration</h2>
         <div class="settings-col">
           <div class="settings-row"><label class="settings-label">Preset</label>
             <div style="position:relative;flex:1;min-width:0;">
               <select id="uf-api-preset" tabindex="-1" aria-hidden="true" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;"><option value="">Custom (no preset)</option>${selectOpts}</select>
-              <button type="button" id="uf-api-preset-trigger" class="settings-select" style="display:flex;align-items:center;gap:10px;cursor:pointer;text-align:left;width:100%;padding-right:24px;position:relative;">
+              <button type="button" id="uf-api-preset-trigger" class="settings-select" style="display:flex;align-items:center;text-align:left;width:100%">
                 <span class="ufapi-icon" style="display:inline-flex;align-items:center;">${_apiCustomIco}</span>
                 <span class="ufapi-label" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Custom (no preset)</span>
                 <span aria-hidden="true" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);opacity:0.5;font-size:10px;pointer-events:none;">▾</span>
@@ -4311,9 +4313,9 @@ async function initUnifiedIntegrations() {
           <div class="settings-row"><label class="settings-label">API Key${_apiHint('The secret token the service issued you (generated in its admin panel / settings). Used to prove your identity on each request. Required for any Auth mode except None.')}</label><input id="uf-api-key" class="settings-input" type="password" placeholder="Token/key"></div>
           <div class="settings-row" style="margin-top:10px;align-items:center;justify-content:flex-end;gap:6px;">
             <span id="uf-api-msg" style="font-size:11px;flex:1;margin-right:8px"></span>
-            <button class="admin-btn-add" id="uf-api-test" style="display:inline-flex;align-items:center;gap:5px;background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));">Test</button>
-            <button class="admin-btn-add" id="uf-api-save" style="display:inline-flex;align-items:center;gap:5px;background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));font-weight:600;">Save</button>
-            <button class="admin-btn-add" id="uf-api-cancel" style="display:inline-flex;align-items:center;gap:5px;background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));">Cancel</button>
+            <button class="admin-btn-add" id="uf-api-test" style="display:inline-flex;align-items:center;border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">Test</button>
+            <button class="admin-btn-add" id="uf-api-save" style="display:inline-flex;align-items:center;border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">Save</button>
+            <button class="admin-btn-add" id="uf-api-cancel" style="display:inline-flex;align-items:center;border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">Cancel</button>
           </div>
         </div>
       </div>`;
@@ -4449,7 +4451,7 @@ async function initUnifiedIntegrations() {
   async function showCalDavForm(editId) {
     const isNew = !editId || editId === 'new';
     formEl.innerHTML = `
-      <div class="admin-card" style="margin-top:8px">
+      <div class="admin-card">
         <h2 style="font-size:13px;display:flex;align-items:center;gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent, var(--red));flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>${isNew ? 'Add CalDAV Calendar' : 'Edit CalDAV Calendar'}</h2>
         <div class="settings-col">
           <div class="settings-row"><label class="settings-label">Label</label><input id="uf-caldav-label" class="settings-input" placeholder="e.g. Work, Personal"></div>
@@ -4458,9 +4460,9 @@ async function initUnifiedIntegrations() {
           <div class="settings-row"><label class="settings-label">Password</label><input id="uf-caldav-pass" class="settings-input" type="password" placeholder="${isNew ? '' : 'Leave blank to keep existing'}"></div>
           <div class="settings-row" style="margin-top:10px;align-items:center;justify-content:flex-end;gap:6px;">
             <span id="uf-caldav-msg" style="font-size:11px;flex:1;margin-right:8px"></span>
-            <button class="admin-btn-add" id="uf-caldav-test" style="display:inline-flex;align-items:center;gap:5px;background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));">Test</button>
-            <button class="admin-btn-add" id="uf-caldav-save" style="display:inline-flex;align-items:center;gap:5px;background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));font-weight:600;">Save</button>
-            <button class="admin-btn-add" id="uf-caldav-cancel" style="display:inline-flex;align-items:center;gap:5px;background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));">Cancel</button>
+            <button class="admin-btn-add" id="uf-caldav-test" style="display:inline-flex;align-items:center;border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">Test</button>
+            <button class="admin-btn-add" id="uf-caldav-save" style="display:inline-flex;align-items:center;border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">Save</button>
+            <button class="admin-btn-add" id="uf-caldav-cancel" style="display:inline-flex;align-items:center;border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">Cancel</button>
           </div>
         </div>
       </div>`;
@@ -4559,7 +4561,7 @@ async function initUnifiedIntegrations() {
   // ── CardDAV form + contacts manager ──
   async function showCardDavForm() {
     formEl.innerHTML = `
-      <div class="admin-card" style="margin-top:8px">
+      <div class="admin-card">
         <h2 style="font-size:13px;display:flex;align-items:center;gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent, var(--red));flex-shrink:0;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Contacts (CardDAV)</h2>
         <div class="settings-col">
           <div class="settings-row"><label class="settings-label">URL</label><input id="uf-carddav-url" class="settings-input" placeholder="http://localhost:5232/user/contacts/"></div>
@@ -4567,21 +4569,21 @@ async function initUnifiedIntegrations() {
           <div class="settings-row"><label class="settings-label">Password</label><input id="uf-carddav-pass" class="settings-input" type="password"></div>
           <div class="settings-row" style="margin-top:10px;align-items:center;justify-content:flex-end;gap:6px;">
             <span id="uf-carddav-msg" style="font-size:11px;flex:1;margin-right:8px"></span>
-            <button class="admin-btn-add" id="uf-carddav-save" style="display:inline-flex;align-items:center;gap:5px;background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));font-weight:600;">
+            <button class="admin-btn-add" id="uf-carddav-save" style="display:inline-flex;align-items:center;border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
               Save
             </button>
-            <button class="admin-btn-add" id="uf-carddav-cancel" style="display:inline-flex;align-items:center;gap:5px;background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));">
+            <button class="admin-btn-add" id="uf-carddav-cancel" style="display:inline-flex;align-items:center;border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               Cancel
             </button>
           </div>
         </div>
       </div>
-      <div class="admin-card contacts-manager" style="margin-top:8px">
+      <div class="admin-card contacts-manager">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
           <h2 style="font-size:13px;margin:0;display:flex;align-items:center;gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent, var(--red));flex-shrink:0;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Contacts Import <span id="cm-count" style="opacity:0.5;font-weight:normal;font-size:11px;"></span></h2>
-          <button class="admin-btn-sm" id="cm-import-btn" style="margin-left:auto;">Import</button>
+          <button class="admin-btn-sm" id="cm-import-btn">Import</button>
           <button class="admin-btn-sm" id="cm-export-vcf-btn">Export .vcf</button>
           <button class="admin-btn-sm" id="cm-export-csv-btn">Export .csv</button>
           <button class="admin-btn-sm" id="cm-add-toggle">+ Add</button>
@@ -4594,7 +4596,7 @@ async function initUnifiedIntegrations() {
           <input id="cm-add-address" class="settings-input" placeholder="Address (optional)">
           <div style="display:flex;gap:6px;justify-content:flex-end;"><button class="admin-btn-sm" id="cm-add-save">Save</button></div>
         </div>
-        <input type="text" id="cm-search" class="settings-input" placeholder="Search contacts (name, email, phone, address)" style="margin-top:6px;">
+        <input type="text" id="cm-search" class="settings-input" placeholder="Search contacts (name, email, phone, address)">
         <div id="cm-list" class="contacts-list"><div style="opacity:0.4;font-size:11px;padding:8px 2px;">Loading…</div></div>
       </div>`;
     try {
@@ -4774,11 +4776,11 @@ async function initUnifiedIntegrations() {
               <div class="contact-name" style="font-size:12px;font-weight:600;">${esc(c.name || '(no name)')}</div>
               <div class="contact-sub" style="font-size:10px;opacity:0.55;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(sub)}</div>
             </div>
-            <button class="admin-btn-sm contact-edit" title="Edit" style="display:inline-flex;align-items:center;gap:4px;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 35%, var(--border));">
+            <button class="admin-btn-sm contact-edit" title="Edit" style="display:inline-flex;align-items:center;border-color:color-mix(in srgb, var(--accent, var(--red)) 35%, var(--border))">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               Edit
             </button>
-            <button class="admin-btn-sm contact-del" title="Delete" style="opacity:0.85;display:inline-flex;align-items:center;gap:4px;">
+            <button class="admin-btn-sm contact-del" title="Delete" style="display:inline-flex;align-items:center">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
               Delete
             </button>
@@ -4788,7 +4790,7 @@ async function initUnifiedIntegrations() {
             <input class="settings-input contact-edit-emails" value="${esc(emails)}" placeholder="email1, email2">
             <input class="settings-input contact-edit-phones" value="${esc(phones)}" placeholder="phone1, phone2">
             <input class="settings-input contact-edit-address" value="${esc(address)}" placeholder="Address">
-            <div style="display:flex;gap:6px;"><button class="admin-btn-sm contact-save">Save</button><button class="admin-btn-sm contact-cancel" style="opacity:0.7;">Cancel</button></div>
+            <div style="display:flex;gap:6px;"><button class="admin-btn-sm contact-save">Save</button><button class="admin-btn-sm contact-cancel">Cancel</button></div>
           </div>
         </div>`;
       }).join('');
@@ -4899,13 +4901,13 @@ async function initUnifiedIntegrations() {
       .map(([k, label]) => `<button type="button" class="ufp-option" data-value="${esc(k)}" style="display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;background:transparent;border:0;color:var(--fg);font:inherit;cursor:pointer;text-align:left;">${PROV_LOGO[k] || _customLogo}<span>${esc(label)}</span></button>`).join('');
     const _smtpSecurity = (acct) => acct?.smtp_security || ((parseInt(acct?.smtp_port || 465) === 587) ? 'starttls' : 'ssl');
     formEl.innerHTML = `
-      <div class="admin-card" style="margin-top:8px">
+      <div class="admin-card">
         <h2 style="font-size:13px">${isEdit ? 'Edit' : 'Add'} Email Account</h2>
         <div class="settings-col">
           <div class="settings-row"><label class="settings-label">Provider${_hint('Pick a known provider to auto-fill the IMAP and SMTP host/port. Choose Custom to type your own.')}</label>
             <div class="ufp-wrap" style="position:relative;flex:1;min-width:0;">
               <select id="uf-email-provider" tabindex="-1" aria-hidden="true" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;"><option value="">Custom…</option>${_providerOptions}</select>
-              <button type="button" id="uf-email-provider-trigger" class="settings-select" style="display:flex;align-items:center;gap:8px;cursor:pointer;text-align:left;width:100%;padding-right:24px;position:relative;">
+              <button type="button" id="uf-email-provider-trigger" class="settings-select" style="display:flex;align-items:center;text-align:left;width:100%">
                 <span class="ufp-icon" style="display:inline-flex;align-items:center;">${PROV_LOGO['']}</span>
                 <span class="ufp-label" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Custom…</span>
                 <span aria-hidden="true" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);opacity:0.5;font-size:10px;pointer-events:none;">▾</span>
@@ -4920,7 +4922,7 @@ async function initUnifiedIntegrations() {
           <div id="uf-oauth-section" style="display:none;margin:8px 0;padding:10px;border:1px solid var(--border);border-radius:6px;background:color-mix(in srgb,var(--accent,#50fa7b) 6%,transparent)">
             <div style="font-size:11px;font-weight:600;margin-bottom:6px">Google OAuth2 — required for Workspace / .edu accounts</div>
             <div id="uf-oauth-status" style="font-size:11px;opacity:0.7;margin-bottom:6px">${existing && existing.oauth_provider === 'google' ? '✓ Connected via Google OAuth' : 'Not connected — click below to authorize'}</div>
-            <button type="button" id="uf-oauth-btn" class="admin-btn-add" style="font-size:11px">${existing && existing.oauth_provider === 'google' ? 'Reconnect with Google' : 'Connect with Google'}</button>
+            <button type="button" id="uf-oauth-btn" class="admin-btn-add">${existing && existing.oauth_provider === 'google' ? 'Reconnect with Google' : 'Connect with Google'}</button>
           </div>
           <div style="font-size:11px;font-weight:600;opacity:0.6;margin:4px 0 2px;display:flex;align-items:center;gap:5px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent, var(--red));flex-shrink:0;" aria-hidden="true"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>IMAP (Receiving)</div>
           <div class="settings-row"><label class="settings-label">Host${_hint('Your IMAP server, e.g. imap.gmail.com, imap.migadu.com, a LAN host, or a Tailscale IP for Dovecot.')}</label><input id="uf-imap-host" class="settings-input" placeholder="imap.example.com"></div>
@@ -4938,19 +4940,19 @@ async function initUnifiedIntegrations() {
           <div class="settings-row" style="margin-top:4px"><label class="settings-label">Default${_hint('Use this account whenever no specific account is chosen.')}</label><label class="admin-switch" style="margin-left:0"><input type="checkbox" id="uf-email-default"><span class="admin-slider"></span></label><span style="font-size:10px;opacity:0.5;margin-left:6px">Used when nothing else is selected</span></div>
           <div class="settings-row" style="margin-top:10px;align-items:center;justify-content:flex-end;gap:6px;">
             <span id="uf-email-msg" style="font-size:11px;flex:1;margin-right:8px"></span>
-            <button class="admin-btn-add" id="uf-email-test" style="display:inline-flex;align-items:center;gap:5px;background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));">
+            <button class="admin-btn-add" id="uf-email-test" style="display:inline-flex;align-items:center;border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">
               <span class="uf-email-test-ico" style="display:inline-flex;width:11px;height:11px;align-items:center;justify-content:center;">
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 4 12 14.01 9 11.01"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
               </span>
               Test
             </button>
-            <button class="admin-btn-add" id="uf-email-save" style="display:inline-flex;align-items:center;gap:5px;background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));font-weight:600;">
+            <button class="admin-btn-add" id="uf-email-save" style="display:inline-flex;align-items:center;border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">
               <span class="uf-email-save-ico" style="display:inline-flex;width:11px;height:11px;align-items:center;justify-content:center;">
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
               </span>
               <span class="uf-email-save-label">${isEdit ? 'Save' : 'Create'}</span>
             </button>
-            <button class="admin-btn-add" id="uf-email-cancel" style="display:inline-flex;align-items:center;gap:5px;background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));">
+            <button class="admin-btn-add" id="uf-email-cancel" style="display:inline-flex;align-items:center;border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               Cancel
             </button>
@@ -5040,11 +5042,11 @@ async function initUnifiedIntegrations() {
         <div style="font-weight:600;margin-bottom:3px;">${esc(n.title)}</div>
         <div style="opacity:0.8;margin-bottom:6px;">${esc(n.body)}</div>
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-          <a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer" class="admin-btn-sm" style="background:var(--red);border-color:var(--red);color:#fff;text-decoration:none;display:inline-flex;align-items:center;gap:5px;font-weight:600;">
+          <a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer" class="admin-btn-sm" style="border-color:var(--red);text-decoration:none;display:inline-flex;align-items:center">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
             ${esc(n.linkLabel || 'Generate App Password')}
           </a>
-          <button type="button" class="admin-btn-sm uf-prov-copy" data-url="${esc(n.url)}" style="opacity:0.7;display:inline-flex;align-items:center;gap:5px;">
+          <button type="button" class="admin-btn-sm uf-prov-copy" data-url="${esc(n.url)}" style="display:inline-flex;align-items:center">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             Copy link
           </button>
@@ -5359,7 +5361,7 @@ async function initUnifiedIntegrations() {
   // ── Vaultwarden form ──
   async function showVaultForm() {
     formEl.innerHTML = `
-      <div class="admin-card" style="margin-top:8px">
+      <div class="admin-card">
         <h2 style="font-size:13px">Vaultwarden (Password Vault)</h2>
         <div id="uf-vault-status" style="font-size:11px;opacity:0.7;margin-bottom:8px">Loading...</div>
         <div class="settings-col">
@@ -5368,12 +5370,12 @@ async function initUnifiedIntegrations() {
           <div class="settings-row"><label class="settings-label">Master Password</label><input id="uf-vault-pass" class="settings-input" type="password" placeholder="Only required for Login / Unlock"></div>
           <div class="settings-row" style="margin-top:10px;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap;">
             <span id="uf-vault-msg" style="font-size:11px;flex:1;margin-right:8px"></span>
-            <button class="admin-btn-add" id="uf-vault-save" style="background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));font-weight:600;">Save Config</button>
-            <button class="admin-btn-add" id="uf-vault-login" style="background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));">Login</button>
-            <button class="admin-btn-add" id="uf-vault-unlock" style="background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));">Unlock</button>
-            <button class="admin-btn-add" id="uf-vault-lock" style="background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));">Lock</button>
-            <button class="admin-btn-add" id="uf-vault-logout" style="background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));">Logout</button>
-            <button class="admin-btn-add" id="uf-vault-cancel" style="background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));">Cancel</button>
+            <button class="admin-btn-add" id="uf-vault-save" style="border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">Save Config</button>
+            <button class="admin-btn-add" id="uf-vault-login" style="border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">Login</button>
+            <button class="admin-btn-add" id="uf-vault-unlock" style="border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">Unlock</button>
+            <button class="admin-btn-add" id="uf-vault-lock" style="border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">Lock</button>
+            <button class="admin-btn-add" id="uf-vault-logout" style="border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">Logout</button>
+            <button class="admin-btn-add" id="uf-vault-cancel" style="border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">Cancel</button>
           </div>
           <div style="font-size:10px;opacity:0.5;margin-top:6px;line-height:1.4">
             <strong>Login</strong> registers this device with your Vaultwarden account (once per account).<br>
@@ -5498,8 +5500,8 @@ async function initUnifiedIntegrations() {
       if (el('uf-mcp-pasteback')) return;  // already shown
       msg.innerHTML =
         'Authorize in the opened tab. If the redirect fails (remote access), paste the resulting URL here: ' +
-        '<input id="uf-mcp-pasteback" class="settings-input" placeholder="http://localhost:7000/api/mcp/oauth/callback?code=..." style="margin-top:4px">' +
-        '<button class="admin-btn-sm" id="uf-mcp-paste-go" style="margin-top:4px">Submit</button>';
+        '<input id="uf-mcp-pasteback" class="settings-input" placeholder="http://localhost:7000/api/mcp/oauth/callback?code=...">' +
+        '<button class="admin-btn-sm" id="uf-mcp-paste-go">Submit</button>';
       const pasteGo = el('uf-mcp-paste-go');
       if (pasteGo) pasteGo.addEventListener('click', async () => {
         const cb = el('uf-mcp-pasteback').value.trim();
@@ -5549,18 +5551,18 @@ async function initUnifiedIntegrations() {
     }
     if (editId && editId !== 'new') {
       // Show management view for existing server
-      formEl.innerHTML = '<div class="admin-card" style="margin-top:8px"><span style="opacity:0.5;font-size:11px">Loading...</span></div>';
+      formEl.innerHTML = '<div class="admin-card"><span style="opacity:0.5;font-size:11px">Loading...</span></div>';
       try {
         const res = await fetch('/api/mcp/servers', { credentials: 'same-origin' });
         const servers = await res.json();
         const srv = servers.find(s => (s.id || s.name) === editId);
-        if (!srv) { formEl.innerHTML = '<div class="admin-card" style="margin-top:8px">Server not found</div>'; return; }
+        if (!srv) { formEl.innerHTML = '<div class="admin-card">Server not found</div>'; return; }
         const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
         const statusColor = srv.needs_oauth ? '#e5a33a' : srv.status === 'connected' ? 'var(--green,#50fa7b)' : srv.status === 'error' ? 'var(--red)' : 'var(--fg)';
         const toolInfo = srv.status === 'connected' ? `${srv.enabled_tool_count}/${srv.tool_count} tools` : '';
         const statusText = srv.needs_oauth ? 'Needs authorization' : srv.status === 'connected' ? `Connected (${toolInfo})` : srv.status === 'error' ? `Error: ${esc(srv.error || 'unknown')}` : 'Disconnected';
         formEl.innerHTML = `
-          <div class="admin-card" style="margin-top:8px">
+          <div class="admin-card">
             <h2 style="font-size:13px">${esc(srv.name)}</h2>
             <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
               <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${statusColor}"></span>
@@ -5568,10 +5570,10 @@ async function initUnifiedIntegrations() {
             </div>
             <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px;justify-content:flex-end;">
               <span id="uf-mcp-msg" style="font-size:11px;flex:1;margin-right:8px"></span>
-              ${srv.needs_oauth ? `<a href="/api/mcp/oauth/authorize/${srv.id}" target="_blank" class="admin-btn-add" style="background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));text-decoration:none;font-weight:600;">Authorize</a>` : ''}
-              <button class="admin-btn-add" id="uf-mcp-reconnect" style="background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));">Reconnect</button>
-              <button class="admin-btn-add" id="uf-mcp-toggle" style="background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));">${srv.is_enabled ? 'Disable' : 'Enable'}</button>
-              <button class="admin-btn-add" id="uf-mcp-cancel" style="background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));">Close</button>
+              ${srv.needs_oauth ? `<a href="/api/mcp/oauth/authorize/${srv.id}" target="_blank" class="admin-btn-add" style="border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));text-decoration:none">Authorize</a>` : ''}
+              <button class="admin-btn-add" id="uf-mcp-reconnect" style="border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">Reconnect</button>
+              <button class="admin-btn-add" id="uf-mcp-toggle" style="border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">${srv.is_enabled ? 'Disable' : 'Enable'}</button>
+              <button class="admin-btn-add" id="uf-mcp-cancel" style="border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">Close</button>
             </div>
             <div id="uf-mcp-tools-panel"></div>
           </div>`;
@@ -5616,11 +5618,11 @@ async function initUnifiedIntegrations() {
             }
           } catch (_) { panel.innerHTML = '<span style="opacity:0.5;font-size:11px">Failed to load tools</span>'; }
         }
-      } catch (_) { formEl.innerHTML = '<div class="admin-card" style="margin-top:8px">Failed to load server</div>'; }
+      } catch (_) { formEl.innerHTML = '<div class="admin-card">Failed to load server</div>'; }
     } else {
       // Add new MCP server form
       formEl.innerHTML = `
-        <div class="admin-card" style="margin-top:8px">
+        <div class="admin-card">
           <h2 style="font-size:13px">Add MCP Server</h2>
           <div class="settings-col">
             <div class="settings-row"><label class="settings-label">Name</label><input id="uf-mcp-name" class="settings-input" placeholder="Server name"></div>
@@ -5635,8 +5637,8 @@ async function initUnifiedIntegrations() {
             </div>
             <div class="settings-row" style="margin-top:10px;align-items:center;justify-content:flex-end;gap:6px;">
               <span id="uf-mcp-msg" style="font-size:11px;flex:1;margin-right:8px"></span>
-              <button class="admin-btn-add" id="uf-mcp-save" style="background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));font-weight:600;">Save</button>
-              <button class="admin-btn-add" id="uf-mcp-cancel" style="background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));">Cancel</button>
+              <button class="admin-btn-add" id="uf-mcp-save" style="border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">Save</button>
+              <button class="admin-btn-add" id="uf-mcp-cancel" style="border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">Cancel</button>
             </div>
           </div>
         </div>`;
@@ -5765,12 +5767,12 @@ async function initUnifiedIntegrations() {
       </div>` : '';
 
     formEl.innerHTML = `
-      <div class="admin-card" style="margin-top:8px">
+      <div class="admin-card">
         <div class="settings-col">
           ${editExistingHtml}
           <div id="uf-codex-prompt" style="display:${current ? 'none' : 'block'};padding:6px 0;">
             <div style="font-size:11px;opacity:0.7;margin-bottom:6px;">Name this ${esc(cfg.word)} agent so you can tell it apart from other ones (e.g. "${esc(cfg.defaultName)} — laptop").</div>
-            <input type="text" id="uf-codex-name-input" class="settings-select" placeholder="${esc(cfg.defaultName)}" style="width:100%;font-size:12px;padding:6px 8px;">
+            <input type="text" id="uf-codex-name-input" class="settings-select" placeholder="${esc(cfg.defaultName)}" style="width:100%">
           </div>
           <div id="uf-codex-pending" style="display:none;align-items:center;gap:8px;padding:6px 0;font-size:11px;opacity:0.7;"></div>
           <div id="uf-codex-reveal" style="display:none;width:100%;box-sizing:border-box;">
@@ -5779,7 +5781,7 @@ async function initUnifiedIntegrations() {
             <div style="font-size:11px;opacity:0.62;margin-bottom:4px;">Copy this token, it won't be shown again.</div>
             <div style="position:relative;">
               <code id="uf-codex-token" style="display:block;word-break:break-all;font-size:11px;padding:6px 30px 6px 8px;background:rgba(0,0,0,0.08);border-radius:4px;"></code>
-              <button type="button" class="admin-btn-sm" id="uf-codex-copy-token" title="Copy token" aria-label="Copy token" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);padding:3px 5px;background:none;border:none;color:inherit;opacity:0.7;cursor:pointer;display:inline-flex;align-items:center;">
+              <button type="button" class="admin-btn-sm" id="uf-codex-copy-token" title="Copy token" aria-label="Copy token" style="right:4px;transform:translateY(-50%);display:inline-flex;align-items:center">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
               </button>
             </div>
@@ -5791,11 +5793,11 @@ async function initUnifiedIntegrations() {
             <div style="margin-top:14px;display:flex;align-items:center;gap:8px;">
               <span style="font-weight:600;font-size:11px;">Configure access</span>
               <span style="flex:1"></span>
-              <button type="button" class="admin-btn-sm" id="uf-codex-copy-setup" title="Copy setup" aria-label="Copy setup" style="font-size:11px;font-weight:normal;display:inline-flex;align-items:center;gap:5px;opacity:0.85;">
+              <button type="button" class="admin-btn-sm" id="uf-codex-copy-setup" title="Copy setup" aria-label="Copy setup" style="display:inline-flex;align-items:center">
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                 <span>Copy</span>
               </button>
-              <button type="button" class="admin-btn-sm" id="uf-codex-toggle-config" aria-expanded="false" style="font-size:11px;font-weight:normal;display:inline-flex;align-items:center;gap:5px;opacity:0.85;">
+              <button type="button" class="admin-btn-sm" id="uf-codex-toggle-config" aria-expanded="false" style="display:inline-flex;align-items:center">
                 <svg id="uf-codex-toggle-config-caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transition:transform 0.15s"><polyline points="6 9 12 15 18 9"/></svg>
                 <span>Configure</span>
               </button>
@@ -5806,20 +5808,20 @@ async function initUnifiedIntegrations() {
             </div>
           </div>
           <div class="settings-row" style="margin-top:10px;align-items:center;gap:6px;">
-            <button class="admin-btn-add" id="uf-codex-cancel" style="display:inline-flex;align-items:center;gap:5px;background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));">
+            <button class="admin-btn-add" id="uf-codex-cancel" style="display:inline-flex;align-items:center;border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               Cancel
             </button>
             <span id="uf-codex-msg" style="font-size:11px;flex:1;text-align:center;"></span>
-            <button class="admin-btn-add" id="uf-codex-revoke" style="display:none;align-items:center;gap:5px;background:color-mix(in srgb, var(--color-error) 10%, transparent);color:var(--color-error);border:1px solid var(--color-error);font-weight:600;">
+            <button class="admin-btn-add" id="uf-codex-revoke" style="display:none;align-items:center">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
               Revoke
             </button>
-            <button class="admin-btn-add" id="uf-codex-create-btn" style="display:${current ? 'none' : 'inline-flex'};align-items:center;gap:5px;background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));">
+            <button class="admin-btn-add" id="uf-codex-create-btn" style="display:${current ? 'none' : 'inline-flex'};align-items:center;border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 2l-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/><path d="M15.5 7.5l3 3"/></svg>
               Create token
             </button>
-            <button class="admin-btn-add" id="uf-codex-save" style="display:none;align-items:center;gap:5px;background:transparent;color:var(--accent, var(--red));border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));font-weight:600;">
+            <button class="admin-btn-add" id="uf-codex-save" style="display:none;align-items:center;border-color:color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border))">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
               Save
             </button>
@@ -6158,7 +6160,8 @@ async function initUnifiedIntegrations() {
       const menu = document.createElement('div');
       menu.className = 'uf-add-menu';
       menu.innerHTML = _rowsHtml;
-      menu.style.cssText = 'position:absolute;right:0;z-index:1000;background:var(--panel);border:1px solid var(--border);border-radius:6px;max-height:340px;overflow-y:auto;box-shadow:0 6px 18px rgba(0,0,0,0.25);min-width:220px;';
+      menu.style.cssText = 'position:absolute;right:0;z-index:1000;max-height:340px;overflow-y:auto;min-width:220px;';
+      menu.classList.add('ui-menu');
       addBtn.parentElement.appendChild(menu);
       _menuEl = menu;
       // Drop-up when there isn't enough room below the button (modal near
@@ -6211,6 +6214,9 @@ export function open(tab) {
 
   if (tab) {
     activateSettingsPanel(modalEl, tab);
+  } else {
+    // Narrow layouts open on the category list; desktop ignores this.
+    showSettingsHome(modalEl);
   }
 
   // Preserve existing panel-specific side effects when Settings is opened

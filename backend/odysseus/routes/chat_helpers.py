@@ -776,6 +776,7 @@ async def build_chat_context(
     continuation_context_message: str | None = None,
     persist_user_message: bool = True,
     voice_mode: bool = False,
+    voice_interrupted_reply: str | None = None,
 ) -> ChatContext:
     """Build the full context (preface + messages) for an LLM call.
 
@@ -885,14 +886,34 @@ async def build_chat_context(
             "spoken word or phrase remains valid.\n"
             "Reply in the user's language, following the current conversation "
             "context and language settings. Keep a natural, warm spoken style "
-            "and be concise: usually 1–3 short sentences (about 40 words max), "
+            "and be concise: usually 1–2 short sentences (about 30 words max), "
             "with no markdown and no mention of transport or transcription. "
-            "Write for the ear: spell out units, symbols, abbreviations and "
-            "numeric ranges as words in the reply language (never %, °, →, "
-            "km/h and the like), and use plain sentences instead of lists.\n"
+            "Write for the ear: the speech engine reads your text literally, "
+            "letter by letter, and treats every period as a sentence break. "
+            "So never abbreviate: write every word in full in the reply "
+            "language, including words you would normally shorten with a dot "
+            "(approx., e.g., etc. and their equivalents), and spell out units, "
+            "symbols and numeric ranges as words (never %, °, →, km/h and the "
+            "like). Use plain sentences instead of lists.\n"
+            "Your reply is spoken while you are still writing it. Before a tool "
+            "call you may say one very short sentence about what you are doing; "
+            "after the tool, add only the result and do not repeat that sentence. "
             "Use tools normally; after a successful operation, confirm it in "
             "one short sentence. Do not omit an important result merely to be brief."
         )
+        if voice_interrupted_reply is not None and voice_interrupted_reply.strip():
+            voice_addendum += (
+                "\nThe user interrupted your previous spoken reply. They heard "
+                "only this part of it: «" + voice_interrupted_reply.strip() + "». "
+                "Do not assume they heard the rest; answer what they say now."
+            )
+        elif voice_interrupted_reply is not None:
+            voice_addendum += (
+                "\nThe user kept talking before hearing any of your previous "
+                "reply, so they heard none of it. Read their new message "
+                "together with their previous one and answer both as one "
+                "request; do not refer to anything from your unheard reply."
+            )
         preset_system_prompt = "\n\n".join(
             part for part in (preset_system_prompt, voice_addendum) if part
         )

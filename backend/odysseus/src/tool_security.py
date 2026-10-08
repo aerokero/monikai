@@ -96,6 +96,7 @@ PLAN_MODE_READONLY_TOOLS = {
     "get_workspace",
     "web_search",
     "web_fetch",
+    "get_weather",
     "search_chats",
     "list_models",
     "list_sessions",

@@ -55,8 +55,11 @@ CONVERSATION_TOOL_DEFINITIONS = (
     ),
     ConversationToolDefinition(
         name="get_weather",
-        description="Refresh and get the current weather known to Monika.",
-        parameters_json_schema={"type": "object", "properties": {}},
+        description="Current weather and today/tomorrow forecast from Open-Meteo. Omit city for the home city.",
+        parameters_json_schema={
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+        },
     ),
     ConversationToolDefinition(
         name="list_reminders",

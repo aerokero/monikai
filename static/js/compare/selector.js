@@ -453,7 +453,8 @@ async function showModelSelector() {
       // both the modal's overflow clipping AND any transform on the modal-content
       // (a transformed ancestor makes position:fixed clip to it — which was why
       // the dropdown kept cropping under the next row). Coords set in _placeDropdown.
-      dropdown.style.cssText = 'display:none;position:fixed;max-height:200px;overflow-y:auto;background:var(--panel);border:1px solid var(--border);border-radius:6px;z-index:100000;box-shadow:0 4px 12px rgba(0,0,0,0.2);';
+      dropdown.style.cssText = 'display:none;position:fixed;max-height:200px;overflow-y:auto;z-index:100000;';
+      dropdown.classList.add('ui-menu');
       document.body.appendChild(dropdown);
 
       function renderItems(query) {

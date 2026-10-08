@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
@@ -141,7 +142,6 @@ class ServerVoiceChatSession:
         calendar_manager=None,
         reminder_manager=None,
         spotify_manager=None,
-        personality=None,
         kasa_agent=None,
         hue_agent=None,
         home_assistant_agent=None,
@@ -152,7 +152,6 @@ class ServerVoiceChatSession:
         self.calendar_manager = calendar_manager
         self.reminder_manager = reminder_manager
         self.spotify_manager = spotify_manager
-        self.personality = personality
         self.kasa_agent = kasa_agent
         self.hue_agent = hue_agent
         self.home_assistant_agent = home_assistant_agent
@@ -172,9 +171,15 @@ class ServerVoiceChatSession:
         web UI should apply to the next spoken turn as well.
         """
         settings = self.settings_getter() or {}
+        persona_id = str(settings.get("text_persona_id") or "").strip()
+        # Voice needs a fast model regardless of what the chat picker holds;
+        # a dedicated voice route wins when configured.
+        voice_model = str(settings.get("voice_model") or os.getenv("ODYSSEUS_VOICE_MODEL") or "").strip()
+        voice_endpoint = str(settings.get("voice_endpoint_id") or os.getenv("ODYSSEUS_VOICE_ENDPOINT_ID") or "").strip()
+        if voice_model and voice_endpoint:
+            return voice_model, voice_endpoint, persona_id
         model = str(settings.get("text_model") or "").strip()
         endpoint_id = str(settings.get("text_endpoint_id") or "").strip()
-        persona_id = str(settings.get("text_persona_id") or "").strip()
 
         if not model or not endpoint_id:
             try:
@@ -198,11 +203,31 @@ class ServerVoiceChatSession:
         if not self.session_store.manager.get_current_session_id():
             await self.session_store.begin()
 
-    async def ask(self, text: str) -> str:
+    async def ask(
+        self,
+        text: str,
+        on_event: Optional[Callable[[Dict[str, Any]], None]] = None,
+        interrupted_reply: Optional[str] = None,
+    ) -> str:
         async with self.lock:
             await self.ensure_started()
             session_id = self.session_store.manager.get_current_session_id()
             model, endpoint_id, persona_id = self._conversation_route()
+            if interrupted_reply is None:
+                reply = await self._home_assistant_fast_path(text)
+                if reply:
+                    self.conversation_gateway.configure(
+                        model=model, endpoint_id=endpoint_id, persona_id=persona_id
+                    )
+                    self.conversation_gateway.append_turn(
+                        str(session_id or ""), text, reply, "home_assistant_assist"
+                    )
+                    if on_event:
+                        on_event({"text": reply})
+                    return reply
+            kwargs = {"on_event": on_event} if on_event else {}
+            if interrupted_reply is not None:
+                kwargs["interrupted_reply"] = interrupted_reply
             return await self.conversation_gateway.generate(
                 text,
                 timeout_sec=120.0,
@@ -210,7 +235,30 @@ class ServerVoiceChatSession:
                 endpoint_id=endpoint_id,
                 persona_id=persona_id,
                 session_id=str(session_id or ""),
+                **kwargs,
             )
+
+    async def _home_assistant_fast_path(self, text: str) -> str:
+        """Let HA Assist answer device commands it fully understood (~0.1 s).
+
+        Only an action or answer that actually hit entities, with nothing
+        failed, is accepted; anything else (no match, ambiguity, general
+        questions, the clock) goes to the agent as before.
+        """
+        if self.home_assistant_agent is None or os.getenv("SERVER_VOICE_HA_FAST_PATH", "true").lower() not in {"1", "true", "yes"}:
+            return ""
+        result = await self.home_assistant_agent.process_conversation(text)
+        response = (result or {}).get("response") or {}
+        data = response.get("data") or {}
+        speech = str(((response.get("speech") or {}).get("plain") or {}).get("speech") or "").strip()
+        if (
+            response.get("response_type") in {"action_done", "query_answer"}
+            and data.get("success")
+            and not data.get("failed")
+            and speech
+        ):
+            return speech
+        return ""
 
     @property
     def uses_canonical_history(self) -> bool:

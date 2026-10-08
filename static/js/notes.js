@@ -1185,11 +1185,11 @@ export function openPanel() {
     <div class="notes-pane-header">
       <h4 class="notes-pane-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2.5px;margin-right:6px"><path d="M5 3h10l4 4v14H5z"/><path d="M15 3v5h5"/><path d="M8 17.5 15.5 10l2.5 2.5L10.5 20H8z"/></svg>Notes</h4>
       <span style="flex:1"></span>
-      <button id="notes-archive-toggle" class="doc-action-icon-btn notes-header-text-btn" title="View archive" style="opacity:0.8;gap:5px;">
+      <button id="notes-archive-toggle" class="doc-action-icon-btn notes-header-text-btn" title="View archive">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 002 2h12a2 2 0 002-2V8"/><path d="M10 12h4"/></svg>
         <span class="notes-header-btn-label">Archive</span>
       </button>
-      <button id="notes-view-toggle" class="doc-action-icon-btn notes-header-text-btn" title="Toggle view" style="opacity:0.8;gap:5px;">
+      <button id="notes-view-toggle" class="doc-action-icon-btn notes-header-text-btn" title="Toggle view">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
         <span class="notes-header-btn-label">Toggle</span>
       </button>
@@ -1863,7 +1863,7 @@ function _renderNotes() {
         const agentSessionAttr = item.agent_session_id ? ` data-session-id="${_attrEsc(item.agent_session_id)}"` : '';
         const agentMenuTitle = item.agent_session_title || `Agent: ${(item.text || '').slice(0, 40)}`;
         const indent = Math.min(item.indent || 0, 3);
-        contentHtml += `<div class="note-checkbox${doneClass}" data-note-id="${note.id}" data-idx="${i}" style="padding-left:${indent * 16}px">
+        contentHtml += `<div class="note-checkbox${doneClass}" data-note-id="${note.id}" data-idx="${i}">
           <span class="note-check-dot" title="Mark done"></span>
           <span class="note-check-text">${_linkify(item.text)}</span>
           <button class="note-checkbox-agent${agentDoneClass}" data-note-id="${_attrEsc(note.id)}" data-idx="${i}"${agentSessionAttr} data-agent-title="${_attrEsc(agentMenuTitle)}" title="${_attrEsc(agentTitle)}">
@@ -1898,7 +1898,7 @@ function _renderNotes() {
       : '';
     const noteTags = _visibleNoteTags(note);
     const dueBadge = dueFmt && !_hasTimeComponent(note.due_date) ? `<span class="note-due-inline${overdue ? ' note-due-overdue' : ''}">${dueFmt}</span>` : '';
-    const colorDots = COLORS.map(c => `<span class="note-card-color-dot${_dotIsActive(c.value, note.color) ? ' active' : ''}" data-color="${c.value}" style="background:${_dotBg(c.value, note.color)}" title="${c.name || 'default'}"></span>`).join('');
+    const colorDots = COLORS.map(c => `<span class="note-card-color-dot${_dotIsActive(c.value, note.color) ? ' active' : ''}" data-color="${c.value}" title="${c.name || 'default'}"></span>`).join('');
     const goalClass = note.note_type === 'goal' ? ' note-card-goal' : '';
     const reminderGlowClass = activeReminderHighlights.has(note.id) && _hasActiveReminder(note) ? ' note-card-reminder-fired-sticky' : '';
     const goalPill = note.note_type === 'goal'
@@ -2975,7 +2975,7 @@ function _buildForm(note = null) {
       </button>
       <input type="file" class="note-form-photo-input" accept="image/*" capture="environment" style="display:none" />
       <div class="note-color-picker">
-        ${COLORS.map(c => `<span class="note-color-dot${_dotIsActive(c.value, color) ? ' active' : ''}" data-color="${c.value}" style="background:${_dotBg(c.value, color)}" title="${c.name || 'default'}"></span>`).join('')}
+        ${COLORS.map(c => `<span class="note-color-dot${_dotIsActive(c.value, color) ? ' active' : ''}" data-color="${c.value}" title="${c.name || 'default'}"></span>`).join('')}
       </div>
       <input type="text" class="note-form-label" value="${_esc(note?.label || '')}" placeholder="#tag1 #tag2" title="Tag(s) — space-separated" />
       <div class="note-form-actions-group">

@@ -1254,16 +1254,17 @@ if (!window._odyEscExpandGuard) {
     // (the live-stream chat rebuilds thinking DOM mid-stream so the header
     // can briefly be absent). Toggling the `expanded` class directly is the
     // fallback so ESC never bypasses the thinking block to hit a modal.
-    if (_closeHoveredWindow()) {
-      e.stopImmediatePropagation(); e.preventDefault();
-      return;
-    }
     // Transient ad-hoc menus (dropdowns / context popups) live outside the
     // .modal system and register a dismiss callback in escMenuStack. Close the
     // most-recently-opened one first — so a menu opened over a modal dismisses
-    // before the modal — and do it BEFORE the text-input guard below, since a
-    // menu may own the focused input (e.g. a search dropdown).
+    // before the modal (it used to run after the hovered-window close, so Esc
+    // shut the whole window under an open menu) — and do it BEFORE the
+    // text-input guard below, since a menu may own the focused input.
     if (dismissTopMenu()) {
+      e.stopImmediatePropagation(); e.preventDefault();
+      return;
+    }
+    if (_closeHoveredWindow()) {
       e.stopImmediatePropagation(); e.preventDefault();
       return;
     }

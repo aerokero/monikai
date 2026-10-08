@@ -2134,11 +2134,11 @@ export function _renderRunningTab() {
     // .cookbook-group > .admin-card), flex:1 collapsed the card to body height
     // and the body's scrollHeight stopped tracking the overflowing children.
     // Sized-to-content means cookbook-body's overflow-y:auto kicks in naturally.
-    group.innerHTML = '<div class="admin-card" style="display:flex;flex-direction:column;">' +
+    group.innerHTML = '<div class="admin-card" style="display:flex;flex-direction:column">' +
       '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px;">' +
       '<h2 style="margin:0;padding:0;line-height:1;">Active <span id="running-count" class="memory-count" style="font-size:0.6em;opacity:0.6;font-weight:normal">' + activeCount + '</span></h2>' +
       '</div>' +
-      '<p class="memory-desc doclib-desc" style="margin-top:6px;">Active downloads, installs and model launches.</p>' +
+      '<p class="memory-desc doclib-desc">Active downloads, installs and model launches.</p>' +
       '</div>';
     const firstGroup = body.querySelector('.cookbook-group');
     if (firstGroup) body.insertBefore(group, firstGroup);

@@ -121,11 +121,27 @@ class VoiceLightFeedbackController:
             elif not self._external_off:
                 # Start pulse animation task for active state
                 self._pulse_task = asyncio.create_task(
-                    self._run_pulse_animation(new_state),
+                    # Between active states the bulb is ours and lit; if it
+                    # is off now, a tool ("turn off all lights") did that.
+                    self._run_pulse_animation(
+                        new_state, respect_off=prev_state != VoiceFeedbackState.IDLE
+                    ),
                     name=f"voice-light-{new_state.value}",
                 )
 
-    async def _run_pulse_animation(self, state: VoiceFeedbackState) -> None:
+    async def _external_off_now(self) -> bool:
+        """True (and remember it) when someone else switched the bulb off."""
+        try:
+            live = await self.ha_agent.get_entity_raw_state(self.entity_id)
+        except Exception:
+            return False
+        if live and str(live.get("state", "")).lower() == "off":
+            self._external_off = True
+            self._saved_initial_state = live
+            return True
+        return False
+
+    async def _run_pulse_animation(self, state: VoiceFeedbackState, respect_off: bool = False) -> None:
         """Run smooth breathing/pulsing loop for the target state."""
         profile = self._profiles.get(state)
         if not profile:
@@ -138,6 +154,8 @@ class VoiceLightFeedbackController:
         interval = profile["interval"]
 
         try:
+            if respect_off and await self._external_off_now():
+                return
             # Immediate initial pulse to max brightness
             await self.ha_agent.set_light_state(
                 self.entity_id,
@@ -151,13 +169,7 @@ class VoiceLightFeedbackController:
                 await asyncio.sleep(interval)
                 # Our own pulses always keep the bulb on, so "off" here means
                 # the user (or a tool call) turned it off: respect that.
-                try:
-                    live = await self.ha_agent.get_entity_raw_state(self.entity_id)
-                except Exception:
-                    live = None
-                if live and str(live.get("state", "")).lower() == "off":
-                    self._external_off = True
-                    self._saved_initial_state = live
+                if await self._external_off_now():
                     return
                 target_bri = min_bri if toggle else max_bri
                 toggle = not toggle

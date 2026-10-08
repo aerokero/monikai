@@ -78,10 +78,34 @@ export function dismissOrRemove(el) {
 // should count as inside the menu. The returned idempotent close() is also
 // stashed on `el._dismiss`, so bulk removers (see dismissOrRemove) can tear the
 // menu down through its real teardown rather than orphaning its stack entry.
+// A menu opened by a long-press appears while the finger is still down; the
+// release then fires a click on the row underneath. Track live touches so
+// bindMenuDismiss can ignore that one synthetic click.
+let _touchDown = false;
+if (typeof document !== 'undefined') {
+  document.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') _touchDown = true; }, true);
+  const up = () => { _touchDown = false; };
+  document.addEventListener('pointerup', up, true);
+  document.addEventListener('pointercancel', up, true);
+}
+
 export function bindMenuDismiss(el, onClose, isOutside) {
   let done = false;
   let unreg = () => {};
+  let skipReleaseClick = _touchDown;
+  if (skipReleaseClick && el.style) {
+    // Nothing in the menu is tappable until that finger lifts, so a release
+    // over an item can't trigger it.
+    el.style.pointerEvents = 'none';
+    document.addEventListener('pointerup', () => setTimeout(() => {
+      skipReleaseClick = false;
+      el.style.pointerEvents = '';
+    }, 400), { once: true, capture: true });
+  }
+  // Holding a finger on an item must not pop the browser's text/callout menu.
+  el.addEventListener?.('contextmenu', (ev) => ev.preventDefault());
   const onDocClick = (ev) => {
+    if (skipReleaseClick) { skipReleaseClick = false; return; }
     const outside = typeof isOutside === 'function' ? isOutside(ev) : !el.contains(ev.target);
     if (outside) close();
   };

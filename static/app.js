@@ -22,7 +22,7 @@ import {
   settleSessionHydration
 } from './js/startupShell.js';
 import markdownModule from './js/markdown.js';
-import chatRenderer from './js/chatRenderer.js?v=20261005printer1';
+import chatRenderer from './js/chatRenderer.js?v=20261007think1';
 import sessionModule from './js/sessions.js';
 import memoryModule from './js/memory.js?v=20260722memoryloading1';
 import voiceRecorderModule from './js/voiceRecorder.js?v=20260924toolaxis1';
@@ -137,7 +137,6 @@ function hydrateCanonicalIcons(root = document) {
     ['#group-toggle-btn .composer-chip-icon', 'user'],
     ['#character-indicator-icon', 'user'],
     ['#compare-indicator-btn .composer-chip-icon', 'columns'],
-    ['#model-picker-btn', 'caretDown'],
     ['#model-picker-refresh-btn', 'refresh'],
     ['#model-picker-add-models-btn', 'plus'],
     ['#composer-mic-btn', 'microphone'],
@@ -180,6 +179,8 @@ function hydrateCanonicalIcons(root = document) {
   // section/session hydration.
   const directTargets = [
     ['#sidebar .list-item-plus-icon', 'plus'],
+    // Direct child only: the label's provider-logo svg comes first.
+    ['#model-picker-btn > svg', 'caretDown'],
     ['#sidebar .section-collapse-chevron', 'caretDown'],
     ['#sidebar .sort-icon', 'sort'],
     ['#sidebar .session-menu-btn > svg', 'caretDown'],
@@ -1871,8 +1872,9 @@ function initializeEventListeners() {
   if (toolMemoryBtn && memoryModal) {
     toolMemoryBtn.addEventListener('click', () => {
       memoryModal.classList.remove('hidden');
-      if (memoryModule && memoryModule.renderMemoryList) memoryModule.renderMemoryList();
-      if (memoryModule && memoryModule.updateMemoryCount) memoryModule.updateMemoryCount();
+      // Fetch on open — the startup warmup runs 12s in, so an early open
+      // showed "No memories yet" over a non-empty store.
+      memoryModule?.loadMemories?.().catch?.(() => {});
     });
   }
 

@@ -204,7 +204,7 @@ function _emailSettingsAccountSelectHtml() {
     const suffix = a.is_default ? ' · default' : '';
     return `<option value="${_esc(a.id || '')}" ${state._libAccountId === a.id ? 'selected' : ''}>${_esc(label + suffix)}</option>`;
   }).join('');
-  return `<select id="email-settings-account-select" class="memory-toolbar-btn" title="Active email for all email settings" style="height:28px;max-width:240px;margin-left:auto;">${opts}</select>`;
+  return `<select id="email-settings-account-select" class="memory-toolbar-btn" title="Active email for all email settings" style="max-width:240px">${opts}</select>`;
 }
 
 function _emailWritingStyleHtml(style) {
@@ -1530,7 +1530,7 @@ function _showUnsubscribeCleanupPrompt(modal, candidates) {
       <div style="font-size:12px;font-weight:700;">Done. Mark all ${count} of these email${count === 1 ? '' : 's'} as spam?</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
         <button type="button" class="memory-toolbar-btn email-unsub-clean-spam">Mark as spam</button>
-        <button type="button" class="memory-toolbar-btn email-unsub-clean-delete" style="color:var(--red);">Delete</button>
+        <button type="button" class="memory-toolbar-btn email-unsub-clean-delete">Delete</button>
         <button type="button" class="memory-toolbar-btn email-unsub-clean-keep">Keep</button>
       </div>
     </div>
@@ -1653,8 +1653,8 @@ async function _openUnsubscribeReviewModal(anchor) {
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;">${reasons}</div>
           <div style="display:flex;gap:7px;align-items:center;justify-content:flex-end;flex-wrap:wrap;">
-            ${urlMethod ? `<a class="memory-toolbar-btn email-unsub-link-btn" href="${_esc(urlMethod.target)}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;position:relative;top:2px;"><span style="position:relative;top:3px;">Link Unsubscribe</span></a>` : ''}
-            ${urlMethod ? `<button type="button" class="memory-toolbar-btn email-unsub-agent-btn" data-idx="${idx}" style="display:inline-flex;align-items:center;gap:6px;"><svg class="email-unsub-agent-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="position:relative;top:1px;flex-shrink:0;"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg><span>Agent Unsubscribe</span></button>` : ''}
+            ${urlMethod ? `<a class="memory-toolbar-btn email-unsub-link-btn" href="${_esc(urlMethod.target)}" target="_blank" rel="noopener noreferrer" style="text-decoration:none"><span style="position:relative;top:3px;">Link Unsubscribe</span></a>` : ''}
+            ${urlMethod ? `<button type="button" class="memory-toolbar-btn email-unsub-agent-btn" data-idx="${idx}" style="display:inline-flex;align-items:center"><svg class="email-unsub-agent-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="position:relative;top:1px;flex-shrink:0;"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg><span>Agent Unsubscribe</span></button>` : ''}
             ${c.can_execute ? `<button type="button" class="memory-toolbar-btn email-unsub-send-btn" data-idx="${idx}"><span style="position:relative;top:1px;">${_esc(_unsubscribeMethodLabel(method))}</span></button>` : ''}
           </div>
         </div>`;
@@ -2564,7 +2564,7 @@ export function openEmailLibrary(opts = {}) {
   modal.className = 'modal';
   modal.id = 'email-lib-modal';
   modal.innerHTML = `
-    <div class="modal-content doclib-modal-content" style="width:min(720px, 92vw);background:var(--bg);">
+    <div class="modal-content doclib-modal-content" style="width:min(1160px, 94vw);background:var(--bg);">
       <div class="modal-header">
         <h4>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
@@ -2583,23 +2583,17 @@ export function openEmailLibrary(opts = {}) {
         </div>
       </div>
       <div class="modal-body" style="display:flex;flex-direction:column;gap:10px;overflow:hidden;">
-        <div class="admin-card" style="flex:1;flex-direction:column;display:flex;overflow:hidden;">
-          <div class="email-accounts-row">
-            <div id="email-lib-accounts" style="display:flex;gap:4px;flex:1;min-width:0;"></div>
-            <button class="memory-toolbar-btn email-compose-jiggle" id="email-lib-compose-btn">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:3px;"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-              New
-            </button>
-          </div>
+        <div class="admin-card ui-panel" style="flex:1;flex-direction:column;display:flex;overflow:hidden">
           <div class="memory-toolbar">
             <div class="memory-category-filters">
-              <select class="memory-sort-select" id="email-lib-folder" style="flex:1;min-width:0;text-overflow:ellipsis;">
+              <div id="email-lib-accounts" style="display:flex;gap:4px;min-width:0;"></div>
+              <select class="memory-sort-select" id="email-lib-folder">
                 <option value="INBOX">Inbox</option>
               </select>
               <!-- Hidden native select kept as the source of truth — all
                    existing change handlers still fire via the custom picker
                    dispatching 'change' on it. -->
-              <select class="memory-sort-select" id="email-lib-filter" style="display:none;">
+              <select class="memory-sort-select" id="email-lib-filter" style="display:none">
                 <option value="all">All</option>
                 <option value="unread">Unread</option>
                 <option value="favorites">Favorites</option>
@@ -2639,7 +2633,7 @@ export function openEmailLibrary(opts = {}) {
             </div>
             <div class="email-search-row" style="display:flex;gap:6px;align-items:flex-start;">
             <div class="email-search-wrap" style="position:relative;flex:1;min-width:140px;">
-              <div class="email-lib-chip-bar memory-search-input" id="email-lib-chip-bar" style="width:100%;padding-right:134px;padding-left:26px;display:flex;align-items:center;flex-wrap:wrap;gap:4px;cursor:text;min-height:30px;position:relative;">
+              <div class="email-lib-chip-bar memory-search-input" id="email-lib-chip-bar" style="width:100%;display:flex;align-items:center;flex-wrap:wrap">
                 <svg class="email-lib-chip-bar-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--accent, var(--red));"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
                 <span id="email-lib-pills" style="display:contents"></span>
                 <input type="text" id="email-lib-search" placeholder="Search by name or text" autocomplete="off" style="flex:1;min-width:80px;border:0;outline:none;background:transparent;color:inherit;font:inherit;padding:0;position:relative;top:-1px;" />
@@ -2658,14 +2652,18 @@ export function openEmailLibrary(opts = {}) {
                 <span>Tags</span>
               </button>
             </div>
+            <button class="memory-toolbar-btn email-compose-jiggle" id="email-lib-compose-btn">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:3px;"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+              Compose
+            </button>
             </div>
           </div>
-          <div id="email-lib-bulk" class="memory-bulk-bar hidden" style="margin-bottom:5px;">
-            <label class="memory-bulk-check-all" style="position:relative;top:0px;"><input type="checkbox" id="email-lib-select-all"> All</label>
+          <div id="email-lib-bulk" class="memory-bulk-bar hidden">
+            <label class="memory-bulk-check-all" style="position:relative"><input type="checkbox" id="email-lib-select-all"> All</label>
             <span id="email-lib-selected-count" style="position:relative;top:1px;">0 Selected</span>
-            <button class="memory-toolbar-btn" id="email-lib-bulk-actions" style="position:relative;top:-2px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>Actions <span style="opacity:0.55;font-size:9px;">▼</span></button>
-            <button class="memory-toolbar-btn" id="email-lib-bulk-delete" style="position:relative;top:-2px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>Delete</button>
-            <button class="memory-toolbar-btn" id="email-lib-bulk-cancel" title="Cancel (Esc)" style="margin-left:4px;padding:3px 6px;position:relative;top:-2px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+            <button class="memory-toolbar-btn" id="email-lib-bulk-actions"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>Actions <span style="opacity:0.55;font-size:9px;">▼</span></button>
+            <button class="memory-toolbar-btn" id="email-lib-bulk-delete"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>Delete</button>
+            <button class="memory-toolbar-btn" id="email-lib-bulk-cancel" title="Cancel (Esc)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
           </div>
           <div id="email-lib-grid" class="doclib-grid"></div>
           <div id="email-lib-sync-status" class="email-lib-sync-status" aria-live="polite"></div>
@@ -3218,7 +3216,7 @@ function _renderAccountsStrip() {
     const dot = a.is_default ? _dotFilled : _dotHollow;
     const dotTitle = a.is_default ? 'Default account' : 'Set as default';
     html += `<span class="gallery-chip-wrap" style="position:relative;display:inline-flex;align-items:center;">`
-         + `<button class="memory-toolbar-btn gallery-chip email-account-chip${active}${unreadClass}" data-acc-id="${esc(a.id)}" title="${esc(a.from_address || a.imap_user || '')}${a.is_default ? ' (default)' : ''}${unreadTitle}" style="padding-right:24px;">${unreadDot}<span class="email-account-chip-label">${esc(label)}</span>${unreadCount > 0 ? `<span class="email-account-unread-count">${unreadCount > 999 ? '999+' : unreadCount}</span>` : ''}</button>`
+         + `<button class="memory-toolbar-btn gallery-chip email-account-chip${active}${unreadClass}" data-acc-id="${esc(a.id)}" title="${esc(a.from_address || a.imap_user || '')}${a.is_default ? ' (default)' : ''}${unreadTitle}">${unreadDot}<span class="email-account-chip-label">${esc(label)}</span>${unreadCount > 0 ? `<span class="email-account-unread-count">${unreadCount > 999 ? '999+' : unreadCount}</span>` : ''}</button>`
          + `<button class="email-lib-default-dot${a.is_default ? ' is-default' : ''}" data-set-default="${esc(a.id)}" title="${dotTitle}" aria-label="${dotTitle}" style="position:absolute;right:6px;top:calc(50% - 3px);transform:translateY(-50%);background:none;border:0;padding:0;width:18px;height:18px;cursor:pointer;color:${a.is_default ? 'var(--accent, var(--red))' : 'inherit'};opacity:${a.is_default ? '1' : '0.45'};display:inline-flex;align-items:center;justify-content:center;line-height:0;">${dot}</button>`
          + `</span>`;
   }
@@ -3382,14 +3380,14 @@ function _makeDraggable(content, modal, fsClass) {
   const exitFullscreen = (cx, cy) => {
     if (!fsClass || !modal.classList.contains(fsClass)) return;
     modal.classList.remove(fsClass);
-    content.style.width = 'min(720px, 92vw)';
+    content.style.width = 'min(1160px, 94vw)';
     content.style.maxWidth = '';
     content.style.height = '';
     content.style.maxHeight = '85vh';
     content.style.borderRadius = '';
     content.style.right = '';
     content.style.bottom = '';
-    const w = Math.min(720, window.innerWidth * 0.92);
+    const w = Math.min(1160, window.innerWidth * 0.94);
     content.style.left = Math.max(8, cx - w / 2) + 'px';
     content.style.top = Math.max(8, cy - 20) + 'px';
   };
@@ -3872,13 +3870,13 @@ function _renderSearchPills() {
     // contact + text pills carry their label as text.
     if (p.type === 'filter') {
       const titleAttr = `${(p.label || p.value).replace(/"/g, '&quot;')}`;
-      return `<span class="email-lib-pill email-lib-filter-pill" data-pill-idx="${i}" title="${titleAttr}" style="display:inline-flex;align-items:center;gap:3px;padding:0 5px 0 7px;border-radius:999px;background:color-mix(in srgb, var(--accent, var(--red)) 14%, transparent);color:var(--accent, var(--red));line-height:20px;height:20px;flex-shrink:0;">
+      return `<span class="email-lib-pill email-lib-filter-pill" data-pill-idx="${i}" title="${titleAttr}" style="display:inline-flex;align-items:center;flex-shrink:0">
         <span class="email-lib-pill-icon" style="display:inline-flex;align-items:center;width:13px;height:13px;flex-shrink:0;">${_libFilterIconFor(p.value)}</span>
         <button type="button" class="email-lib-pill-x" data-pill-idx="${i}" title="Remove" style="background:transparent;border:0;color:inherit;cursor:pointer;font-size:12px;line-height:1;padding:0 2px;opacity:0.7;position:relative;top:-3px;">×</button>
       </span>`;
     }
     const label = p.type === 'contact' ? (p.name || p.email || '?') : (p.text || '');
-    return `<span class="email-lib-pill" data-pill-idx="${i}" style="display:inline-flex;align-items:center;gap:3px;padding:0 5px 0 7px;border-radius:999px;background:color-mix(in srgb, var(--accent, var(--red)) 14%, transparent);color:var(--accent, var(--red));font-size:11px;line-height:20px;height:20px;font-weight:600;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0;">
+    return `<span class="email-lib-pill" data-pill-idx="${i}" style="display:inline-flex;align-items:center;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0">
       <span style="overflow:hidden;text-overflow:ellipsis;">${esc(label)}</span>
       <button type="button" class="email-lib-pill-x" data-pill-idx="${i}" title="Remove" style="background:transparent;border:0;color:inherit;cursor:pointer;font-size:12px;line-height:1;padding:0 2px;opacity:0.7;position:relative;top:-3px;">×</button>
     </span>`;
@@ -5091,7 +5089,18 @@ function _createCard(em) {
   }
   const color = _senderColor(senderName);
 
+  // Gmail-style avatar: sender initial on their hash colour. Select mode
+  // shows the checkbox in its place.
+  if (!state._selectMode) {
+    const avatar = document.createElement('span');
+    avatar.className = 'email-card-avatar';
+    avatar.style.setProperty('--av', color);
+    avatar.textContent = _initials(senderName).charAt(0);
+    card.appendChild(avatar);
+  }
+
   let dateStr = '';
+  let shortDate = '';
   if (em.date) {
     try {
       const d = new Date(em.date);
@@ -5101,15 +5110,32 @@ function _createCard(em) {
         ? { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }
         : { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
       dateStr = d.toLocaleString([], dateOpts);
+      shortDate = d.toDateString() === now.toDateString()
+        ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : d.toLocaleDateString([], sameYear ? { month: 'short', day: 'numeric' } : { year: 'numeric', month: 'numeric', day: 'numeric' });
     } catch (_) {}
   }
 
   const content = document.createElement('div');
+  content.className = 'email-card-main';
   content.style.cssText = 'flex:1;min-width:0;';
 
   const titleRow = document.createElement('div');
   titleRow.className = 'email-card-titlerow';
   titleRow.style.cssText = 'display:flex;align-items:center;gap:6px;';
+
+  // Back to the list — CSS shows it only on the expanded (reading) card.
+  const backBtn = document.createElement('button');
+  backBtn.type = 'button';
+  backBtn.className = 'email-card-back';
+  backBtn.title = 'Back to list';
+  backBtn.setAttribute('aria-label', 'Back to list');
+  backBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>';
+  backBtn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (card.classList.contains('email-card-expanded')) _toggleCardPreview(card, em);
+  });
+  titleRow.appendChild(backBtn);
 
   const titleEl = document.createElement('span');
   titleEl.className = 'memory-item-title';
@@ -5156,6 +5182,7 @@ function _createCard(em) {
 
   // Done check + unread dot stay next to the subject on the left.
   const isSentFolder = /sent/i.test(cardFolder);
+  let toggleDone = null;
   if (!isSentFolder) {
     const doneCheck = document.createElement('span');
     doneCheck.className = 'email-card-done' + (em.is_answered ? ' active' : '');
@@ -5193,6 +5220,7 @@ function _createCard(em) {
       } catch (err) { console.error(err); }
     };
     doneCheck.addEventListener('click', _toggleDone);
+    toggleDone = _toggleDone;
     titleRow.appendChild(doneCheck);
     if (!em.is_read) {
       const dot = document.createElement('span');
@@ -5254,6 +5282,19 @@ function _createCard(em) {
   meta.innerHTML = `${sentChip}${folderChip}<span class="email-meta-sender" data-email="${_esc(senderAddress || '')}" data-name="${_esc(senderName || '')}"><span style="opacity:0.55">${senderPrefix}</span><span style="color:${color};font-weight:600">${_esc(senderName)}</span></span><span class="email-meta-sep"> · </span><span class="email-meta-date">${_esc(dateStr)}</span>`;
   content.appendChild(meta);
 
+  const dateEl = document.createElement('span');
+  dateEl.className = 'email-card-date';
+  dateEl.textContent = shortDate;
+  dateEl.title = dateStr;
+  content.appendChild(dateEl);
+
+  if (em.cached_summary) {
+    const snippet = document.createElement('div');
+    snippet.className = 'email-card-snippet';
+    snippet.textContent = em.cached_summary;
+    content.appendChild(snippet);
+  }
+
   card.appendChild(content);
 
   // Per-card menu button (... menu)
@@ -5270,6 +5311,16 @@ function _createCard(em) {
       e.stopPropagation();
       _showCardMenu(em, menuBtn);
     });
+    const delBtn = document.createElement('button');
+    delBtn.className = 'memory-item-btn email-card-quick-del';
+    delBtn.title = 'Delete';
+    delBtn.setAttribute('aria-label', 'Delete');
+    delBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>';
+    delBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      _deleteEmailAndAdvance(em, card);
+    });
+    actionsWrap.appendChild(delBtn);
     actionsWrap.appendChild(menuBtn);
     card.appendChild(actionsWrap);
 
@@ -5287,7 +5338,9 @@ function _createCard(em) {
         card._suppressNextClick = true;
         setTimeout(() => { card._suppressNextClick = false; }, 400);
         if (navigator.vibrate) try { navigator.vibrate(15); } catch {}
-        _showCardMenu(em, menuBtn);
+        // ⋮ is hidden on phones — anchor to the row so the menu opens beside
+        // the finger, never under it.
+        _showCardMenu(em, menuBtn.offsetParent ? menuBtn : card);
       }, 500);
     });
     card.addEventListener('pointermove', (e) => {
@@ -5296,6 +5349,13 @@ function _createCard(em) {
     });
     card.addEventListener('pointerup', _cancelHold);
     card.addEventListener('pointercancel', _cancelHold);
+
+    if (window.matchMedia('(max-width: 768px)').matches) {
+      _wireCardSwipe(card, {
+        right: toggleDone,
+        left: () => _deleteEmailAndAdvance(em, card, { confirm: false }), // goes to Trash
+      });
+    }
   }
 
   // Click handler — toggle preview expansion
@@ -5314,6 +5374,80 @@ function _createCard(em) {
   });
 
   return card;
+}
+
+// Gmail-style row swipe (touch): drag past the threshold and release to run
+// the action; a colored underlay with the action's icon follows the finger.
+const _SWIPE_ICONS = {
+  right: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+  left: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>',
+};
+function _wireCardSwipe(card, actions) {
+  let sx = 0, sy = 0, dx = 0, intent = null, under = null;
+  const threshold = () => Math.min(120, card.offsetWidth * 0.3);
+  const reset = (animate) => {
+    card.style.transition = animate ? 'transform .2s ease' : '';
+    card.style.transform = '';
+    card.classList.remove('email-card-swiping');
+    const u = under; under = null;
+    if (u) setTimeout(() => u.remove(), animate ? 200 : 0);
+  };
+  card.addEventListener('touchstart', (e) => {
+    intent = null; dx = 0;
+    if (e.touches.length !== 1 || card.classList.contains('doclib-card-expanded') || state._selectMode) { intent = 'none'; return; }
+    if (e.target.closest('button, .email-card-done, .memory-select-cb')) { intent = 'none'; return; }
+    sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+  }, { passive: true });
+  card.addEventListener('touchmove', (e) => {
+    if (intent === 'none' || intent === 'scroll') return;
+    const x = e.touches[0].clientX - sx, y = e.touches[0].clientY - sy;
+    if (!intent) {
+      if (Math.abs(y) > 10 && Math.abs(y) > Math.abs(x)) { intent = 'scroll'; return; }
+      if (Math.abs(x) < 12) return;
+      intent = 'swipe';
+      card.classList.add('email-card-swiping');
+      // Opaque row so the underlay only shows where the row has moved away
+      for (let el = card.parentElement; el; el = el.parentElement) {
+        const bg = getComputedStyle(el).backgroundColor;
+        if (bg && bg !== 'transparent' && !/rgba\(.*,\s*0\)$/.test(bg)) { card.style.setProperty('--em-row-bg', bg); break; }
+      }
+      under = document.createElement('div');
+      under.className = 'email-swipe-under';
+      under.style.cssText = `top:${card.offsetTop}px;left:${card.offsetLeft}px;width:${card.offsetWidth}px;height:${card.offsetHeight}px;`;
+      card.before(under);
+    }
+    dx = x;
+    const dir = dx > 0 ? 'right' : 'left';
+    if (!actions[dir]) dx = Math.sign(dx) * Math.min(Math.abs(dx), 24); // no action that way: just give
+    card.style.transition = '';
+    card.style.transform = `translateX(${dx}px)`;
+    under.dataset.dir = dir;
+    under.innerHTML = `<span>${_SWIPE_ICONS[dir]}</span>`;
+    under.classList.toggle('armed', !!actions[dir] && Math.abs(dx) >= threshold());
+  }, { passive: true });
+  const end = () => {
+    if (intent !== 'swipe') return;
+    intent = null;
+    card._suppressNextClick = true;
+    setTimeout(() => { card._suppressNextClick = false; }, 400);
+    const dir = dx > 0 ? 'right' : 'left';
+    const fire = actions[dir] && Math.abs(dx) >= threshold();
+    if (navigator.vibrate && fire) try { navigator.vibrate(10); } catch {}
+    if (fire && dir === 'left') {
+      card.style.transition = 'transform .18s ease-in';
+      card.style.transform = `translateX(${-card.offsetWidth}px)`;
+      setTimeout(async () => {
+        await actions.left();
+        if (card.isConnected) reset(true); // failed/aborted → bring it back
+        else under?.remove();
+      }, 180);
+      return;
+    }
+    reset(true);
+    if (fire) actions[dir]();
+  };
+  card.addEventListener('touchend', end);
+  card.addEventListener('touchcancel', () => { if (intent === 'swipe') { intent = null; reset(true); } });
 }
 
 function _findSiblingEmailCard(card, dir) {
@@ -7445,7 +7579,7 @@ async function _summarizeEmail(reader, data, btn) {
         <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0L14.59 8.41L23 12L14.59 15.59L12 24L9.41 15.59L1 12L9.41 8.41Z"/></svg>
         <span>Summary</span>
       </div>
-      <div class="email-summary-content" style="white-space:normal;display:flex;align-items:center;flex-wrap:wrap;gap:6px;"><span style="opacity:0.65">No AI summary generated.</span><button class="memory-toolbar-btn" data-act="summary-generate" style="font-size:10px;margin-left:auto;">Generate now</button></div>`;
+      <div class="email-summary-content" style="white-space:normal;display:flex;align-items:center;flex-wrap:wrap;gap:6px;"><span style="opacity:0.65">No AI summary generated.</span><button class="memory-toolbar-btn" data-act="summary-generate">Generate now</button></div>`;
     body.insertBefore(prompt, body.firstChild);
     if (btn) {
       btn.classList.add('active');
@@ -7670,10 +7804,10 @@ function _showReaderMoreMenu(em, card, reader, anchor) {
   dropdown._anchor = anchor;
   anchor.classList.add('reader-more-active');
   const rect = anchor.getBoundingClientRect();
-  dropdown.style.cssText = `position:fixed;z-index:${topPortalZ()};min-width:180px;background:var(--panel,var(--bg));border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.3);padding:4px;font-size:12px;top:${rect.bottom + 4}px;right:${window.innerWidth - rect.right}px;`;
-
+  dropdown.style.cssText = `position:fixed;z-index:${topPortalZ()};min-width:180px;top:${rect.bottom + 4}px;right:${window.innerWidth - rect.right}px;`;
+  dropdown.classList.add('ui-menu');
   const _icon = (svg) => `<span class="dropdown-icon">${svg}</span>`;
-  const _unreadIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>';
+  const _unreadIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10.5V18a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h12.5"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><circle cx="19" cy="5" r="3" fill="currentColor"/></svg>';
   const _archIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>';
   const _spamIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
   const _trashIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>';
@@ -7936,13 +8070,13 @@ function _showCardMenu(em, anchor) {
   const dropdown = document.createElement('div');
   dropdown.className = 'email-card-dropdown';
   const rect = anchor.getBoundingClientRect();
-  dropdown.style.cssText = `position:fixed;z-index:${topPortalZ()};min-width:140px;background:var(--panel,var(--bg));border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.3);padding:4px;font-size:12px;top:${rect.bottom + 4}px;right:${window.innerWidth - rect.right}px;`;
-
+  dropdown.style.cssText = `position:fixed;z-index:${topPortalZ()};min-width:140px;top:${rect.bottom + 4}px;right:${window.innerWidth - rect.right}px;`;
+  dropdown.classList.add('ui-menu');
   const _icon = (svg) => `<span class="dropdown-icon">${svg}</span>`;
   const _replyIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>';
   const _archIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>';
   const _delIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>';
-  const _unreadIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>';
+  const _unreadIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10.5V18a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h12.5"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><circle cx="19" cy="5" r="3" fill="currentColor"/></svg>';
   const _checkIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
   const _cardBellIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>';
 
@@ -8066,7 +8200,7 @@ function _showCardMenu(em, anchor) {
   // Match the chat-sidebar Select icon — a thick bullet character reads
   // much heavier than a small SVG circle. Nudged up 2px so its visual
   // center lines up with the SVG icons above (which sit a bit higher).
-  const _selectIcon = '<span style="font-size:16px;line-height:1;position:relative;top:-2px;">●</span>';
+  const _selectIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="m8 12 3 3 5-6"/></svg>';
   actions.push({
     label: 'Select',
     icon: _selectIcon,
@@ -8143,9 +8277,10 @@ function _showBulkActionsMenu(anchor) {
   const dropdown = document.createElement('div');
   dropdown.className = 'email-card-dropdown email-bulk-menu';
   const rect = anchor.getBoundingClientRect();
-  dropdown.style.cssText = `position:fixed;z-index:${topPortalZ()};min-width:160px;background:var(--panel,var(--bg));border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.3);padding:4px;font-size:12px;top:${rect.bottom + 4}px;left:${rect.left}px;`;
-  const _readIco = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4 20-7z"/></svg>';
-  const _unreadIco = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>';
+  dropdown.style.cssText = `position:fixed;z-index:${topPortalZ()};min-width:160px;top:${rect.bottom + 4}px;left:${rect.left}px;`;
+  dropdown.classList.add('ui-menu');
+  const _readIco = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.2 8.4c.5.38.8.97.8 1.6v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V10a2 2 0 0 1 .8-1.6l8-6a2 2 0 0 1 2.4 0l8 6Z"/><path d="m22 10-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 10"/></svg>';
+  const _unreadIco = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10.5V18a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h12.5"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><circle cx="19" cy="5" r="3" fill="currentColor"/></svg>';
   const _doneIco = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
   const items = [
     { label: 'Done', icon: _doneIco, action: () => _bulkAction('done') },
@@ -8187,7 +8322,11 @@ function _updateBulkBar() {
   const selectBtn = document.getElementById('email-lib-select-btn');
   if (bar) bar.classList.toggle('hidden', !state._selectMode);
   if (selectBtn) {
-    selectBtn.textContent = state._selectMode ? 'Cancel' : 'Select';
+    // Rebuild icon + label (textContent alone dropped the icon for good)
+    const ico = state._selectMode
+      ? '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>'
+      : '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>';
+    selectBtn.innerHTML = `<svg class="memory-select-btn-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ico}</svg><span>${state._selectMode ? 'Cancel' : 'Select'}</span>`;
     selectBtn.classList.toggle('active', state._selectMode);
   }
   const count = document.getElementById('email-lib-selected-count');
@@ -8463,7 +8602,7 @@ function _showAiReplyChoice(btn, em, data) {
     <div class="email-ai-reply-row" style="display:flex;flex-direction:column;gap:6px;min-width:180px;">
       <textarea data-note-input rows="2" placeholder="Context (optional)" style="width:100%;box-sizing:border-box;resize:vertical;min-height:42px;font-family:inherit;font-size:11px;padding:5px 6px;border-radius:5px;border:1px solid var(--border,#333);background:var(--bg-elev,#1a1a1a);color:var(--fg);"></textarea>
       <div style="display:flex;align-items:center;gap:4px;">
-        <button class="memory-toolbar-btn" data-mode="ai-reply-fast" title="Draft reply" style="display:inline-flex;align-items:center;justify-content:center;gap:5px;flex:1;">
+        <button class="memory-toolbar-btn" data-mode="ai-reply-fast" title="Draft reply" style="display:inline-flex;align-items:center;justify-content:center;flex:1">
           <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="color:var(--accent, var(--red));"><path d="M12 0L14.59 8.41L23 12L14.59 15.59L12 24L9.41 15.59L1 12L9.41 8.41Z"/></svg>
           Submit
         </button>

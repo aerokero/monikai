@@ -61,7 +61,7 @@ from .lifecycle_shutdown import (
 from .lifecycle_startup import (
     initialize_calendar_manager,
     initialize_minecraft_bot_manager,
-    initialize_reminder_and_personality,
+    initialize_reminder_manager,
     initialize_smart_home_agents,
     initialize_spotify_manager,
 )
@@ -146,7 +146,7 @@ def _request_shutdown_from_signal(sig):
 async def lifespan(app: FastAPI):
     global MAIN_LOOP
     global hue_agent, home_assistant_agent
-    global calendar_manager, reminder_manager, personality_system, spotify_manager
+    global calendar_manager, reminder_manager, spotify_manager
     global minecraft_bot_manager, minecraft_autonomy_task, minecraft_autonomy_state
     global server_mic_listener
     global server_voice_sessions, server_voice_chat
@@ -209,14 +209,14 @@ async def lifespan(app: FastAPI):
         schedule_emit_to_frontend=_schedule_emit_to_frontend,
     )
 
-    # 2-3. Reminders + Personality
+    # 2. Reminders
     def _get_audio_loop():
         return audio_loop
 
     def _get_main_loop():
         return MAIN_LOOP
 
-    reminder_manager, personality_system = initialize_reminder_and_personality(
+    reminder_manager = initialize_reminder_manager(
         monikai,
         user_memory_dir,
         schedule_emit_to_frontend=_schedule_emit_to_frontend,
@@ -278,7 +278,6 @@ async def lifespan(app: FastAPI):
             calendar_manager=calendar_manager,
             reminder_manager=reminder_manager,
             spotify_manager=spotify_manager,
-            personality=personality_system,
             hue_agent=hue_agent,
             home_assistant_agent=home_assistant_agent,
             conversation_gateway=getattr(app.state, "odysseus_voice_gateway", None),
@@ -317,6 +316,7 @@ async def lifespan(app: FastAPI):
 
         server_mic_listener = ServerMicListenerService(
             conversation_handler=lambda text: server_voice_chat.ask(text),
+            conversation_stream_handler=lambda text, on_event, **kw: server_voice_chat.ask(text, on_event=on_event, **kw),
             input_device_index=input_dev,
             output_device_index=output_dev,
             require_wake_word=wake_req,
@@ -352,7 +352,6 @@ async def lifespan(app: FastAPI):
         calendar_manager=calendar_manager,
         reminder_manager=reminder_manager,
         spotify_manager=spotify_manager,
-        personality=personality_system,
         server_mic_listener=server_mic_listener,
         hue_agent=hue_agent,
         home_assistant_agent=home_assistant_agent,
@@ -364,13 +363,12 @@ async def lifespan(app: FastAPI):
         calendar_manager=calendar_manager,
         reminder_manager=reminder_manager,
         spotify_manager=spotify_manager,
-        personality=personality_system,
         home_assistant_agent=home_assistant_agent,
         hue_agent=hue_agent,
         conversation_gateway_factory=lambda: _new_channel_conversation_gateway("discord"),
     )
 
-    # v2 Soul Engine — initialize db + personality + discovery engines.
+    # v2 Soul Engine — initialize db + discovery engines.
     from backend.core.runtimes import v2_runtime as _v2
     try:
         await _v2.initialize()
@@ -593,7 +591,6 @@ signal.signal(signal.SIGTERM, signal_handler)
 audio_loop = None
 calendar_manager = None
 reminder_manager = None
-personality_system = None
 spotify_manager = None
 loop_task = None
 authenticator = None
@@ -648,10 +645,6 @@ def _get_spotify_manager():
     return spotify_manager
 
 
-def _get_personality_system():
-    return personality_system
-
-
 def _get_hue_agent():
     return hue_agent
 
@@ -669,7 +662,6 @@ register_settings_profile_handlers(
     get_settings_fn=lambda: SETTINGS,
     save_settings=save_settings,
     get_audio_loop=lambda: audio_loop,
-    get_personality_system=lambda: personality_system,
     get_calendar_manager=lambda: calendar_manager,
     get_authenticator=lambda: authenticator,
     emit_to_frontend=_emit_to_frontend,
@@ -680,7 +672,6 @@ register_settings_profile_handlers(
 register_system_frontend_handlers(
     sio,
     get_audio_loop=_get_audio_loop,
-    get_personality_system=_get_personality_system,
     get_spotify_manager=_get_spotify_manager,
     get_settings=lambda: SETTINGS,
     save_settings=save_settings,
@@ -761,7 +752,6 @@ register_audio_lifecycle_handlers(
     get_calendar_manager=_get_calendar_manager,
     get_reminder_manager=_get_reminder_manager,
     get_spotify_manager=_get_spotify_manager,
-    get_personality_system=_get_personality_system,
     get_hue_agent=_get_hue_agent,
     get_home_assistant_agent=_get_home_assistant_agent,
     get_minecraft_bot_manager=_get_minecraft_bot_manager,

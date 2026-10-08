@@ -53,13 +53,13 @@ async function loadUsers() {
           <div style="width:28px;height:28px;border-radius:50%;background:color-mix(in srgb, var(--accent) 20%, var(--panel));display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0;color:var(--accent);">${esc(initial)}</div>
           <div>
             <span class="admin-user-name">${esc(u.username)}</span>
-            ${u.is_admin ? '<span class="admin-badge" style="margin-left:6px;">ADMIN</span>' : '<span style="font-size:10px;opacity:0.4;display:block;">Click to manage privileges</span>'}
+            ${u.is_admin ? '<span class="admin-badge">ADMIN</span>' : '<span style="font-size:10px;opacity:0.4;display:block;">Click to manage privileges</span>'}
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
-          <button class="admin-btn-sm" data-adm-toggle-admin="${esc(u.username)}" data-make-admin="${u.is_admin ? '0' : '1'}" style="font-size:11px;">${u.is_admin ? 'Revoke admin' : 'Make admin'}</button>
-          <button class="admin-btn-sm" data-adm-rename-user="${esc(u.username)}" style="font-size:11px;">Rename</button>
-          ${u.is_admin ? '' : `<button class="admin-btn-delete" data-adm-del-user="${esc(u.username)}" style="font-size:11px;">Remove</button>`}
+          <button class="admin-btn-sm" data-adm-toggle-admin="${esc(u.username)}" data-make-admin="${u.is_admin ? '0' : '1'}">${u.is_admin ? 'Revoke admin' : 'Make admin'}</button>
+          <button class="admin-btn-sm" data-adm-rename-user="${esc(u.username)}">Rename</button>
+          ${u.is_admin ? '' : `<button class="admin-btn-delete" data-adm-del-user="${esc(u.username)}">Remove</button>`}
           ${u.is_admin ? '' : '<svg class="admin-user-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.3;transition:transform 0.2s,opacity 0.2s;"><polyline points="6 9 12 15 18 9"/></svg>'}
         </div>
       `;
@@ -530,7 +530,7 @@ async function loadEndpoints() {
             <div class="admin-user-info" style="flex:1;flex-wrap:wrap;gap:0.3rem;align-items:center;">
               <span class="adm-ep-row-logo" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;flex-shrink:0;opacity:0.9;">${providerLogoFromUrl(ep.base_url) || ''}</span>
               <span class="admin-user-name">${esc(ep.name)}</span>
-              ${ep.model_type === 'image' ? '<span class="admin-badge" style="background:color-mix(in srgb, var(--accent) 20%, transparent);color:var(--accent);">Image</span>' : ''}
+              ${ep.model_type === 'image' ? '<span class="admin-badge" style="background:color-mix(in srgb, var(--accent) 20%, transparent);color:var(--accent)">Image</span>' : ''}
               ${kindLabel ? `<span class="admin-badge">${esc(kindLabel)}</span>` : ''}
               ${statusBadge}
               ${ep.is_enabled ? '' : '<span class="admin-badge admin-badge-off">disabled</span>'}
@@ -2083,9 +2083,9 @@ async function loadMcpServers() {
             ${hasTools ? `<span style="font-size:10px;opacity:0.4;">Click to manage tools</span>` : ''}
           </div>
           <div style="display:flex;gap:4px;align-items:center;">
-            ${s.needs_oauth ? `<a href="/api/mcp/oauth/authorize/${s.id}" target="_blank" class="admin-btn-sm" style="background:var(--red);color:#fff;text-decoration:none;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;">Authorize</a>` : ''}
+            ${s.needs_oauth ? `<a href="/api/mcp/oauth/authorize/${s.id}" target="_blank" class="admin-btn-sm" style="text-decoration:none">Authorize</a>` : ''}
             <button class="admin-btn-sm" data-adm-mcp-reconnect="${s.id}">Reconnect</button>
-            <button class="admin-btn-delete" style="border-color:${s.is_enabled ? 'color-mix(in srgb, var(--red) 30%, transparent)' : 'color-mix(in srgb, var(--fg) 30%, transparent)'};color:${s.is_enabled ? 'var(--red)' : 'var(--fg)'};" data-adm-mcp-toggle="${s.id}" data-adm-mcp-enable="${!s.is_enabled}">${s.is_enabled ? 'Disable' : 'Enable'}</button>
+            <button class="admin-btn-delete" style="border-color:${s.is_enabled ? 'color-mix(in srgb, var(--red) 30%, transparent)' : 'color-mix(in srgb, var(--fg) 30%, transparent)'}" data-adm-mcp-toggle="${s.id}" data-adm-mcp-enable="${!s.is_enabled}">${s.is_enabled ? 'Disable' : 'Enable'}</button>
             <button class="admin-btn-delete" data-adm-mcp-delete="${s.id}">Delete</button>
             ${hasTools ? '<svg class="admin-user-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.3;transition:transform 0.2s,opacity 0.2s;"><polyline points="6 9 12 15 18 9"/></svg>' : ''}
           </div>
@@ -2558,12 +2558,12 @@ async function loadTokens() {
       <div class="admin-user-row" data-adm-tok-row="${esc(t.id)}" style="display:block;">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           <div class="admin-user-info" style="flex:1;min-width:0;flex-wrap:wrap;gap:0.3rem;">
-            <input type="text" class="adm-tok-rename" data-token-id="${esc(t.id)}" value="${esc(t.name || '')}" placeholder="Token name" style="font-size:13px;font-weight:600;padding:3px 6px;background:transparent;border:1px solid transparent;border-radius:4px;min-width:160px;" title="Click to rename">
+            <input type="text" class="adm-tok-rename" data-token-id="${esc(t.id)}" value="${esc(t.name || '')}" placeholder="Token name" style="min-width:160px" title="Click to rename">
             <span class="admin-badge">${esc(t.token_prefix)}...</span>
             ${t.owner ? `<span style="font-size:0.75rem;opacity:0.5;">Owner: ${esc(t.owner)}</span>` : ''}
             ${t.last_used_at ? `<span style="font-size:0.75rem;opacity:0.5;">Last used: ${new Date(t.last_used_at).toLocaleDateString()}</span>` : '<span style="font-size:0.75rem;opacity:0.4;">Never used</span>'}
           </div>
-          <button class="admin-btn-sm" data-adm-tok-toggle="${esc(t.id)}" style="opacity:0.75;">Permissions</button>
+          <button class="admin-btn-sm" data-adm-tok-toggle="${esc(t.id)}">Permissions</button>
           <button class="admin-btn-delete" data-adm-del-token="${esc(t.id)}">Revoke</button>
         </div>
         <div data-adm-tok-perm="${esc(t.id)}" style="display:none;margin-top:8px;padding:8px 4px 0;border-top:1px solid var(--border);">
@@ -2690,7 +2690,7 @@ async function loadWebhooks() {
     list.innerHTML = hooks.map(w => {
       const events = (w.events || []).map(e => `<span class="admin-badge">${esc(e)}</span>`).join(' ');
       const statusBadge = w.last_status_code
-        ? `<span class="admin-badge" style="background:${w.last_status_code < 400 ? 'color-mix(in srgb, var(--fg) 20%, transparent)' : 'color-mix(in srgb, var(--red) 20%, transparent)'};color:${w.last_status_code < 400 ? 'var(--fg)' : 'var(--red)'};">${w.last_status_code}</span>`
+        ? `<span class="admin-badge" style="background:${w.last_status_code < 400 ? 'color-mix(in srgb, var(--fg) 20%, transparent)' : 'color-mix(in srgb, var(--red) 20%, transparent)'};color:${w.last_status_code < 400 ? 'var(--fg)' : 'var(--red)'}">${w.last_status_code}</span>`
         : '';
       const lastTriggered = w.last_triggered_at ? new Date(w.last_triggered_at).toLocaleString() : 'Never';
       const errorText = w.last_error ? `<div style="font-size:0.75rem;color:var(--red);margin-top:0.2rem;">Error: ${esc(w.last_error.substring(0, 80))}</div>` : '';

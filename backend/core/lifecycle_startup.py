@@ -100,7 +100,7 @@ def initialize_minecraft_bot_manager(server_file_path):
         return None
 
 
-def initialize_reminder_and_personality(
+def initialize_reminder_manager(
     monikai_module,
     user_memory_dir,
     *,
@@ -133,10 +133,7 @@ def initialize_reminder_and_personality(
     reminder_manager.load()
     print("[SERVER] Reminder Manager initialized.")
 
-    personality_system = None
-    print("[SERVER] Personality System bypassed in V2.")
-
-    return reminder_manager, personality_system
+    return reminder_manager
 
 
 def initialize_calendar_manager(monikai_module, user_memory_dir, *, schedule_emit_to_frontend):

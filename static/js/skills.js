@@ -196,9 +196,9 @@ function _matches(sk, query) {
 
 function _statusPill(sk) {
   const s = sk.status || (sk._legacy ? 'legacy' : 'draft');
-  if (s === 'published') return '<span class="memory-cat-badge skill-status-pill" data-status="published" style="background:color-mix(in srgb, var(--accent, #4ade80) 30%, transparent)">published</span>';
-  if (s === 'draft')     return '<span class="memory-cat-badge skill-status-pill" data-status="draft" style="background:color-mix(in srgb, var(--fg) 14%, transparent)">draft</span>';
-  return `<span class="memory-cat-badge skill-status-pill" data-status="${esc(s)}" style="opacity:0.6">${esc(s)}</span>`;
+  if (s === 'published') return '<span class="memory-cat-badge skill-status-pill" style="background:color-mix(in srgb, var(--accent, #4ade80) 30%, transparent)" data-status="published">published</span>';
+  if (s === 'draft')     return '<span class="memory-cat-badge skill-status-pill" style="background:color-mix(in srgb, var(--fg) 14%, transparent)" data-status="draft">draft</span>';
+  return `<span class="memory-cat-badge skill-status-pill" data-status="${esc(s)}">${esc(s)}</span>`;
 }
 
 // Show a "teacher" badge for skills written by the auto-escalation
@@ -208,7 +208,7 @@ function _statusPill(sk) {
 function _sourcePill(sk) {
   if (sk.source !== 'teacher-escalation') return '';
   const teacher = sk.teacher_model || 'teacher';
-  return `<span class="memory-cat-badge" title="Created by teacher escalation: ${esc(teacher)}" style="background:color-mix(in srgb, var(--color-warning, #f0ad4e) 22%, transparent);">teacher-created</span>`;
+  return `<span class="memory-cat-badge" style="background:color-mix(in srgb, var(--color-warning, #f0ad4e) 22%, transparent)" title="Created by teacher escalation: ${esc(teacher)}">teacher-created</span>`;
 }
 
 function _modelShortName(model) {
@@ -475,10 +475,10 @@ function _buildBuiltinCards() {
     header.innerHTML = `
       <span class="skill-conf-dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent, var(--red));flex-shrink:0;margin-right:6px;opacity:0.55;"></span>
       <div style="flex:1;min-width:0;overflow:hidden;">
-        <div class="doclib-card-title" style="display:flex;align-items:center;gap:6px;min-width:0;">
+        <div class="doclib-card-title" style="display:flex;align-items:center;gap:6px;min-width:0">
           <code style="font-weight:600;font-size:0.9em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:1;min-width:0;">${esc(b.name)}</code>
           <span class="memory-cat-badge" style="background:color-mix(in srgb, var(--fg) 14%, transparent)">built-in</span>
-          ${b.is_overridden ? '<span class="memory-cat-badge" title="You have edited this built-in capability" style="background:color-mix(in srgb, var(--color-warning, #f0ad4e) 30%, transparent);">edited</span>' : ''}
+          ${b.is_overridden ? '<span class="memory-cat-badge" style="background:color-mix(in srgb, var(--color-warning, #f0ad4e) 30%, transparent)" title="You have edited this built-in capability">edited</span>' : ''}
         </div>
         ${b.description ? `<div class="doclib-card-session" title="${esc(b.description)}" style="font-size:10px;opacity:0.55;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(b.description)}</div>` : ''}
       </div>
@@ -686,7 +686,7 @@ function renderSkillsList() {
 
     const checked = _selectedNames.has(name) ? 'checked' : '';
     const cbHtml = _selectMode
-      ? `<input type="checkbox" class="memory-select-cb skill-select-cb" data-name="${esc(name)}" ${checked} style="margin-right:6px;flex-shrink:0;cursor:pointer;" />`
+      ? `<input type="checkbox" class="memory-select-cb skill-select-cb" data-name="${esc(name)}" ${checked} style="flex-shrink:0" />`
       : '';
 
     // Collapsed header bar: dot · name (wraps) · [pills (right) · stats · menu].
@@ -1429,7 +1429,7 @@ function _confirmAuditSkills(label) {
           '<div class="modal-header"><h4>Audit Skills</h4></div>' +
           '<div class="modal-body">' +
             '<p id="skills-audit-confirm-msg"></p>' +
-            '<label class="memory-bulk-check-all" style="margin-top:10px;display:inline-flex;align-items:center;gap:7px;">' +
+            '<label class="memory-bulk-check-all" style="display:inline-flex;align-items:center">' +
               '<input type="checkbox" id="skills-audit-skip-audited" checked />' +
               '<span>Skip already audited</span>' +
             '</label>' +
@@ -1871,7 +1871,7 @@ async function _showSkillSource(name) {
       </div>
       <div class="modal-body" style="display:flex;flex-direction:column;gap:8px">
         <textarea id="skill-md-textarea" spellcheck="false" style="flex:1;min-height:50vh;width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;padding:10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--fg);box-sizing:border-box"></textarea>
-        <p class="memory-desc" style="margin:0">Edit the frontmatter and body directly. Save replaces the file via PUT /api/skills/{name}.</p>
+        <p class="memory-desc">Edit the frontmatter and body directly. Save replaces the file via PUT /api/skills/{name}.</p>
       </div>
     </div>
   `;

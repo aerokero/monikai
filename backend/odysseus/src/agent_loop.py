@@ -314,7 +314,8 @@ The block executes automatically and you see the output."""
 _AGENT_RULES = """\
 ## Rules
 - Only use tools when needed. Don't search for things you already know.
-- For web lookup/search/latest/current requests, use `web_search` or `web_fetch`. Do NOT use `bash`, `python`, `curl`, `requests`, or scraping code for web lookup unless web tools are disabled or already failed.
+- For ANY weather/forecast question (including follow-ups like "do I need a jacket?"), call `get_weather` — never `web_search`. Answer from its data only.
+- For other web lookup/search/latest/current requests, use `web_search` or `web_fetch`. Do NOT use `bash`, `python`, `curl`, `requests`, or scraping code for web lookup unless web tools are disabled or already failed.
 - If `web_search` is listed in this prompt, web search is available. Do NOT tell the user search/web tools are unavailable.
 - These exact tags execute automatically. For showing code examples, use ```shell, ```sh, ```py, etc. instead.
 - Multiple tool blocks per response OK. 60s timeout per tool, 10K char output limit.

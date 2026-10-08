@@ -5,12 +5,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 import base64
 import binascii
 import mimetypes
 import os
 import secrets
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import httpx
 from src.approval_text import t
@@ -165,6 +166,14 @@ class OdysseusVoiceGateway:
         return session
 
     @staticmethod
+    def _spoken_delta(event: Dict[str, Any]) -> str:
+        # Thinking deltas and raw tool-result text ("Note created: ... id")
+        # are for the web UI; only the model's own prose is spoken.
+        if "delta" in event and not event.get("thinking") and not event.get("tool_text"):
+            return str(event.get("delta") or "")
+        return ""
+
+    @staticmethod
     def _stream_result(response: httpx.Response) -> str:
         """Extract the user-facing answer from the native Agent SSE stream."""
 
@@ -224,10 +233,7 @@ class OdysseusVoiceGateway:
             elif event_type == "error" or event.get("error"):
                 stream_error = "Agent run failed"
 
-            # Thinking deltas and raw tool-result text ("Note created: ... id")
-            # are for the web UI; only the model's own prose is spoken.
-            if "delta" in event and not event.get("thinking") and not event.get("tool_text"):
-                answer_parts.append(str(event.get("delta") or ""))
+            answer_parts.append(OdysseusVoiceGateway._spoken_delta(event))
 
         if stream_error:
             raise RuntimeError(stream_error)
@@ -250,7 +256,7 @@ class OdysseusVoiceGateway:
         elif not answer and tool_names:
             # The native agent uses this same fallback when a tool completed
             # without a final prose delta. Keep the voice channel responsive.
-            answer = "Done."
+            answer = t("voice.done")
         if not answer:
             raise RuntimeError("Odysseus returned an empty voice response")
         logger.info("[VOICE AGENT] completed tools=%s answer_chars=%d", tool_names, len(answer))
@@ -266,7 +272,12 @@ class OdysseusVoiceGateway:
         endpoint_id: Optional[str] = None,
         persona_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        on_event: Optional[Callable[[Dict[str, Any]], None]] = None,
+        interrupted_reply: Optional[str] = None,
     ) -> str:
+        """Run one voice turn; ``on_event`` gets ``{"text": ...}`` and
+        ``{"tool": ...}`` live while the agent streams, so speech can start
+        before the turn ends.  The return value is the complete answer."""
         prompt = str(text or "").strip()
         normalized_attachment_ids = [
             str(item).strip()
@@ -303,6 +314,7 @@ class OdysseusVoiceGateway:
         row, endpoint_url = self._endpoint()
         active_session_id = self.session_id
         self._ensure_session(active_session_id, row, endpoint_url, self.model)
+        active_model = self.model
 
         payload = {
             "message": prompt,
@@ -320,11 +332,40 @@ class OdysseusVoiceGateway:
             "voice_mode": "true",
             "voice_transport_token": self._voice_transport_token,
         }
+        if interrupted_reply is not None:
+            # The user cut the previous spoken reply short; only this part
+            # (possibly nothing) was heard.  Honoured for the trusted voice
+            # transport only.
+            payload["voice_interrupted"] = "true"
+            payload["voice_interrupted_reply"] = interrupted_reply[:2000]
         if normalized_attachment_ids:
             # The native route accepts attachment IDs, never inline bytes. The
             # upload route has already performed type/size/ownership checks.
             payload["attachments"] = json.dumps(normalized_attachment_ids)
-        transport = httpx.ASGITransport(app=self.app)
+        # ASGITransport hands back the body only once the whole SSE stream has
+        # finished, so log when the first answer text actually left the app:
+        # the gap to the end is time the voice turn waits for nothing.
+        started = time.perf_counter()
+        marks: dict[str, float] = {}
+
+        async def timed_app(scope, receive, send):
+            pending = b""
+
+            async def timed_send(message):
+                nonlocal pending
+                if message["type"] == "http.response.body":
+                    body = message.get("body", b"")
+                    if b'"delta"' in body:
+                        marks.setdefault("first_delta", time.perf_counter() - started)
+                    if on_event and body:
+                        *lines, pending = (pending + body).split(b"\n")
+                        for line in lines:
+                            self._emit_live_event(line, on_event)
+                await send(message)
+
+            await self.app(scope, receive, timed_send)
+
+        transport = httpx.ASGITransport(app=timed_app)
         timeout = httpx.Timeout(max(5.0, float(timeout_sec or 120.0)))
         async with httpx.AsyncClient(
             transport=transport,
@@ -343,12 +384,58 @@ class OdysseusVoiceGateway:
                         detail = response.text[:500]
                     raise RuntimeError(f"Odysseus voice turn failed ({response.status_code}): {detail}")
                 try:
+                    total = time.perf_counter() - started
+                    logger.info(
+                        "[VOICE AGENT] timing first_delta=%.1fs stream_end=%.1fs",
+                        marks.get("first_delta", -1.0),
+                        total,
+                    )
                     return self._stream_result(response)
                 except _TransientUpstreamError as exc:
                     if delay is None:
                         raise
+                    # A pinned free model that is rate-limited upstream stays
+                    # limited for far longer than the retry delays, so the
+                    # first retry moves to the fallback (router) model.
+                    fallback = os.getenv("ODYSSEUS_VOICE_FALLBACK_MODEL", "anthropic/claude-haiku-4.5").strip()
+                    if fallback and fallback != self.model and active_model != fallback:
+                        active_model = fallback
+                        self._ensure_session(active_session_id, row, endpoint_url, fallback)
+                        logger.warning("[VOICE AGENT] %s; retrying on fallback model %s", exc, fallback)
+                        continue
                     logger.warning("[VOICE AGENT] %s; retrying in %.1fs", exc, delay)
                     await asyncio.sleep(delay)
+
+    @classmethod
+    def _emit_live_event(cls, line: bytes, on_event: Callable[[Dict[str, Any]], None]) -> None:
+        if not line.startswith(b"data: "):
+            return
+        try:
+            event = json.loads(line[6:])
+        except (ValueError, UnicodeDecodeError):
+            return
+        if not isinstance(event, dict):
+            return
+        live: Dict[str, Any] = {}
+        if event.get("type") == "tool_start" and event.get("tool"):
+            live = {"tool": str(event["tool"])}
+        elif cls._spoken_delta(event):
+            live = {"text": cls._spoken_delta(event)}
+        if live:
+            try:
+                on_event(live)
+            except Exception:
+                # A speaker problem must never break the agent turn itself.
+                logger.exception("[VOICE AGENT] live event handler failed")
+
+    def append_turn(self, session_id: str, user_text: str, reply: str, source: str) -> None:
+        """Record a turn answered outside the agent so the agent sees it later."""
+        from core.models import ChatMessage
+
+        row, endpoint_url = self._endpoint()
+        session = self._ensure_session(session_id, row, endpoint_url, self.model)
+        session.add_message(ChatMessage("user", user_text))
+        session.add_message(ChatMessage("assistant", reply, {"source": source}))
 
     async def upload_attachments(
         self,
