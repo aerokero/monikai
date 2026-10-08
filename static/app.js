@@ -25,7 +25,7 @@ import markdownModule from './js/markdown.js';
 import chatRenderer from './js/chatRenderer.js?v=20261007think1';
 import sessionModule from './js/sessions.js';
 import memoryModule from './js/memory.js?v=20260722memoryloading1';
-import voiceRecorderModule from './js/voiceRecorder.js?v=20260924toolaxis1';
+import voiceRecorderModule from './js/voiceRecorder.js?v=20261008v2';
 import censorModule from './js/censor.js';
 import galleryModule from './js/gallery.js';
 import wardrobeModule from './js/wardrobe.js';
@@ -4284,9 +4284,10 @@ function startOdysseusApp() {
     sendBtn.addEventListener('click', (e) => {
       e.preventDefault();
       if (sendBtn.dataset.mode === 'recording' || voiceRecorderModule.getIsRecording()) {
-        voiceRecorderModule.stopRecording();
+        voiceRecorderModule.stopRecording(true);
         return;
       }
+      if (voiceRecorderModule.requestSendAfterTranscribe()) return;
       handleSubmit(e);
     });
   }

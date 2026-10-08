@@ -32,7 +32,7 @@
   /* Control heights */
   --ui-h-sm: 30px;     /* chips, badges-as-buttons     */
   --ui-h: 36px;        /* buttons, selects, inputs     */
-  --ui-h-lg: 44px;     /* search, primary inputs       */
+  --ui-h-lg: 36px;     /* search, primary inputs: same as buttons so rows line up */
 
   /* Radii */
   --ui-r-sm: 8px;
@@ -71,7 +71,7 @@
     --ui-fs-xl: 18px;
     --ui-h-sm: 34px;
     --ui-h: 40px;
-    --ui-h-lg: 46px;
+    --ui-h-lg: 40px;
     --ui-icon: 18px;
     --ui-icon-sm: 16px;
   }
@@ -186,7 +186,7 @@ input[type="date"].ui-input, input[type="datetime-local"].ui-input, input[type="
 .ui-seg { display: flex; gap: 4px; padding: 4px; margin: 0; border: 0; border-radius: var(--ui-r); background: var(--ui-fill); flex-shrink: 0; }
 .ui-seg__item {
   flex: 1 1 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 0;
-  height: calc(var(--ui-h) - 4px); padding: 0 var(--ui-s3); margin: 0; border: 0; border-radius: var(--ui-r-sm);
+  height: calc(var(--ui-h) - 4px); padding: 0 var(--ui-s3); margin: 0; border: 0; border-radius: var(--ui-r-full);
   background: transparent; color: var(--ui-text-muted); font: inherit; font-family: var(--ui-font);
   font-size: var(--ui-fs-sm); font-weight: var(--ui-fw-medium); white-space: nowrap; cursor: pointer; box-shadow: none;
   transition: background-color .15s, color .15s;
@@ -311,7 +311,7 @@ input[type="date"].ui-input, input[type="datetime-local"].ui-input, input[type="
   border: 0; border-radius: var(--ui-r-full); background: transparent; color: var(--ui-text-muted);
 }
 :is(.close-btn, .modal-close, .modal-minimize-btn, .minimize-btn):is(input, select, textarea, div, button):hover { background: var(--ui-fill-hover); color: var(--ui-text); }
-:is(.modal-minimize-btn, .minimize-btn) svg:is(input, select, textarea, div, button) { transform: none; width: 14px; height: 14px; }
+:is(.modal-minimize-btn, .minimize-btn) svg { transform: none; width: 14px; height: 14px; }
 :is(.close-btn, .modal-close)::before:is(input, select, textarea, div, button) { width: 11px; height: 11px; }
 
 /* Focus ring only for keyboard focus — windows focus their first button on
@@ -327,11 +327,11 @@ input[type="date"].ui-input, input[type="datetime-local"].ui-input, input[type="
 /* Tab bars → segmented control */
 :is(.lib-tabs, .gallery-tabs, .memory-tabs, .cookbook-tabs, .admin-tabs) {
   display: flex; flex-wrap: nowrap; gap: 4px; padding: 4px; margin: 0 0 var(--ui-s3); border: 0;
-  border-radius: var(--ui-r); background: var(--ui-fill); overflow: visible; flex-shrink: 0; min-width: 0;
+  border-radius: var(--ui-r-full); background: var(--ui-fill); overflow: visible; flex-shrink: 0; min-width: 0;
 }
 :is(.lib-tab, .gallery-tab, .memory-tab, .cookbook-tab, .admin-tab) {
   flex: 1 1 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 0;
-  height: calc(var(--ui-h) - 4px); padding: 0 var(--ui-s3); margin: 0; border: 0; border-radius: var(--ui-r-sm);
+  height: calc(var(--ui-h) - 4px); padding: 0 var(--ui-s3); margin: 0; border: 0; border-radius: var(--ui-r-full);
   background: transparent; color: var(--ui-text-muted); opacity: 1;
   font-family: var(--ui-font); font-size: var(--ui-fs-sm); font-weight: var(--ui-fw-medium); line-height: 1;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; box-shadow: none; transition: background-color .15s, color .15s;
@@ -382,7 +382,7 @@ input[type="date"].ui-input, input[type="datetime-local"].ui-input, input[type="
     .email-filter-btn, .adm-provider-btn, .hwfit-gpu-btn, .doclib-card-text-btn, .note-form-text-btn, .cal-s-btn,
     .savings-small-button, .savings-primary-button, .confirm-btn, .task-toggle-btn, .reader-icon-btn, .notes-header-text-btn,
     .research-start-btn, .cal-new-btn, .email-settings-clean-btn, .email-settings-save, .email-style-settings-save,
-    .email-style-settings-extract, .cookbook-dep-install) svg:is(input, select, textarea, div, button) {
+    .email-style-settings-extract, .cookbook-dep-install) svg {
   width: var(--ui-icon-sm); height: var(--ui-icon-sm); flex-shrink: 0; margin: 0; vertical-align: 0; position: static; top: auto;
 }
 :is(.memory-toolbar-btn, .admin-btn-sm, .admin-btn-add, .admin-btn-delete, .theme-io-btn, .cookbook-btn, .gallery-select-btn, .cal-btn,
@@ -408,7 +408,7 @@ input[type="date"].ui-input, input[type="datetime-local"].ui-input, input[type="
 :is(.cal-icon-btn, .email-filter-refresh-btn, .email-filter-settings-btn, .hwfit-advanced-btn, .hwfit-hw-refresh-btn, .ui-btn--icon) {
   width: var(--ui-h); padding: 0;
 }
-:is(.cal-icon-btn, .email-filter-refresh-btn, .email-filter-settings-btn, .hwfit-advanced-btn, .hwfit-hw-refresh-btn) svg:is(input, select, textarea, div, button) { width: var(--ui-icon); height: var(--ui-icon); }
+:is(.cal-icon-btn, .email-filter-refresh-btn, .email-filter-settings-btn, .hwfit-advanced-btn, .hwfit-hw-refresh-btn) svg { width: var(--ui-icon); height: var(--ui-icon); }
 
 /* Ghost icon buttons: row ⋮ menus, card corner actions */
 :is(.memory-item-btn, .memory-menu-btn, .skill-kebab-btn, .note-card-action, .savings-icon-button, .settings-sidebar-toggle,
@@ -421,7 +421,7 @@ input[type="date"].ui-input, input[type="datetime-local"].ui-input, input[type="
 :is(.memory-item-btn, .memory-menu-btn, .skill-kebab-btn, .note-card-action, .savings-icon-button, .settings-sidebar-toggle,
     .notes-quick-icon, .doc-action-icon-btn:not(.notes-header-text-btn), .pane-action-btn):is(input, select, textarea, div, button):hover { background: var(--ui-fill-hover); color: var(--ui-text); }
 :is(.memory-item-btn, .memory-menu-btn, .skill-kebab-btn, .note-card-action, .savings-icon-button, .settings-sidebar-toggle,
-    .notes-quick-icon, .doc-action-icon-btn:not(.notes-header-text-btn), .pane-action-btn) svg:is(input, select, textarea, div, button) {
+    .notes-quick-icon, .doc-action-icon-btn:not(.notes-header-text-btn), .pane-action-btn) svg {
   width: var(--ui-icon); height: var(--ui-icon); margin: 0; position: static; transform: none;
 }
 
@@ -577,13 +577,13 @@ div.memory-search-input:is(input, select, textarea, div, button) { background-im
 /* Other segmented controls → same look as tab bars */
 :is(.cal-view-toggle, .cal-s-seg, .notes-quick-type-seg, .note-form-type-seg, .task-form-toggle, .compare-mode-tabs) {
   display: inline-flex; flex-wrap: nowrap; gap: 4px; padding: 4px; margin: 0; border: 0; height: auto; width: auto;
-  border-radius: var(--ui-r); background: var(--ui-fill); overflow: visible; flex-shrink: 0; box-shadow: none; position: relative;
+  border-radius: var(--ui-r-full); background: var(--ui-fill); overflow: visible; flex-shrink: 0; box-shadow: none; position: relative;
 }
 :is(.cal-view-toggle, .cal-s-seg, .notes-quick-type-seg, .note-form-type-seg, .task-form-toggle, .compare-mode-tabs)::before,
 :is(.cal-view-toggle, .cal-s-seg, .notes-quick-type-seg, .note-form-type-seg, .task-form-toggle, .compare-mode-tabs)::after { display: none !important; }
 :is(.cal-view-btn, .cal-s-seg > button, .notes-quick-type-pill, .note-form-type-pill, .task-toggle-btn, .compare-mode-tab) {
   flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; width: auto;
-  height: calc(var(--ui-h) - 4px); padding: 0 var(--ui-s3); margin: 0; border: 0; border-radius: var(--ui-r-sm);
+  height: calc(var(--ui-h) - 4px); padding: 0 var(--ui-s3); margin: 0; border: 0; border-radius: var(--ui-r-full);
   background: transparent; color: var(--ui-text-muted); opacity: 1; cursor: pointer; box-shadow: none; position: static; top: auto;
   font-family: var(--ui-font); font-size: var(--ui-fs-sm); font-weight: var(--ui-fw-medium); line-height: 1; white-space: nowrap;
   transition: background-color .15s, color .15s;
@@ -802,3 +802,99 @@ button:is(.memory-item, .doclib-card):hover { background: var(--ui-fill); }
 :is(.compare-blind-toggle, .compare-parallel-toggle, .compare-dice-toggle, .compare-save-toggle, .compare-reset-toggle) svg { width: var(--ui-icon); height: var(--ui-icon); margin: 0; }
 .compare-toggle-label { font-size: var(--ui-fs-xs); line-height: 1; }
 .compare-section-label { font-size: var(--ui-fs-xs); font-weight: var(--ui-fw-bold); letter-spacing: .05em; text-transform: uppercase; color: var(--ui-text-faint); margin: 0 0 6px; }
+
+/* ── Polish pass ─────────────────────────────────────────────────────── */
+/* Window headers sit on the window surface; the Documents one painted its own opaque strip */
+.doclib-modal-content > .modal-header { background: transparent; }
+/* style.css gives every .modal-body button a 6px top margin; components here are laid out with gap */
+.modal-body button { margin-top: 0; }
+
+/* Email toolbar: legacy `top` nudges are gone — everything sits on one centre line */
+#email-lib-select-btn, #email-lib-refresh-btn, #email-lib-settings-btn, #email-lib-compose-btn { top: 0; }
+#email-lib-settings-btn svg { top: 0; }
+@media (min-width: 769px) { #email-lib-compose-btn { height: var(--ui-h); } }
+@media (max-width: 768px) { #email-lib-select-btn, #email-lib-refresh-btn, #email-lib-settings-btn { top: 0; } }
+/* Account chip is a control in the same row as the folder select: same height, same size text */
+#email-lib-modal #email-lib-accounts .email-account-chip { height: var(--ui-h); padding: 0 var(--ui-s4); }
+/* Tags toggle: neutral like its siblings; tint only on hover */
+#email-lib-modal .email-search-wrap > .email-tags-toggle-inline.active { background: var(--ui-fill); color: var(--ui-text); }
+#email-lib-modal .email-search-wrap > .email-tags-toggle-inline.active:hover { background: var(--ui-fill-hover); }
+/* Email filter row holds an absolutely-positioned dropdown; overflow-x:auto clipped it. Wrap instead of scroll. */
+#email-lib-modal .memory-category-filters { overflow: visible; flex-wrap: wrap; }
+/* Reader split view: left pane is narrow, keep the control row on one line and let the folder select give way */
+#email-lib-modal:is(.email-reading, :has(.doclib-card-expanded)) .memory-category-filters { flex-wrap: nowrap; }
+#email-lib-modal:is(.email-reading, :has(.doclib-card-expanded)) #email-lib-folder { flex: 0 1 auto; min-width: 72px; }
+#email-lib-compose-btn svg { color: inherit; }
+#email-lib-modal #email-lib-accounts { flex-shrink: 0; }
+#email-lib-modal:is(.email-reading, :has(.doclib-card-expanded)) #email-lib-accounts .email-account-chip { min-width: var(--ui-h); padding: 0; justify-content: center; }
+/* Reader actions: icon + label on one line like every other tonal button (label used to spill out of a 36px column) */
+#email-lib-modal .email-reader-actions-inline .reader-icon-btn { flex-direction: row; gap: var(--ui-s2); padding: 0 var(--ui-s3); }
+#email-lib-modal .email-reader-actions-inline .reader-btn-label { font-size: var(--ui-fs-sm); line-height: 1; letter-spacing: 0; }
+#email-lib-modal .email-reader-actions-inline .reader-icon-btn svg { width: var(--ui-icon-sm); height: var(--ui-icon-sm); }
+#email-lib-modal .email-reader-header { padding-left: var(--ui-s4); padding-right: var(--ui-s4); }
+#email-lib-modal .email-reader-header { padding-left: var(--ui-s4) !important; padding-right: var(--ui-s4) !important; }
+#email-lib-sync-status { font-family: var(--ui-font); font-size: var(--ui-fs-xs); color: var(--ui-text-faint); text-align: center; }
+/* Tabs: icon sits on the same centre line as the label (legacy per-window svg margins removed) */
+#doclib-modal .lib-tab svg { width: var(--ui-icon-sm); height: var(--ui-icon-sm); margin: 0; vertical-align: 0; }
+/* Doclib panel body is inset 14px while its tabs/header are not — align them */
+#doclib-modal .modal-body { padding-left: 0; padding-right: 0; }
+/* Gallery toolbar: legacy `top:2px` nudges and 12px/odd-padding Select button */
+.gallery-toolbar .gallery-search-wrap, .gallery-toolbar .gallery-select-btn { top: 0; }
+.gallery-toolbar .gallery-select-btn { padding: 0 var(--ui-s4); font-size: var(--ui-fs-sm); line-height: 1; }
+.gallery-grid > .gallery-empty { grid-column: 2 / -1; align-self: center; padding: var(--ui-s4); font-size: var(--ui-fs-sm); font-style: normal; color: var(--ui-text-faint); }
+.gallery-toolbar { margin-bottom: var(--ui-s2); }
+#gallery-filter-chips { margin-bottom: var(--ui-s2); }
+/* Minimize carries an inline margin-left:auto; with the title's own auto it split free space and centred the Wardrobe "Auto" switch */
+@media (min-width: 769px) { #wardrobe-modal .modal-minimize-btn { margin-left: 0 !important; } }
+/* Notes pane: header, search, chips and cards were inset 0 / 8 / 8 — one shared gutter like .modal-content */
+@media (min-width: 769px) {
+  #notes-pane.mw-win { padding: var(--ui-s4) var(--ui-s4) 0; box-sizing: border-box; }
+  #notes-pane .notes-search-bar { padding-left: 0; padding-right: 0; }
+  #notes-pane .notes-pane-body { padding-left: 0; padding-right: 0; }
+}
+/* Note composer: it had no inner padding, so title, type switch and Save/Cancel hugged the card border */
+#notes-pane .note-form { padding: var(--ui-s3) var(--ui-s4); gap: var(--ui-s2); box-sizing: border-box; }
+#notes-pane .note-form-meta { flex-wrap: wrap; align-items: center; gap: var(--ui-s2); }
+#notes-pane .note-form-meta .note-form-label { flex: 1 1 140px; min-width: 0; margin: 0; }
+#notes-pane .note-form-meta .note-form-actions-group { flex: 1 0 100%; justify-content: flex-end; gap: var(--ui-s2); }
+@media (max-width: 768px) {
+  #email-lib-modal .memory-category-filters { flex-wrap: nowrap; }
+  #email-lib-modal #email-lib-folder { flex: 0 1 auto; min-width: 72px; }
+}
+
+/* ── Prompt window (#custom-preset-modal) ────────────────────────────── */
+#custom-preset-modal .modal-content { background: var(--bg); }
+#custom-preset-modal .preset-tabs {
+  display: flex; gap: 4px; padding: 4px; margin: 0 0 var(--ui-s3); border: 0; border-radius: var(--ui-r-full); background: var(--ui-fill); overflow: visible;
+}
+#custom-preset-modal .preset-tab {
+  flex: 1 1 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: calc(var(--ui-h) - 4px); padding: 0 var(--ui-s3); margin: 0;
+  border: 0; border-radius: var(--ui-r-full); background: transparent; color: var(--ui-text-muted);
+  font-size: var(--ui-fs-sm); font-weight: var(--ui-fw-medium); line-height: 1; box-shadow: none; transition: background-color .15s, color .15s;
+}
+#custom-preset-modal .preset-tab:hover { color: var(--ui-text); background: transparent; }
+#custom-preset-modal .preset-tab.active { background: var(--bg); color: var(--ui-text); box-shadow: 0 1px 4px rgba(0, 0, 0, .3); border: 0; }
+#custom-preset-modal .preset-tab.active .preset-tab-icon { color: var(--ui-accent); }
+#custom-preset-modal .modal-body label { margin: var(--ui-s3) 0 6px; font-size: var(--ui-fs-xs); font-weight: var(--ui-fw-bold); letter-spacing: .02em; color: var(--ui-text-muted); }
+#custom-preset-modal .modal-body :is(input[type="text"], textarea, select) {
+  background: var(--ui-field-bg); border: 1px solid var(--ui-line); border-radius: var(--ui-r); color: var(--ui-text);
+  font-family: var(--ui-font); font-size: var(--ui-fs-md); padding: 0 var(--ui-s3); margin: 0;
+}
+#custom-preset-modal .modal-body :is(input[type="text"], select) { height: var(--ui-h); }
+#custom-preset-modal .modal-body textarea { padding: var(--ui-s2) var(--ui-s3); line-height: var(--ui-lh); }
+#custom-preset-modal .modal-body :is(input[type="text"], textarea, select):focus { outline: none; border-color: var(--ui-accent); box-shadow: var(--ui-focus); }
+#custom-preset-modal :is(.char-action-btn, .char-expand-btn) {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--ui-h-sm); padding: 0 var(--ui-s3); margin: 0 !important;
+  border: 0; border-radius: var(--ui-r-full); background: var(--ui-fill); color: var(--ui-text); font-size: var(--ui-fs-xs); font-weight: var(--ui-fw-medium); cursor: pointer;
+}
+#custom-preset-modal :is(.char-action-btn, .char-expand-btn):hover { background: var(--ui-fill-hover); }
+#custom-preset-modal .modal-footer { gap: var(--ui-s2); margin-top: var(--ui-s4); padding-top: var(--ui-s3); border-top: 1px solid var(--ui-line); }
+#custom-preset-modal .modal-footer button {
+  height: var(--ui-h); padding: 0 var(--ui-s4); border: 0; border-radius: var(--ui-r-full); background: var(--ui-fill); color: var(--ui-text);
+  font-size: var(--ui-fs-sm); font-weight: var(--ui-fw-medium); display: inline-flex; align-items: center; gap: var(--ui-s2);
+}
+#custom-preset-modal .modal-footer button:hover { background: var(--ui-fill-hover); }
+#custom-preset-modal .modal-footer button#save-custom-preset { background: var(--ui-accent); color: var(--ui-on-accent); font-weight: var(--ui-fw-bold); }
+#custom-preset-modal .modal-footer button#save-custom-preset:hover { background: var(--ui-accent); filter: brightness(1.1); opacity: 1; }
+#custom-preset-modal .char-prompt-wrap textarea { min-height: 140px; padding-bottom: 44px; }
+#custom-preset-modal .char-expand-btn { bottom: 16px; right: var(--ui-s2); background: var(--ui-fill); border: 0; color: var(--ui-text); }

@@ -73,9 +73,6 @@ function _ensureStyles() {
   const style = document.createElement('style');
   style.id = 'wardrobe-module-styles';
   style.textContent = `
-    .wardrobe-tabs {
-      padding: 0 14px;
-    }
     .wardrobe-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
@@ -95,14 +92,12 @@ function _ensureStyles() {
       text-align: center;
       cursor: pointer;
       position: relative;
-      transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s, background-color 0.15s;
+      transition: border-color 0.15s, background-color 0.15s;
       user-select: none;
       box-sizing: border-box;
     }
     .wardrobe-card:hover {
-      transform: translateY(-2px);
       border-color: color-mix(in srgb, var(--accent, var(--red)) 50%, var(--border));
-      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
     }
     .wardrobe-card.selected {
       border-color: var(--accent, var(--red));
@@ -130,10 +125,6 @@ function _ensureStyles() {
       object-fit: cover;
       object-position: center top;
       pointer-events: none;
-      transition: transform 0.25s ease;
-    }
-    .wardrobe-card:hover .wardrobe-card-preview img {
-      transform: scale(1.04);
     }
     .wardrobe-card-check {
       position: absolute;
@@ -304,14 +295,14 @@ export function openWardrobe() {
     modal.className = 'modal';
     modal.id = 'wardrobe-modal';
     modal.innerHTML = `
-      <div class="modal-content wardrobe-modal-content" style="background:var(--bg); width:min(740px, 94vw); height:600px; max-height:85vh; display:flex; flex-direction:column; overflow:hidden;">
+      <div class="modal-content wardrobe-modal-content" style="width:min(740px, 94vw); height:600px; max-height:85vh; display:flex; flex-direction:column; overflow:hidden;">
         <div class="modal-header">
           <h4>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px">
               <path d="M12 2a3 3 0 0 0-3 3c0 .8.3 1.5.8 2.1L2.4 15.6A2 2 0 0 0 4 19h16a2 2 0 0 0 1.6-3.4L14.2 7.1c.5-.6.8-1.3.8-2.1a3 3 0 0 0-3-3z"/>
             </svg>Wardrobe
           </h4>
-          <label class="admin-switch-inline" style="margin-left:auto;margin-right:12px;font-size:12px;cursor:pointer;user-select:none;" title="Monika adapts appearance automatically based on context">
+          <label class="admin-switch-inline" style="margin:0 var(--ui-s2) 0 0;font-size:var(--ui-fs-sm);display:inline-flex;align-items:center;gap:var(--ui-s2);cursor:pointer;user-select:none;" title="Monika adapts appearance automatically based on context">
             <span>Auto</span>
             <label class="admin-switch" title="Auto appearance">
               <input type="checkbox" id="wardrobe-auto-toggle" />
@@ -328,7 +319,7 @@ export function openWardrobe() {
           <button class="memory-tab wardrobe-tab ${_activeTab === 'backgrounds' ? 'active' : ''}" data-tab="backgrounds" role="tab">Backgrounds</button>
         </div>
 
-        <div class="modal-body wardrobe-modal-body" style="flex:1 1 auto; min-height:0; overflow-y:auto; padding:14px;">
+        <div class="modal-body wardrobe-modal-body" style="flex:1 1 auto; min-height:0; overflow-y:auto; padding:0;">
           <div class="wardrobe-grid" id="wardrobe-grid-container"></div>
         </div>
       </div>

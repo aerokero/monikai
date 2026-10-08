@@ -247,7 +247,7 @@
   <link rel="preload" as="font" type="font/woff2" crossorigin href="/static/fonts/FiraCode-SemiBold.woff2">
   <link rel="stylesheet" href="/static/style.css?v=20261008tasks4">
   <link rel="stylesheet" href="/static/sidebar.css">
-  <link rel="stylesheet" href="/static/composer.css?v=20261005m1">
+  <link rel="stylesheet" href="/static/composer.css?v=20261008v1">
   <link rel="stylesheet" href="/static/ui.css">
   <link rel="stylesheet" href="/static/windows.css">
   <link rel="modulepreload" href="/static/app.js?v=20260923savings_sync2">
@@ -1037,6 +1037,10 @@
         <div class="composer-text-row">
           <div id="message-ghost" class="ghost-text-overlay" aria-hidden="true"></div>
           <textarea id="message" placeholder="Ask Monika anything..." required autocomplete="off" aria-label="Message input" rows="1" autofocus></textarea>
+          <div id="voice-overlay" class="voice-overlay" hidden aria-live="polite">
+            <canvas id="voice-viz" aria-hidden="true"></canvas>
+            <span id="voice-status" class="voice-status"></span>
+          </div>
         </div>
 
         <!-- Row 2: Actions Bar (Left: Tools / Chips, Right: Model Picker / Mic / Send) -->
@@ -2680,7 +2684,7 @@
 <script type="module" src="/static/js/tourHints.js"></script>
 <script type="module" src="/static/js/tourAutoplay.js"></script>
 <script type="module" src="/static/js/fileHandler.js"></script>
-<script type="module" src="/static/js/voiceRecorder.js?v=20260924toolaxis1"></script>
+<script type="module" src="/static/js/voiceRecorder.js?v=20261008v2"></script>
 <script type="module" src="/static/js/models.js?v=20260715startupcalm2"></script>  <!-- This must come BEFORE app.js -->
 <script type="module" src="/static/js/rag.js"></script>
 <script type="module" src="/static/js/presets.js"></script>

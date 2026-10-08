@@ -20,6 +20,16 @@ let recordingInterval = null;
 let _recognition = null;
 let _browserTranscript = '';
 
+// Visualizer / UI state
+let _audioCtx = null;
+let _analyser = null;
+let _vizRaf = 0;
+let _cancelled = false;
+let _sendAfter = false; // send the message as soon as the transcript lands
+let _vizMode = ''; // '' | 'recording' | 'transcribing'
+
+const BAR_W = 3, BAR_GAP = 3;
+
 // Cached STT provider — refreshed on settings change
 let _sttProvider = 'disabled';
 
@@ -49,11 +59,97 @@ function formatTime(seconds) {
   return `${mins}:${secs}`;
 }
 
+
+/**
+ * Waveform in the composer: live mic levels while recording, a travelling
+ * wave while the server transcribes.
+ */
+function _setVizMode(mode) {
+  _vizMode = mode;
+  const pill = document.querySelector('.composer-pill');
+  const overlay = document.getElementById('voice-overlay');
+  if (pill) {
+    pill.classList.toggle('voice-recording', mode === 'recording');
+    pill.classList.toggle('voice-transcribing', mode === 'transcribing');
+  }
+  if (overlay) overlay.hidden = !mode;
+}
+
+function _startViz(stream) {
+  const canvas = document.getElementById('voice-viz');
+  const status = document.getElementById('voice-status');
+  if (!canvas) return;
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (Ctx) {
+    _audioCtx = new Ctx();
+    _analyser = _audioCtx.createAnalyser();
+    _analyser.fftSize = 512;
+    _audioCtx.createMediaStreamSource(stream).connect(_analyser);
+  }
+  const buf = new Uint8Array(_analyser ? _analyser.fftSize : 0);
+  const levels = [];
+  let lastPush = 0;
+  const g = canvas.getContext('2d');
+
+  const frame = (t) => {
+    _vizRaf = requestAnimationFrame(frame);
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    if (canvas.width !== Math.round(w * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); }
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    const n = Math.floor(w / (BAR_W + BAR_GAP));
+    const css = getComputedStyle(canvas);
+    const color = _vizMode === 'transcribing' ? css.getPropertyValue('--ui-text-muted') || '#888' : css.getPropertyValue('--color-recording') || '#ff3b30';
+    g.fillStyle = color.trim();
+
+    if (_vizMode === 'recording' && _analyser && t - lastPush > 45) {
+      lastPush = t;
+      _analyser.getByteTimeDomainData(buf);
+      let sum = 0;
+      for (const v of buf) { const d = (v - 128) / 128; sum += d * d; }
+      levels.push(Math.min(1, Math.sqrt(sum / buf.length) * 5)); // ponytail: fixed gain, add AGC if quiet mics look flat
+      if (levels.length > n) levels.shift();
+    }
+    for (let i = 0; i < n; i++) {
+      let v;
+      if (_vizMode === 'transcribing') {
+        v = 0.22 + 0.18 * Math.sin(t / 220 - i * 0.45);
+      } else {
+        v = levels[levels.length - n + i] ?? 0;
+      }
+      const bh = Math.max(3, v * h);
+      const x = i * (BAR_W + BAR_GAP);
+      g.globalAlpha = _vizMode === 'recording' ? 0.35 + 0.65 * (i / n) : 0.7;
+      g.beginPath();
+      g.roundRect(x, (h - bh) / 2, BAR_W, bh, BAR_W / 2);
+      g.fill();
+    }
+    if (_vizMode === 'recording' && recordingStartTime && status) {
+      status.textContent = formatTime(Math.floor((Date.now() - recordingStartTime) / 1000));
+    }
+  };
+  _vizRaf = requestAnimationFrame(frame);
+}
+
+function _stopViz() {
+  cancelAnimationFrame(_vizRaf);
+  _vizRaf = 0;
+  if (_audioCtx) { _audioCtx.close().catch(() => {}); _audioCtx = null; _analyser = null; }
+  _setVizMode('');
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && isRecording) { _cancelled = true; stopRecording(); }
+});
+
 /**
  * Reset UI state after recording ends
  */
 function _resetRecordingUI() {
   isRecording = false;
+  _sendAfter = false;
+  _stopViz();
   const micBtn = document.getElementById('composer-mic-btn');
   if (micBtn) {
     micBtn.setAttribute('aria-pressed', 'false');
@@ -112,6 +208,12 @@ function stopBrowserSTT() {
   return _browserTranscript.trim();
 }
 
+function _submitIfRequested() {
+  if (!_sendAfter) return;
+  _sendAfter = false;
+  document.getElementById('chat-form')?.requestSubmit();
+}
+
 /**
  * Send audio to server for transcription
  */
@@ -149,6 +251,13 @@ function insertTranscription(text, showToast) {
   input.dispatchEvent(new Event('input', { bubbles: true }));
   input.focus();
 
+  const pill = input.closest('.composer-pill');
+  if (pill) {
+    pill.classList.remove('voice-inserted');
+    void pill.offsetWidth; // restart animation
+    pill.classList.add('voice-inserted');
+    setTimeout(() => pill.classList.remove('voice-inserted'), 900);
+  }
   if (showToast) showToast('Transcribed');
   return true;
 }
@@ -203,6 +312,12 @@ export function startRecording(onFileCreated, showToast, showError) {
 
       mediaRecorder.onstop = async () => {
         stream.getTracks().forEach(track => track.stop());
+        if (_cancelled) {
+          _cancelled = false;
+          stopBrowserSTT();
+          _resetRecordingUI();
+          return;
+        }
 
         const audioBlob = new Blob(audioChunks, { type: recordingType });
         const provider = _sttProvider;
@@ -210,7 +325,7 @@ export function startRecording(onFileCreated, showToast, showError) {
         if (provider === 'browser') {
           const transcript = stopBrowserSTT();
           if (transcript) {
-            if (insertTranscription(transcript, showToast)) notifyVoiceTranscription(transcript);
+            if (insertTranscription(transcript, showToast)) { notifyVoiceTranscription(transcript); _submitIfRequested(); }
           } else {
             if (showToast) showToast('No speech detected');
             const audioFile = new File([audioBlob], `voice-message-${Date.now()}.${extension}`, { type: recordingType });
@@ -218,11 +333,13 @@ export function startRecording(onFileCreated, showToast, showError) {
           }
         } else if (provider === 'local' || provider.startsWith('endpoint:')) {
           // Show "Transcribing..." feedback
-          if (showToast) showToast('Transcribing...', 5000);
+          _setVizMode('transcribing');
+          const st = document.getElementById('voice-status');
+          if (st) st.textContent = 'Transcribing…';
           try {
             const transcript = await transcribeOnServer(audioBlob);
             if (transcript) {
-              if (insertTranscription(transcript, showToast)) notifyVoiceTranscription(transcript);
+              if (insertTranscription(transcript, showToast)) { notifyVoiceTranscription(transcript); _submitIfRequested(); }
             } else {
               if (showToast) showToast('No speech detected');
             }
@@ -244,22 +361,22 @@ export function startRecording(onFileCreated, showToast, showError) {
 
       mediaRecorder.start();
       isRecording = true;
+      _cancelled = false;
       if (micBtn) {
         micBtn.disabled = false;
         micBtn.setAttribute('aria-pressed', 'true');
         micBtn.setAttribute('aria-label', 'Stop recording');
         micBtn.title = 'Stop recording';
       }
-      recordingStartTime = new Date();
+      recordingStartTime = Date.now();
+      _setVizMode('recording');
+      _startViz(stream);
 
       // Start browser STT if that's the provider
       if (_sttProvider === 'browser') {
         startBrowserSTT();
       }
 
-      if (showToast) {
-        showToast('Recording...');
-      }
     })
     .catch(error => {
       activeStream?.getTracks().forEach(track => track.stop());
@@ -280,7 +397,8 @@ export function startRecording(onFileCreated, showToast, showError) {
 /**
  * Stop voice recording
  */
-export function stopRecording() {
+export function stopRecording(send = false) {
+  if (send) _sendAfter = true;
   if (mediaRecorder && mediaRecorder.state === 'recording') {
     mediaRecorder.stop();
     // isRecording will be set to false in _resetRecordingUI called from onstop
@@ -292,6 +410,11 @@ export function stopRecording() {
 /**
  * Check if currently recording
  */
+export function requestSendAfterTranscribe() {
+  if (_vizMode === 'transcribing') _sendAfter = true;
+  return _vizMode === 'transcribing';
+}
+
 export function getIsRecording() {
   return isRecording;
 }
@@ -307,6 +430,7 @@ export function init() {
 const voiceRecorderModule = {
   startRecording,
   stopRecording,
+  requestSendAfterTranscribe,
   getIsRecording,
   init,
   refreshSttProvider,

@@ -44,3 +44,4 @@ caldav
 nh3
 pypdf
 beautifulsoup4
+faster-whisper

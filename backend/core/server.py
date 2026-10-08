@@ -493,6 +493,11 @@ except Exception as _voice_gateway_err:
 # Keep the compatibility bridge for model discovery/default-chat and older
 # clients.  Native Odysseus chat routes were mounted above, so Starlette
 # resolves /api/chat(_stream) to the native conversation pipeline first.
+
+# Composer mic -> speech-to-text (/api/stt/*); provider comes from settings.json.
+from backend.odysseus.routes.stt_routes import setup_stt_routes
+from backend.odysseus.services.stt.stt_service import STTService
+app.include_router(setup_stt_routes(STTService()))
 register_odysseus_http_routes(app, emit_to_frontend=_emit_to_frontend)
 
 class _RevalidatingStatic(StaticFiles):

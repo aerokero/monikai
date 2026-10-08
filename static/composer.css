@@ -786,3 +786,51 @@
     border-radius: 22px !important;
   }
 }
+
+/* ── Voice dictation: waveform replaces the placeholder ── */
+.composer-pill .voice-overlay {
+  position: absolute;
+  inset: 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  pointer-events: none;
+}
+.composer-pill .voice-overlay[hidden] { display: none; }
+.composer-pill #voice-viz {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+}
+.composer-pill .voice-status {
+  flex: 0 0 auto;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-text-secondary);
+}
+.composer-pill.voice-recording textarea#message,
+.composer-pill.voice-transcribing textarea#message { visibility: hidden; }
+.composer-pill.voice-recording #composer-mic-btn { animation: voice-pulse 1.6s ease-out infinite; }
+.composer-pill.voice-transcribing .voice-status {
+  background: linear-gradient(90deg, var(--ui-text-muted) 25%, var(--fg) 50%, var(--ui-text-muted) 75%) 0 0 / 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: voice-shimmer 1.4s linear infinite;
+}
+.composer-pill.voice-inserted textarea#message { animation: voice-reveal 0.55s ease-out; }
+
+@keyframes voice-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-recording) 45%, transparent); }
+  100% { box-shadow: 0 0 0 10px transparent; }
+}
+@keyframes voice-shimmer { to { background-position: -200% 0; } }
+@keyframes voice-reveal {
+  from { opacity: 0; filter: blur(4px); transform: translateY(3px); }
+  to { opacity: 1; filter: none; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-pill.voice-recording #composer-mic-btn,
+  .composer-pill.voice-transcribing .voice-status,
+  .composer-pill.voice-inserted textarea#message { animation: none; }
+}
