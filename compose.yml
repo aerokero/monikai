@@ -61,6 +61,11 @@ services:
       KOKORO_DEVICE: "auto"
       KOKORO_POLISH_MODE: "${KOKORO_POLISH_MODE:-experimental}"
       HF_HOME: "/app/data/huggingface"
+      # Vector store behind tool-RAG and memory recall, plus a multilingual
+      # embedder (the default all-MiniLM-L6-v2 is English-only).
+      CHROMADB_HOST: "chromadb"
+      CHROMADB_PORT: "8000"
+      FASTEMBED_MODEL: "${FASTEMBED_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}"
       XTTS_SERVER_URL: "${XTTS_SERVER_URL:-http://192.168.1.10:8020}"
       XTTS_DEFAULT_SPEAKER: "${XTTS_DEFAULT_SPEAKER:-leda}"
 
@@ -75,6 +80,10 @@ services:
 
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+    networks:
+      - default
+      - cloudflare
 
     devices:
       - /dev/snd:/dev/snd
@@ -101,6 +110,13 @@ services:
       start_period: 90s
 
     stop_grace_period: 30s
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: monikai-chromadb
+    restart: unless-stopped
+    volumes:
+      - /srv/fast/containers/monikai/data/chroma:/data
 
   watchtower:
     image: containrrr/watchtower:latest
@@ -146,3 +162,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
+networks:
+  cloudflare:
+    external: true

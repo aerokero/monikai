@@ -198,6 +198,7 @@ _ROUTING_PATTERNS: tuple[tuple[str, str, Pattern[str]], ...] = tuple(
         ("notes", "Polish note/task action request", r"\b(?:dodaj|zapisz|dopisz|utwórz|utworz|stwórz|stworz|ustaw|przypomnij|pamiętaj|pamietaj)\b.{0,140}\b(?:notatk\w*|zadani\w*|todo\w*|checklist\w*|przypomn\w*|listę?\s+zakup\w*)\b"),
         ("notes", "Polish note/task lookup request", r"\b(?:pokaż|pokaz|wyświetl|wyswietl|sprawdź|sprawdz|lista|znajdź|znajdz|co mam)\b.{0,120}\b(?:notatk\w*|zadani\w*|todo\w*|przypomn\w*|checklist\w*)\b"),
         ("notes", "Polish reminder or shopping request", r"\b(?:przypomnij\w*|nie\s+zapomnij|kup|kupić|kupic)\b(?:.{0,120})?"),
+        ("notes", "alarm clock request", r"\b(?:budzik\w*|obudź\w*|obudz\w*|pobudk\w*|drzemk\w*|wake\s+me|alarm\s+(?:for|at|clock))\b"),
 
         # Home Assistant / smart-home commands. These are intentionally
         # separate from UI theme commands: “tryb nocny w Home Assistant” is a

@@ -99,6 +99,8 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "manage_webhooks": "Webhook management: list, add, delete, enable, or disable webhooks.",
     "api_call": "Call a configured non-Home-Assistant API integration by name (Miniflux, Gitea, Linkding, Jellyfin, RSS reader, git forge, bookmark manager, or any other registered service). Make a GET/POST/PUT/PATCH/DELETE request to the integration's endpoint path, with an optional JSON body. Use whenever the user asks to query or control a connected service that has no dedicated named tool.",
     "home_assistant_control": "Control one explicitly named, configured Home Assistant light, switch, or scene through the shared HA agent, including an explicit interactive all-lights command. Natural requests such as 'turn on the kitchen lamp', 'set the lighting to relaxation', or 'activate the relaxation scene' indicate smart-home intent; do not require the user to say Home Assistant. A request about conversation tone is not smart-home control, and 'mode' alone is ambiguous. This is not the MonikAI UI theme and does not allow arbitrary HA service calls.",
+    "manage_alarms": "Alarm clock / budzik ringing on the server speakers: set, list, edit, delete, enable, disable, stop or snooze wake-up alarms ('obudź mnie o 6:30', 'budzik w dni robocze na 7'). Use this, not notes or tasks, for alarms.",
+    "manage_shopping_list": "Home Assistant shopping list (lista zakupów): list, add, remove items. Default shopping list; a notes checklist only when the user asks for it in notes.",
     "print_text": "Print explicitly requested plain text on the configured Canon TS3700 printer. Always presents the exact title and document in a confirmation card; only print after the user approves that specific card.",
     "get_print_status": "Check the configured Canon printer status and CUPS print queue. Read only; does not print or change settings.",
     "manage_tokens": "API token management: list, create, or delete API access tokens.",
@@ -477,6 +479,12 @@ class ToolIndex:
                    "tryb relaksu", "scena trybu relaksu", "smart home",
                    "scena tryb nocny"}):
             {"home_assistant_control"},
+        frozenset({"alarm", "alarm clock", "wake me", "wake-up", "budzik", "budzika",
+                   "budzik", "obudź", "obudz", "pobudka", "drzemka", "snooze"}):
+            {"manage_alarms"},
+        frozenset({"shopping list", "grocery", "groceries", "lista zakupów", "liste zakupow",
+                   "listę zakupów", "listy zakupów", "zakupy", "kupić", "kupic"}):
+            {"manage_shopping_list", "manage_notes"},
         # Managing EXISTING research in the Library — open/read/find/delete.
         frozenset({"my research", "the research", "research on", "open research",
                    "read research", "find research", "delete research",

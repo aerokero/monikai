@@ -28,6 +28,7 @@ export const UI_VIS_MAP = {
   'tool-notes':          '#tool-notes-btn, #rail-notes',
   'tool-tasks':          '#tool-tasks-btn, #rail-tasks',
   'tool-savings':        '#tool-savings-btn, #rail-savings',
+  'tool-alarms':         '#tool-alarms-btn, #rail-alarms',
   'tool-theme':          '#tool-theme-btn, #rail-theme',
   'user-bar':            '#user-bar-profile',
   'sidebar-settings-btn':'#user-bar-settings',

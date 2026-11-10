@@ -165,6 +165,7 @@ _PLAN_MODE_KNOWN_MUTATORS = {
     # Controls shell processes (kill); plan mode can't run bash anyway.
     "manage_bg_jobs",
     "home_assistant_control",
+    "manage_alarms", "manage_shopping_list",
 }
 
 

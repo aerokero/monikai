@@ -225,7 +225,7 @@ def _process_office_document(
 
     markdown = convert_to_markdown(path)
     if markdown and markdown.strip():
-        title = os.path.splitext(os.path.basename(path))[0]
+        title = os.path.splitext(os.path.basename(display_name or path))[0]
         body, marker = _truncate_inline(markdown)
 
         # Persist the full extracted text as a Document. The agent's existing

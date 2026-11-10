@@ -48,48 +48,6 @@ def test_streaming_transcript_distinguishes_growth_revision_and_new_chunk():
     )
 
 
-async def test_manual_voice_turn_delivers_brief_before_activity_end():
-    events = []
-
-    class FakeThinker:
-        async def prepare_spoken_reply(self, text):
-            events.append(("prepare", text))
-            return "Gotowe."
-
-        def mark_voice_delivered(self):
-            events.append(("marked", True))
-
-    class FakeSession:
-        async def send_realtime_input(self, **kwargs):
-            events.append((next(iter(kwargs)), kwargs))
-
-    loop = AudioLoop.__new__(AudioLoop)
-    loop.chat_buffer = {"sender": "Ty", "text": "pełna wypowiedź użytkownika"}
-    loop._last_input_transcription = ""
-    loop.thinker = FakeThinker()
-    loop.session = FakeSession()
-    loop.out_queue = None
-    loop._is_speaking = False
-    loop._manual_voice_activity_open = True
-    loop._voice_finalize_task = asyncio.current_task()
-    loop._suppress_spoken_output = False
-    loop._dedicated_speech_enabled = lambda: True
-
-    async def deliver(reply, *, speak):
-        events.append(("deliver", (reply, speak)))
-        return True
-
-    loop.deliver_authored_reply = deliver
-
-    await loop._finalize_manual_voice_turn()
-
-    assert [kind for kind, _ in events] == ["prepare", "activity_end", "deliver", "marked"]
-    assert events[2][1] == ("Gotowe.", True)
-    assert not any(kind == "text" for kind, _ in events)
-    assert loop._suppress_spoken_output is True
-    assert loop._manual_voice_activity_open is False
-
-
 async def test_authored_reply_is_displayed_and_synthesized_without_rewrite(monkeypatch):
     authored = "Po prostu siadasz i robisz."
     transcripts = []
@@ -110,6 +68,8 @@ async def test_authored_reply_is_displayed_and_synthesized_without_rewrite(monke
             "timeout_sec": 2.0,
         },
     )
+    # Bypass the global voice-output service so the fake synthesizer is used.
+    monkeypatch.setattr("backend.conversation.voice_output.get_voice_output_service", lambda: None)
     loop = AudioLoop.__new__(AudioLoop)
     loop.chat_buffer = {"sender": None, "text": ""}
     loop._ai_turn_open = False
@@ -251,7 +211,6 @@ async def test_unintelligible_manual_voice_turn_closes_live_activity_without_rep
     loop._manual_voice_activity_open = True
     loop._voice_finalize_task = asyncio.current_task()
     loop._suppress_spoken_output = False
-    loop.thinker = SimpleNamespace(update_voice_transcript=lambda text: events.append(("clear", text)))
     loop._last_speech_trace = {}
 
     async def deliver(reply, *, speak):
@@ -261,7 +220,7 @@ async def test_unintelligible_manual_voice_turn_closes_live_activity_without_rep
 
     await loop._finalize_manual_voice_turn()
 
-    assert [event[0] for event in events] == ["live", "clear"]
+    assert [event[0] for event in events] == ["live"]
     assert loop._manual_voice_activity_open is False
     assert loop._suppress_spoken_output is True
     assert loop._last_speech_trace["status"] == "ignored"
@@ -284,13 +243,7 @@ async def test_lore_learning_runs_after_matching_authored_turn(monkeypatch):
     )
     loop = AudioLoop.__new__(AudioLoop)
     loop.lore_learning_engine = FakeLearningEngine()
-    loop.thinker = SimpleNamespace(
-        last_trace={
-            "status": "prepared",
-            "source": "Pracuję w Warszawie.",
-            "reply_core": "Rozumiem.",
-        }
-    )
+    loop._last_user_text = "Pracuję w Warszawie."
     loop.session_manager = SimpleNamespace(
         get_current_session_id=lambda: "session-1"
     )

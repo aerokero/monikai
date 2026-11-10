@@ -829,7 +829,18 @@ class ManageDocumentTool:
                 doc_id = args.get("document_id") or args.get("id") or args.get("uid")
                 if not doc_id:
                     return {"error": "Need document_id (use action=list to find one)", "exit_code": 1}
-                doc = _get_owned_document(db, Document, doc_id, owner, active_only=True)
+                doc = _get_owned_document(db, Document, doc_id, owner)
+                if doc and not doc.is_active:
+                    # Closing the editor tab soft-deletes an attachment's
+                    # auto-created copy, but the chat still points at it. Keep
+                    # it readable; any other deleted document stays gone.
+                    from core.database import DocumentVersion
+                    first = db.query(DocumentVersion).filter(
+                        DocumentVersion.document_id == doc.id,
+                        DocumentVersion.version_number == 1,
+                    ).first()
+                    if not first or first.source != "upload":
+                        doc = None
                 if not doc:
                     return {"error": f"Document '{doc_id}' not found", "exit_code": 1}
                 body = doc.current_content or ""

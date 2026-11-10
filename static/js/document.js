@@ -10660,7 +10660,7 @@ import { bindMenuDismiss, dismissOrRemove } from './escMenuStack.js';
     }
 
     // Capture old content before updating the map
-    const textarea = document.getElementById('doc-editor-textarea');
+    let textarea = document.getElementById('doc-editor-textarea');
     const oldContent = (docId === activeDocId && textarea) ? textarea.value : '';
     const isExistingDoc = docs.has(docId);
     if (isExistingDoc) {
@@ -10717,6 +10717,10 @@ import { bindMenuDismiss, dismissOrRemove } from './escMenuStack.js';
     if (!data.title) autoTitleFromContent(newContent, docId);
 
     if (!isOpen) openPanel();
+    // The editor textarea only exists once the panel is open. Without this
+    // re-query the first doc of a session (e.g. an Office attachment) never got
+    // its content, and the next autosave overwrote the saved text with ''.
+    textarea = document.getElementById('doc-editor-textarea');
 
     // Force doc button visible (overrides appearance settings & toolbar collapse)
     const toggleBtn = document.getElementById('overflow-doc-btn');

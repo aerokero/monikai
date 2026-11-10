@@ -2636,6 +2636,13 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         }
         if _omit_temperature(provider, model):
             payload.pop("temperature", None)
+        # OpenRouter forwards cache_control to Anthropic: cache the system prefix
+        # re-sent every agent round (cache reads ~10% of input price).
+        if provider == "openrouter" and model.startswith("anthropic/") and messages_copy[0].get("role") == "system":
+            first = messages_copy[0]
+            if isinstance(first.get("content"), str):
+                messages_copy[0] = {**first, "content": [
+                    {"type": "text", "text": first["content"], "cache_control": {"type": "ephemeral"}}]}
         if provider not in {"openrouter", "groq"}:
             payload["stream_options"] = {"include_usage": True}
         if max_tokens and max_tokens > 0:

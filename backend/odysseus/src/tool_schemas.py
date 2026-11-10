@@ -617,7 +617,7 @@ FUNCTION_TOOL_SCHEMAS = [
                     "trigger_event": {"type": "string", "enum": ["session_created", "message_sent", "document_created", "memory_added", "research_completed", "email_received", "skill_added"],
                                       "description": "Event name (for trigger_type=event)"},
                     "trigger_count": {"type": "integer", "description": "Fire every N events (for trigger_type=event)"},
-                    "output_target": {"type": "string", "description": "Where results go. Defaults to 'session' (results land in a dedicated chat session the user reads) — this is the right choice for 'summarize for me' / 'send to me'. Do NOT go hunting for the user's email address; only use an email MCP tool name here if the user explicitly asked to be emailed AND an address is already known."}
+                    "output_target": {"type": "string", "description": "Where results go. Defaults to 'session' (results land in a dedicated chat session the user reads) — this is the right choice for 'summarize for me' / 'send to me'. Use 'speaker' when the user wants Monika to SAY it aloud in the room (spoken routines, e.g. 'every evening at 21 remind me out loud about pills'). Do NOT go hunting for the user's email address; only use an email MCP tool name here if the user explicitly asked to be emailed AND an address is already known."}
                 },
                 "required": ["action"]
             }
@@ -704,6 +704,43 @@ FUNCTION_TOOL_SCHEMAS = [
                     "color": {"type": "string", "description": "For action='set': a supported color value"}
                 },
                 "required": ["target", "action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_alarms",
+            "description": "Alarm clock that rings on the server speakers in the user's room (wake-up alarms, 'obudź mnie o 6:30', 'budzik na 7 w dni robocze'). Use this — not manage_notes or manage_tasks — for any alarm/budzik/wake-up request. Actions: list, set (new alarm), edit, delete, enable, disable, stop (silence a ringing alarm), snooze. Omit `days` for a one-shot alarm (next occurrence of `time`, or on `date`). After stopping, Monika greets the user unless greeting=false.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["list", "set", "edit", "delete", "enable", "disable", "stop", "snooze"]},
+                    "alarm_id": {"type": "string", "description": "Alarm id from list (edit/delete/enable/disable)"},
+                    "time": {"type": "string", "description": "Local 24h time HH:MM, e.g. '06:30'"},
+                    "days": {"type": "string", "description": "Recurrence: 'daily', 'weekdays', 'weekend', a range like 'pn-pt', or a list like 'mon,wed,fri'. Empty/omitted = one-shot."},
+                    "date": {"type": "string", "description": "YYYY-MM-DD for a one-shot alarm on a specific day"},
+                    "label": {"type": "string", "description": "Optional name spoken/shown, e.g. 'Praca'"},
+                    "sound": {"type": "string", "description": "'tone' (generated beeps, default) or the file name of a custom sound in the alarms folder"},
+                    "greeting": {"type": "boolean", "description": "Spoken morning greeting after the alarm is stopped (default true)"},
+                    "minutes": {"type": "integer", "description": "Snooze length in minutes"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_shopping_list",
+            "description": "The Home Assistant shopping list (todo.shopping_list, also visible in the HA phone app): list, add, or remove items. This is the default shopping list for 'dodaj mleko do listy zakupów', 'co mam kupić'. Only when the user explicitly asks for the shopping list in notes ('w notatkach') use a manage_notes checklist instead.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["list", "add", "remove"]},
+                    "items": {"type": "array", "items": {"type": "string"}, "description": "Items to add/remove, one product per entry"}
+                },
+                "required": ["action"]
             }
         }
     },
@@ -857,15 +894,16 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "manage_documents",
-            "description": "Manage documents: list all documents (with optional search/language filter), delete documents, or run tidy cleanup.",
+            "description": "Manage documents: list all documents (with optional search/language filter), read a document's text (paged with offset; use this for attachments whose inline text was truncated), delete documents, or run tidy cleanup.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string", "enum": ["list", "delete", "tidy"]},
-                    "document_id": {"type": "string", "description": "Document ID (for delete)"},
+                    "action": {"type": "string", "enum": ["list", "read", "delete", "tidy"]},
+                    "document_id": {"type": "string", "description": "Document ID (for read/delete)"},
+                    "offset": {"type": "integer", "description": "Character offset to start reading from (for read; continue from next_offset)"},
                     "search": {"type": "string", "description": "Search query (for list)"},
                     "language": {"type": "string", "description": "Filter by language (for list)"},
-                    "limit": {"type": "integer", "description": "Max results (for list, default 50)"}
+                    "limit": {"type": "integer", "description": "Max results (for list, default 50) or max characters (for read)"}
                 },
                 "required": ["action"]
             }

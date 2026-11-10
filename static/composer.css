@@ -709,6 +709,30 @@
   overflow-y: auto;
   flex-shrink: 0;
 }
+/* Pending attachments: a card on the composer's own surface, so chips stay
+   readable over the character background instead of floating on it. */
+#attach-strip:not(:empty) {
+  position: relative;
+  z-index: 5; /* above the VN character stage, which is positioned and would cover it */
+  background: var(--input-bg, var(--panel));
+  border: 1px solid var(--input-border, var(--border));
+  border-radius: 20px;
+  padding: 10px 12px;
+  margin: 0 auto 8px;
+  gap: 10px;
+  box-shadow: rgba(0, 0, 0, 0.16) 0 2px 8px -2px;
+}
+#attach-strip .thumb {
+  color: var(--fg);
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  max-width: 220px;
+}
+#attach-strip .thumb span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#attach-strip .thumb:not(.thumb-image) button { color: var(--fg); background: none; border: 0; cursor: pointer; font-size: 18px; line-height: 1; }
+#attach-strip .thumb.thumb-image { padding: 0; }
+#attach-strip .thumb-img { max-width: 120px; max-height: 72px; border-radius: 12px; }
 @media (max-width: 768px) {
   .chat-container .composer-pill :is(#overflow-plus-btn, #composer-mic-btn, #send-btn, #model-picker-btn),
   .chat-meta-overlay .export-dl-btn {

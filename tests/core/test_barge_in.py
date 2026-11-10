@@ -52,6 +52,17 @@ async def test_audio_output_pause_holds_position_and_stop_releases_players():
 
 
 @pytest.mark.asyncio
+async def test_audio_output_stalled_callback_releases_player():
+    output = AudioOutput(rate=16000, channels=1)
+    pcm = np.full(160, 1000, np.int16).tobytes()
+
+    with pytest.raises(TimeoutError, match="callback did not finish"):
+        await output.play(pcm, 16000)
+
+    assert not output.busy
+
+
+@pytest.mark.asyncio
 async def test_audio_output_ducks_smoothly():
     output = AudioOutput(rate=16000, channels=1)
     asyncio.create_task(output.play(np.full(3200, 10000, np.int16).tobytes(), 16000))

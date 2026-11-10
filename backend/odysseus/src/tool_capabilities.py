@@ -8,6 +8,7 @@ run-local integrity gates before dispatch.
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
@@ -270,6 +271,15 @@ _register(
     # api_call/app_api return remote or stored application data, and the
     # admin managers can echo user-controlled configuration.  Conservatively
     # retain the action effect while treating every successful result as data.
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
+    {"manage_alarms"},
+    ToolEffect.WRITE_PRIVATE,
+)
+_register(
+    {"manage_shopping_list"},
+    ToolEffect.EXTERNAL_SIDE_EFFECT,
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
 _register(
@@ -632,6 +642,15 @@ def messages_contain_external_untrusted_context(messages: Iterable[dict]) -> boo
     return False
 
 
+# The chat upload pipeline appends this pointer when it caps an attachment's
+# inline text. It sits in the *user's* turn, so the document it names is one the
+# user handed over themselves.
+_ATTACHED_DOCUMENT_POINTER = re.compile(
+    r"truncated for inline context \u2014 full [\d,]+ chars saved as document `([0-9a-fA-F-]{36})`"
+)
+_DOCUMENT_READ_ACTIONS = frozenset({"read", "view", "open", "get"})
+
+
 @dataclass
 class ToolRunSecurityContext:
     """Server-owned integrity state for one agent run."""
@@ -648,6 +667,21 @@ class ToolRunSecurityContext:
     # The bypass affects only this automatic gate; current tool policy, ownership,
     # workspace confinement, and execution/sandbox restrictions still apply.
     approval_gate_bypassed: bool = False
+    # Documents the user attached in this conversation. Paging through one is
+    # not an escalation, so it stays allowed after untrusted content was read
+    # (the attachment's own text is what armed the gate in the first place).
+    attached_document_ids: set[str] = field(default_factory=set)
+
+    def _reads_attached_document(self, content: Any) -> bool:
+        try:
+            args = json.loads(content) if isinstance(content, str) else dict(content or {})
+        except (TypeError, ValueError):
+            return False
+        return (
+            isinstance(args, dict)
+            and args.get("action") in _DOCUMENT_READ_ACTIONS
+            and args.get("document_id") in self.attached_document_ids
+        )
 
     def observe_messages(self, messages: Iterable[dict]) -> None:
         """Apply server-owned chat scope and promote untrusted prompt context."""
@@ -661,6 +695,9 @@ class ToolRunSecurityContext:
             for message in message_list
         ):
             self.approval_gate_bypassed = True
+        for message in message_list:
+            if isinstance(message, dict) and message.get("role") == "user" and isinstance(message.get("content"), str):
+                self.attached_document_ids.update(_ATTACHED_DOCUMENT_POINTER.findall(message["content"]))
         if messages_contain_external_untrusted_context(message_list):
             self.external_untrusted_context_seen = True
 
@@ -673,6 +710,8 @@ class ToolRunSecurityContext:
         if self.approval_gate_bypassed:
             return ToolGateDecision(True)
         if not self.external_untrusted_context_seen:
+            return ToolGateDecision(True)
+        if tool_name == "manage_documents" and self._reads_attached_document(content):
             return ToolGateDecision(True)
         capabilities = capabilities_for_action(tool_name, content)
         blocked_effects = capabilities.effects & POST_EXTERNAL_BLOCKED_EFFECTS

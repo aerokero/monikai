@@ -103,7 +103,16 @@ class AudioOutput:
         with self._lock:
             self._clips.append(clip)
         try:
-            await clip.done
+            # PortAudio can stop invoking the callback after a device fault.
+            # Never let one lost completion hold the voice listener forever.
+            duration = clip.frames / self.rate
+            # Barge-in may pause a clip while speech recognition runs (up to
+            # several seconds), so leave room for that before declaring a stall.
+            await asyncio.wait_for(asyncio.shield(clip.done), timeout=duration + 8.0)
+        except asyncio.TimeoutError:
+            clip.cancelled = True
+            self.stop()
+            raise TimeoutError("audio output callback did not finish playback")
         except asyncio.CancelledError:
             clip.cancelled = True
             raise

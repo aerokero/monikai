@@ -45,3 +45,5 @@ nh3
 pypdf
 beautifulsoup4
 faster-whisper
+# Vector store client for tool-RAG and memory recall (server: chromadb service in compose.yml)
+chromadb-client

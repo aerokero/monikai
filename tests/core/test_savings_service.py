@@ -8,13 +8,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.core.routers.savings_http_router import register_savings_http_routes
-from backend.services.savings_service import SavingsService, normalize_ledger_state
+from backend.services.savings_service import SavingsService
 
 
 def test_savings_service_uninitialized(tmp_path: Path):
     ledger_file = tmp_path / "savings_ledger.json"
-    service = SavingsService(ledger_path=ledger_file)
-    assert not service.is_initialized()
+    service = SavingsService(ledger_file=ledger_file)
+    assert not service.get_ledger()["initialized"]
 
     result = service.get_ledger()
     assert result["initialized"] is False
@@ -23,7 +23,7 @@ def test_savings_service_uninitialized(tmp_path: Path):
 
 def test_savings_service_save_and_load(tmp_path: Path):
     ledger_file = tmp_path / "savings_ledger.json"
-    service = SavingsService(ledger_path=ledger_file)
+    service = SavingsService(ledger_file=ledger_file)
 
     payload = {
         "settings": {
@@ -63,7 +63,7 @@ def test_savings_service_save_and_load(tmp_path: Path):
     }
 
     saved = service.save_ledger(payload)
-    assert service.is_initialized()
+    assert service.get_ledger()["initialized"]
     assert saved["settings"]["income"] == 7000
     assert len(saved["wallets"]) == 1
     assert saved["wallets"][0]["name"] == "Konto Główne"
@@ -80,18 +80,18 @@ def test_savings_service_save_and_load(tmp_path: Path):
 
 def test_savings_service_reset(tmp_path: Path):
     ledger_file = tmp_path / "savings_ledger.json"
-    service = SavingsService(ledger_path=ledger_file)
+    service = SavingsService(ledger_file=ledger_file)
     service.save_ledger({"settings": {"income": 10000}})
-    assert service.is_initialized()
+    assert service.get_ledger()["initialized"]
 
     reset_res = service.reset_ledger()
     assert reset_res["initialized"] is False
-    assert not service.is_initialized()
+    assert not service.get_ledger()["initialized"]
 
 
 def test_savings_http_routes(tmp_path: Path, monkeypatch):
     ledger_file = tmp_path / "savings_ledger.json"
-    test_service = SavingsService(ledger_path=ledger_file)
+    test_service = SavingsService(ledger_file=ledger_file)
 
     monkeypatch.setattr(
         "backend.core.routers.savings_http_router.get_savings_service",

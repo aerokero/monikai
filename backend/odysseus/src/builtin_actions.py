@@ -2354,10 +2354,18 @@ async def action_ping_notes(owner: str, **kwargs) -> Tuple[str, bool]:
                 body = "\n\n".join(p for p in body_parts if p) or title
                 try:
                     from routes.note_routes import dispatch_reminder
-                    await dispatch_reminder(
+                    result = await dispatch_reminder(
                         title=title, note_body=body, note_id=n.id,
                         owner=n.owner or owner or "",
                     )
+                    if not (result or {}).get("skipped"):
+                        from src.settings import load_settings as _ls
+                        if _ls().get("reminder_speak_on_server", True):
+                            from src.voice_runtime import announce
+                            spoken = (result or {}).get("synthesis") or ""
+                            if not spoken or spoken.startswith("["):
+                                spoken = f"Przypomnienie: {title}"
+                            await announce(spoken)
                     cache[n.id] = now.isoformat()
                     sent.append(title)
                 except Exception as e:

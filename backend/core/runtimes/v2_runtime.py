@@ -139,17 +139,15 @@ async def shutdown() -> None:
 # ---------------------------------------------------------------------------
 
 class V2Runtime:
-    """Lightweight runtime for prompt, time and background session digestion."""
+    """Lightweight runtime for time and background session digestion."""
 
     def __init__(
         self,
         db_path: Path,
         time_engine=None,
-        cached_prompt: str = "",
     ) -> None:
         self._db_path = db_path
         self._time_engine = time_engine
-        self._cached_prompt = cached_prompt
         self._digest_task: asyncio.Task | None = None
 
     @classmethod
@@ -166,9 +164,8 @@ class V2Runtime:
         await time_engine.check_anniversaries(db_path)
 
         runtime = cls(db_path=db_path, time_engine=time_engine)
-        runtime._cached_prompt = await runtime.refresh_prompt()
         runtime._digest_task = asyncio.create_task(runtime._digest_loop())
-        logger.info("v2: runtime initialized (prompt=%d chars)", len(runtime._cached_prompt))
+        logger.info("v2: runtime initialized")
         return runtime
 
     # ------------------------------------------------------------------
@@ -197,11 +194,9 @@ class V2Runtime:
                 except Exception:
                     pass
 
-                digested = await scan_and_digest(
+                await scan_and_digest(
                     db_path=self._db_path, current_session_id=current_id
                 )
-                if digested:
-                    await self.refresh_prompt()
 
                 try:
                     from backend.soul.proactivity import maybe_poke
@@ -213,22 +208,6 @@ class V2Runtime:
             except Exception as exc:
                 logger.warning("v2: digest loop error: %s", exc)
             await asyncio.sleep(self._DIGEST_SCAN_INTERVAL_S)
-
-    # ------------------------------------------------------------------
-    # Prompt assembly
-    # ------------------------------------------------------------------
-
-    async def refresh_prompt(self) -> str:
-        try:
-            from backend.core.system_prompt import assemble_prompt
-            self._cached_prompt = await assemble_prompt(db_path=self._db_path)
-        except Exception as exc:
-            logger.warning("v2: prompt assembly failed, keeping cached: %s", exc)
-        return self._cached_prompt
-
-    @property
-    def cached_prompt(self) -> str:
-        return self._cached_prompt
 
     # ------------------------------------------------------------------
     # Per-turn bookkeeping

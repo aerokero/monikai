@@ -306,7 +306,7 @@ def _load_mcp_disabled_map() -> Dict[str, set]:
 # System prompt that tells the LLM about available tools.
 # Always injected — the LLM decides whether to use them.
 _AGENT_PREAMBLE = """\
-You are an AI assistant with tool access. You can run shell commands, execute Python, search the web, \
+You have tool access. You can run shell commands, execute Python, search the web, \
 read/write files, create and edit documents, generate images, manage memories, and more. \
 To use a tool, write a fenced code block with the tool name as the language tag. \
 The block executes automatically and you see the output."""
@@ -425,7 +425,7 @@ _API_AGENT_RULES = """\
   - Listing sessions: "1. [Big Chat](#session-abc123) — 2h ago, 2. [Code Review](#session-def456) — 5h ago\""""
 
 _AGENT_PREAMBLE = """\
-You are an AI assistant with tool access. Only the tools listed below are available for this turn.
+You have tool access. Only the tools listed below are available for this turn.
 To use a tool, write a fenced code block with the tool name as the language tag. The block executes automatically and you see the output."""
 
 _AGENT_RULES = """\
@@ -502,7 +502,9 @@ _DOMAIN_RULES = {
 ## Notes/calendar/tasks rules
 - Notes/todos/reminders use `manage_notes`, not memory.
 - Calendar create/update/delete should call `manage_calendar` with `action=list_calendars` first.
-- Recurring/automatic/scheduled requests create a `manage_tasks` task; do not just perform the action once.""",
+- Recurring/automatic/scheduled requests create a `manage_tasks` task; do not just perform the action once.
+- Alarms / budzik / "obudź mnie" use `manage_alarms` (rings on the room speakers), never a note reminder or a task.
+- The shopping list is `manage_shopping_list` (Home Assistant) unless the user explicitly wants it in notes, then a `manage_notes` checklist.""",
     "ui": """\
 ## UI rules
 - "Open/show <panel>" uses `ui_control open_panel <name>`.
@@ -552,7 +554,7 @@ _DOMAIN_TOOL_MAP = {
     "documents": {"create_document", "edit_document", "update_document", "suggest_document", "manage_documents"},
     "email": {"list_email_accounts", "list_emails", "read_email", "scan_email_unsubscribes", "unsubscribe_email", "send_email", "reply_to_email", "bulk_email", "archive_email", "delete_email", "mark_email_read", "resolve_contact", "manage_contact"},
     "cookbook": {"download_model", "serve_model", "serve_preset", "list_serve_presets", "list_served_models", "stop_served_model", "tail_serve_output", "list_downloads", "cancel_download", "search_hf_models", "list_cached_models", "list_cookbook_servers", "adopt_served_model"},
-    "notes_calendar_tasks": {"manage_notes", "manage_calendar", "manage_tasks"},
+    "notes_calendar_tasks": {"manage_notes", "manage_calendar", "manage_tasks", "manage_alarms", "manage_shopping_list"},
     "ui": {"ui_control"},
     "sessions": {"create_session", "list_sessions", "manage_session", "send_to_session", "search_chats"},
     "files": {"bash", "python", "read_file", "write_file", "edit_file", "apply_patch", "todowrite", "grep", "glob", "ls", "get_workspace", "manage_bg_jobs"},
@@ -881,7 +883,7 @@ def _assemble_prompt(tool_names: set, disabled_tools: set = None, compact: bool 
             if name in included:
                 tool_lines.append(f"- `{name}`")
         parts = [
-            "You are an AI assistant with native tool/function calling. "
+            "You have native tool/function calling. "
             "Only the tool schemas provided by the API are available for this turn. "
             "Use native tool calls when action is needed; do not write tool syntax or tool instructions in chat.",
             "## Available tools\n" + ("\n".join(tool_lines) if tool_lines else "none"),
@@ -1154,6 +1156,20 @@ def _insert_before_latest_user(messages: List[Dict], context_msg: Dict) -> List[
     return out
 
 
+_TRUNCATED_DOCUMENT_MARKER = "truncated for inline context"
+
+
+def _history_has_truncated_document(messages: List[Dict]) -> bool:
+    """True if a user turn holds an attachment whose inline text was cut short."""
+    return any(
+        m.get("role") == "user"
+        and isinstance(m.get("content"), str)
+        and _TRUNCATED_DOCUMENT_MARKER in m["content"]
+        and "manage_documents" in m["content"]
+        for m in messages
+    )
+
+
 def _uploaded_files_context_message(uploaded_files: Optional[List[Dict]]) -> Optional[Dict]:
     if not uploaded_files:
         return None
@@ -1178,7 +1194,7 @@ def _uploaded_files_context_message(uploaded_files: Optional[List[Dict]]) -> Opt
         lines.append(f"- ... {len(uploaded_files) - 20} more upload(s) omitted from this manifest")
     lines.extend([
         "",
-        "The attachment contents may already be in the latest user message. If an attachment is marked truncated or omitted, read its listed path with `read_file` when that tool is available. Do not say uploaded files are undiscoverable when they are listed here.",
+        "The attachment contents may already be in the latest user message. If an attachment is marked truncated, page through the saved copy with `manage_documents` (action=read, document_id from the truncation note, offset=next_offset); if it is omitted, read its listed path with `read_file` when that tool is available. Do not say uploaded files are undiscoverable when they are listed here.",
     ])
     return untrusted_context_message(
         "current chat uploaded files",
@@ -1493,7 +1509,7 @@ def _classify_agent_request(messages: List[Dict], last_user: str) -> Dict[str, o
         domains.add("email")
     if has(r"\b(notes?|todos?|to-dos?|checklists?|tasks?|task list|remind me|reminders?|buy|pickup|pick up|"
            r"notatk\w*|zadani\w*|przypomn\w*|kalendarz\w*|wydarzen\w*|spotkan\w*|"
-           r"termin\w*|wizyt\w*|harmonogram\w*|kup\w*)\b"):
+           r"termin\w*|wizyt\w*|harmonogram\w*|kup\w*|zakup\w*|alarm\w*|budzik\w*|obudź\w*|obudz\w*|pobudk\w*|drzemk\w*|wake me)\b"):
         domains.add("notes_calendar_tasks")
     if smart_home_command or (
         has(
@@ -4135,6 +4151,15 @@ async def stream_agent_loop(
             from src.tool_index import ALWAYS_AVAILABLE
             _relevant_tools = set(ALWAYS_AVAILABLE)
         _relevant_tools.update({"read_file", "grep", "ls", "manage_documents"})
+    # Follow-up turns ("and now?", "can you see it all?") carry no upload and no
+    # retrievable keywords, yet the earlier inline text may be truncated with a
+    # pointer to `manage_documents`. Keep that tool reachable for as long as the
+    # conversation holds such a document, independent of query language.
+    elif not guide_only and _history_has_truncated_document(messages):
+        if _relevant_tools is None:
+            from src.tool_index import ALWAYS_AVAILABLE
+            _relevant_tools = set(ALWAYS_AVAILABLE)
+        _relevant_tools.add("manage_documents")
 
     # Per-request forced tools are stronger than retrieval. Explicit search
     # settings make web tools visible even when tool RAG misses them;

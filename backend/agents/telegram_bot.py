@@ -29,6 +29,8 @@ TELEGRAM_COMMANDS = [
     {"command": "weather", "description": "Pokaż aktualną pogodę"},
     {"command": "notes", "description": "Pokaż lub dopisz do notatek"},
     {"command": "remind", "description": "Utwórz przypomnienie"},
+    {"command": "alarm", "description": "Budziki (/alarm 6:30 pn-pt Praca, /alarm usun <id>)"},
+    {"command": "zakupy", "description": "Lista zakupów HA (/zakupy mleko, chleb)"},
     {"command": "memory", "description": "Pokaż ostatnie wpisy pamięci"},
     {"command": "forget", "description": "Usuń ostatni wpis pamięci"},
     {"command": "profile", "description": "Pokaż profil użytkownika"},
@@ -757,6 +759,54 @@ class TelegramBotService:
         keyboard = [[{"text": "✅ Odznacz zrobione", "callback_data": f"rem_ack:{rid}"}]]
         asyncio.create_task(self.broadcast_notification(text, reply_markup={"inline_keyboard": keyboard}))
 
+    async def notify_alarm(self, event: str, alarm: Any, **info):
+        """AlarmManager fan-out: ringing gets Stop/Drzemka buttons."""
+        name = f"*{alarm.time}*" + (f" „{alarm.label}”" if alarm.label else "")
+        markup = None
+        if event == "ringing":
+            text = f"⏰ Budzik {name} dzwoni!"
+            markup = {"inline_keyboard": [[
+                {"text": "⏹ Stop", "callback_data": "alarm_stop"},
+                {"text": "😴 Drzemka 10 min", "callback_data": "alarm_snooze"},
+            ]]}
+        elif event == "snoozed":
+            text = f"😴 Budzik {name}: drzemka {info.get('minutes')} min."
+        elif event == "stopped":
+            text = f"✅ Budzik {name} wyłączony."
+        elif event == "timeout":
+            text = f"⚠️ Budzik {name} dzwonił bez reakcji i sam się wyłączył."
+        elif event == "error":
+            text = f"⚠️ Budzik {name}: głośnik nie działa ({info.get('error')}). Wyłącz go tutaj."
+            markup = {"inline_keyboard": [[{"text": "⏹ Stop", "callback_data": "alarm_stop"}]]}
+        elif event == "greeting":
+            text = f"☀️ {info.get('text')}"
+        else:
+            return
+        await self.broadcast_notification(text, reply_markup=markup)
+
+    async def _alarm_command(self, args: str) -> str:
+        """/alarm | /alarm 6:30 [dni] [etykieta] | /alarm usun|off|on <id>"""
+        from src.tools.alarms import do_manage_alarms
+
+        parts = args.split()
+        actions = {"usun": "delete", "usuń": "delete", "del": "delete", "off": "disable", "on": "enable"}
+        if not parts:
+            payload = {"action": "list"}
+        elif parts[0].lower() in actions and len(parts) > 1:
+            payload = {"action": actions[parts[0].lower()], "alarm_id": parts[1]}
+        else:
+            payload = {"action": "set", "time": parts[0]}
+            rest = parts[1:]
+            if rest:
+                try:
+                    from backend.services.alarm_manager import parse_days
+                    parse_days(rest[0])
+                    payload["days"], rest = rest[0], rest[1:]
+                except ValueError:
+                    pass
+            payload["label"] = " ".join(rest)
+        return (await do_manage_alarms(json.dumps(payload)))["output"]
+
     async def _register_bot_metadata(self):
         try:
             me = await self._api_call("getMe", {}, timeout_sec=15.0)
@@ -1173,6 +1223,11 @@ class TelegramBotService:
                     )
             except Exception:
                 pass
+        elif data in ("alarm_stop", "alarm_snooze"):
+            from src.voice_runtime import get_alarm_manager
+            mgr = get_alarm_manager()
+            ok = bool(mgr) and (mgr.stop() if data == "alarm_stop" else mgr.snooze())
+            answer_text = ("Wyłączono budzik." if data == "alarm_stop" else "Drzemka.") if ok else "Żaden budzik nie dzwoni."
         elif data == "notes_catalog":
             session = await self._get_session(chat_id, user_label)
             await session.ensure_started()
@@ -1229,6 +1284,8 @@ class TelegramBotService:
                     "• `/weather` - aktualna pogoda\n"
                     "• `/notes` - Twoje notatki (lub `/notes <treść>`)\n"
                     "• `/remind <treść> | <czas>` - ustaw przypomnienie\n"
+                    "• `/alarm` - budziki; `/alarm 6:30 pn-pt Praca`, `/alarm usun <id>`, `/alarm off|on <id>`\n"
+                    "• `/zakupy` - lista zakupów HA; `/zakupy mleko, chleb` dodaje\n"
                     "• `/voice [on|off|auto]` - tryb odpowiedzi głosowych\n"
                     "• `/profile` - profil użytkownika i preferencje\n"
                     "• `/memory` - ostatnie wpisy z pamięci\n"
@@ -1335,6 +1392,16 @@ class TelegramBotService:
                     await self._send_message(chat_id, session.append_note_page(selector, note_text))
                 else:
                     await self._send_message(chat_id, session.append_notes(args))
+            return
+        if command == "alarm":
+            await self._send_message(chat_id, await self._alarm_command(args), parse_mode=None)
+            return
+        if command == "zakupy":
+            from src.tools.alarms import do_manage_shopping_list
+            items = [i.strip() for i in args.split(",") if i.strip()]
+            payload = {"action": "add", "items": items} if items else {"action": "list"}
+            result = await do_manage_shopping_list(json.dumps(payload))
+            await self._send_message(chat_id, result["output"], parse_mode=None)
             return
         if command == "remind":
             session = await self._get_session(chat_id, user_label)

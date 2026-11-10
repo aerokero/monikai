@@ -7,7 +7,7 @@
 //   - Other static assets (images/fonts/libs): cache-first with bg refresh.
 //   - API / non-GET: never cached.
 // Bump CACHE_NAME whenever the precache list or SW logic changes.
-const CACHE_NAME = 'odysseus-v404-wardrobefix';
+const CACHE_NAME = 'odysseus-v405-alarms';
 
 // KaTeX resolves these from its own stylesheet, so caching the CSS without them
 // gives offline math fallback glyphs instead of proper typesetting.
@@ -83,6 +83,7 @@ const PRECACHE = [
   '/static/js/calendar/utils.js',
   '/static/js/calendar/reminders.js',
   '/static/js/savings.js',
+  '/static/js/alarms.js',
   '/static/js/group.js',
   '/static/js/keyboard-shortcuts.js',
   '/static/js/sidebar-layout.js',

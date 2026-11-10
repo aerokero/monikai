@@ -1240,6 +1240,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             {"value": "session", "label": "Session", "description": "Save result to a chat session"},
             {"value": "notification", "label": "Notification", "description": "Push a browser notification with the result (also saved to the session for history)"},
             {"value": "email", "label": "Email me", "description": "Send result through your configured SMTP account"},
+            {"value": "speaker", "label": "Speak in the room", "description": "Monika says the result on the server speakers (also saved to the session)"},
         ]
         # Only include tools whose NAME clearly indicates an outbound delivery
         # action — match by verb in the tool name, not by any mention of "email"
@@ -1367,7 +1368,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             "(daily, weekly, monthly, once, or cron), scheduled_time (24-hour LOCAL HH:MM), "
             "scheduled_day (weekly 0=Mon..6=Sun or monthly 1..31), scheduled_date "
             "(ISO local date-time only for once), cron_expression (only for cron), and "
-            "output_target (session, email, or notification).\n"
+            "output_target (session, email, notification, or speaker = spoken aloud in the room).\n"
             "Example of valid output: "
             '{"task_type":"llm","name":"Review unread email","prompt":"Review my unread email and summarize anything important.","schedule":"daily","scheduled_time":"09:00","output_target":"session"}\n\n'
             "Rules: default schedule to 'daily' if a time is given without a frequency. "
@@ -1424,7 +1425,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
                     out["scheduled_day"] = scheduled_day
                 elif out["schedule"] == "monthly" and 1 <= scheduled_day <= 31:
                     out["scheduled_day"] = scheduled_day
-            if draft.get("output_target") in ("session", "email", "notification"):
+            if draft.get("output_target") in ("session", "email", "notification", "speaker"):
                 out["output_target"] = draft["output_target"]
             out["trigger_type"] = "schedule"
             if not out.get("prompt"):

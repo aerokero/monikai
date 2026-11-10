@@ -7,6 +7,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.conversation.speech import SynthesizedSpeech
+from backend.audio.barge_in import AudioOutput
 from backend.audio.server_mic_listener import (
     AdaptiveEnergyVAD,
     ServerMicListenerService,
@@ -146,6 +147,23 @@ def test_server_mic_service_mute_and_controls():
 
     service.set_muted(False)
     assert not service.is_muted
+
+
+@pytest.mark.asyncio
+async def test_barge_in_restores_output_for_next_wake():
+    service = ServerMicListenerService()
+    service._output = AudioOutput(rate=16000, channels=1)
+    service._output.paused = True
+    service._output.gain = 0.3
+    service._barge_monitor = MagicMock()
+    service._speech_detector = MagicMock()
+    service.transcribe_speech = AsyncMock(return_value="Hej Monika")
+
+    await service._resolve_barge_in(b"\0\0" * 160)
+
+    assert service._barge_in_transcript == "Hej Monika"
+    assert service._output.paused is False
+    assert service._output.gain == 1.0
 
 
 @pytest.mark.asyncio

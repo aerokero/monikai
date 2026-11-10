@@ -42,7 +42,6 @@ from .handlers.lorebook_handlers import register_lorebook_handlers
 from .handlers.notes_journal_handlers import register_notes_journal_handlers
 from .handlers.openclaw_skill_handlers import register_openclaw_skill_handlers
 from .handlers.settings_profile_handlers import register_settings_profile_handlers
-from .handlers.session_mode_handlers import register_session_mode_handlers
 from .handlers.conversation_handlers import register_conversation_handlers
 from .handlers.shared_activity_handlers import register_shared_activity_handlers
 from .routers.frontend_router import (
@@ -95,6 +94,7 @@ from .routers.mcp_http_router import register_mcp_http_routes
 from .routers.research_http_router import register_research_http_routes
 from .routers.workspace_http_router import register_workspace_http_routes
 from .routers.savings_http_router import register_savings_http_routes
+from .routers.alarms_http_router import register_alarms_http_routes
 from .routers.wardrobe_http_router import register_wardrobe_http_routes
 from .routers.voice_http_router import register_voice_http_routes
 from .routers.odysseus_http_router import register_odysseus_http_routes
@@ -151,6 +151,7 @@ async def lifespan(app: FastAPI):
     global server_mic_listener
     global server_voice_sessions, server_voice_chat
     global telegram_service, telegram_task
+    global alarm_manager
     global discord_service, discord_task
 
     setup_logging(
@@ -358,6 +359,38 @@ async def lifespan(app: FastAPI):
         conversation_gateway_factory=lambda: _new_channel_conversation_gateway("telegram"),
     )
 
+    # Alarm clock: rings on the server speakers, Telegram gets Stop/Drzemka.
+    from dataclasses import asdict as _asdict
+    from backend.services.alarm_manager import AlarmManager
+    from src import voice_runtime
+
+    async def _alarm_notify(event, alarm, **info):
+        _schedule_emit_to_frontend("alarm_event", {"event": event, "alarm": _asdict(alarm), **info})
+        if telegram_service:
+            await telegram_service.notify_alarm(event, alarm, **info)
+
+    async def _alarm_greeting(alarm):
+        if server_voice_chat is None or not server_voice_chat.uses_canonical_history:
+            return ""
+        return await server_voice_chat.ask(
+            f"[Budzik {alarm.time}{' ' + alarm.label if alarm.label else ''}] Za kilka minut budzisz "
+            "użytkownika. Przygotuj krótkie poranne powitanie (3–4 zdania, po polsku, bez markdown, "
+            "do przeczytania na głos): pogoda na dziś, dzisiejsze wydarzenia z kalendarza i "
+            "przypomnienia, a jeśli lista zakupów nie jest pusta — wspomnij o niej jednym zdaniem."
+        )
+
+    alarm_manager = AlarmManager(
+        user_memory_dir,
+        player=server_mic_listener,
+        notify=_alarm_notify,
+        compose_greeting=_alarm_greeting,
+    )
+    alarm_manager.start()
+    voice_runtime.set_alarm_manager(alarm_manager)
+    if server_mic_listener:
+        server_mic_listener.alarm = alarm_manager
+        voice_runtime.set_announcer(server_mic_listener.announce)
+
     discord_service, discord_task = start_discord_service(
         lambda: SETTINGS,
         calendar_manager=calendar_manager,
@@ -399,6 +432,13 @@ async def lifespan(app: FastAPI):
             set_home_assistant_agent(None)
         except Exception:
             pass
+
+        if alarm_manager:
+            from src import voice_runtime
+            voice_runtime.set_alarm_manager(None)
+            voice_runtime.set_announcer(None)
+            await alarm_manager.shutdown()
+            alarm_manager = None
 
         if server_mic_listener:
             try:
@@ -471,6 +511,7 @@ register_mcp_http_routes(app)
 register_research_http_routes(app, emit_to_frontend=_emit_to_frontend)
 register_voice_http_routes(app)
 register_savings_http_routes(app, emit_to_frontend=_emit_to_frontend)
+register_alarms_http_routes(app)
 register_wardrobe_http_routes(app, emit_to_frontend=_emit_to_frontend)
 try:
     from backend.odysseus_bridge import init_and_register_odysseus_backend
@@ -548,6 +589,7 @@ SPA_ROUTES = [
     "/email",
     "/tasks",
     "/savings",
+    "/alarms",
     "/library",
     "/memory",
     "/gallery",
@@ -603,6 +645,7 @@ DATA_DIR = CONFIG_DATA_DIR
 STUDY_DIR = DATA_DIR / "study"
 last_start_params = {}
 telegram_service = None
+alarm_manager = None
 telegram_task = None
 discord_service = None
 discord_task = None
@@ -802,13 +845,6 @@ register_lorebook_handlers(
     sio,
     get_audio_loop=lambda: audio_loop,
     db_path=DATA_DIR / "monika.db",
-)
-
-register_session_mode_handlers(
-    sio,
-    get_audio_loop=lambda: audio_loop,
-    journal_today_path=lambda: journal_today_path(DATA_DIR),
-    data_dir=DATA_DIR,
 )
 
 register_conversation_handlers(

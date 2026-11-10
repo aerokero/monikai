@@ -77,27 +77,17 @@ from backend.conversation.speech import (
 )
 from backend.conversation.providers import GeminiTextProvider
 from backend.soul.lorebook import LoreLearningEngine
-from backend.conversation.routing import requires_capability_runtime
 from backend.conversation.voice_quality import voice_transcript_is_usable
 from backend.conversation.tools import (
-    CONVERSATION_TOOL_DEFINITIONS,
     ConversationToolRequest,
-    ConversationToolResult,
-    ToolTurnOutcome,
-    plan_named_scene_tool,
-    plan_read_only_tool,
-    validate_planned_tool_request,
 )
 from .conversation_tool_executor import CoreConversationToolExecutor
 from .smart_home_tool_executor import SmartHomeToolExecutor
-from backend.llm.thinker import Thinker, THINKER_FALLBACK_MODEL
 from .tool_definitions import tools
-from .system_prompt import SYSTEM_PROMPT, current_system_prompt
 from backend.services.calendar_manager import CalendarEvent, CalendarManager
 from backend.services.reminder_manager import Reminder, ReminderManager
 from backend.services.memory_adapter import MemoryEngine
 from .session_manager import SessionManager
-from .therapy_persona import build_therapy_system_instruction, build_opening_trigger
 from .config import BASE_DIR, DATA_DIR, SETTINGS_PATH
 from ..tools.openclaw_skills import OpenClawSkillManager
 from ..integrations.games.minecraft_agent import MinecraftBotManager
@@ -249,7 +239,7 @@ def _build_voice_renderer_thinking_config() -> types.ThinkingConfig:
 
 
 def _build_voice_realtime_input_config(renderer_only: bool) -> types.RealtimeInputConfig:
-    """Hold a voice turn open until the Thinker delivers its final script."""
+    """Hold a voice turn open until Odysseus delivers the final reply."""
     if not renderer_only:
         return BASE_REALTIME_INPUT_CONFIG
     return types.RealtimeInputConfig(
@@ -257,6 +247,16 @@ def _build_voice_realtime_input_config(renderer_only: bool) -> types.RealtimeInp
         activity_handling=types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
         turn_coverage=types.TurnCoverage.TURN_INCLUDES_ONLY_ACTIVITY,
     )
+
+
+# Gemini Live only transcribes the microphone; native Odysseus authors every reply.
+ASR_TRANSPORT_INSTRUCTION = (
+    "You are an audio input transport for another assistant. "
+    "Transcribe the user's speech accurately. If the audio is "
+    "silent or unintelligible, do not guess or turn noise into "
+    "plausible words; emit no usable transcript. Do not answer, "
+    "continue the conversation, call tools, or invent a reply."
+)
 
 
 def _build_base_live_config() -> types.LiveConnectConfig:
@@ -268,7 +268,7 @@ def _build_base_live_config() -> types.LiveConnectConfig:
         thinking_config=_build_thinking_config(_mc.GEMINI_THINKING_LEVEL, _mc.GEMINI_THINKING_BUDGET),
         context_window_compression=BASE_CONTEXT_WINDOW_COMPRESSION,
         realtime_input_config=BASE_REALTIME_INPUT_CONFIG,
-        system_instruction=SYSTEM_PROMPT,
+        system_instruction=ASR_TRANSPORT_INSTRUCTION,
         tools=tools,
         speech_config=types.SpeechConfig(
             voice_config=types.VoiceConfig(
@@ -587,21 +587,8 @@ class AudioLoop:
 
         self.web_agent = WebAgent()
 
-        self.session_mode = False
-        self.session_mode_kind = "auto"
         self.minecraft_game_mode = False
-        # Session mode is delivered as a genuine identity swap via reconnect.
-        # _session_relationship_context: what Monika "remembers" about this
-        #   person, injected into the therapeutic system instruction.
-        # _session_mode_reconnect_requested: set on toggle; the idle loop
-        #   raises LiveReconnectRequested when idle so she reconnects as the
-        #   therapist (or back to her normal self).
-        # _pending_session_opening: "enter" | "exit" | None, consumed once after
-        #   the reconnect to decide how she opens.
-        self._session_relationship_context = None
-        self._session_mode_reconnect_requested = False
         self._model_settings_reconnect_requested = False
-        self._pending_session_opening = None
 
         # SessionManager (global, no projects). A stream channel (e.g.
         # Telegram) routes all turns to a continuous per-day log instead of
@@ -612,29 +599,12 @@ class AudioLoop:
             stream_channel=session_stream_channel,
         )
 
-        # Text model owns the final answer. A separate speech-only provider may
-        # render it, but no audio dialogue model is allowed to rewrite it.
-        self.thinker = Thinker(
-            # The response author sees only the active conversation. Past
-            # threads remain available through explicit memory/recall tools.
-            get_history=lambda limit: self.session_manager.get_current_session_turns(limit=limit),
-            deliver=lambda text: self.send_system_message(text, end_of_turn=False),
-            is_ai_turn_open=lambda: self._ai_turn_open,
-            # Prefiks pokazuje w konsoli/UI analizę i rdzeń odpowiedzi Thinkera.
-            on_thought=lambda thought: self.on_internal_thought(f"[Myśliciel] {thought}") if self.on_internal_thought else None,
-            get_settings=lambda: APP_SETTINGS.get("thinker") or {},
-            get_conversation_id=lambda: self.session_manager.get_current_session_id(),
-            get_world_snapshot=lambda: __import__(
-                "backend.soul.world_snapshot",
-                fromlist=["build_snapshot"],
-            ).build_snapshot(),
-        )
         lore_cfg = APP_SETTINGS.get("lore_learning") or {}
         self.lore_learning_engine = LoreLearningEngine(
             provider=GeminiTextProvider(api_key=os.getenv("GEMINI_API_KEY")),
             model=str(
                 os.getenv("MONIKAI_LORE_LEARNING_MODEL")
-                or THINKER_FALLBACK_MODEL
+                or os.getenv("MONIKAI_CONVERSATION_FALLBACK_MODEL", "gemini-3.6-flash")
             ),
             db_path=DATA_DIR / "monika.db",
             minimum_confidence=float(
@@ -1089,14 +1059,6 @@ class AudioLoop:
     async def submit_text_turn(self, text: str, timeout_sec: float = 90.0) -> str:
         return await self.submit_native_turn(text=text, timeout_sec=timeout_sec)
 
-    def _dedicated_speech_enabled(self) -> bool:
-        speech = APP_SETTINGS.get("speech") or {}
-        thinker = APP_SETTINGS.get("thinker") or {}
-        return bool(thinker.get("enabled", False)) and (
-            str(speech.get("delivery_mode") or "dedicated_tts").strip().lower()
-            == "dedicated_tts"
-        )
-
     def _uses_canonical_text_author(self) -> bool:
         return getattr(self, "conversation_gateway", None) is not None
 
@@ -1231,122 +1193,6 @@ class AudioLoop:
             and tool_name in self._CHANNEL_TOOL_SCOPES
             and tool_name != "list_smart_devices"
         )
-
-    async def _plan_conversation_tool(
-        self,
-        text: str,
-    ) -> ConversationToolRequest | None:
-        request = plan_named_scene_tool(text)
-        if request is not None:
-            return request
-        request = plan_read_only_tool(text)
-        if request is not None:
-            return request
-        if not requires_capability_runtime(text):
-            return None
-        try:
-            ctx = get_time_context()
-            smart_entities = []
-            if getattr(self, "home_assistant_agent", None):
-                smart_entities = [
-                    f"{e_id} ({e.get('attributes', {}).get('friendly_name', e_id)})"
-                    for e_id, e in getattr(self.home_assistant_agent, "entities", {}).items()
-                ]
-            runtime_context = (
-                f"local_iso={ctx.get('iso')}; timezone={ctx.get('timezone')}; "
-                f"utc_offset={ctx.get('offset')}; "
-                f"known_smart_home_entities={smart_entities}"
-            )
-            timeout_sec = max(
-                0.5,
-                float(
-                    (APP_SETTINGS.get("thinker") or {}).get(
-                        "tool_planning_timeout_sec",
-                        4.0,
-                    )
-                    or 4.0
-                ),
-            )
-            calls = await asyncio.wait_for(
-                self.thinker.plan_tool_calls(
-                    text,
-                    tools=CONVERSATION_TOOL_DEFINITIONS,
-                    runtime_context=runtime_context,
-                ),
-                timeout=timeout_sec,
-            )
-            allowed = {item.name for item in CONVERSATION_TOOL_DEFINITIONS}
-            return next(
-                (
-                    call
-                    for call in calls
-                    if call.name in allowed
-                    and validate_planned_tool_request(text, call)
-                ),
-                None,
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            self._last_tool_trace = {
-                "status": "planning_failed",
-                "error": str(exc),
-            }
-            return None
-
-    async def author_tool_turn(self, text: str) -> ToolTurnOutcome:
-        """Plan, authorize, execute once, then return evidence to the author."""
-        request = await self._plan_conversation_tool(text)
-        if request is None:
-            self._last_tool_trace = {"status": "not_applicable"}
-            return ToolTurnOutcome(handled=False)
-
-        try:
-            authorized = await self._authorize_conversation_tool(request)
-            if authorized:
-                result = await self._get_conversation_tool_executor().execute(
-                    request
-                )
-            else:
-                result = ConversationToolResult(
-                    name=request.name,
-                    result="User denied the request to use this tool.",
-                    ok=False,
-                )
-
-            reply = await self.thinker.prepare_spoken_reply(
-                text,
-                turn_evidence=result.as_evidence(),
-            )
-            self._last_tool_trace = {
-                "status": "authored" if reply else "author_failed",
-                "tool": request.name,
-                "result_ok": result.ok,
-                "authorized": authorized,
-            }
-            return ToolTurnOutcome(
-                handled=True,
-                reply=str(reply or ""),
-                tool_name=request.name,
-                error=None if result.ok else result.result,
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            self._last_tool_trace = {
-                "status": "execution_failed",
-                "tool": request.name,
-                "error": str(exc),
-            }
-            return ToolTurnOutcome(
-                handled=True,
-                tool_name=request.name,
-                error=str(exc),
-            )
-
-    async def author_read_only_tool_turn(self, text: str) -> ToolTurnOutcome:
-        """Compatibility name for callers introduced by the first tool slice."""
-        return await self.author_tool_turn(text)
 
     async def deliver_authored_reply(self, reply: str, *, speak: bool) -> bool:
         """Publish immutable author text and optionally render it through TTS.
@@ -1486,16 +1332,8 @@ class AudioLoop:
         if not bool(cfg.get("enabled", True)):
             return
         engine = getattr(self, "lore_learning_engine", None)
-        thinker = getattr(self, "thinker", None)
-        trace = dict(getattr(thinker, "last_trace", {}) or {})
-        user_text = str(trace.get("source") or "").strip()
-        authored = str(trace.get("reply_core") or "").strip()
-        if (
-            engine is None
-            or not user_text
-            or authored != str(assistant_reply or "").strip()
-            or trace.get("status") not in {"prepared", "delivered"}
-        ):
+        user_text = str(getattr(self, "_last_user_text", "") or "").strip()
+        if engine is None or not user_text:
             return
         conversation_id = str(
             self.session_manager.get_current_session_id() or "conversation"
@@ -1700,51 +1538,11 @@ class AudioLoop:
         self.paused = paused
 
     def _build_live_connect_config(self):
-        canonical_text_author = self._uses_canonical_text_author()
-        renderer_only = bool((APP_SETTINGS.get("thinker") or {}).get("enabled", False)) or canonical_text_author
+        canonical_text_author = True
+        renderer_only = True
         self._manual_voice_turn_control = renderer_only
-        if canonical_text_author:
-            # Gemini Live supplies input transcription/activity boundaries only.
-            # Native Odysseus produces the answer and the speech renderer reads
-            # that exact text afterwards.
-            system_instruction = (
-                "You are an audio input transport for another assistant. "
-                "Transcribe the user's speech accurately. If the audio is "
-                "silent or unintelligible, do not guess or turn noise into "
-                "plausible words; emit no usable transcript. Do not answer, "
-                "continue the conversation, call tools, or invent a reply."
-            )
-            thinking_config = _build_voice_renderer_thinking_config()
-        elif self.session_mode:
-            # Genuine identity swap: she reconnects as an expert clinician,
-            # still herself, knowing this person, with the safety floor on top.
-            system_instruction = build_therapy_system_instruction(
-                relationship_context=self._session_relationship_context,
-                base_persona=current_system_prompt(),
-            )
-            thinking_config = (
-                _build_voice_renderer_thinking_config()
-                if renderer_only
-                else _build_thinking_config(
-                    _mc.GEMINI_THERAPY_THINKING_LEVEL,
-                    _mc.GEMINI_THERAPY_THINKING_BUDGET,
-                )
-            )
-        else:
-            # v2: use assembled prompt (CHARACTER + PSYCHOLOGICAL + MEMORY + OPERATIONAL)
-            from backend.core.runtimes.v2_runtime import get as _v2_get
-            _v2 = _v2_get()
-            if not _v2:
-                raise RuntimeError("MonikAI v2 runtime is not active")
-            system_instruction = _v2.cached_prompt
-            thinking_config = (
-                _build_voice_renderer_thinking_config()
-                if renderer_only
-                else _build_thinking_config(
-                    _mc.GEMINI_THINKING_LEVEL,
-                    _mc.GEMINI_THINKING_BUDGET,
-                )
-            )
+        system_instruction = ASR_TRANSPORT_INSTRUCTION
+        thinking_config = _build_voice_renderer_thinking_config()
 
         session_resumption = None
         if GEMINI_SESSION_RESUMPTION:
@@ -1846,10 +1644,6 @@ class AudioLoop:
             except Exception as exc:
                 print(f"[VOICE] Failed to close rejected activity: {exc}")
             self._manual_voice_activity_open = False
-        try:
-            self.thinker.update_voice_transcript("")
-        except Exception:
-            pass
         self._last_speech_trace = {
             "status": "ignored",
             "reason": str(reason or "unusable_transcript"),
@@ -1872,66 +1666,30 @@ class AudioLoop:
                 await self._discard_manual_voice_turn("unusable_transcript")
                 return
             text = assessment_text
-            if self._uses_canonical_text_author():
-                # The Live model closes ASR activity only.  It is not given an
-                # authored brief and cannot rewrite the Odysseus response.
-                dedicated_speech = True
-                reply = await self._generate_odysseus_reply(
-                    text,
-                    timeout_sec=max(20.0, float((APP_SETTINGS.get("speech") or {}).get("timeout_sec", 20.0))),
-                )
-                injection = None
-            else:
-                tool_outcome = (
-                    await self.author_tool_turn(text)
-                    if self._dedicated_speech_enabled()
-                    else ToolTurnOutcome(handled=False)
-                )
-                dedicated_speech = bool(
-                    self._dedicated_speech_enabled()
-                    and (
-                        tool_outcome.handled
-                        or not requires_capability_runtime(text)
-                    )
-                )
-                if dedicated_speech:
-                    reply = (
-                        tool_outcome.reply
-                        if tool_outcome.handled
-                        else await self.thinker.prepare_spoken_reply(text)
-                    )
-                    injection = None
-                else:
-                    reply = None
-                    injection = await self.thinker.prepare_voice_turn(text)
+            # The Live model closes ASR activity only.  It is not given an
+            # authored brief and cannot rewrite the Odysseus response.
+            reply = await self._generate_odysseus_reply(
+                text,
+                timeout_sec=max(20.0, float((APP_SETTINGS.get("speech") or {}).get("timeout_sec", 20.0))),
+            )
             if self._is_speaking or not self._manual_voice_activity_open or not self.session:
                 return
-            if dedicated_speech:
-                # The Live session remains ASR transport for now. Ignore the
-                # dialogue response it produces after the activity boundary.
-                self._suppress_spoken_output = True
+            # The Live session remains ASR transport. Ignore the dialogue
+            # response it produces after the activity boundary.
+            self._suppress_spoken_output = True
             if self.out_queue:
-                if injection:
-                    await self.out_queue.put({"realtime_text": injection})
                 await self.out_queue.put({"activity_end": True})
             else:
-                if injection:
-                    await self.session.send_realtime_input(text=injection)
                 await self.session.send_realtime_input(activity_end=types.ActivityEnd())
-            if injection:
-                self.thinker.mark_voice_delivered()
             self._manual_voice_activity_open = False
             if reply:
                 await self.deliver_authored_reply(reply, speak=True)
-                if not self._uses_canonical_text_author():
-                    self.thinker.mark_voice_delivered()
-            mode = "odysseus+speech" if self._uses_canonical_text_author() else ("speech-only" if dedicated_speech else "renderer Live")
-            print(f"[VOICE] finalizacja zakończona — tryb: {mode}.")
+            print("[VOICE] finalizacja zakończona — tryb: odysseus+speech.")
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            print(f"[THINKER] finalizacja tury głosowej nie powiodła się: {exc}")
-            # Nie blokuj rozmowy na zawsze, gdy Thinker lub API zawiedzie.
+            print(f"[VOICE] finalizacja tury głosowej nie powiodła się: {exc}")
+            # Nie blokuj rozmowy na zawsze, gdy API zawiedzie.
             if self._manual_voice_activity_open and not self._is_speaking and self.session:
                 try:
                     await self.session.send_realtime_input(activity_end=types.ActivityEnd())
@@ -1942,28 +1700,9 @@ class AudioLoop:
             if self._voice_finalize_task is current_task:
                 self._voice_finalize_task = None
 
-    def set_session_mode(self, active: bool, kind: str = "auto"):
-        """Toggle session mode and request a reconnect so the swap takes effect.
-
-        The actual identity change happens at reconnect time, when
-        ``_build_live_connect_config`` picks the therapeutic system instruction.
-        We just flip the flags and ask the idle loop to reconnect when idle.
-        """
-        was_active = self.session_mode
-        self.session_mode = bool(active)
-        if kind:
-            self.session_mode_kind = str(kind)
-        if self.session_mode == was_active:
-            return  # no real change, no reconnect needed
-        self._pending_session_opening = "enter" if self.session_mode else "exit"
-        self._session_mode_reconnect_requested = True
-
     def set_minecraft_game_mode(self, active: bool):
         """Enable or disable focused Minecraft game mode."""
         self.minecraft_game_mode = bool(active)
-        if self.minecraft_game_mode:
-            # Game mode and therapy/session mode should not run together.
-            self.session_mode = False
 
     def request_reconnect(self, reason: str = "settings_changed") -> None:
         """Request a graceful reconnect (fires when Monika is idle)."""
@@ -1975,10 +1714,6 @@ class AudioLoop:
         self._manual_voice_activity_open = False
         try:
             self.flush_chat()
-        except Exception:
-            pass
-        try:
-            self.thinker.close()
         except Exception:
             pass
         try:
@@ -2065,15 +1800,6 @@ class AudioLoop:
 
             if not self.session:
                 continue
-
-            # Session mode toggled: reconnect when idle.
-            if (
-                self._session_mode_reconnect_requested
-                and not self._is_speaking
-                and not self._ai_turn_open
-            ):
-                self._session_mode_reconnect_requested = False
-                raise LiveReconnectRequested("session_mode_toggle")
 
             # Model preset / voice changed: reconnect when idle.
             if (
@@ -3225,13 +2951,6 @@ class AudioLoop:
                                         else:
                                             self.chat_buffer["text"] += delta
 
-                                    # Zbieraj wyłącznie najnowszą rewizję ASR.
-                                    # Jeden brief powstanie dopiero na ręcznie
-                                    # kontrolowanym końcu aktywności głosowej.
-                                    try:
-                                        self.thinker.update_voice_transcript(self.chat_buffer["text"])
-                                    except Exception:
-                                        pass
 
                         if response.server_content.output_transcription:
                             transcript = response.server_content.output_transcription.text
@@ -4875,13 +4594,6 @@ class AudioLoop:
             try:
                 print("[AI DEBUG] [CONNECT] Connecting to Gemini Live API...")
 
-                # v2: refresh assembled prompt at each reconnect (async context).
-                from backend.core.runtimes.v2_runtime import get as _v2_get
-                _v2 = _v2_get()
-                if not _v2:
-                    raise RuntimeError("MonikAI v2 runtime is not active")
-                await _v2.refresh_prompt()
-
                 current_config = self._build_live_connect_config()
 
                 async with (
@@ -4976,21 +4688,7 @@ class AudioLoop:
                         self._ai_turn_open = False
                         self.chat_buffer = {"sender": None, "text": ""}
 
-                        # A session-mode toggle drives its own reconnect. Open
-                        # the way a session should open instead of the generic
-                        # "I spaced out" recovery message.
-                        pending_opening = self._pending_session_opening
-                        self._pending_session_opening = None
-                        if pending_opening == "enter":
-                            print("[AI DEBUG] [SESSION] Entering session mode (therapist identity).")
-                            await self.session.send(
-                                input=build_opening_trigger(self.session_mode_kind),
-                                end_of_turn=True,
-                            )
-                        elif pending_opening == "exit":
-                            print("[AI DEBUG] [SESSION] Exiting session mode (back to normal Monika).")
-                            # Reconnect silently as her normal self; no announcement.
-                        elif not self._session_resume_handle:
+                        if not self._session_resume_handle:
                             # Phase G: recovery context comes from the CURRENT
                             # conversation only — continuity across conversations
                             # is handled explicitly through memory/history tools.

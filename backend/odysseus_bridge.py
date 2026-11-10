@@ -369,6 +369,16 @@ def init_and_register_odysseus_backend(app: FastAPI):
         except Exception as e:
             logger.warning("diagnostics_routes mount error: %s", e)
 
+        # Load the embedder and index tools now: building the index on the first
+        # turn exceeds the 1.5s tool-selection budget and drops that turn to
+        # the three always-available tools.
+        try:
+            import threading
+            from src.tool_index import get_tool_index
+            threading.Thread(target=get_tool_index, name="tool-index-warmup", daemon=True).start()
+        except Exception as e:
+            logger.warning("tool index warm-up not started: %s", e)
+
         logger.info("Odysseus backend full suite successfully initialized and mounted!")
 
     except Exception as err:

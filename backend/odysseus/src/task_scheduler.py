@@ -1703,6 +1703,12 @@ class TaskScheduler:
             await self._deliver_via_email(output, task, result)
             return
 
+        if output == "speaker":
+            # Routines: say it in the room, keep the session copy as history.
+            from src.voice_runtime import announce
+            await announce(result or "")
+            output = "session"
+
         if output != "session":
             return
 

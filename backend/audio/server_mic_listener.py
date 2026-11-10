@@ -684,7 +684,30 @@ class ServerMicListenerService:
         self._cached_chime_pcm: Optional[bytes] = None
         self._cached_chime_sr: int = 24000
         self._cached_wake_prompts: list[tuple[str, bytes, int]] = []
+        # AlarmManager (duck-typed: .ringing, async handle_voice(text)); set by the server.
+        self.alarm = None
         self._load_preloaded_audio_assets()
+
+    def _alarm_ringing(self) -> bool:
+        return bool(self.alarm is not None and self.alarm.ringing)
+
+    @property
+    def _mic_closed(self) -> bool:
+        # A ringing alarm reopens a muted mic: its segments only ever reach
+        # local Vosk + AlarmManager.handle_voice, never cloud STT or the agent.
+        return self._is_muted and not self._alarm_ringing()
+
+    async def render_speech(self, text: str) -> Tuple[bytes, int]:
+        from backend.conversation.speech_text import prepare_for_speech
+
+        return await self._render_speech(prepare_for_speech(text) or text)
+
+    async def announce(self, text: str) -> None:
+        """Speak a proactive message (reminder, routine, alarm) on the server speakers."""
+        pcm, sample_rate = await self.render_speech(text)
+        # Wait for an in-progress conversation turn instead of talking over it.
+        async with self._turn_lock:
+            await self.play_audio_locally(pcm, sample_rate=sample_rate)
 
     def _load_preloaded_audio_assets(self) -> None:
         """Pre-load wake chime and neutral vocalizations to RAM for zero-latency reaction."""
@@ -1375,11 +1398,16 @@ class ServerMicListenerService:
                 self._is_speaking = True
             try:
                 await self._output.play(pcm_bytes, sample_rate)
+                return
+            except TimeoutError as exc:
+                print(f"[SERVER MIC] [AUDIO OUT] Persistent output stalled: {exc}")
+                self._output.close()
+                self._output = None
+                self._echo = self._barge_monitor = None
             finally:
                 if suppress_capture:
                     self._is_speaking = False
                     self.vad.reset_segment()
-            return
 
         if suppress_capture:
             self._is_speaking = True
@@ -1842,6 +1870,9 @@ class ServerMicListenerService:
             self._barge_in_segment, self._barge_in_transcript = pcm, transcript
             self._interrupted_reply = spoken
             self._output.stop()
+            # The interrupted clip is gone. Leaving the persistent stream
+            # paused would make the next wake chime wait forever in play().
+            self._output.gain, self._output.paused = 1.0, False
             return
         print(f"[SERVER MIC] [BARGE-IN] Resuming; heard {'own echo' if transcript else 'no words'}.")
         self._barge_monitor.reset()
@@ -1997,14 +2028,6 @@ class ServerMicListenerService:
                     print(f"[SERVER MIC] [WAKE] Voice acknowledgement notice: {exc}")
 
     def _live_system_instruction(self) -> str:
-        try:
-            from backend.core.runtimes.v2_runtime import get as get_v2_runtime
-
-            runtime = get_v2_runtime()
-            persona = str(getattr(runtime, "cached_prompt", "") or "").strip()
-        except Exception:
-            persona = ""
-
         smart_devices_summary = ""
         if self.home_assistant_agent and getattr(self.home_assistant_agent, "entities", None):
             dev_list = []
@@ -2032,7 +2055,7 @@ class ServerMicListenerService:
             "Jeżeli użytkownik powiedział tylko twoje imię ('Monika' lub odmianę), odpowiedz krótko 'Hm?' i zaczekaj na "
             "następną wypowiedź. Nie opisuj działania systemu ani transkrypcji."
         )
-        return (persona + smart_devices_summary + voice_rules).strip()
+        return (smart_devices_summary + voice_rules).strip()
 
     @staticmethod
     def _normalize_live_command(value: Any) -> str:
@@ -2419,7 +2442,16 @@ class ServerMicListenerService:
 
     async def _handle_speech_segment(self, raw_pcm: bytes):
         """Process recorded speech segment."""
-        if self._is_muted or self._is_speaking or self._is_busy:
+        if self._mic_closed or self._is_speaking or self._is_busy:
+            return
+
+        if self._alarm_ringing():
+            # Between alarm bursts: local-only recognition, no wake word, and
+            # nothing (alarm noise included) reaches cloud STT or the agent.
+            heard = await self.transcribe_wake_word_locally(raw_pcm)
+            if heard:
+                handled = await self.alarm.handle_voice(heard)
+                print(f"[SERVER MIC] [ALARM] Heard \"{heard}\" -> {'handled' if handled else 'ignored'}.")
             return
 
         timing_started = time.perf_counter()
@@ -2785,7 +2817,7 @@ class ServerMicListenerService:
                         frame_data = self._echo.process(frame_data, self._output.reference)
 
                     if (
-                        self._is_muted
+                        self._mic_closed
                         or self._is_speaking
                         or self._is_busy
                         or self._speech_segment_in_flight()
@@ -2843,6 +2875,7 @@ class ServerMicListenerService:
                         self.require_wake_word
                         and not self.is_awaiting_command
                         and not self._conversation_session_open
+                        and not self._alarm_ringing()
                     ):
                         wake_text = self._process_idle_wake_frame(
                             frame_data,
@@ -2876,7 +2909,7 @@ class ServerMicListenerService:
                 print(f"[SERVER MIC] [OK] PyAudio listening stream started (VAD, rate={self.sample_rate}Hz).")
                 while self._is_running:
                     if (
-                        self._is_muted
+                        self._mic_closed
                         or self._is_speaking
                         or self._is_busy
                         or self._speech_segment_in_flight()
@@ -2918,6 +2951,7 @@ class ServerMicListenerService:
                         self.require_wake_word
                         and not self.is_awaiting_command
                         and not self._conversation_session_open
+                        and not self._alarm_ringing()
                     ):
                         wake_text = self._process_idle_wake_frame(
                             data,

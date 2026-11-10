@@ -776,6 +776,7 @@ async def _execute_tool_block_impl(
         do_vault_search, do_vault_get, do_vault_unlock,
         do_app_api,
         do_home_assistant_control,
+        do_manage_alarms, do_manage_shopping_list,
     )
 
     # HACK:
@@ -1022,6 +1023,12 @@ async def _execute_tool_block_impl(
     elif tool == "home_assistant_control":
         desc = "home_assistant_control"
         result = await do_home_assistant_control(content, owner=owner)
+    elif tool == "manage_alarms":
+        desc = "manage_alarms"
+        result = await do_manage_alarms(content, owner=owner)
+    elif tool == "manage_shopping_list":
+        desc = "manage_shopping_list"
+        result = await do_manage_shopping_list(content, owner=owner)
     elif tool in ("manage_endpoints", "manage_mcp", "manage_webhooks", "manage_tokens", "manage_settings"):
         # Registry-dispatched (agent_tools.admin_tools); owner threaded for ownership/admin checks.
         desc = tool
